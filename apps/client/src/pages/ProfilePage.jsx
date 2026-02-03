@@ -1,0 +1,237 @@
+import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { api } from '../services/api'
+
+// Helper component for section headers with the blue gradient style
+const SectionHeader = ({ title }) => (
+    <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
+        {title}
+    </div>
+)
+
+// Helper for Info Table Rows
+const InfoRow = ({ label, value, note, isOdd }) => (
+    <div className={`flex border-b border-blue-200 text-sm ${isOdd ? 'bg-blue-50/50' : 'bg-white'}`}>
+        <div className="w-1/3 p-2 bg-blue-100/50 font-semibold text-blue-900 border-r border-blue-200 flex items-center justify-end pr-4">
+            {label}:
+        </div>
+        <div className="w-2/3 p-2 text-slate-700 flex items-center font-medium">
+            {value}
+            {note && <span className="ml-1 text-slate-500 text-xs font-normal">{note}</span>}
+        </div>
+    </div>
+)
+
+export default function ProfilePage() {
+    const { login } = useAuth()
+    const [profile, setProfile] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
+    const [refreshing, setRefreshing] = useState(false)
+
+    useEffect(() => {
+        loadProfile()
+    }, [])
+
+    const loadProfile = async () => {
+        try {
+            setLoading(true)
+            const data = await api.getProfile()
+            setProfile(data)
+
+            // Update AuthContext with fresh data
+            if (data.user) {
+                const token = localStorage.getItem('token')
+                login(data.user, token)
+            }
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleRefresh = async () => {
+        setRefreshing(true)
+        await loadProfile()
+        setRefreshing(false)
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <div className="text-slate-400 font-bold animate-pulse">Đang tải hồ sơ...</div>
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div className="max-w-md mx-auto mt-8 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+                <p>Lỗi: {error}</p>
+                <button
+                    onClick={loadProfile}
+                    className="mt-2 px-4 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                    Thử lại
+                </button>
+            </div>
+        )
+    }
+
+    const { user, playerState } = profile || {}
+    const username = user?.username || 'Huấn Luyện Viên'
+    const joinDate = user?.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Không rõ'
+    const coins = playerState?.gold || 0
+
+    return (
+        <div className="max-w-4xl mx-auto font-sans pb-12">
+            {/* Top Header Area */}
+            <div className="text-center mb-6">
+                <div className="text-amber-400 font-bold tracking-wider text-xs mb-1 uppercase drop-shadow-sm">
+                    ⭐ Đang có sự kiện nhân đôi kinh nghiệm!
+                </div>
+                <h1 className="text-4xl font-bold text-slate-800 mb-2 drop-shadow-sm tracking-tight">{username}</h1>
+                <div className="flex justify-center gap-6 text-sm font-bold text-slate-500">
+                    <div className="flex items-center gap-1 text-slate-700 drop-shadow-sm">
+                        <span>🪙 {coins.toLocaleString()} Xu Bạch Kim</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-slate-600">
+                        <span>🌑 0 Điểm Nguyệt Các</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Navigation Tabs Bar */}
+            <div className="rounded-t-lg overflow-hidden border border-blue-500 shadow-lg bg-slate-800">
+                <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
+                    Menu Hồ Sơ
+                </div>
+                <div className="bg-blue-50 border-b border-blue-300 p-2 flex flex-wrap justify-center gap-1 text-xs font-bold text-blue-700">
+                    {['Cá Nhân', 'Đội Hình', 'Kho', 'Hầm Mỏ', 'Túi Đồ', 'Thú Bông', 'Đồ Hiếm', 'Danh Hiệu'].map(tab => (
+                        <button key={tab} className="hover:text-amber-600 hover:underline px-2 transition-colors">
+                            [ {tab} ]
+                        </button>
+                    ))}
+                </div>
+
+                <div className="bg-white p-2 sm:p-4 space-y-6">
+
+                    {/* PROFILE CARD */}
+                    <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
+                        <SectionHeader title={`Hồ sơ của ${username}`} />
+
+                        <div className="bg-blue-50/50 p-4 text-center">
+                            {/* Sub-header: Trainer Avatar */}
+                            <div className="max-w-2xl mx-auto">
+                                <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-4 shadow-sm">
+                                    Ảnh Đại Diện
+                                </div>
+
+                                {/* Avatar Display */}
+                                <div className="mx-auto w-32 h-32 mb-6 flex items-center justify-center">
+                                    <img
+                                        src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/red.png"
+                                        alt="Trainer Avatar"
+                                        className="h-full object-contain pixelated drop-shadow-md"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Sub-header: Account Actions */}
+                                <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
+                                    Hành Động
+                                </div>
+                                <div className="flex flex-wrap justify-center gap-2 text-xs font-bold text-blue-700 mb-6 px-4">
+                                    <Link to="/profile/edit" className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap text-blue-800">
+                                        [ Chỉnh Sửa ]
+                                    </Link>
+                                    {['Gửi Tin Nhắn', 'Chuyển Tiền', 'Thách Đấu'].map(action => (
+                                        <button key={action} className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap">
+                                            [ {action} ]
+                                        </button>
+                                    ))}
+                                    <div className="w-full hidden sm:block"></div> {/* Break line on desktop if needed, or flex wrap handles it */}
+                                    {['Giới Thiệu', 'Thống Kê Ngày', 'Kho Đầy Đủ', 'Pokemon Đã Bán', 'Thú Bông'].map(action => (
+                                        <button key={action} className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap">
+                                            [ {action} ]
+                                        </button>
+                                    ))}
+                                    {/* Add Refresh Button here explicitly as an action */}
+                                    <button onClick={handleRefresh} className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap text-blue-800">
+                                        [ Làm Mới Hồ Sơ ]
+                                        {refreshing && <span className="ml-1 animate-spin inline-block">↻</span>}
+                                    </button>
+                                </div>
+
+                                {/* Sub-header: Online Status */}
+                                <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
+                                    Trạng Thái
+                                </div>
+                                <div className="py-2 text-sm text-slate-700">
+                                    <span className="font-bold text-slate-900">{username}</span> hiện đang <span className="text-green-600 font-bold">Trực Tuyến</span>.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* PARTY SECTION */}
+                    <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
+                        <SectionHeader title="Đội Hình" />
+                        <div className="bg-slate-100 min-h-[100px] flex items-stretch divide-x divide-gray-300 border-b border-gray-300 overflow-x-auto">
+                            {/* Example Party Member */}
+                            <div className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center p-2 bg-slate-50 hover:bg-white transition-colors">
+                                <span className="text-xs text-slate-500 mb-1">Thường</span>
+                                <span className="font-bold text-slate-800 text-sm mb-1">Bulbasaur</span>
+                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png" className="w-12 h-12 pixelated" />
+                                <span className="text-xs text-amber-600 font-bold mt-1">Lv. 5</span>
+                            </div>
+
+                            {/* Empty Slots */}
+                            {[...Array(5)].map((_, i) => (
+                                <div key={i} className="min-w-[16.66%] flex-1 bg-slate-100 flex items-center justify-center">
+                                    <div className="w-8 h-8 rounded-full bg-slate-200/50"></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* USER INFO TABLE */}
+                    <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
+                        <SectionHeader title="Thông Tin Người Chơi" />
+                        <div className="bg-white">
+                            <InfoRow label="ID Người Chơi" value={`#${user?.id ? user.id.slice(-7).toUpperCase() : '???'}`} isOdd={false} />
+                            <InfoRow label="Tên Nhân Vật" value={username} isOdd={true} />
+                            <InfoRow label="Danh Hiệu" value="Tân Thủ" isOdd={false} />
+                            <InfoRow label="Giới Tính" value="Nam" isOdd={true} />
+                            <InfoRow label="Nhóm" value={user?.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
+                            <InfoRow label="Cấp Bản Đồ" value="Lv. 1" isOdd={true} />
+                            <InfoRow label="Cấp Người Chơi" value={`Lv. ${playerState?.level || 1}`} isOdd={false} />
+                            <InfoRow label="Kinh Nghiệm" value="0 EXP (0/250 để lên cấp)" isOdd={true} />
+                            <InfoRow label="Cấp Đào Mỏ" value="Lv. 1" isOdd={false} />
+                            <InfoRow label="Xu Bạch Kim" value={`$${coins.toLocaleString()}`} isOdd={true} />
+                            <InfoRow label="Điểm Nguyệt Các" value="0 Điểm" isOdd={false} />
+                            <InfoRow label="Thể Lực" value="0 AP (Đội Đỏ)" isOdd={true} />
+                            <InfoRow label="Trận Thắng" value="0 trận" isOdd={false} />
+                            <InfoRow label="Ngày Đăng Ký" value={joinDate} isOdd={true} />
+                            <InfoRow label="Đăng Nhập Cuối" value={new Date().toLocaleDateString('vi-VN')} isOdd={false} />
+                            <InfoRow label="Thời Gian Chơi" value="Không rõ" isOdd={true} />
+                            <InfoRow label="Phiên Bản" value="- [Xem]" isOdd={false} />
+                        </div>
+                        <div className="bg-white border-t border-blue-200">
+                            <SectionHeader title="Chữ Ký" />
+                            <div className="p-4 text-center text-slate-400 italic text-sm">
+                                Chưa có chữ ký
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    )
+}

@@ -1,0 +1,152 @@
+import express from 'express'
+import jwt from 'jsonwebtoken'
+import User from '../models/User.js'
+import PlayerState from '../models/PlayerState.js'
+import { authMiddleware } from '../middleware/auth.js'
+
+const router = express.Router()
+
+// POST /api/auth/register
+router.post('/register', async (req, res, next) => {
+    try {
+        const { email, username, password } = req.body
+
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Email and password are required',
+            })
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Password must be at least 6 characters',
+            })
+        }
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ email })
+        if (existingUser) {
+            return res.status(409).json({
+                ok: false,
+                message: 'User already exists',
+            })
+        }
+
+        // Create user with username (password will be hashed by pre-save hook)
+        const user = await User.create({
+            email,
+            username: username || email.split('@')[0], // fallback to email prefix
+            password
+        })
+
+        // Create initial player state
+        await PlayerState.create({ userId: user._id })
+
+        // Generate JWT with role
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        )
+
+        res.status(201).json({
+            ok: true,
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// POST /api/auth/login
+router.post('/login', async (req, res, next) => {
+    try {
+        const { email, password } = req.body
+
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Email and password are required',
+            })
+        }
+
+        // Find user
+        const user = await User.findOne({ email })
+        if (!user) {
+            return res.status(401).json({
+                ok: false,
+                message: 'Invalid credentials',
+            })
+        }
+
+        // Compare password
+        const isMatch = await user.comparePassword(password)
+        if (!isMatch) {
+            return res.status(401).json({
+                ok: false,
+                message: 'Invalid credentials',
+            })
+        }
+
+        // Generate JWT with role
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        )
+
+        res.json({
+            ok: true,
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// GET /api/auth/me (protected)
+router.get('/me', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId).select('-password')
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'User not found',
+            })
+        }
+
+        const playerState = await PlayerState.findOne({ userId: user._id })
+
+        res.json({
+            ok: true,
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+                createdAt: user.createdAt,
+            },
+            playerState: playerState || { hp: 100, maxHp: 100, gold: 0, clicks: 0 },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+export default router
