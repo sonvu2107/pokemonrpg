@@ -5,7 +5,7 @@ const encounterSchema = new mongoose.Schema(
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
         mapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Map', required: true, index: true },
         pokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pokemon', required: true },
-        level: { type: Number, required: true, min: 1, max: 100 },
+        level: { type: Number, required: true, min: 1 },
         hp: { type: Number, required: true, min: 0 },
         maxHp: { type: Number, required: true, min: 1 },
         isShiny: { type: Boolean, default: false },

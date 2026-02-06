@@ -14,12 +14,16 @@ const MOCK_STATS = {
     moonPoints: 0
 }
 
+const NORMAL_RARITIES = new Set(['d', 'c', 'common', 'uncommon'])
+
 export default function MapPage() {
     const { slug } = useParams()
     const [map, setMap] = useState(null)
     const [dropRates, setDropRates] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [unlockInfo, setUnlockInfo] = useState(null)
+    const [isLocked, setIsLocked] = useState(false)
 
     // Game State
     const [searching, setSearching] = useState(false)
@@ -34,6 +38,19 @@ export default function MapPage() {
         totalSearches: MOCK_STATS.totalSearches,
     })
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
+    const requiredSearches = Math.max(
+        0,
+        (isLocked ? unlockInfo?.requiredSearches : map?.requiredSearches) ?? 0
+    )
+    const currentSearches = Math.max(
+        0,
+        (isLocked ? unlockInfo?.currentSearches : mapStats.totalSearches) ?? 0
+    )
+    const unlockRemaining = Math.max(0, requiredSearches - currentSearches)
+    const unlockPercent = requiredSearches > 0
+        ? Math.min(100, Math.round((currentSearches / requiredSearches) * 100))
+        : 100
+    const normalDropRates = dropRates.filter(dr => dr.pokemonId && NORMAL_RARITIES.has(dr.pokemonId.rarity))
 
     useEffect(() => {
         loadMapData()
@@ -55,6 +72,17 @@ export default function MapPage() {
             if (stateData?.mapProgress) {
                 setMapStats(stateData.mapProgress)
             }
+            if (stateData?.unlock) {
+                setUnlockInfo(stateData.unlock)
+            }
+            setIsLocked(Boolean(stateData?.locked))
+            if (stateData?.locked) {
+                setMapStats((prev) => ({
+                    ...prev,
+                    exp: 0,
+                    totalSearches: 0,
+                }))
+            }
         } catch (err) {
             setError(err.message)
         } finally {
@@ -63,6 +91,10 @@ export default function MapPage() {
     }
 
     const handleSearch = async () => {
+        if (isLocked) {
+            setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
+            return
+        }
         try {
             setSearching(true)
             setLastResult(null)
@@ -70,6 +102,11 @@ export default function MapPage() {
             setActionMessage('')
 
             const res = await gameApi.searchMap(slug)
+            if (res?.locked) {
+                setUnlockInfo(res.unlock || null)
+                setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
+                return
+            }
 
             // Artificial delay to mimic "Searching..." feel of old RPGs
             await new Promise(r => setTimeout(r, 600))
@@ -146,6 +183,30 @@ export default function MapPage() {
     if (error) return <div className="text-center py-8 text-red-600 font-bold">{error}</div>
     if (!map) return null
 
+    if (isLocked) {
+        return (
+            <div className="max-w-3xl mx-auto font-sans text-sm animate-fadeIn">
+                <div className="border-[3px] border-blue-700 rounded-lg bg-blue-900 overflow-hidden shadow-lg min-h-[600px]">
+                    <div className="text-center py-3 bg-gradient-to-b from-white to-blue-50 border-b-2 border-slate-300 shadow-sm">
+                        <div className="flex flex-col items-center justify-center gap-0.5">
+                            <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
+                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png" className="w-4 h-4" alt="Coins" />
+                                <span>${MOCK_STATS.platinumCoins} Xu Bạch Kim</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
+                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png" className="w-4 h-4" alt="Points" />
+                                <span>{MOCK_STATS.moonPoints} Điểm Nguyệt Các</span>
+                            </div>
+                        </div>
+                        <div className="mt-2 text-slate-800 text-sm">
+                            Bạn cần tìm kiếm <span className="font-bold">{unlockInfo?.requiredSearches || 0}</span> lần tại <Link to={unlockInfo?.sourceMap?.slug ? `/map/${unlockInfo.sourceMap.slug}` : '#'} className="font-bold text-blue-700 hover:underline">{unlockInfo?.sourceMap?.name || 'bản đồ trước'}</Link>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="max-w-3xl mx-auto font-sans text-sm animate-fadeIn">
             {/* Main Blue Border Container */}
@@ -169,6 +230,8 @@ export default function MapPage() {
                     <h1 className="text-2xl font-bold text-blue-900 drop-shadow-sm">{map.name}</h1>
                 </div>
 
+
+
                 {/* Winter Event / Links Section (Mock) */}
                 <div className="border-t border-b border-blue-300">
                     <div className="bg-gradient-to-t from-blue-600 to-blue-400 text-white font-bold text-center py-1 border-b border-blue-700">
@@ -191,26 +254,22 @@ export default function MapPage() {
                         {map.name}
                     </div>
 
-                    {/* Special Pokemon (Rare/Ultra Rare/Legendary) */}
-                    {dropRates.some(dr => dr.pokemonId && ['rare', 'ultra_rare', 'legendary'].includes(dr.pokemonId.rarity)) && (
+                    {/* Special Pokemon (from uploaded images) */}
+                    {map.specialPokemonImages && map.specialPokemonImages.length > 0 && (
                         <>
                             <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-b border-blue-200">
                                 Pokemon Đặc Biệt
                             </div>
-                            <div className="flex justify-center flex-wrap gap-8 py-6 min-h-[100px] items-center">
-                                {dropRates
-                                    .filter(dr => dr.pokemonId && ['rare', 'ultra_rare', 'legendary'].includes(dr.pokemonId.rarity))
-                                    .slice(0, 6)
-                                    .map(dr => (
-                                        <div key={dr._id} className="flex flex-col items-center">
-                                            <img
-                                                src={dr.pokemonId.imageUrl || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${dr.pokemonId.pokedexNumber}.png`}
-                                                alt={dr.pokemonId.name}
-                                                className="w-16 h-16 pixelated hover:scale-110 transition-transform"
-                                                title={`${dr.pokemonId.name} (${dr.pokemonId.rarity === 'legendary' ? 'Huyền Thoại' : 'Hiếm'})`}
-                                            />
-                                        </div>
-                                    ))}
+                            <div className="flex justify-center flex-wrap gap-6 py-6 min-h-[120px] items-center bg-gradient-to-b from-purple-50/30 to-white">
+                                {map.specialPokemonImages.map((imageUrl, index) => (
+                                    <div key={index} className="flex flex-col items-center">
+                                        <img
+                                            src={imageUrl}
+                                            alt={`Special Pokemon ${index + 1}`}
+                                            className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
+                                        />
+                                    </div>
+                                ))}
                             </div>
                         </>
                     )}
@@ -222,7 +281,7 @@ export default function MapPage() {
                         </div>
                         <div className="flex justify-center flex-wrap gap-6 py-4 min-h-[80px] items-center bg-white">
                             {dropRates
-                                .filter(dr => dr.pokemonId && ['common', 'uncommon'].includes(dr.pokemonId.rarity))
+                                .filter(dr => dr.pokemonId && NORMAL_RARITIES.has(dr.pokemonId.rarity))
                                 .map(dr => (
                                     <div key={dr._id} className="flex flex-col items-center opacity-90 hover:opacity-100">
                                         <img
@@ -233,7 +292,7 @@ export default function MapPage() {
                                         />
                                     </div>
                                 ))}
-                            {dropRates.filter(dr => dr.pokemonId && ['common', 'uncommon'].includes(dr.pokemonId.rarity)).length === 0 && (
+                            {normalDropRates.length === 0 && (
                                 <span className="text-slate-400 text-xs italic">Chưa có Pokemon thường nào...</span>
                             )}
                         </div>
@@ -268,6 +327,26 @@ export default function MapPage() {
                                 <td className="px-3 py-1 text-blue-600">{mapStats.totalSearches}/{mapStats.expToNext}</td>
                             </tr>
                             <tr className="border-b border-slate-300">
+                                <td className="bg-sky-100 px-3 py-1 text-right border-r border-slate-300">
+                                    {isLocked ? 'Tien do mo khoa map:' : 'Tien do mo map tiep theo:'}
+                                </td>
+                                <td className="px-3 py-1 bg-white flex items-center gap-2">
+                                    {requiredSearches > 0 ? (
+                                        <>
+                                            <span className="text-blue-700 font-bold">{currentSearches}/{requiredSearches}</span>
+                                            <div className="w-36 h-2 bg-white border border-slate-600 rounded-full overflow-hidden relative shadow-inner">
+                                                <div
+                                                    className="absolute top-0 left-0 h-full bg-gradient-to-b from-amber-300 to-amber-600"
+                                                    style={{ width: `${Math.max(5, unlockPercent)}%` }}
+                                                ></div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <span className="text-emerald-700 font-bold">Không yêu cầu</span>
+                                    )}
+                                </td>
+                            </tr>
+                            <tr className="border-b border-slate-300">
                                 <td className="bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Gặp gần nhất:</td>
                                 <td className="px-3 py-1 text-slate-500">-</td>
                             </tr>
@@ -284,7 +363,7 @@ export default function MapPage() {
                         <div
                             className="w-[300px] h-[180px] bg-cover bg-center pixelated relative"
                             style={{
-                                backgroundImage: `url('https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png')`, // Generic Pokemon Map 
+                                backgroundImage: `url('${map.mapImageUrl || 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png'}')`,
                                 imageRendering: 'pixelated'
                             }}
                         >
@@ -320,7 +399,7 @@ export default function MapPage() {
                     {/* Search Button */}
                     <button
                         onClick={handleSearch}
-                        disabled={searching || Boolean(encounter)} // If found, force decision? Or just re-search as user requested simple loop
+                        disabled={searching || Boolean(encounter) || isLocked} // If found, force decision? Or just re-search as user requested simple loop
                         className="px-6 py-1 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-sm shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded disabled:opacity-50"
                     >
                         {searching ? 'Đang tìm...' : 'Tìm kiếm'}
@@ -380,3 +459,4 @@ export default function MapPage() {
         </div>
     )
 }
+

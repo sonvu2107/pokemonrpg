@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
-import { mapApi } from "../services/mapApi"
+import { gameApi } from "../services/gameApi"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -42,11 +42,26 @@ export default function LeftColumn() {
     const [legendaryMaps, setLegendaryMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
 
+    const sortByDisplayOrder = (maps) => {
+        return maps
+            .map((map, index) => ({ ...map, __originalIndex: index }))
+            .sort((a, b) => {
+                const aParsedOrder = Number(a.orderIndex)
+                const bParsedOrder = Number(b.orderIndex)
+                const aOrder = Number.isFinite(aParsedOrder) ? aParsedOrder : Number.MAX_SAFE_INTEGER
+                const bOrder = Number.isFinite(bParsedOrder) ? bParsedOrder : Number.MAX_SAFE_INTEGER
+                if (aOrder !== bOrder) return aOrder - bOrder
+                return a.__originalIndex - b.__originalIndex
+            })
+            .map(({ __originalIndex, ...map }) => map)
+    }
+
     useEffect(() => {
         const loadLegendaryMaps = async () => {
             try {
-                const maps = await mapApi.fetchLegendaryMaps()
-                setLegendaryMaps(maps)
+                const maps = await gameApi.getMaps()
+                const legendaryOnly = maps.filter((map) => map.isLegendary)
+                setLegendaryMaps(sortByDisplayOrder(legendaryOnly))
             } catch (err) {
                 console.error('Failed to load legendary maps:', err)
             } finally {
@@ -75,16 +90,9 @@ export default function LeftColumn() {
             {/* GENERAL */}
             <SidebarSection title="Chung" iconId={81}> {/* Magnemite */}
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
-                <SidebarLink to="/welcome">Chào Mừng</SidebarLink>
                 <SidebarLink to="/messages">Tin Nhắn</SidebarLink>
                 <SidebarLink to="/trades">Giao Dịch</SidebarLink>
-                <SidebarLink to="/guides">Hướng Dẫn</SidebarLink>
-                <SidebarLink to="/guide/new" isSpecial>Hướng Dẫn Tân Thủ</SidebarLink>
                 <SidebarLink to="/friends">Bạn Bè</SidebarLink>
-                <SidebarLink to="/staff">Ban Quản Trị</SidebarLink>
-                <SidebarLink to="/rules">Nội Quy</SidebarLink>
-                <SidebarLink to="/chat">Trò Chuyện</SidebarLink>
-                <SidebarLink to="/forums">Diễn Đàn</SidebarLink>
                 <SidebarLink to="/donations">Ủng Hộ</SidebarLink>
                 <button onClick={logout} className="block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm">
                     Đăng Xuất
@@ -97,39 +105,46 @@ export default function LeftColumn() {
                 <SidebarLink to="/options">Tùy Chọn</SidebarLink>
                 <SidebarLink to="/referral">Giới Thiệu</SidebarLink>
                 <SidebarLink to="/music">Nghe Nhạc</SidebarLink>
-                <SidebarLink to="/art">Tác Giả</SidebarLink>
             </SidebarSection>
 
             {/* EXPLORE */}
             <SidebarSection title="Khám Phá" iconId={138}> {/* Omanyte/Omastar for exploration */}
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
-                <SidebarLink to="/legendary">Khu Vực Huyền Thoại</SidebarLink>
+                <SidebarLink to="/legendary">Khu Vực Săn Bắt</SidebarLink>
                 <SidebarLink to="/mines">Hầm Mỏ</SidebarLink>
                 <SidebarLink to="/center">Trung Tâm Pokemon</SidebarLink>
                 <SidebarLink to="/minigames">Minigame</SidebarLink>
-                <SidebarLink to="/dna">Trung Tâm DNA</SidebarLink>
-                <SidebarLink to="/lottery">Xổ Số</SidebarLink>
-                <SidebarLink to="/chase" isSpecial>Truy Đuổi Cầu Vồng</SidebarLink>
-            </SidebarSection>
-
-            {/* PLUSHIES */}
-            <SidebarSection title="Thú Bông" iconId={60}> {/* Poliwag */}
-                <SidebarLink to="/plushies">Thú Bông</SidebarLink>
-                <SidebarLink to="/plushies/trade">Đổi Thú Bông</SidebarLink>
-                <SidebarLink to="/plushies/dex">Plushie Dex</SidebarLink>
             </SidebarSection>
 
             {/* LEGENDARY AREAS */}
             {legendaryMaps.length > 0 && (
-                <SidebarSection title="Khu Vực Huyền Thoại" iconId={legendaryMaps[0]?.iconId || 385}>
+                <SidebarSection title="Khu Vực Săn Bắt" iconId={legendaryMaps[0]?.iconId || 385}>
                     {loadingMaps ? (
                         <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
                     ) : (
-                        legendaryMaps.map((map) => (
-                            <SidebarLink key={map._id} to={`/map/${map.slug}`}>
-                                {map.name}
-                            </SidebarLink>
-                        ))
+                        legendaryMaps.map((map) => {
+                            const isLocked = !map.isUnlocked
+                            const requiredSearches = map.unlockRequirement?.requiredSearches || 0
+                            const remainingSearches = map.unlockRequirement?.remainingSearches || 0
+                            const sourceMapName = map.unlockRequirement?.sourceMap?.name
+                            const tooltip = isLocked
+                                ? `Cần thêm ${remainingSearches} lượt tìm kiếm tại ${sourceMapName || 'map trước'}`
+                                : ''
+
+                            if (isLocked) {
+                                return (
+                                    <div key={map._id} title={tooltip} className="px-2 py-0.5 text-sm font-bold text-white/50 cursor-not-allowed">
+                                        {map.name}
+                                    </div>
+                                )
+                            }
+
+                            return (
+                                <SidebarLink key={map._id} to={`/map/${map.slug}`}>
+                                    {map.name}
+                                </SidebarLink>
+                            )
+                        })
                     )}
                 </SidebarSection>
             )}

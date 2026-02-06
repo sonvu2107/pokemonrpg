@@ -6,6 +6,7 @@ import authRoutes from './routes/auth.js'
 import gameRoutes from './routes/game.js'
 import mapsRoutes from './routes/maps.js'
 import newsRoutes from './routes/news.js'
+import statsRoutes from './routes/stats.js'
 import pokemonAdminRoutes from './routes/admin/pokemon.js'
 import mapsAdminRoutes from './routes/admin/maps.js'
 import dropRatesAdminRoutes from './routes/admin/dropRates.js'
@@ -13,6 +14,11 @@ import userAdminRoutes from './routes/admin/user.js'
 import { authMiddleware, requireAdmin } from './middleware/auth.js'
 import { errorHandler, notFound } from './utils/errorHandler.js'
 import boxRoutes from './routes/box.js'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const app = express()
 
@@ -46,6 +52,9 @@ const adminLimiter = rateLimit({
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
+// Serve static files (uploads)
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')))
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ ok: true, message: 'Server is running' })
@@ -56,6 +65,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/game', gameRoutes)
 app.use('/api/maps', mapsRoutes)
 app.use('/api/news', newsRoutes)
+app.use('/api/stats', statsRoutes)
 app.use('/api/box', boxRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)

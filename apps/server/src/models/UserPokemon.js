@@ -11,7 +11,7 @@ const UserPokemonSchema = new Schema(
         nickname: { type: String, default: null, trim: true, maxlength: 20 },
 
         // Progression
-        level: { type: Number, default: 5, min: 1, max: 100 },
+        level: { type: Number, default: 5, min: 1 },
         experience: { type: Number, default: 0, min: 0 },
 
         // Genetics / Stats

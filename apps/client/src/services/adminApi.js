@@ -137,6 +137,45 @@ export const mapApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) throw new Error('Failed to fetch drop rates')
+        if (!res.ok) throw new Error('Failed to fetch drop rates')
+        return res.json()
+    },
+
+    // POST /api/admin/maps/upload-special-image
+    async uploadSpecialImage(file) {
+        const formData = new FormData()
+        formData.append('image', file)
+
+        const res = await fetch(`${API_URL}/admin/maps/upload-special-image`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeader(),
+            },
+            body: formData,
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Upload failed')
+        }
+        return res.json()
+    },
+
+    // POST /api/admin/maps/upload-map-image
+    async uploadMapImage(file) {
+        const formData = new FormData()
+        formData.append('image', file)
+
+        const res = await fetch(`${API_URL}/admin/maps/upload-map-image`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeader(),
+            },
+            body: formData,
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Map image upload failed')
+        }
         return res.json()
     },
 }

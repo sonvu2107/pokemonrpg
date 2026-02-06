@@ -14,8 +14,10 @@ export default function DropRateManagerPage() {
     // Add Pokemon Modal State
     const [showAddModal, setShowAddModal] = useState(false)
     const [allPokemon, setAllPokemon] = useState([])
-    const [selectedPokemonId, setSelectedPokemonId] = useState('')
-    const [weight, setWeight] = useState(10)
+    const [selectedPokemonIds, setSelectedPokemonIds] = useState([])
+    const [bulkWeight, setBulkWeight] = useState(10)
+    const [searchTerm, setSearchTerm] = useState('')
+    const [bulkLoading, setBulkLoading] = useState(false)
 
     // Edit State
     const [editingId, setEditingId] = useState(null)
@@ -45,21 +47,29 @@ export default function DropRateManagerPage() {
     }
 
     const handleAddDropRate = async () => {
-        if (!selectedPokemonId || weight < 0) return
+        if (selectedPokemonIds.length === 0 || bulkWeight < 0) return
 
         try {
-            await dropRateApi.upsert({
-                mapId,
-                pokemonId: selectedPokemonId,
-                weight: parseInt(weight),
-            })
+            setBulkLoading(true)
+            await Promise.all(
+                selectedPokemonIds.map((pokemonId) =>
+                    dropRateApi.upsert({
+                        mapId,
+                        pokemonId,
+                        weight: parseInt(bulkWeight),
+                    })
+                )
+            )
 
             setShowAddModal(false)
-            setSelectedPokemonId('')
-            setWeight(10)
+            setSelectedPokemonIds([])
+            setBulkWeight(10)
+            setSearchTerm('')
             loadData()
         } catch (err) {
             alert('Thêm thất bại: ' + err.message)
+        } finally {
+            setBulkLoading(false)
         }
     }
 
@@ -104,6 +114,14 @@ export default function DropRateManagerPage() {
     if (loading) return <div className="text-blue-800 font-medium text-center py-8">Đang tải dữ liệu...</div>
     if (!map) return <div className="text-red-500 font-medium text-center py-8">Không tìm thấy bản đồ</div>
 
+    const existingPokemonIds = new Set(dropRates.map((dr) => dr.pokemon?._id))
+    const filteredPokemon = allPokemon.filter((p) => {
+        const name = String(p.name || '').toLowerCase()
+        const query = searchTerm.trim().toLowerCase()
+        if (!query) return true
+        return name.includes(query) || String(p.pokedexNumber).includes(query)
+    })
+
     return (
         <div className="space-y-6 max-w-5xl mx-auto">
             <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-blue-100">
@@ -113,7 +131,7 @@ export default function DropRateManagerPage() {
                     </h1>
                     <p className="text-slate-500 text-sm mt-1 flex items-center gap-2">
                         <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-bold border border-blue-100">LV {map.levelMin} - {map.levelMax}</span>
-                        {map.isLegendary && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-100">⭐ Legendary</span>}
+                        {map.isLegendary && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-100">🏹 Săn Bắt</span>}
                     </p>
                 </div>
                 <Link
@@ -287,37 +305,74 @@ export default function DropRateManagerPage() {
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Chọn Pokemon <span className="text-red-500">*</span></label>
-                                <select
-                                    value={selectedPokemonId}
-                                    onChange={(e) => setSelectedPokemonId(e.target.value)}
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokemon</label>
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Nhập tên hoặc số Pokedex #"
                                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-                                >
-                                    <option value="">-- Chọn danh sách --</option>
-                                    {allPokemon.map((p) => (
-                                        <option key={p._id} value={p._id}>
-                                            #{p.pokedexNumber.toString().padStart(3, '0')} - {p.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
                             </div>
 
                             <div>
-                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Trọng số xuất hiện <span className="text-red-500">*</span></label>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-slate-700 text-sm font-bold">
+                                        Chọn nhiều Pokemon <span className="text-red-500">*</span>
+                                    </label>
+                                    <span className="text-xs text-slate-500">
+                                        Đã chọn: <span className="font-bold text-blue-700">{selectedPokemonIds.length}</span>
+                                    </span>
+                                </div>
+                                <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-md">
+                                    {filteredPokemon.length === 0 ? (
+                                        <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy</div>
+                                    ) : (
+                                        filteredPokemon.map((p) => {
+                                            const isChecked = selectedPokemonIds.includes(p._id)
+                                            const isExisting = existingPokemonIds.has(p._id)
+                                            return (
+                                                <label
+                                                    key={p._id}
+                                                    className={`flex items-center gap-2 px-3 py-2 border-b border-slate-100 text-sm cursor-pointer hover:bg-blue-50 ${isExisting ? 'bg-amber-50/40' : ''}`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedPokemonIds((prev) => [...prev, p._id])
+                                                            } else {
+                                                                setSelectedPokemonIds((prev) => prev.filter((id) => id !== p._id))
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span className="font-mono text-xs text-slate-500">#{p.pokedexNumber.toString().padStart(3, '0')}</span>
+                                                    <span className="font-bold text-slate-700">{p.name}</span>
+                                                    {isExisting && <span className="ml-auto text-[10px] text-amber-700 font-bold">Đã có</span>}
+                                                </label>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Trọng số (cho tất cả) <span className="text-red-500">*</span></label>
                                 <div className="relative">
                                     <input
                                         type="number"
                                         min="0"
                                         max="100000"
-                                        value={weight}
-                                        onChange={(e) => setWeight(e.target.value)}
+                                        value={bulkWeight}
+                                        onChange={(e) => setBulkWeight(e.target.value)}
                                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                                     />
                                 </div>
                                 <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100 grid grid-cols-2 gap-2 text-xs">
                                     <span className="text-slate-500">Tỷ lệ ước tính:</span>
                                     <span className="text-right font-bold text-blue-700">
-                                        {totalWeight > 0 ? ((weight / (totalWeight + parseInt(weight || 0))) * 100).toFixed(2) : 100}%
+                                        {totalWeight > 0 ? ((bulkWeight / (totalWeight + parseInt(bulkWeight || 0))) * 100).toFixed(2) : 100}%
                                     </span>
                                 </div>
                             </div>
@@ -325,16 +380,16 @@ export default function DropRateManagerPage() {
                             <div className="flex gap-3 pt-4 border-t border-slate-100 mt-2">
                                 <button
                                     onClick={handleAddDropRate}
-                                    disabled={!selectedPokemonId}
+                                    disabled={selectedPokemonIds.length === 0 || bulkLoading}
                                     className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md text-sm font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Thêm Ngay
+                                    {bulkLoading ? 'Đang lưu...' : 'Thêm Ngay'}
                                 </button>
                                 <button
                                     onClick={() => setShowAddModal(false)}
                                     className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold shadow-sm transition-all"
                                 >
-                                    Hủy
+                                    Hủy bỏ
                                 </button>
                             </div>
                         </div>

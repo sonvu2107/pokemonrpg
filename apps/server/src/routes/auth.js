@@ -98,6 +98,11 @@ router.post('/login', async (req, res, next) => {
             })
         }
 
+        // Set user as online
+        user.isOnline = true
+        user.lastActive = new Date()
+        await user.save()
+
         // Generate JWT with role
         const token = jwt.sign(
             { userId: user._id, email: user.email, role: user.role },

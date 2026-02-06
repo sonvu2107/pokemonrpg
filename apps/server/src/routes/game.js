@@ -5,15 +5,54 @@ import { emitPlayerState } from '../socket/index.js'
 import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
 import MapProgress from '../models/MapProgress.js'
+import MapModel from '../models/Map.js'
 
 const router = express.Router()
 
 const EXP_PER_SEARCH = 1
 const expToNext = (level) => 250 + Math.max(0, level - 1) * 100
 
-const calcMaxHp = (baseHp, level) => {
-    const safeBase = Math.max(1, baseHp || 50)
-    return Math.max(10, Math.floor(((safeBase * 2 * level) / 100) + level + 10))
+const RARITY_STAT_GAIN = {
+    d: 1,
+    c: 1,
+    b: 2,
+    a: 5,
+    s: 10,
+    ss: 20,
+}
+
+const RARITY_ALIASES = {
+    superlegendary: 'ss',
+    legendary: 's',
+    ultra_rare: 'a',
+    rare: 'b',
+    uncommon: 'c',
+    common: 'd',
+}
+
+const normalizeRarity = (rarity) => {
+    const normalized = String(rarity || 'd').trim().toLowerCase()
+    return RARITY_ALIASES[normalized] || normalized
+}
+
+const getRarityStatGain = (rarity) => RARITY_STAT_GAIN[normalizeRarity(rarity)] ?? 1
+
+const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
+    const gain = getRarityStatGain(rarity)
+    const step = Math.max(0, level - 1) * gain
+    return {
+        hp: Math.max(1, (baseStats.hp || 0) + step),
+        atk: Math.max(1, (baseStats.atk || 0) + step),
+        def: Math.max(1, (baseStats.def || 0) + step),
+        spatk: Math.max(1, (baseStats.spatk || 0) + step),
+        spdef: Math.max(1, (baseStats.spldef || 0) + step),
+        spd: Math.max(1, (baseStats.spd || 0) + step),
+    }
+}
+
+const calcMaxHp = (baseHp, level, rarity) => {
+    const stats = calcStatsForLevel({ hp: baseHp }, level, rarity)
+    return Math.max(10, Math.floor(stats.hp))
 }
 
 const rollDamage = (level) => {
@@ -41,7 +80,15 @@ const buildMovesForLevel = (pokemon, level) => {
 const updateMapProgress = async (userId, mapId) => {
     let progress = await MapProgress.findOne({ userId, mapId })
     if (!progress) {
-        progress = await MapProgress.create({ userId, mapId })
+        progress = await MapProgress.create({
+            userId,
+            mapId,
+            isUnlocked: true,
+            unlockedAt: new Date(),
+        })
+    } else if (!progress.isUnlocked) {
+        progress.isUnlocked = true
+        progress.unlockedAt = progress.unlockedAt || new Date()
     }
 
     progress.totalSearches += 1
@@ -63,6 +110,76 @@ const formatMapProgress = (progress) => ({
     expToNext: expToNext(progress.level),
     totalSearches: progress.totalSearches,
 })
+
+const getOrderedMaps = async () => {
+    return MapModel.find({})
+        .select('name slug levelMin levelMax isLegendary iconId requiredSearches orderIndex')
+        .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+        .lean()
+}
+
+const buildProgressIndex = (progresses) => {
+    const byId = new Map()
+    progresses.forEach((progress) => {
+        byId.set(progress.mapId.toString(), progress)
+    })
+    return byId
+}
+
+const buildUnlockRequirement = (maps, index, progressById) => {
+    if (index <= 0) {
+        return {
+            requiredSearches: 0,
+            currentSearches: 0,
+            remainingSearches: 0,
+            sourceMap: null,
+        }
+    }
+
+    const sourceMap = maps[index - 1]
+    const sourceProgress = progressById.get(sourceMap._id.toString())
+    const requiredSearches = Math.max(0, sourceMap.requiredSearches || 0)
+    const currentSearches = sourceProgress?.totalSearches || 0
+    const remainingSearches = Math.max(0, requiredSearches - currentSearches)
+
+    return {
+        requiredSearches,
+        currentSearches,
+        remainingSearches,
+        sourceMap: {
+            id: sourceMap._id,
+            name: sourceMap.name,
+            slug: sourceMap.slug,
+        },
+    }
+}
+
+const ensureMapUnlocked = async (userId, mapId) => {
+    const now = new Date()
+    const progress = await MapProgress.findOneAndUpdate(
+        { userId, mapId },
+        {
+            $set: {
+                isUnlocked: true,
+            },
+            $setOnInsert: {
+                userId,
+                mapId,
+                level: 1,
+                exp: 0,
+                totalSearches: 0,
+                lastSearchedAt: null,
+                unlockedAt: now,
+            },
+        },
+        { new: true, upsert: true }
+    )
+    if (!progress.unlockedAt) {
+        progress.unlockedAt = now
+        await progress.save()
+    }
+    return progress
+}
 
 // POST /api/game/click (protected)
 router.post('/click', authMiddleware, async (req, res, next) => {
@@ -103,15 +220,47 @@ router.post('/search', authMiddleware, async (req, res, next) => {
     try {
         const { mapSlug } = req.body
         const userId = req.user.userId
+        const isAdmin = req.user?.role === 'admin'
 
         // 1. Validate Map
-        const Map = (await import('../models/Map.js')).default
-        const map = await Map.findOne({ slug: mapSlug })
+        const map = await MapModel.findOne({ slug: mapSlug })
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Map not found' })
         }
 
+        const orderedMaps = await getOrderedMaps()
+        const mapIndex = orderedMaps.findIndex((m) => m._id.toString() === map._id.toString())
+        if (mapIndex === -1) {
+            return res.status(404).json({ ok: false, message: 'Map not found in progression order' })
+        }
+
+        if (!isAdmin) {
+            let progressById = new Map()
+            if (mapIndex > 0) {
+                const sourceMapId = orderedMaps[mapIndex - 1]._id
+                const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
+                progressById = buildProgressIndex(sourceProgress ? [sourceProgress] : [])
+            }
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById)
+            const isUnlocked = mapIndex === 0 || unlockRequirement.remainingSearches === 0
+            if (!isUnlocked) {
+                return res.status(403).json({
+                    ok: false,
+                    locked: true,
+                    message: 'Map is locked',
+                    unlock: unlockRequirement,
+                })
+            }
+        }
+
         const mapProgress = await updateMapProgress(userId, map._id)
+        if (!isAdmin) {
+            const requiredToUnlockNext = Math.max(0, map.requiredSearches || 0)
+            if (mapProgress.totalSearches >= requiredToUnlockNext && mapIndex < orderedMaps.length - 1) {
+                const nextMap = orderedMaps[mapIndex + 1]
+                await ensureMapUnlocked(userId, nextMap._id)
+            }
+        }
 
         // 2. Fetch Drop Rates
         const DropRate = (await import('../models/DropRate.js')).default
@@ -161,7 +310,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         )
 
         const level = Math.floor(Math.random() * (map.levelMax - map.levelMin + 1)) + map.levelMin
-        const maxHp = calcMaxHp(pokemon.baseStats?.hp, level)
+        const scaledStats = calcStatsForLevel(pokemon.baseStats, level, pokemon.rarity)
+        const maxHp = calcMaxHp(pokemon.baseStats?.hp, level, pokemon.rarity)
         const hp = maxHp
 
         const encounter = await Encounter.create({
@@ -182,7 +332,10 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             ok: true,
             encountered: true,
             encounterId: encounter._id,
-            pokemon: pokemon,
+            pokemon: {
+                ...pokemon,
+                stats: scaledStats,
+            },
             level,
             hp,
             maxHp,
@@ -194,23 +347,110 @@ router.post('/search', authMiddleware, async (req, res, next) => {
     }
 })
 
+// GET /api/game/maps (protected)
+router.get('/maps', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const isAdmin = req.user?.role === 'admin'
+        const orderedMaps = await getOrderedMaps()
+        const mapIds = orderedMaps.map((map) => map._id)
+        const progresses = await MapProgress.find({ userId, mapId: { $in: mapIds } })
+        const progressById = buildProgressIndex(progresses)
+
+        const response = []
+        for (let i = 0; i < orderedMaps.length; i += 1) {
+            const map = orderedMaps[i]
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, i, progressById)
+            const isUnlocked = isAdmin || i === 0 || unlockRequirement.remainingSearches === 0
+
+            if (!isAdmin && isUnlocked) {
+                const existing = progressById.get(map._id.toString())
+                if (!existing || !existing.isUnlocked) {
+                    const updated = await ensureMapUnlocked(userId, map._id)
+                    progressById.set(map._id.toString(), updated)
+                }
+            }
+
+            const progress = progressById.get(map._id.toString())
+            response.push({
+                ...map,
+                isUnlocked,
+                unlockRequirement,
+                progress: {
+                    totalSearches: progress?.totalSearches || 0,
+                },
+            })
+        }
+
+        res.json({ ok: true, maps: response })
+    } catch (error) {
+        next(error)
+    }
+})
+
 // GET /api/game/map/:slug/state (protected)
 router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
-        const Map = (await import('../models/Map.js')).default
-        const map = await Map.findOne({ slug: req.params.slug })
+        const isAdmin = req.user?.role === 'admin'
+        const map = await MapModel.findOne({ slug: req.params.slug })
 
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Map not found' })
         }
 
-        let progress = await MapProgress.findOne({ userId, mapId: map._id })
-        if (!progress) {
-            progress = await MapProgress.create({ userId, mapId: map._id })
+        const orderedMaps = await getOrderedMaps()
+        const mapIndex = orderedMaps.findIndex((m) => m._id.toString() === map._id.toString())
+        if (mapIndex === -1) {
+            return res.status(404).json({ ok: false, message: 'Map not found in progression order' })
         }
 
-        res.json({ ok: true, mapProgress: formatMapProgress(progress) })
+        const progresses = []
+        if (mapIndex > 0) {
+            const sourceMapId = orderedMaps[mapIndex - 1]._id
+            const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
+            if (sourceProgress) {
+                progresses.push(sourceProgress)
+            }
+        }
+        const progressById = buildProgressIndex(progresses)
+        const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById)
+        const isUnlocked = isAdmin || mapIndex === 0 || unlockRequirement.remainingSearches === 0
+
+        if (!isUnlocked) {
+            return res.status(403).json({
+                ok: false,
+                locked: true,
+                message: 'Map is locked',
+                unlock: unlockRequirement,
+            })
+        }
+
+        let progress = await MapProgress.findOne({ userId, mapId: map._id })
+        if (!progress) {
+            progress = await MapProgress.create({
+                userId,
+                mapId: map._id,
+                isUnlocked: true,
+                unlockedAt: new Date(),
+            })
+        } else if (!progress.isUnlocked) {
+            progress.isUnlocked = true
+            progress.unlockedAt = progress.unlockedAt || new Date()
+            await progress.save()
+        }
+
+        res.json({
+            ok: true,
+            mapProgress: formatMapProgress(progress),
+            unlock: {
+                requiredSearches: Math.max(0, map.requiredSearches || 0),
+                currentSearches: progress.totalSearches,
+                remainingSearches: Math.max(0, (map.requiredSearches || 0) - progress.totalSearches),
+                sourceMap: unlockRequirement.sourceMap,
+            },
+            isUnlocked: true,
+        })
     } catch (error) {
         next(error)
     }

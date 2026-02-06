@@ -27,11 +27,14 @@ export const gameApi = {
             },
             body: JSON.stringify({ mapSlug }),
         })
+        const data = await res.json()
         if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message || 'Failed to search map')
+            if (res.status === 403 && data.locked) {
+                return data
+            }
+            throw new Error(data.message || 'Failed to search map')
         }
-        return res.json()
+        return data
     },
 
     // GET /api/game/map/:slug/state
@@ -39,11 +42,27 @@ export const gameApi = {
         const res = await fetch(`${API_URL}/game/map/${mapSlug}/state`, {
             headers: getAuthHeader(),
         })
+        const data = await res.json()
+        if (!res.ok) {
+            if (res.status === 403 && data.locked) {
+                return data
+            }
+            throw new Error(data.message || 'Failed to fetch map state')
+        }
+        return data
+    },
+
+    // GET /api/game/maps
+    async getMaps() {
+        const res = await fetch(`${API_URL}/game/maps`, {
+            headers: getAuthHeader(),
+        })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch map state')
+            throw new Error(err.message || 'Failed to fetch maps')
         }
-        return res.json()
+        const data = await res.json()
+        return data.maps || []
     },
 
     // POST /api/game/encounter/:id/attack
@@ -81,6 +100,16 @@ export const gameApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Run failed')
+        }
+        return res.json()
+    },
+
+    // GET /api/stats - Get server statistics
+    async getServerStats() {
+        const res = await fetch(`${API_URL}/stats`)
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch server stats')
         }
         return res.json()
     },

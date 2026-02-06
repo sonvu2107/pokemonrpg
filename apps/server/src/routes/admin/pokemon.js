@@ -3,6 +3,21 @@ import Pokemon from '../../models/Pokemon.js'
 
 const router = express.Router()
 
+const RARITY_ALIASES = {
+    superlegendary: 'ss',
+    legendary: 's',
+    ultra_rare: 'a',
+    rare: 'b',
+    uncommon: 'c',
+    common: 'd',
+}
+
+const normalizeRarity = (rarity) => {
+    if (!rarity) return 'd'
+    const normalized = String(rarity).trim().toLowerCase()
+    return RARITY_ALIASES[normalized] || normalized
+}
+
 const normalizeForms = (forms) => {
     if (!Array.isArray(forms)) return []
     return forms
@@ -111,7 +126,7 @@ router.post('/', async (req, res) => {
             sprites: sprites || forms[0]?.sprites || {},
             imageUrl: imageUrl || forms[0]?.imageUrl || '',
             description: description || '',
-            rarity: rarity || 'common',
+            rarity: normalizeRarity(rarity),
             rarityWeight,
             defaultFormId: defaultFormId || forms[0]?.formId || 'normal',
             forms,
@@ -159,7 +174,7 @@ router.put('/:id', async (req, res) => {
         pokemon.sprites = sprites || pokemon.sprites
         if (imageUrl !== undefined) pokemon.imageUrl = imageUrl
         pokemon.description = description || ''
-        pokemon.rarity = rarity || 'common'
+        pokemon.rarity = normalizeRarity(rarity)
         if (rarityWeight !== undefined) pokemon.rarityWeight = rarityWeight
         if (defaultFormId !== undefined) pokemon.defaultFormId = defaultFormId
         if (forms) pokemon.forms = forms

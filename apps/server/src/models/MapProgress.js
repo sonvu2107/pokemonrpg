@@ -8,6 +8,8 @@ const mapProgressSchema = new mongoose.Schema(
         exp: { type: Number, default: 0, min: 0 },
         totalSearches: { type: Number, default: 0, min: 0 },
         lastSearchedAt: { type: Date, default: null },
+        isUnlocked: { type: Boolean, default: false },
+        unlockedAt: { type: Date, default: null },
     },
     { timestamps: true }
 )

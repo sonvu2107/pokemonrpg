@@ -18,17 +18,20 @@ const mapSchema = new mongoose.Schema(
             type: String,
             default: '',
         },
+        mapImageUrl: {
+            type: String,
+            default: '',
+            trim: true,
+        },
         levelMin: {
             type: Number,
             required: true,
             min: 1,
-            max: 100,
         },
         levelMax: {
             type: Number,
             required: true,
             min: 1,
-            max: 100,
             validate: {
                 validator: function (val) {
                     return val >= this.levelMin
@@ -45,6 +48,27 @@ const mapSchema = new mongoose.Schema(
             min: 1,
             max: 1000,
             required: false,
+        },
+        specialPokemonImages: {
+            type: [String],
+            default: [],
+            validate: {
+                validator: function (arr) {
+                    return arr.length >= 0 && arr.length <= 5
+                },
+                message: 'Map can have 0-5 special Pokemon images only'
+            }
+        },
+        requiredSearches: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 10000,
+        },
+        orderIndex: {
+            type: Number,
+            default: 0,
+            min: 0,
         },
     },
     {

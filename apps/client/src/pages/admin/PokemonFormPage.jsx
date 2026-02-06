@@ -10,7 +10,57 @@ const TYPES = [
     'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'
 ]
 
-const RARITIES = ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary']
+const RARITIES = ['ss', 's', 'a', 'b', 'c', 'd']
+
+const FORM_VARIANTS = [
+    { id: 'normal', name: 'Normal' },
+    { id: 'shiny', name: 'Shiny' },
+    { id: 'dark', name: 'Dark' },
+    { id: 'silver', name: 'Silver' },
+    { id: 'golden', name: 'Golden' },
+    { id: 'crystal', name: 'Crystal' },
+    { id: 'ruby', name: 'Ruby' },
+    { id: 'sapphire', name: 'Sapphire' },
+    { id: 'emerald', name: 'Emerald' },
+    { id: 'shadow', name: 'Shadow' },
+    { id: 'light', name: 'Light' },
+    { id: 'legacy', name: 'Legacy' },
+    { id: 'pearl', name: 'Pearl' },
+    { id: 'astral', name: 'Astral' },
+    { id: 'rainbow', name: 'Rainbow' },
+    { id: 'genesis', name: 'Genesis' },
+    { id: 'relic', name: 'Relic' },
+    { id: 'retro', name: 'Retro' },
+    { id: 'hyper', name: 'Hyper' },
+]
+const FORM_VARIANT_NAME_BY_ID = Object.fromEntries(FORM_VARIANTS.map(v => [v.id, v.name]))
+
+const RARITY_ALIASES = {
+    superlegendary: 'ss',
+    legendary: 's',
+    ultra_rare: 'a',
+    rare: 'b',
+    uncommon: 'c',
+    common: 'd',
+}
+
+const normalizeRarity = (rarity) => {
+    if (!rarity) return 'd'
+    const normalized = String(rarity).trim().toLowerCase()
+    return RARITY_ALIASES[normalized] || normalized
+}
+
+
+const normalizeFormId = (formId) => String(formId || '').trim()
+const normalizeFormName = (formName) => String(formName || '').trim()
+
+const resolveDefaultFormId = (formList = [], preferredDefault = 'normal') => {
+    const ids = formList.map(f => normalizeFormId(f?.formId)).filter(Boolean)
+    if (ids.includes('normal')) return 'normal'
+    const normalizedPreferred = normalizeFormId(preferredDefault)
+    if (normalizedPreferred && ids.includes(normalizedPreferred)) return normalizedPreferred
+    return ids[0] || 'normal'
+}
 
 const GROWTH_RATES = ['fast', 'medium_fast', 'medium_slow', 'slow', 'erratic', 'fluctuating']
 
@@ -36,7 +86,7 @@ export default function PokemonFormPage() {
         sprites: { normal: '', shiny: '', icon: '' },
         imageUrl: '',
         description: '',
-        rarity: 'common',
+        rarity: 'd',
         rarityWeight: 100,
 
         // New Fields
@@ -75,12 +125,17 @@ export default function PokemonFormPage() {
                         stats: pokemon.baseStats || {},
                     }]
 
-                setForms(resolvedForms)
-                setDefaultFormId(pokemon.defaultFormId || resolvedForms[0]?.formId || 'normal')
+                const normalizedForms = resolvedForms.map((f) => ({
+                    ...f,
+                    formId: normalizeFormId(f.formId).toLowerCase(),
+                }))
+                setForms(normalizedForms)
+                setDefaultFormId(resolveDefaultFormId(normalizedForms, pokemon.defaultFormId))
 
                 // Map API data to form state
                 setFormData({
                     ...pokemon,
+                    rarity: normalizeRarity(pokemon.rarity),
                     levelUpMoves: (pokemon.levelUpMoves && pokemon.levelUpMoves.length > 0)
                         ? pokemon.levelUpMoves
                         : (pokemon.initialMoves?.map(m => ({ level: 1, moveName: m })) || [{ level: 1, moveName: '' }]),
@@ -115,26 +170,28 @@ export default function PokemonFormPage() {
             return
         }
 
+        const normalizedDefaultFormId = normalizeFormId(defaultFormId).toLowerCase() || 'normal'
         const cleanedForms = forms
             .map(f => ({
                 ...f,
-                formId: String(f?.formId || '').trim(),
-                formName: String(f?.formName || '').trim(),
+                formId: normalizeFormId(f?.formId).toLowerCase(),
+                formName: normalizeFormName(f?.formName),
                 imageUrl: String(f?.imageUrl || '').trim(),
                 sprites: f?.sprites || {},
                 stats: f?.stats || {},
             }))
             .filter(f => f.formId)
 
+        let effectiveDefaultFormId = resolveDefaultFormId(cleanedForms, normalizedDefaultFormId)
+
         if (cleanedForms.length > 0) {
             const ids = cleanedForms.map(f => f.formId)
             if (new Set(ids).size !== ids.length) {
-                setError('formId phải là duy nhất trong 1 Pokemon')
+                setError('formId must be unique within one Pokemon')
                 return
             }
-            if (!ids.includes(defaultFormId)) {
-                setError('defaultFormId phải thuộc forms')
-                return
+            if (!ids.includes(effectiveDefaultFormId)) {
+                effectiveDefaultFormId = resolveDefaultFormId(cleanedForms, normalizedDefaultFormId)
             }
         }
 
@@ -144,7 +201,7 @@ export default function PokemonFormPage() {
             // Format Data for API
             const cleanedData = {
                 ...formData,
-                defaultFormId,
+                defaultFormId: effectiveDefaultFormId,
                 forms: cleanedForms,
                 levelUpMoves: formData.levelUpMoves
                     .filter(m => m.moveName.trim() !== '')
@@ -159,7 +216,7 @@ export default function PokemonFormPage() {
             delete cleanedData.initialMoves
 
             if (cleanedForms.length > 0) {
-                const defaultForm = cleanedForms.find(f => f.formId === defaultFormId) || cleanedForms[0]
+                const defaultForm = cleanedForms.find(f => f.formId === effectiveDefaultFormId) || cleanedForms[0]
                 if (defaultForm?.imageUrl) cleanedData.imageUrl = defaultForm.imageUrl
             }
 
@@ -221,11 +278,38 @@ export default function PokemonFormPage() {
 
     const updateForm = (index, patch) => {
         setForms(prev => {
-            const prevId = prev[index]?.formId
-            const next = prev.map((f, i) => (i === index ? { ...f, ...patch } : f))
-            if (patch.formId && prevId === defaultFormId) {
-                setDefaultFormId(patch.formId)
+            const prevId = normalizeFormId(prev[index]?.formId).toLowerCase()
+            const normalizedPatch = { ...patch }
+            if ('formId' in normalizedPatch) {
+                normalizedPatch.formId = normalizeFormId(normalizedPatch.formId).toLowerCase()
             }
+            const next = prev.map((f, i) => (i === index ? { ...f, ...normalizedPatch } : f))
+
+            const resolvedDefault = resolveDefaultFormId(next, defaultFormId)
+
+            if (patch.formId && prevId === normalizeFormId(defaultFormId).toLowerCase()) {
+                setDefaultFormId(resolvedDefault)
+                return next
+            }
+
+            if (resolveDefaultFormId(next, defaultFormId) !== normalizeFormId(defaultFormId).toLowerCase()) {
+                setDefaultFormId(resolvedDefault)
+            }
+            return next
+        })
+    }
+
+    const applyPresetToForm = (index, presetId) => {
+        const normalizedPresetId = normalizeFormId(presetId).toLowerCase()
+        if (!normalizedPresetId) return
+        const presetName = FORM_VARIANT_NAME_BY_ID[normalizedPresetId] || normalizedPresetId
+
+        setForms(prev => {
+            const next = prev.map((f, i) => {
+                if (i !== index) return f
+                return { ...f, formId: normalizedPresetId, formName: presetName }
+            })
+            setDefaultFormId((prevDefault) => resolveDefaultFormId(next, prevDefault))
             return next
         })
     }
@@ -233,11 +317,7 @@ export default function PokemonFormPage() {
     const removeForm = (index) => {
         setForms(prev => {
             const next = prev.filter((_, i) => i !== index)
-            if (next.length === 0) {
-                setDefaultFormId('normal')
-            } else if (!next.some(f => f.formId === defaultFormId)) {
-                setDefaultFormId(next[0].formId || 'normal')
-            }
+            setDefaultFormId(resolveDefaultFormId(next, defaultFormId))
             return next
         })
     }
@@ -296,7 +376,7 @@ export default function PokemonFormPage() {
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Dạng Mặc Định</label>
                             <select
                                 value={defaultFormId}
-                                onChange={(e) => setDefaultFormId(e.target.value)}
+                                onChange={(e) => setDefaultFormId(normalizeFormId(e.target.value))}
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                             >
                                 {forms.filter(f => f.formId).length === 0 && (
@@ -317,10 +397,32 @@ export default function PokemonFormPage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                                             <div>
                                                 <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">ID dạng *</label>
+                                                <select
+                                                    value=""
+                                                    onChange={(e) => {
+                                                        applyPresetToForm(index, e.target.value)
+                                                        e.target.value = ''
+                                                    }}
+                                                    className="w-full mb-2 px-3 py-2 bg-white border border-slate-300 rounded text-xs"
+                                                >
+                                                    <option value="">Chọn nhanh dạng có sẵn...</option>
+                                                    {FORM_VARIANTS.map((variant) => (
+                                                        <option key={variant.id} value={variant.id}>
+                                                            {variant.name} ({variant.id})
+                                                        </option>
+                                                    ))}
+                                                </select>
                                                 <input
                                                     type="text"
                                                     value={form.formId}
-                                                    onChange={(e) => updateForm(index, { formId: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const nextFormId = normalizeFormId(e.target.value).toLowerCase()
+                                                        const nextPatch = { formId: nextFormId }
+                                                        if (!normalizeFormId(form.formName) && FORM_VARIANT_NAME_BY_ID[nextFormId]) {
+                                                            nextPatch.formName = FORM_VARIANT_NAME_BY_ID[nextFormId]
+                                                        }
+                                                        updateForm(index, nextPatch)
+                                                    }}
                                                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                                 />
                                             </div>
@@ -337,7 +439,7 @@ export default function PokemonFormPage() {
                                         <div className="flex gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() => removeForm(index)}
+                                                onClick={(e) => { e.preventDefault(); removeForm(index) }}
                                                 className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 rounded text-xs font-bold"
                                             >
                                                 Xóa dạng
@@ -601,4 +703,10 @@ export default function PokemonFormPage() {
         </div>
     )
 }
+
+
+
+
+
+
 

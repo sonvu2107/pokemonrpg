@@ -7,8 +7,8 @@ const router = express.Router()
 router.get('/legendary', async (req, res) => {
     try {
         const legendaryMaps = await Map.find({ isLegendary: true })
-            .select('name slug iconId')
-            .sort({ name: 1 })
+            .select('name slug iconId specialPokemonImages mapImageUrl')
+            .sort({ createdAt: 1 })
             .lean()
 
         res.json({ ok: true, maps: legendaryMaps })
@@ -21,7 +21,7 @@ router.get('/legendary', async (req, res) => {
 // GET /api/maps - Get all maps (public endpoint, maybe filtered?)
 router.get('/', async (req, res) => {
     try {
-        const maps = await Map.find({}).select('name slug levelMin levelMax isLegendary iconId').sort({ levelMin: 1 }).lean()
+        const maps = await Map.find({}).select('name slug levelMin levelMax isLegendary iconId specialPokemonImages mapImageUrl').sort({ levelMin: 1 }).lean()
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/maps error:', error)

@@ -37,7 +37,7 @@ const FormSchema = new Schema(
 // Level-up Move Entry
 const LevelMoveSchema = new Schema(
     {
-        level: { type: Number, required: true, min: 1, max: 100 },
+        level: { type: Number, required: true, min: 1 },
         moveId: { type: Schema.Types.ObjectId, ref: 'Move', default: null },
         // Fallback for transition period (before Move model is fully populated)
         moveName: { type: String, default: '' },
@@ -49,7 +49,7 @@ const LevelMoveSchema = new Schema(
 const EvolutionSchema = new Schema(
     {
         evolvesTo: { type: Schema.Types.ObjectId, ref: 'Pokemon', default: null },
-        minLevel: { type: Number, default: null, min: 1, max: 100 },
+        minLevel: { type: Number, default: null, min: 1 },
         // Future extensibility (optional)
         // method: { type: String, enum: ['level', 'item', 'trade', 'friendship'], default: 'level' },
         // itemId: { type: Schema.Types.ObjectId, ref: 'Item', default: null },
@@ -187,19 +187,20 @@ const pokemonSchema = new Schema(
         rarity: {
             type: String,
             required: true,
-            enum: ['common', 'uncommon', 'rare', 'ultra_rare', 'legendary'],
-            default: 'common',
+            enum: ['ss', 's', 'a', 'b', 'c', 'd'],
+            default: 'd',
         },
 
         rarityWeight: {
             type: Number,
             default: function () {
                 const weights = {
-                    common: 100,
-                    uncommon: 50,
-                    rare: 20,
-                    ultra_rare: 5,
-                    legendary: 1,
+                    d: 100,
+                    c: 50,
+                    b: 20,
+                    a: 5,
+                    s: 1,
+                    ss: 0.2,
                 }
                 return weights[this.rarity] || 100
             },

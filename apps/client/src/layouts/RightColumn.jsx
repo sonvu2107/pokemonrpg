@@ -1,5 +1,7 @@
 import { NavLink } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { useState, useEffect } from "react"
+import { gameApi } from "../services/gameApi"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -41,9 +43,41 @@ const InfoRow = ({ label, value }) => (
     </div>
 )
 
+// Helper function to format numbers with commas
+const formatNumber = (num) => {
+    if (num === null || num === undefined) return '...'
+    return num.toLocaleString('vi-VN')
+}
+
 export default function RightColumn() {
     const { user } = useAuth()
     const isAdmin = user?.role === 'admin'
+    const [serverStats, setServerStats] = useState({ totalUsers: null, onlineUsers: null })
+    const [loadingStats, setLoadingStats] = useState(true)
+
+    // Fetch server stats on mount and refresh every 30 seconds
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const data = await gameApi.getServerStats()
+                if (data.ok) {
+                    setServerStats({
+                        totalUsers: data.totalUsers,
+                        onlineUsers: data.onlineUsers,
+                    })
+                }
+            } catch (err) {
+                console.error('Failed to fetch server stats:', err)
+            } finally {
+                setLoadingStats(false)
+            }
+        }
+
+        fetchStats()
+        const interval = setInterval(fetchStats, 30000) // Refresh every 30 seconds
+
+        return () => clearInterval(interval)
+    }, [])
 
     return (
         <div className="flex flex-col w-full">
@@ -63,8 +97,8 @@ export default function RightColumn() {
 
             {/* INFORMATION */}
             <SidebarSection title="Thông Tin" iconId={137}>
-                <InfoRow label="Tổng người chơi" value="1,089,947" />
-                <InfoRow label="Đang online" value="696" />
+                <InfoRow label="Tổng người chơi" value={formatNumber(serverStats.totalUsers)} />
+                <InfoRow label="Đang online" value={formatNumber(serverStats.onlineUsers)} />
                 <InfoRow label="Giờ Server" value={new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} />
                 <SidebarLink to="/stats">Thống kê ngày</SidebarLink>
             </SidebarSection>
