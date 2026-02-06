@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { mapApi } from '../../services/adminApi'
+import { mapApi, pokemonApi } from '../../services/adminApi'
 
 export default function MapFormPage() {
     const { id } = useParams()
@@ -18,19 +18,45 @@ export default function MapFormPage() {
         levelMax: 10,
         isLegendary: false,
         iconId: '',
-        specialPokemonImages: [],
+        specialPokemonIds: [],
         requiredSearches: 0,
         orderIndex: 0,
     })
 
-    const [uploadingImage, setUploadingImage] = useState(false)
     const [uploadingMapImage, setUploadingMapImage] = useState(false)
+    const [allPokemon, setAllPokemon] = useState([])
+    const [loadingPokemon, setLoadingPokemon] = useState(false)
+    const [selectedPokemonIdToAdd, setSelectedPokemonIdToAdd] = useState('')
+
+    const normalizeSpecialPokemonIds = (value) => {
+        if (!Array.isArray(value)) return []
+        return value
+            .map((item) => {
+                if (!item) return ''
+                if (typeof item === 'string') return item
+                return item._id || ''
+            })
+            .filter(Boolean)
+    }
 
     useEffect(() => {
+        loadPokemonOptions()
         if (isEdit) {
             loadMap()
         }
     }, [id])
+
+    const loadPokemonOptions = async () => {
+        try {
+            setLoadingPokemon(true)
+            const data = await pokemonApi.list({ page: 1, limit: 5000 })
+            setAllPokemon(data.pokemon || [])
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setLoadingPokemon(false)
+        }
+    }
 
     const loadMap = async () => {
         try {
@@ -41,7 +67,7 @@ export default function MapFormPage() {
                 description: data.map.description || '',
                 mapImageUrl: data.map.mapImageUrl || '',
                 iconId: data.map.iconId || '',
-                specialPokemonImages: data.map.specialPokemonImages || [],
+                specialPokemonIds: normalizeSpecialPokemonIds(data.map.specialPokemonIds),
                 isLegendary: data.map.isLegendary || false,
                 requiredSearches: data.map.requiredSearches || 0,
                 orderIndex: data.map.orderIndex || 0,
@@ -79,51 +105,6 @@ export default function MapFormPage() {
         }
     }
 
-    const handleImageUpload = async (e) => {
-        const files = Array.from(e.target.files)
-        if (!files.length) return
-
-        const currentCount = formData.specialPokemonImages.length
-        const availableSlots = 5 - currentCount
-
-        if (files.length > availableSlots) {
-            setError(`Chỉ có thể thêm tối đa ${availableSlots} ảnh nữa (giới hạn 5 ảnh)`)
-            return
-        }
-
-        try {
-            setUploadingImage(true)
-            setError('')
-
-            const uploadPromises = files.map(async (file) => {
-                // Validate file size (2MB)
-                if (file.size > 2 * 1024 * 1024) {
-                    throw new Error(`File ${file.name} vượt quá 2MB`)
-                }
-
-                // Validate file type
-                if (!file.type.startsWith('image/')) {
-                    throw new Error(`File ${file.name} không phải là ảnh`)
-                }
-
-                const data = await mapApi.uploadSpecialImage(file)
-                return data.imageUrl
-            })
-
-            const uploadedUrls = await Promise.all(uploadPromises)
-
-            setFormData(prev => ({
-                ...prev,
-                specialPokemonImages: [...prev.specialPokemonImages, ...uploadedUrls]
-            }))
-        } catch (err) {
-            setError(err.message)
-        } finally {
-            setUploadingImage(false)
-            // Reset file input
-            e.target.value = ''
-        }
-    }
 
     const handleMapImageUpload = async (e) => {
         const file = e.target.files?.[0]
@@ -153,13 +134,39 @@ export default function MapFormPage() {
             e.target.value = ''
         }
     }
+    const handleAddSpecialPokemon = () => {
+        if (!selectedPokemonIdToAdd) return
 
-    const handleRemoveImage = (indexToRemove) => {
-        setFormData(prev => ({
+        if (formData.specialPokemonIds.length >= 5) {
+            setError('Chỉ có thể chọn tối đa 5 Pokemon đặc biệt')
+            return
+        }
+
+        if (formData.specialPokemonIds.includes(selectedPokemonIdToAdd)) {
+            setSelectedPokemonIdToAdd('')
+            return
+        }
+
+        setFormData((prev) => ({
             ...prev,
-            specialPokemonImages: prev.specialPokemonImages.filter((_, i) => i !== indexToRemove)
+            specialPokemonIds: [...prev.specialPokemonIds, selectedPokemonIdToAdd],
+        }))
+        setSelectedPokemonIdToAdd('')
+        setError('')
+    }
+
+    const handleRemoveSpecialPokemon = (pokemonIdToRemove) => {
+        setFormData((prev) => ({
+            ...prev,
+            specialPokemonIds: prev.specialPokemonIds.filter((pokemonId) => pokemonId !== pokemonIdToRemove),
         }))
     }
+
+    const selectedSpecialPokemon = formData.specialPokemonIds
+        .map((id) => allPokemon.find((pokemon) => pokemon._id === id))
+        .filter(Boolean)
+
+    const selectablePokemon = allPokemon.filter((pokemon) => !formData.specialPokemonIds.includes(pokemon._id))
 
     if (loading && isEdit) return <div className="text-blue-800 font-medium text-center py-8">Đang tải dữ liệu...</div>
 
@@ -353,59 +360,71 @@ export default function MapFormPage() {
                             )}
                         </div>
 
-                        {/* Special Pokemon Images Upload Section */}
+                        {/* Special Pokemon Selector Section */}
                         <div className="bg-white rounded border border-blue-100 p-6 shadow-sm">
                             <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-6">
                                 <div>
-                                    <h3 className="text-sm font-bold text-blue-900 uppercase">Ảnh Pokemon Đặc Biệt</h3>
-                                    <p className="text-xs text-blue-700 mt-1">Ảnh sẽ hiển thị ngoài Game. Tối đa 5 ảnh.</p>
+                                    <h3 className="text-sm font-bold text-blue-900 uppercase">Pokemon Đặc Biệt</h3>
+                                    <p className="text-xs text-blue-700 mt-1">Chọn Pokemon từ kho Pokemon admin. Tối đa 5 Pokemon.</p>
                                 </div>
                                 <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">
-                                    {formData.specialPokemonImages.length} / 5
+                                    {formData.specialPokemonIds.length} / 5
                                 </span>
                             </div>
 
-                            <div className="bg-white rounded-lg border border-slate-100 min-h-[140px] flex flex-col justify-center shadow-inner p-4">
-                                {formData.specialPokemonImages.length > 0 ? (
-                                    <div className="grid grid-cols-5 gap-3 mb-4">
-                                        {formData.specialPokemonImages.map((url, index) => (
-                                            <div key={index} className="relative group aspect-square bg-slate-50 rounded border border-slate-200 flex items-center justify-center overflow-hidden hover:border-blue-400 transition-colors">
-                                                <img
-                                                    src={url}
-                                                    alt={`Special ${index}`}
-                                                    className="w-full h-full object-contain p-1"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveImage(index)}
-                                                    className="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-all font-bold text-xs"
-                                                    title="Xóa"
-                                                >
-                                                    ×
-                                                </button>
-                                            </div>
+                            <div className="space-y-4">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <select
+                                        value={selectedPokemonIdToAdd}
+                                        onChange={(e) => setSelectedPokemonIdToAdd(e.target.value)}
+                                        disabled={loadingPokemon || formData.specialPokemonIds.length >= 5 || selectablePokemon.length === 0}
+                                        className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">
+                                            {loadingPokemon ? 'Đang tải Pokemon...' : 'Chọn Pokemon để thêm'}
+                                        </option>
+                                        {selectablePokemon.map((pokemon) => (
+                                            <option key={pokemon._id} value={pokemon._id}>
+                                                #{pokemon.pokedexNumber} - {pokemon.name}
+                                            </option>
                                         ))}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddSpecialPokemon}
+                                        disabled={!selectedPokemonIdToAdd || formData.specialPokemonIds.length >= 5}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Thêm
+                                    </button>
+                                </div>
 
-                                        {formData.specialPokemonImages.length < 5 && (
-                                            <label className="aspect-square flex flex-col items-center justify-center cursor-pointer bg-slate-50 border-2 border-dashed border-blue-200 rounded hover:border-blue-500 hover:bg-blue-50 transition-all">
-                                                {uploadingImage ? (
-                                                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-200 border-t-blue-600"></div>
-                                                ) : (
-                                                    <span className="text-2xl text-blue-400 font-bold">+</span>
-                                                )}
-                                                <input type="file" accept="image/*" multiple onChange={handleImageUpload} disabled={uploadingImage} className="hidden" />
-                                            </label>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-6">
-                                        <p className="text-sm font-bold text-slate-500 mb-2">Chưa có ảnh nào</p>
-                                        <label className="inline-block px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-bold shadow-md cursor-pointer transition-all hover:-translate-y-0.5">
-                                            Upload Ảnh
-                                            <input type="file" accept="image/*" multiple onChange={handleImageUpload} disabled={uploadingImage} className="hidden" />
-                                        </label>
-                                    </div>
-                                )}
+                                <div className="bg-white rounded-lg border border-slate-100 min-h-[140px] shadow-inner p-4">
+                                    {selectedSpecialPokemon.length > 0 ? (
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                                            {selectedSpecialPokemon.map((pokemon) => (
+                                                <div key={pokemon._id} className="relative group aspect-square bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center p-2 overflow-hidden hover:border-blue-400 transition-colors">
+                                                    <img
+                                                        src={pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`}
+                                                        alt={pokemon.name}
+                                                        className="w-16 h-16 object-contain pixelated"
+                                                    />
+                                                    <p className="text-[11px] font-semibold text-slate-700 text-center mt-1 line-clamp-2">{pokemon.name}</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveSpecialPokemon(pokemon._id)}
+                                                        className="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-all font-bold text-xs"
+                                                        title="Xóa"
+                                                    >
+                                                        X
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-sm font-bold text-slate-500">Chưa chọn Pokemon đặc biệt nào</div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -432,3 +451,8 @@ export default function MapFormPage() {
         </div>
     )
 }
+
+
+
+
+

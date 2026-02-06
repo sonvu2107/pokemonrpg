@@ -59,6 +59,19 @@ const mapSchema = new mongoose.Schema(
                 message: 'Map can have 0-5 special Pokemon images only'
             }
         },
+        specialPokemonIds: {
+            type: [{
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Pokemon',
+            }],
+            default: [],
+            validate: {
+                validator: function (arr) {
+                    return arr.length >= 0 && arr.length <= 5
+                },
+                message: 'Map can have 0-5 special Pokemon references only',
+            },
+        },
         requiredSearches: {
             type: Number,
             default: 0,

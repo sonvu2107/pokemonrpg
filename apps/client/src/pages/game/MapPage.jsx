@@ -183,6 +183,8 @@ export default function MapPage() {
     if (error) return <div className="text-center py-8 text-red-600 font-bold">{error}</div>
     if (!map) return null
 
+    const specialPokemons = Array.isArray(map.specialPokemons) ? map.specialPokemons : []
+
     if (isLocked) {
         return (
             <div className="max-w-3xl mx-auto font-sans text-sm animate-fadeIn">
@@ -254,26 +256,38 @@ export default function MapPage() {
                         {map.name}
                     </div>
 
-                    {/* Special Pokemon (from uploaded images) */}
-                    {map.specialPokemonImages && map.specialPokemonImages.length > 0 && (
+                    {/* Special Pokemon */}
+                    {((specialPokemons.length > 0) || (map.specialPokemonImages && map.specialPokemonImages.length > 0)) && (
                         <>
                             <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-b border-blue-200">
-                                Pokemon Đặc Biệt
+                                Pokemon Dac Biet
                             </div>
                             <div className="flex justify-center flex-wrap gap-6 py-6 min-h-[120px] items-center bg-gradient-to-b from-purple-50/30 to-white">
-                                {map.specialPokemonImages.map((imageUrl, index) => (
-                                    <div key={index} className="flex flex-col items-center">
-                                        <img
-                                            src={imageUrl}
-                                            alt={`Special Pokemon ${index + 1}`}
-                                            className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
-                                        />
-                                    </div>
-                                ))}
+                                {specialPokemons.length > 0
+                                    ? specialPokemons.map((pokemon) => (
+                                        <div key={pokemon.id || pokemon._id} className="flex flex-col items-center">
+                                            <img
+                                                src={pokemon.imageUrl || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`}
+                                                alt={pokemon.name || 'Special Pokemon'}
+                                                className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
+                                            />
+                                            {pokemon.name && (
+                                                <p className="text-xs font-bold text-blue-800 mt-1">{pokemon.name}</p>
+                                            )}
+                                        </div>
+                                    ))
+                                    : map.specialPokemonImages.map((imageUrl, index) => (
+                                        <div key={index} className="flex flex-col items-center">
+                                            <img
+                                                src={imageUrl}
+                                                alt={`Special Pokemon ${index + 1}`}
+                                                className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
+                                            />
+                                        </div>
+                                    ))}
                             </div>
                         </>
                     )}
-
                     {/* Normal Pokemon (Common/Uncommon) */}
                     <div>
                         <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-y border-blue-200">
@@ -459,4 +473,8 @@ export default function MapPage() {
         </div>
     )
 }
+
+
+
+
 

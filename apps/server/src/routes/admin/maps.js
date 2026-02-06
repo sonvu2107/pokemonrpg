@@ -1,14 +1,38 @@
 import express from 'express'
 import Map from '../../models/Map.js'
+import Pokemon from '../../models/Pokemon.js'
 import upload from '../../middleware/upload.js'
 import { uploadMapImageToCloudinary, uploadSpecialPokemonImageToCloudinary } from '../../utils/cloudinary.js'
 
 const router = express.Router()
 
+const normalizeSpecialPokemonIds = (value) => {
+    if (!Array.isArray(value)) return []
+    return [...new Set(value.map((id) => String(id || '').trim()).filter(Boolean))]
+}
+
+const validateSpecialPokemonIds = async (ids) => {
+    if (ids.length > 5) {
+        return 'specialPokemonIds must be an array with max 5 items'
+    }
+
+    if (!ids.length) return null
+
+    const count = await Pokemon.countDocuments({ _id: { $in: ids } })
+    if (count !== ids.length) {
+        return 'specialPokemonIds contains invalid Pokemon id'
+    }
+
+    return null
+}
+
 // GET /api/admin/maps - List all Maps
 router.get('/', async (req, res) => {
     try {
-        const maps = await Map.find().sort({ createdAt: 1 }).lean()
+        const maps = await Map.find()
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
+            .sort({ createdAt: 1 })
+            .lean()
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/admin/maps error:', error)
@@ -20,6 +44,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const map = await Map.findById(req.params.id)
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
 
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Map not found' })
@@ -85,7 +110,19 @@ router.post('/upload-map-image', upload.single('image'), async (req, res) => {
 // POST /api/admin/maps - Create Map
 router.post('/', async (req, res) => {
     try {
-        const { name, description, mapImageUrl, levelMin, levelMax, isLegendary, iconId, specialPokemonImages, requiredSearches, orderIndex } = req.body
+        const {
+            name,
+            description,
+            mapImageUrl,
+            levelMin,
+            levelMax,
+            isLegendary,
+            iconId,
+            specialPokemonImages,
+            specialPokemonIds,
+            requiredSearches,
+            orderIndex,
+        } = req.body
 
         if (!name || !levelMin || !levelMax) {
             return res.status(400).json({ ok: false, message: 'Missing required fields' })
@@ -102,6 +139,12 @@ router.post('/', async (req, res) => {
         // Validate specialPokemonImages
         if (specialPokemonImages && (!Array.isArray(specialPokemonImages) || specialPokemonImages.length > 5)) {
             return res.status(400).json({ ok: false, message: 'specialPokemonImages must be an array with max 5 items' })
+        }
+
+        const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
+        const specialPokemonValidationError = await validateSpecialPokemonIds(normalizedSpecialPokemonIds)
+        if (specialPokemonValidationError) {
+            return res.status(400).json({ ok: false, message: specialPokemonValidationError })
         }
 
         // Validate requiredSearches
@@ -123,6 +166,7 @@ router.post('/', async (req, res) => {
             isLegendary: isLegendary || false,
             iconId: iconId || undefined,
             specialPokemonImages: specialPokemonImages || [],
+            specialPokemonIds: normalizedSpecialPokemonIds,
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
         })
@@ -144,7 +188,19 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/maps/:id - Update Map
 router.put('/:id', async (req, res) => {
     try {
-        const { name, description, mapImageUrl, levelMin, levelMax, isLegendary, iconId, specialPokemonImages, requiredSearches, orderIndex } = req.body
+        const {
+            name,
+            description,
+            mapImageUrl,
+            levelMin,
+            levelMax,
+            isLegendary,
+            iconId,
+            specialPokemonImages,
+            specialPokemonIds,
+            requiredSearches,
+            orderIndex,
+        } = req.body
 
         const map = await Map.findById(req.params.id)
 
@@ -165,6 +221,15 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'specialPokemonImages must be an array with max 5 items' })
         }
 
+        const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
+        const shouldUpdateSpecialPokemonIds = specialPokemonIds !== undefined
+        if (shouldUpdateSpecialPokemonIds) {
+            const specialPokemonValidationError = await validateSpecialPokemonIds(normalizedSpecialPokemonIds)
+            if (specialPokemonValidationError) {
+                return res.status(400).json({ ok: false, message: specialPokemonValidationError })
+            }
+        }
+
         // Validate requiredSearches
         if (requiredSearches !== undefined && (requiredSearches < 0 || requiredSearches > 10000)) {
             return res.status(400).json({ ok: false, message: 'requiredSearches must be between 0 and 10000' })
@@ -183,6 +248,7 @@ router.put('/:id', async (req, res) => {
         map.isLegendary = isLegendary !== undefined ? isLegendary : map.isLegendary
         map.iconId = iconId !== undefined ? iconId : map.iconId
         map.specialPokemonImages = specialPokemonImages !== undefined ? specialPokemonImages : map.specialPokemonImages
+        map.specialPokemonIds = shouldUpdateSpecialPokemonIds ? normalizedSpecialPokemonIds : map.specialPokemonIds
         map.requiredSearches = requiredSearches !== undefined ? requiredSearches : map.requiredSearches
         map.orderIndex = orderIndex !== undefined ? orderIndex : map.orderIndex
 
