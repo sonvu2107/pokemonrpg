@@ -144,7 +144,7 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/pokemon/:id - Update Pokemon
 router.put('/:id', async (req, res) => {
     try {
-        const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId } = req.body
+        const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = 'forms' in req.body ? normalizeForms(req.body.forms) : null
 
         const pokemon = await Pokemon.findById(req.params.id)
@@ -178,6 +178,13 @@ router.put('/:id', async (req, res) => {
         if (rarityWeight !== undefined) pokemon.rarityWeight = rarityWeight
         if (defaultFormId !== undefined) pokemon.defaultFormId = defaultFormId
         if (forms) pokemon.forms = forms
+
+        // Update game mechanics fields
+        if (evolution !== undefined) pokemon.evolution = evolution
+        if (levelUpMoves !== undefined) pokemon.levelUpMoves = levelUpMoves
+        if (catchRate !== undefined) pokemon.catchRate = catchRate
+        if (baseExperience !== undefined) pokemon.baseExperience = baseExperience
+        if (growthRate !== undefined) pokemon.growthRate = growthRate
 
         if (forms && forms.length > 0) {
             const ids = new Set(forms.map(f => f.formId))
