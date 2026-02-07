@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { mapApi, pokemonApi } from '../../services/adminApi'
+import ImageUpload from '../../components/ImageUpload'
 
 export default function MapFormPage() {
     const { id } = useParams()
@@ -23,7 +24,6 @@ export default function MapFormPage() {
         orderIndex: 0,
     })
 
-    const [uploadingMapImage, setUploadingMapImage] = useState(false)
     const [allPokemon, setAllPokemon] = useState([])
     const [loadingPokemon, setLoadingPokemon] = useState(false)
     const [selectedPokemonIdToAdd, setSelectedPokemonIdToAdd] = useState('')
@@ -105,35 +105,6 @@ export default function MapFormPage() {
         }
     }
 
-
-    const handleMapImageUpload = async (e) => {
-        const file = e.target.files?.[0]
-        if (!file) return
-
-        try {
-            setUploadingMapImage(true)
-            setError('')
-
-            if (file.size > 2 * 1024 * 1024) {
-                throw new Error(`File ${file.name} vượt quá 2MB`)
-            }
-
-            if (!file.type.startsWith('image/')) {
-                throw new Error(`File ${file.name} không phải là ảnh`)
-            }
-
-            const data = await mapApi.uploadMapImage(file)
-            setFormData(prev => ({
-                ...prev,
-                mapImageUrl: data.imageUrl || '',
-            }))
-        } catch (err) {
-            setError(err.message)
-        } finally {
-            setUploadingMapImage(false)
-            e.target.value = ''
-        }
-    }
     const handleAddSpecialPokemon = () => {
         if (!selectedPokemonIdToAdd) return
 
@@ -217,38 +188,19 @@ export default function MapFormPage() {
                                 <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-6">
                                     <div>
                                         <h3 className="text-sm font-bold text-blue-900 uppercase">Ảnh Bản Đồ</h3>
-                                        <p className="text-xs text-blue-700 mt-1">Ảnh đại diện cho bản đồ (tối đa 2MB).</p>
+                                        <p className="text-xs text-blue-700 mt-1">Ảnh đại diện cho bản đồ (tối đa 5MB).</p>
                                     </div>
                                 </div>
 
                                 <div className="bg-white rounded-lg border border-slate-100 min-h-[140px] flex flex-col justify-center shadow-inner p-4">
-                                    {formData.mapImageUrl ? (
-                                        <div className="grid grid-cols-5 gap-3 mb-4">
-                                            <div className="relative group aspect-square bg-slate-50 rounded border border-slate-200 flex items-center justify-center overflow-hidden hover:border-blue-400 transition-colors">
-                                                <img
-                                                    src={formData.mapImageUrl}
-                                                    alt="Map preview"
-                                                    className="w-full h-full object-contain p-1"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setFormData(prev => ({ ...prev, mapImageUrl: '' }))}
-                                                    className="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-all font-bold text-xs"
-                                                    title="Xóa"
-                                                >
-                                                    ×
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-6">
-                                            <p className="text-sm font-bold text-slate-500 mb-2">Chưa có ảnh nào</p>
-                                            <label className="inline-block px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-bold shadow-md cursor-pointer transition-all hover:-translate-y-0.5">
-                                                {uploadingMapImage ? 'Đang tải lên...' : 'Tải Ảnh Lên'}
-                                                <input type="file" accept="image/*" onChange={handleMapImageUpload} disabled={uploadingMapImage} className="hidden" />
-                                            </label>
-                                        </div>
-                                    )}
+                                    <ImageUpload
+                                        currentImage={formData.mapImageUrl}
+                                        onUploadSuccess={(url) => setFormData((prev) => ({
+                                            ...prev,
+                                            mapImageUrl: Array.isArray(url) ? (url[0] || '') : (url || ''),
+                                        }))}
+                                        label="Ảnh Bản Đồ"
+                                    />
                                 </div>
                             </div>
 
