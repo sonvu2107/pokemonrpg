@@ -114,7 +114,7 @@ export default function RightColumn() {
             {/* POKEMON */}
             <SidebarSection title="Pokemon" iconId={823}>
                 <SidebarLink to="/box">Kho Pokemon</SidebarLink>
-                <SidebarLink to="/team">Thay đổi đội hình</SidebarLink>
+                <SidebarLink to="/party">Thay đổi đội hình</SidebarLink>
                 <SidebarLink to="/evolve">Tiến hóa</SidebarLink>
                 <SidebarLink to="/pokedex">Pokedex</SidebarLink>
             </SidebarSection>

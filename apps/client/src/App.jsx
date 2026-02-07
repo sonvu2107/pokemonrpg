@@ -9,6 +9,8 @@ import ProfilePage from './pages/ProfilePage'
 import MapPage from './pages/game/MapPage'
 import EditProfilePage from './pages/EditProfilePage'
 import PokemonBoxPage from './pages/PokemonBoxPage'
+import PokemonInfoPage from './pages/PokemonInfoPage'
+import ChangePartyPage from './pages/ChangePartyPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -37,6 +39,8 @@ export default function App() {
                 <Route path="/explore" element={<ExplorePage />} />
                 <Route path="/map/:slug" element={<MapPage />} />
                 <Route path="/box" element={<PokemonBoxPage />} />
+                <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
+                <Route path="/party" element={<ChangePartyPage />} />
 
                 {/* Admin Routes */}
                 <Route path="/admin" element={<AdminDashboard />} />

@@ -113,4 +113,80 @@ export const gameApi = {
         }
         return res.json()
     },
+
+    // GET /api/pokemon/:id
+    async getPokemonDetail(id) {
+        const res = await fetch(`${API_URL}/pokemon/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch pokemon detail')
+        }
+        const data = await res.json()
+        return data.pokemon
+    },
+    // GET /api/party
+    async getParty() {
+        const res = await fetch(`${API_URL}/party`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch party')
+        }
+        const data = await res.json()
+        return data.party
+    },
+
+    // POST /api/party/swap
+    async swapParty(fromIndex, toIndex) {
+        const res = await fetch(`${API_URL}/party/swap`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ fromIndex, toIndex }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Swap failed')
+        }
+        return res.json()
+    },
+
+    // POST /api/party/add
+    async addToParty(pokemonId) {
+        const res = await fetch(`${API_URL}/party/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ pokemonId }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Add to party failed')
+        }
+        return res.json()
+    },
+
+    // POST /api/party/remove
+    async removeFromParty(pokemonId) {
+        const res = await fetch(`${API_URL}/party/remove`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ pokemonId }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Remove from party failed')
+        }
+        return res.json()
+    },
 }

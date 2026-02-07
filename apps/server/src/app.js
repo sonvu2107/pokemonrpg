@@ -14,6 +14,8 @@ import userAdminRoutes from './routes/admin/user.js'
 import { authMiddleware, requireAdmin } from './middleware/auth.js'
 import { errorHandler, notFound } from './utils/errorHandler.js'
 import boxRoutes from './routes/box.js'
+import pokemonRoutes from './routes/pokemon.js'
+import partyRoutes from './routes/party.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -67,6 +69,8 @@ app.use('/api/maps', mapsRoutes)
 app.use('/api/news', newsRoutes)
 app.use('/api/stats', statsRoutes)
 app.use('/api/box', boxRoutes)
+app.use('/api/pokemon', pokemonRoutes)
+app.use('/api/party', partyRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, pokemonAdminRoutes)

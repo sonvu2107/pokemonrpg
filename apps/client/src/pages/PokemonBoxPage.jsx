@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../services/api'
+import { gameApi } from '../services/gameApi'
 
 // Helper component for section headers
 const SectionHeader = ({ title }) => (
@@ -230,25 +231,53 @@ export default function PokemonBoxPage() {
 
                                     return (
                                         <div key={p._id} className="group relative flex flex-col items-center p-2 bg-slate-50 border border-slate-200 hover:bg-white hover:border-blue-300 rounded cursor-pointer transition-all">
-                                            <div className="relative w-16 h-16 flex items-center justify-center">
-                                                <img
-                                                    src={sprite || '/placeholder.png'}
-                                                    alt={name}
-                                                    className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform"
-                                                    onError={(e) => {
-                                                        e.target.onerror = null
-                                                        e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                            <Link to={`/pokemon/${p._id}`} className="flex flex-col items-center w-full">
+                                                <div className="relative w-16 h-16 flex items-center justify-center">
+                                                    <img
+                                                        src={sprite || '/placeholder.png'}
+                                                        alt={name}
+                                                        className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform"
+                                                        onError={(e) => {
+                                                            e.target.onerror = null
+                                                            e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                                        }}
+                                                    />
+                                                    <span className="absolute top-0 right-0 text-[10px] font-bold text-amber-600 bg-white/80 px-1 rounded-bl">
+                                                        Lv.{p.level}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-600 truncate w-full text-center group-hover:text-blue-600">
+                                                    {name}
+                                                </div>
+                                                {p.isShiny && (
+                                                    <span className="absolute top-1 left-1 text-[8px] text-amber-500 font-bold" title="Shiny">jw</span>
+                                                )}
+                                            </Link>
+
+                                            {/* Add to Party Button (Visible on Hover) */}
+                                            {p.location !== 'party' && (
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation()
+                                                        e.preventDefault()
+                                                        try {
+                                                            await gameApi.addToParty(p._id)
+                                                            alert('Đã thêm vào đội hình!')
+                                                            // Optional: reload box or update UI locally
+                                                            loadBox()
+                                                        } catch (err) {
+                                                            alert(err.message)
+                                                        }
                                                     }}
-                                                />
-                                                <span className="absolute top-0 right-0 text-[10px] font-bold text-amber-600 bg-white/80 px-1 rounded-bl">
-                                                    Lv.{p.level}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1 text-[10px] font-bold text-slate-600 truncate w-full text-center group-hover:text-blue-600">
-                                                {name}
-                                            </div>
-                                            {p.isShiny && (
-                                                <span className="absolute top-1 left-1 text-[8px] text-amber-500 font-bold" title="Shiny">★</span>
+                                                    className="absolute top-0 left-0 w-full h-full bg-black/50 items-center justify-center text-white font-bold text-xs uppercase opacity-0 group-hover:opacity-100 flex z-10 transition-opacity backdrop-blur-[1px] rounded"
+                                                >
+                                                    + Vào Đội
+                                                </button>
+                                            )}
+                                            {p.location === 'party' && (
+                                                <div className="absolute top-0 left-0 w-full h-full bg-blue-500/10 border-2 border-blue-500 rounded pointer-events-none flex items-start justify-end p-1">
+                                                    <span className="bg-blue-600 text-white text-[8px] px-1 rounded font-bold uppercase">Party</span>
+                                                </div>
                                             )}
                                         </div>
                                     )

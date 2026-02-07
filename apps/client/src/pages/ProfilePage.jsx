@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
+import { gameApi } from '../services/gameApi'
 
 // Helper component for section headers with the blue gradient style
 const SectionHeader = ({ title }) => (
@@ -26,24 +27,30 @@ const InfoRow = ({ label, value, note, isOdd }) => (
 export default function ProfilePage() {
     const { login } = useAuth()
     const [profile, setProfile] = useState(null)
+    const [party, setParty] = useState(Array(6).fill(null))
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [refreshing, setRefreshing] = useState(false)
 
     useEffect(() => {
-        loadProfile()
+        loadData()
     }, [])
 
-    const loadProfile = async () => {
+    const loadData = async () => {
         try {
             setLoading(true)
-            const data = await api.getProfile()
-            setProfile(data)
+            const [profileData, partyData] = await Promise.all([
+                api.getProfile(),
+                gameApi.getParty()
+            ])
+
+            setProfile(profileData)
+            setParty(partyData)
 
             // Update AuthContext with fresh data
-            if (data.user) {
+            if (profileData.user) {
                 const token = localStorage.getItem('token')
-                login(data.user, token)
+                login(profileData.user, token)
             }
         } catch (err) {
             setError(err.message)
@@ -54,7 +61,7 @@ export default function ProfilePage() {
 
     const handleRefresh = async () => {
         setRefreshing(true)
-        await loadProfile()
+        await loadData()
         setRefreshing(false)
     }
 
@@ -71,7 +78,7 @@ export default function ProfilePage() {
             <div className="max-w-md mx-auto mt-8 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
                 <p>Lỗi: {error}</p>
                 <button
-                    onClick={loadProfile}
+                    onClick={loadData}
                     className="mt-2 px-4 py-1 bg-red-600 text-white rounded hover:bg-red-700"
                 >
                     Thử lại
@@ -84,6 +91,13 @@ export default function ProfilePage() {
     const username = user?.username || 'Huấn Luyện Viên'
     const joinDate = user?.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Không rõ'
     const coins = playerState?.gold || 0
+    const moonPoints = playerState?.moonPoints || 0
+    const level = playerState?.level || 1
+    const exp = playerState?.experience || 0
+    const stamina = playerState?.stamina || 0
+    const maxStamina = playerState?.maxStamina || 100
+    const wins = playerState?.wins || 0
+    const losses = playerState?.losses || 0
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
@@ -98,7 +112,7 @@ export default function ProfilePage() {
                         <span>🪙 {coins.toLocaleString()} Xu Bạch Kim</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-600">
-                        <span>🌑 0 Điểm Nguyệt Các</span>
+                        <span>🌑 {moonPoints.toLocaleString()} Điểm Nguyệt Các</span>
                     </div>
                 </div>
             </div>
@@ -183,20 +197,44 @@ export default function ProfilePage() {
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title="Đội Hình" />
                         <div className="bg-slate-100 min-h-[100px] flex items-stretch divide-x divide-gray-300 border-b border-gray-300 overflow-x-auto">
-                            {/* Example Party Member */}
-                            <div className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center p-2 bg-slate-50 hover:bg-white transition-colors">
-                                <span className="text-xs text-slate-500 mb-1">Thường</span>
-                                <span className="font-bold text-slate-800 text-sm mb-1">Bulbasaur</span>
-                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png" className="w-12 h-12 pixelated" />
-                                <span className="text-xs text-amber-600 font-bold mt-1">Lv. 5</span>
-                            </div>
+                            {/* Party Members */}
+                            {party.map((p, i) => {
+                                if (!p) {
+                                    return (
+                                        <div key={i} className="min-w-[16.66%] flex-1 bg-slate-100 flex items-center justify-center p-2">
+                                            <div className="w-8 h-8 rounded-full bg-slate-200/50 flex items-center justify-center text-slate-300 text-xs">
+                                                {i + 1}
+                                            </div>
+                                        </div>
+                                    )
+                                }
+                                const species = p.pokemonId || {}
+                                const sprite = p.isShiny ? (species.sprites?.shiny || species.imageUrl) : (species.imageUrl || species.sprites?.normal)
+                                const name = p.nickname || species.name || 'Unknown'
 
-                            {/* Empty Slots */}
-                            {[...Array(5)].map((_, i) => (
-                                <div key={i} className="min-w-[16.66%] flex-1 bg-slate-100 flex items-center justify-center">
-                                    <div className="w-8 h-8 rounded-full bg-slate-200/50"></div>
-                                </div>
-                            ))}
+                                return (
+                                    <Link
+                                        to={`/pokemon/${p._id}`}
+                                        key={p._id}
+                                        className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center p-2 bg-slate-50 hover:bg-white transition-colors group"
+                                    >
+                                        <span className="text-[10px] text-slate-500 mb-1 uppercase tracking-tighter">{species.name}</span>
+                                        <span className="font-bold text-blue-900 text-xs mb-1 truncate max-w-[80px] text-center group-hover:text-blue-600">{name}</span>
+                                        <div className="relative w-12 h-12 flex items-center justify-center">
+                                            <img
+                                                src={sprite || '/placeholder.png'}
+                                                className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                                }}
+                                            />
+                                            {p.isShiny && <span className="absolute top-0 right-0 text-[8px] text-amber-500 font-bold">★</span>}
+                                        </div>
+                                        <span className="text-xs text-amber-600 font-bold mt-1">Lv. {p.level}</span>
+                                    </Link>
+                                )
+                            })}
                         </div>
                     </div>
 
@@ -210,17 +248,17 @@ export default function ProfilePage() {
                             <InfoRow label="Giới Tính" value="Nam" isOdd={true} />
                             <InfoRow label="Nhóm" value={user?.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
                             <InfoRow label="Cấp Bản Đồ" value="Lv. 1" isOdd={true} />
-                            <InfoRow label="Cấp Người Chơi" value={`Lv. ${playerState?.level || 1}`} isOdd={false} />
-                            <InfoRow label="Kinh Nghiệm" value="0 EXP (0/250 để lên cấp)" isOdd={true} />
+                            <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={false} />
+                            <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (${expToNext(level).toLocaleString()} để lên cấp)`} isOdd={true} />
                             <InfoRow label="Cấp Đào Mỏ" value="Lv. 1" isOdd={false} />
                             <InfoRow label="Xu Bạch Kim" value={`$${coins.toLocaleString()}`} isOdd={true} />
-                            <InfoRow label="Điểm Nguyệt Các" value="0 Điểm" isOdd={false} />
-                            <InfoRow label="Thể Lực" value="0 AP (Đội Đỏ)" isOdd={true} />
-                            <InfoRow label="Trận Thắng" value="0 trận" isOdd={false} />
+                            <InfoRow label="Điểm Nguyệt Các" value={`${moonPoints.toLocaleString()} Điểm`} isOdd={false} />
+                            <InfoRow label="Thể Lực" value={`${stamina}/${maxStamina} AP`} isOdd={true} />
+                            <InfoRow label="Trận Thắng" value={`${wins} thắng - ${losses} thua`} isOdd={false} />
                             <InfoRow label="Ngày Đăng Ký" value={joinDate} isOdd={true} />
-                            <InfoRow label="Đăng Nhập Cuối" value={new Date().toLocaleDateString('vi-VN')} isOdd={false} />
+                            <InfoRow label="Đăng Nhập Cuối" value={new Date().toLocaleDateString('vi-VN')} isOdd={false} help="Mocked for now" />
                             <InfoRow label="Thời Gian Chơi" value="Không rõ" isOdd={true} />
-                            <InfoRow label="Phiên Bản" value="- [Xem]" isOdd={false} />
+                            <InfoRow label="Phiên Bản" value="Beta 1.0" isOdd={false} />
                         </div>
                         <div className="bg-white border-t border-blue-200">
                             <SectionHeader title="Chữ Ký" />
@@ -235,3 +273,5 @@ export default function ProfilePage() {
         </div>
     )
 }
+
+const expToNext = (level) => 250 + Math.max(0, level - 1) * 100

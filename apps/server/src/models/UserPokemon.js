@@ -41,6 +41,7 @@ const UserPokemonSchema = new Schema(
         // Location
         location: { type: String, enum: ['box', 'party'], default: 'box', index: true },
         boxNumber: { type: Number, default: 1 },
+        partyIndex: { type: Number, default: null }, // 0-5 for party slots
 
         // Moves (Array of Move IDs or strings for now if Move model not fully linked)
         moves: [{ type: String }],

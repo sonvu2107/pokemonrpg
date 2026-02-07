@@ -24,6 +24,13 @@ const playerStateSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        level: { type: Number, default: 1 },
+        experience: { type: Number, default: 0 },
+        stamina: { type: Number, default: 100 },
+        maxStamina: { type: Number, default: 100 },
+        moonPoints: { type: Number, default: 0 },
+        wins: { type: Number, default: 0 },
+        losses: { type: Number, default: 0 },
     },
     {
         timestamps: true,
