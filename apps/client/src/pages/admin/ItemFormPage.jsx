@@ -154,7 +154,9 @@ export default function ItemFormPage() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị HP</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
+                                {formData.effectType === 'catchMultiplier' ? 'Tỉ lệ bắt (x)' : 'Giá trị HP'}
+                            </label>
                             <input
                                 type="number"
                                 min="0"
@@ -165,19 +167,21 @@ export default function ItemFormPage() {
                             />
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị MP</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={formData.effectValueMp}
-                                onChange={(e) => setFormData({ ...formData, effectValueMp: parseFloat(e.target.value) || 0 })}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                            />
+                    {formData.effectType === 'heal' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị MP</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={formData.effectValueMp}
+                                    onChange={(e) => setFormData({ ...formData, effectValueMp: parseFloat(e.target.value) || 0 })}
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="bg-white rounded border border-blue-100 p-4 shadow-sm">
                         <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-4">
