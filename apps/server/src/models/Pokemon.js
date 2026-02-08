@@ -23,6 +23,18 @@ const FormStatsSchema = new Schema(
     { _id: false }
 )
 
+// Evolution Data
+const EvolutionSchema = new Schema(
+    {
+        evolvesTo: { type: Schema.Types.ObjectId, ref: 'Pokemon', default: null },
+        minLevel: { type: Number, default: null, min: 1 },
+        // Future extensibility (optional)
+        // method: { type: String, enum: ['level', 'item', 'trade', 'friendship'], default: 'level' },
+        // itemId: { type: Schema.Types.ObjectId, ref: 'Item', default: null },
+    },
+    { _id: false }
+)
+
 const FormSchema = new Schema(
     {
         formId: { type: String, required: true, trim: true },
@@ -30,6 +42,7 @@ const FormSchema = new Schema(
         imageUrl: { type: String, default: '' },
         sprites: { type: FormSpritesSchema, default: () => ({}) },
         stats: { type: FormStatsSchema, default: () => ({}) },
+        evolution: { type: EvolutionSchema, default: null },
     },
     { _id: false }
 )
@@ -45,17 +58,7 @@ const LevelMoveSchema = new Schema(
     { _id: false }
 )
 
-// Evolution Data
-const EvolutionSchema = new Schema(
-    {
-        evolvesTo: { type: Schema.Types.ObjectId, ref: 'Pokemon', default: null },
-        minLevel: { type: Number, default: null, min: 1 },
-        // Future extensibility (optional)
-        // method: { type: String, enum: ['level', 'item', 'trade', 'friendship'], default: 'level' },
-        // itemId: { type: Schema.Types.ObjectId, ref: 'Item', default: null },
-    },
-    { _id: false }
-)
+
 
 const pokemonSchema = new Schema(
     {

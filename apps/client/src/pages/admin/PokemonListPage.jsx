@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 
@@ -32,6 +32,10 @@ export default function PokemonListPage() {
     const [savingId, setSavingId] = useState('')
     const [expandedIds, setExpandedIds] = useState(() => new Set())
 
+    // Scroll Sync
+    const tableContainerRef = useRef(null)
+    const topScrollRef = useRef(null)
+
     // Filters
     const [search, setSearch] = useState('')
     const [typeFilter, setTypeFilter] = useState('')
@@ -46,6 +50,34 @@ export default function PokemonListPage() {
         loadAllPokemon()
     }, [])
 
+    // Sync Top Scrollbar
+    useEffect(() => {
+        const table = tableContainerRef.current
+        const top = topScrollRef.current
+
+        if (!table || !top) return
+
+        const handleTableScroll = () => {
+            if (top.scrollLeft !== table.scrollLeft) {
+                top.scrollLeft = table.scrollLeft
+            }
+        }
+
+        const handleTopScroll = () => {
+            if (table.scrollLeft !== top.scrollLeft) {
+                table.scrollLeft = top.scrollLeft
+            }
+        }
+
+        table.addEventListener('scroll', handleTableScroll)
+        top.addEventListener('scroll', handleTopScroll)
+
+        return () => {
+            table.removeEventListener('scroll', handleTableScroll)
+            top.removeEventListener('scroll', handleTopScroll)
+        }
+    }, [pokemon])
+
     const loadPokemon = async () => {
         try {
             setLoading(true)
@@ -55,11 +87,23 @@ export default function PokemonListPage() {
             setEvolutionEdits((prev) => {
                 const next = { ...prev }
                 data.pokemon.forEach((p) => {
+                    // Main Pokemon evolution
                     const evolvesTo = typeof p.evolution?.evolvesTo === 'string'
                         ? p.evolution.evolvesTo
                         : p.evolution?.evolvesTo?._id || ''
                     const minLevel = p.evolution?.minLevel ?? ''
                     next[p._id] = { evolvesTo, minLevel: minLevel === null ? '' : minLevel }
+
+                    // Form evolutions
+                    if (Array.isArray(p.forms)) {
+                        p.forms.forEach(form => {
+                            const formEvolvesTo = typeof form.evolution?.evolvesTo === 'string'
+                                ? form.evolution.evolvesTo
+                                : form.evolution?.evolvesTo?._id || ''
+                            const formMinLevel = form.evolution?.minLevel ?? ''
+                            next[`${p._id}_${form.formId}`] = { evolvesTo: formEvolvesTo, minLevel: formMinLevel === null ? '' : formMinLevel }
+                        })
+                    }
                 })
                 return next
             })
@@ -86,35 +130,44 @@ export default function PokemonListPage() {
         }))
     }
 
-    const handleSaveEvolution = async (p) => {
-        const edit = evolutionEdits[p._id] || { evolvesTo: '', minLevel: '' }
+    const handleSaveEvolution = async (p, formId = null) => {
+        const key = formId ? `${p._id}_${formId}` : p._id
+        const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '' }
         const evolvesToValue = edit.evolvesTo || null
         const minLevelValue = evolvesToValue ? (parseInt(edit.minLevel) || null) : null
 
         try {
-            setSavingId(p._id)
+            setSavingId(key)
             setError('')
 
-            const payload = {
-                pokedexNumber: p.pokedexNumber,
-                name: p.name,
-                baseStats: p.baseStats,
-                types: p.types,
-                initialMoves: p.initialMoves || [],
-                sprites: p.sprites || {},
-                imageUrl: p.imageUrl || '',
-                description: p.description || '',
-                rarity: p.rarity,
-                rarityWeight: p.rarityWeight,
-                defaultFormId: p.defaultFormId,
-                evolution: {
-                    evolvesTo: evolvesToValue,
-                    minLevel: minLevelValue,
-                },
-                levelUpMoves: p.levelUpMoves || [],
-                catchRate: p.catchRate,
-                baseExperience: p.baseExperience,
-                growthRate: p.growthRate,
+            let payload
+            if (formId) {
+                if (!Array.isArray(p.forms) || p.forms.length === 0) {
+                    throw new Error("Không tìm thấy dữ liệu các dạng của Pokemon này.")
+                }
+                // Updating a specific form
+                const forms = p.forms.map(f => {
+                    if (f.formId === formId) {
+                        return {
+                            ...f,
+                            evolution: {
+                                ...f.evolution,
+                                evolvesTo: evolvesToValue,
+                                minLevel: minLevelValue,
+                            }
+                        }
+                    }
+                    return f
+                })
+                payload = { forms }
+            } else {
+                // Updating main Pokemon
+                payload = {
+                    evolution: {
+                        evolvesTo: evolvesToValue,
+                        minLevel: minLevelValue,
+                    },
+                }
             }
 
             await pokemonApi.update(p._id, payload)
@@ -146,6 +199,208 @@ export default function PokemonListPage() {
                 next.add(id)
             }
             return next
+        })
+    }
+
+    const buildRows = () => {
+        return pokemon.flatMap((p) => {
+            const forms = Array.isArray(p.forms) && p.forms.length > 0
+                ? p.forms
+                : [{
+                    formId: p.defaultFormId || 'normal',
+                    formName: p.defaultFormId || 'normal',
+                    imageUrl: p.imageUrl || '',
+                }]
+            const defaultFormId = p.defaultFormId || forms[0]?.formId || 'normal'
+            const defaultForm = forms.find((form) => form.formId === defaultFormId) || forms[0]
+            const extraForms = forms.filter((form) => form.formId !== defaultFormId)
+            const isExpanded = expandedIds.has(p._id)
+
+            const rows = []
+
+            rows.push(
+                <tr key={`${p._id}-base`} className="hover:bg-blue-50 transition-colors">
+                    <td className="px-3 py-2 text-slate-500 font-mono text-xs">#{p.pokedexNumber.toString().padStart(3, '0')}</td>
+                    <td className="px-3 py-2">
+                        {(defaultForm?.imageUrl || p.imageUrl) ? (
+                            <img
+                                src={defaultForm?.imageUrl || p.imageUrl}
+                                alt={p.name}
+                                className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
+                            />
+                        ) : (
+                            <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
+                                ?
+                            </div>
+                        )}
+                    </td>
+                    <td className="px-3 py-2 text-slate-800 font-bold text-sm truncate max-w-[140px]" title={p.name}>
+                        {p.name}
+                    </td>
+                    <td className="px-3 py-2">
+                        <div className="flex gap-1 flex-wrap max-w-[100px]">
+                            {p.types.map(type => (
+                                <span
+                                    key={type}
+                                    className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                >
+                                    {type.slice(0, 3)}
+                                </span>
+                            ))}
+                        </div>
+                    </td>
+                    <td className="px-3 py-2">
+                        <span
+                            className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                            title={defaultForm?.formName ? `${defaultForm.formName} (${defaultForm.formId})` : defaultForm?.formId}
+                        >
+                            {defaultForm?.formName || defaultForm?.formId}
+                        </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">
+                        <div className="flex items-center gap-2">
+                            <select
+                                value={evolutionEdits[p._id]?.evolvesTo || ''}
+                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                className="w-32 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
+                            >
+                                <option value="">--</option>
+                                {allPokemon.map((target) => (
+                                    <option key={target._id} value={target._id} disabled={target._id === p._id}>
+                                        #{target.pokedexNumber} {target.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <input
+                                type="number"
+                                min="1"
+                                placeholder="Lv"
+                                value={evolutionEdits[p._id]?.minLevel ?? ''}
+                                onChange={(e) => updateEvolutionEdit(p._id, { minLevel: e.target.value })}
+                                className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                                disabled={!evolutionEdits[p._id]?.evolvesTo}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleSaveEvolution(p)}
+                                disabled={savingId === p._id}
+                                title="Lưu tiến hóa"
+                                className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                        <div className="flex justify-end gap-1">
+                            {extraForms.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => toggleExpanded(p._id)}
+                                    title={isExpanded ? 'Ẩn dạng' : 'Xem dạng'}
+                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-bold shadow-sm"
+                                >
+                                    {isExpanded ? 'Ẩn dạng' : `Dạng (${extraForms.length})`}
+                                </button>
+                            )}
+                            <Link
+                                to={`/admin/pokemon/${p._id}/edit`}
+                                title="Sửa"
+                                className="p-1.5 bg-green-500 hover:bg-green-600 text-white rounded shadow-sm"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                                </svg>
+                            </Link>
+                            <button
+                                onClick={() => handleDelete(p._id, p.name)}
+                                title="Xóa"
+                                className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            )
+
+            if (isExpanded) {
+                extraForms.forEach((form) => {
+                    rows.push(
+                        <tr key={`${p._id}-${form.formId}`} className="bg-slate-50/40">
+                            <td className="px-3 py-2 text-slate-400 font-mono text-xs">#{p.pokedexNumber.toString().padStart(3, '0')}</td>
+                            <td className="px-3 py-2">
+                                {(form.imageUrl || p.imageUrl) ? (
+                                    <img
+                                        src={form.imageUrl || p.imageUrl}
+                                        alt={`${p.name} ${form.formName || form.formId}`.trim()}
+                                        className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
+                                    />
+                                ) : (
+                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
+                                        ?
+                                    </div>
+                                )}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700 font-semibold text-sm truncate max-w-[140px]" title={p.name}>
+                                {p.name}
+                            </td>
+                            <td className="px-3 py-2">
+                                <div className="flex gap-1 flex-wrap max-w-[100px]">
+                                    {p.types.map(type => (
+                                        <span
+                                            key={type}
+                                            className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                        >
+                                            {type.slice(0, 3)}
+                                        </span>
+                                    ))}
+                                </div>
+                            </td>
+                            <td className="px-3 py-2">
+                                <span
+                                    className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                                    title={form.formName ? `${form.formName} (${form.formId})` : form.formId}
+                                >
+                                    {form.formName || form.formId}
+                                </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={evolutionEdits[p._id]?.evolvesTo || ''}
+                                        onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                        className="w-32 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
+                                    >
+                                        <option value="">--</option>
+                                        {allPokemon.map((target) => (
+                                            <option key={target._id} value={target._id} disabled={target._id === p._id}>
+                                                #{target.pokedexNumber} {target.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        placeholder="Lv"
+                                        value={evolutionEdits[p._id]?.minLevel ?? ''}
+                                        onChange={(e) => updateEvolutionEdit(p._id, { minLevel: e.target.value })}
+                                        className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                                        disabled={!evolutionEdits[p._id]?.evolvesTo}
+                                    />
+                                </div>
+                            </td>
+                            <td className="px-3 py-2 text-right"></td>
+                        </tr>
+                    )
+                })
+            }
+
+            return rows
         })
     }
 
@@ -190,7 +445,17 @@ export default function PokemonListPage() {
                 ) : (
                     <>
                         {/* Table */}
-                        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto shadow-sm">
+                        <div
+                            ref={topScrollRef}
+                            className="bg-slate-50 border border-slate-200 border-b-0 rounded-t-lg overflow-x-auto shadow-sm h-4 mb-[-1px] sticky-top-scrollbar"
+                            style={{ scrollbarWidth: 'thin' }}
+                        >
+                            <div style={{ width: '1200px' }} className="h-full"></div>
+                        </div>
+                        <div
+                            ref={tableContainerRef}
+                            className="bg-white border border-slate-200 rounded-b-lg overflow-x-auto shadow-sm rounded-t-none"
+                        >
                             <table className="w-full text-sm min-w-[1200px]">
                                 <thead className="bg-blue-600 text-white border-b border-blue-700">
                                     <tr>
@@ -235,7 +500,33 @@ export default function PokemonListPage() {
                                                         )}
                                                     </td>
                                                     <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[200px]" title={p.name}>
-                                                        {p.name}
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="truncate">{p.name}</span>
+                                                            {extraForms.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleExpanded(p._id)}
+                                                                    title={isExpanded ? 'Ẩn dạng' : 'Xem dạng'}
+                                                                    className={`px-1.5 py-0.5 border text-[10px] rounded font-bold shadow-sm transition-colors flex items-center gap-1 shrink-0 ${isExpanded ? 'bg-slate-100 text-slate-600 border-slate-300' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'}`}
+                                                                >
+                                                                    {isExpanded ? (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                                                <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                            Ẩn
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                                                                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                            +{extraForms.length}
+                                                                        </>
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="px-3 py-3">
                                                         <div className="flex gap-1 flex-wrap max-w-[120px]">
@@ -295,16 +586,6 @@ export default function PokemonListPage() {
                                                     </td>
                                                     <td className="px-3 py-3 text-right whitespace-nowrap">
                                                         <div className="flex justify-end gap-1">
-                                                            {extraForms.length > 0 && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => toggleExpanded(p._id)}
-                                                                    title={isExpanded ? 'Ẩn dạng' : 'Xem dạng'}
-                                                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-bold shadow-sm transition-colors"
-                                                                >
-                                                                    {isExpanded ? 'Ẩn' : `+${extraForms.length}`}
-                                                                </button>
-                                                            )}
                                                             <Link
                                                                 to={`/admin/pokemon/${p._id}/edit`}
                                                                 title="Sửa"
@@ -367,7 +648,40 @@ export default function PokemonListPage() {
                                                             </span>
                                                         </td>
                                                         <td className="px-3 py-3 text-slate-600 border-t border-slate-100/50">
-                                                            {/* Sub-form evolution placeholder if needed */}
+                                                            <div className="flex items-center gap-2">
+                                                                <select
+                                                                    value={evolutionEdits[p._id]?.evolvesTo || ''}
+                                                                    onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                                                    className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
+                                                                >
+                                                                    <option value="">--</option>
+                                                                    {allPokemon.map((target) => (
+                                                                        <option key={target._id} value={target._id} disabled={target._id === p._id}>
+                                                                            #{target.pokedexNumber} {target.name}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    placeholder="Lv"
+                                                                    value={evolutionEdits[p._id]?.minLevel ?? ''}
+                                                                    onChange={(e) => updateEvolutionEdit(p._id, { minLevel: e.target.value })}
+                                                                    className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                                                                    disabled={!evolutionEdits[p._id]?.evolvesTo}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSaveEvolution(p)}
+                                                                    disabled={savingId === p._id}
+                                                                    title="Lưu tiến hóa"
+                                                                    className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center transition-colors"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="px-3 py-3 text-right whitespace-nowrap border-t border-slate-100/50"></td>
                                                     </tr>

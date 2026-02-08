@@ -60,6 +60,7 @@ router.get('/', async (req, res) => {
             Pokemon.countDocuments(query),
         ])
 
+        res.set('Cache-Control', 'no-store')
         res.json({
             ok: true,
             pokemon,
@@ -160,7 +161,8 @@ router.put('/:id', async (req, res) => {
         }
 
         // Check if new name/pokedex conflicts with other Pokemon
-        if (pokedexNumber !== pokemon.pokedexNumber || name !== pokemon.name) {
+        if ((pokedexNumber !== undefined && pokedexNumber !== pokemon.pokedexNumber)
+            || (name !== undefined && name !== pokemon.name)) {
             const conflict = await Pokemon.findOne({
                 _id: { $ne: req.params.id },
                 $or: [{ pokedexNumber }, { name }]
@@ -172,15 +174,15 @@ router.put('/:id', async (req, res) => {
         }
 
         // Update fields
-        pokemon.pokedexNumber = pokedexNumber
-        pokemon.name = name
-        pokemon.baseStats = baseStats
-        pokemon.types = types.map(t => t.toLowerCase())
-        pokemon.initialMoves = initialMoves || []
-        pokemon.sprites = sprites || pokemon.sprites
+        if (pokedexNumber !== undefined) pokemon.pokedexNumber = pokedexNumber
+        if (name !== undefined) pokemon.name = name
+        if (baseStats !== undefined) pokemon.baseStats = baseStats
+        pokemon.types = Array.isArray(types) ? types.map(t => t.toLowerCase()) : pokemon.types
+        if (initialMoves !== undefined) pokemon.initialMoves = initialMoves || []
+        if (sprites !== undefined) pokemon.sprites = sprites || pokemon.sprites
         if (imageUrl !== undefined) pokemon.imageUrl = imageUrl
-        pokemon.description = description || ''
-        pokemon.rarity = normalizeRarity(rarity)
+        if (description !== undefined) pokemon.description = description || ''
+        if (rarity !== undefined) pokemon.rarity = normalizeRarity(rarity)
         if (rarityWeight !== undefined) pokemon.rarityWeight = rarityWeight
         if (defaultFormId !== undefined) pokemon.defaultFormId = defaultFormId
         if (forms) pokemon.forms = forms
