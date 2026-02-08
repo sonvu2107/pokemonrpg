@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { gameApi } from '../services/gameApi'
 
 // Helper component for section headers with the blue gradient style
 const SectionHeader = ({ title }) => (
@@ -9,12 +10,43 @@ const SectionHeader = ({ title }) => (
 
 export default function InventoryPage() {
     const [activeTab, setActiveTab] = useState('All Items')
+    const [inventory, setInventory] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
-    // Mock items - in real app, fetch from API
-    const items = [
-        { id: 1, name: 'Pokeball', image: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png', type: 'Battle' },
-        // Add more mock items here later
-    ]
+    useEffect(() => {
+        const loadInventory = async () => {
+            try {
+                setLoading(true)
+                const data = await gameApi.getInventory()
+                setInventory(data.inventory || [])
+            } catch (err) {
+                setError(err.message)
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        loadInventory()
+    }, [])
+
+    const items = useMemo(() => {
+        return inventory.map((entry) => ({
+            id: entry.item?._id || entry._id,
+            name: entry.item?.name || 'Unknown Item',
+            image: entry.item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png',
+            type: entry.item?.type || 'Other',
+            quantity: entry.quantity || 0,
+        }))
+    }, [inventory])
+
+    const filteredItems = useMemo(() => {
+        if (activeTab === 'Tất Cả') return items
+        if (activeTab === 'Vật Phẩm Chiến Đấu') return items.filter((item) => item.type === 'battle')
+        if (activeTab === 'Vật Phẩm Quan Trọng') return items.filter((item) => item.type === 'key')
+        if (activeTab === 'Vật Phẩm Khác') return items.filter((item) => item.type === 'other')
+        return items
+    }, [activeTab, items])
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
@@ -61,25 +93,37 @@ export default function InventoryPage() {
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm min-h-[200px]">
                         <SectionHeader title="Danh Sách" />
                         <div className="bg-white p-4">
-                            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
-                                {items.map(item => (
-                                    <div key={item.id} className="flex flex-col items-center justify-center group cursor-pointer">
-                                        <div className="w-12 h-12 flex items-center justify-center transition-transform group-hover:scale-110">
-                                            <img src={item.image} alt={item.name} className="w-10 h-10 pixelated rendering-pixelated" />
-                                        </div>
-                                        <div className="mt-1 text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight">
-                                            {item.name}
-                                        </div>
-                                    </div>
-                                ))}
-
-                                {/* Empty slots visual filler if needed, or just leave whitespace */}
-                            </div>
-
-                            {items.length === 0 && (
-                                <div className="text-center text-slate-400 italic py-8">
-                                    Túi đồ trống
+                            {error && (
+                                <div className="text-center text-red-500 font-bold py-4">
+                                    {error}
                                 </div>
+                            )}
+                            {loading ? (
+                                <div className="text-center text-slate-500 italic py-8">
+                                    Đang tải kho đồ...
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
+                                        {filteredItems.map(item => (
+                                            <div key={item.id} className="flex flex-col items-center justify-center group">
+                                                <div className="w-12 h-12 flex items-center justify-center transition-transform group-hover:scale-110">
+                                                    <img src={item.image} alt={item.name} className="w-10 h-10 pixelated rendering-pixelated" />
+                                                </div>
+                                                <div className="mt-1 text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight">
+                                                    {item.name}
+                                                </div>
+                                                <div className="text-[10px] text-slate-500">x{item.quantity}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {filteredItems.length === 0 && (
+                                        <div className="text-center text-slate-400 italic py-8">
+                                            Túi đồ trống
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>

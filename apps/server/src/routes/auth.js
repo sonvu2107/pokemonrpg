@@ -144,6 +144,8 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 id: user._id,
                 email: user.email,
                 username: user.username,
+                avatar: user.avatar,
+                signature: user.signature,
                 role: user.role,
                 createdAt: user.createdAt,
             },
@@ -151,6 +153,53 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 hp: 100, maxHp: 100, gold: 0, clicks: 0,
                 level: 1, experience: 0, stamina: 100, maxStamina: 100,
                 moonPoints: 0, wins: 0, losses: 0
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// PUT /api/auth/profile (protected)
+router.put('/profile', authMiddleware, async (req, res, next) => {
+    try {
+        const { username, avatar, signature } = req.body
+
+        // Validate username if provided
+        if (username && username.trim().length === 0) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Username cannot be empty',
+            })
+        }
+
+        // Find user
+        const user = await User.findById(req.user.userId)
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'User not found',
+            })
+        }
+
+        // Update fields
+        if (username !== undefined) user.username = username
+        if (avatar !== undefined) user.avatar = avatar
+        if (signature !== undefined) user.signature = signature
+
+        await user.save()
+
+        res.json({
+            ok: true,
+            message: 'Profile updated successfully',
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                avatar: user.avatar,
+                signature: user.signature,
+                role: user.role,
+                createdAt: user.createdAt,
             },
         })
     } catch (error) {

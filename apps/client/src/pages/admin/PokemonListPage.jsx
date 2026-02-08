@@ -461,10 +461,10 @@ export default function PokemonListPage() {
                                     <tr>
                                         <th className="px-3 py-3 text-left font-bold uppercase text-xs w-14 whitespace-nowrap">#</th>
                                         <th className="px-3 py-3 text-center font-bold uppercase text-xs w-20 whitespace-nowrap">Hình</th>
-                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[200px] whitespace-nowrap">Tên</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[150px] whitespace-nowrap">Tên</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[280px] whitespace-nowrap">Tiến Hóa</th>
                                         <th className="px-3 py-3 text-left font-bold uppercase text-xs w-32 whitespace-nowrap">Hệ</th>
                                         <th className="px-3 py-3 text-left font-bold uppercase text-xs w-28 whitespace-nowrap">Dạng</th>
-                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[300px] whitespace-nowrap">Tiến Hóa</th>
                                         <th className="px-3 py-3 text-right font-bold uppercase text-xs w-28 whitespace-nowrap">Hành Động</th>
                                     </tr>
                                 </thead>
@@ -499,7 +499,7 @@ export default function PokemonListPage() {
                                                             </div>
                                                         )}
                                                     </td>
-                                                    <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[200px]" title={p.name}>
+                                                    <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[150px]" title={p.name}>
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="truncate">{p.name}</span>
                                                             {extraForms.length > 0 && (
@@ -527,26 +527,6 @@ export default function PokemonListPage() {
                                                                 </button>
                                                             )}
                                                         </div>
-                                                    </td>
-                                                    <td className="px-3 py-3">
-                                                        <div className="flex gap-1 flex-wrap max-w-[120px]">
-                                                            {p.types.map(type => (
-                                                                <span
-                                                                    key={type}
-                                                                    className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
-                                                                >
-                                                                    {type.slice(0, 3)}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-3">
-                                                        <span
-                                                            className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
-                                                            title={defaultForm?.formName ? `${defaultForm.formName} (${defaultForm.formId})` : defaultForm?.formId}
-                                                        >
-                                                            {defaultForm?.formName || defaultForm?.formId}
-                                                        </span>
                                                     </td>
                                                     <td className="px-3 py-3 text-slate-600">
                                                         <div className="flex items-center gap-2">
@@ -584,6 +564,27 @@ export default function PokemonListPage() {
                                                             </button>
                                                         </div>
                                                     </td>
+                                                    <td className="px-3 py-3">
+                                                        <div className="flex gap-1 flex-wrap max-w-[120px]">
+                                                            {p.types.map(type => (
+                                                                <span
+                                                                    key={type}
+                                                                    className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                                >
+                                                                    {type.slice(0, 3)}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-3">
+                                                        <span
+                                                            className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                                                            title={defaultForm?.formName ? `${defaultForm.formName} (${defaultForm.formId})` : defaultForm?.formId}
+                                                        >
+                                                            {defaultForm?.formName || defaultForm?.formId}
+                                                        </span>
+                                                    </td>
+
                                                     <td className="px-3 py-3 text-right whitespace-nowrap">
                                                         <div className="flex justify-end gap-1">
                                                             <Link
@@ -646,42 +647,6 @@ export default function PokemonListPage() {
                                                             >
                                                                 {form.formName || form.formId}
                                                             </span>
-                                                        </td>
-                                                        <td className="px-3 py-3 text-slate-600 border-t border-slate-100/50">
-                                                            <div className="flex items-center gap-2">
-                                                                <select
-                                                                    value={evolutionEdits[p._id]?.evolvesTo || ''}
-                                                                    onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
-                                                                    className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
-                                                                >
-                                                                    <option value="">--</option>
-                                                                    {allPokemon.map((target) => (
-                                                                        <option key={target._id} value={target._id} disabled={target._id === p._id}>
-                                                                            #{target.pokedexNumber} {target.name}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                                <input
-                                                                    type="number"
-                                                                    min="1"
-                                                                    placeholder="Lv"
-                                                                    value={evolutionEdits[p._id]?.minLevel ?? ''}
-                                                                    onChange={(e) => updateEvolutionEdit(p._id, { minLevel: e.target.value })}
-                                                                    className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
-                                                                    disabled={!evolutionEdits[p._id]?.evolvesTo}
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleSaveEvolution(p)}
-                                                                    disabled={savingId === p._id}
-                                                                    title="Lưu tiến hóa"
-                                                                    className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center transition-colors"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                                    </svg>
-                                                                </button>
-                                                            </div>
                                                         </td>
                                                         <td className="px-3 py-3 text-right whitespace-nowrap border-t border-slate-100/50"></td>
                                                     </tr>

@@ -78,6 +78,18 @@ const mapSchema = new mongoose.Schema(
             min: 0,
             max: 10000,
         },
+        encounterRate: {
+            type: Number,
+            default: 1,
+            min: 0,
+            max: 1,
+        },
+        itemDropRate: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 1,
+        },
         orderIndex: {
             type: Number,
             default: 0,

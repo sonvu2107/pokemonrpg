@@ -139,6 +139,35 @@ export const gameApi = {
         return data.party
     },
 
+    // GET /api/inventory
+    async getInventory() {
+        const res = await fetch(`${API_URL}/inventory`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch inventory')
+        }
+        return res.json()
+    },
+
+    // POST /api/inventory/use
+    async useItem(itemId, quantity = 1) {
+        const res = await fetch(`${API_URL}/inventory/use`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ itemId, quantity }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to use item')
+        }
+        return res.json()
+    },
+
     // POST /api/party/swap
     async swapParty(fromIndex, toIndex) {
         const res = await fetch(`${API_URL}/party/swap`, {

@@ -4,6 +4,7 @@ import PlayerState from '../models/PlayerState.js'
 import { emitPlayerState } from '../socket/index.js'
 import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
+import UserInventory from '../models/UserInventory.js'
 import MapProgress from '../models/MapProgress.js'
 import MapModel from '../models/Map.js'
 
@@ -225,16 +226,71 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             }
         }
 
-        // 2. Fetch Drop Rates
+        const encounterRate = typeof map.encounterRate === 'number' ? map.encounterRate : 1
+
+        const ItemDropRate = (await import('../models/ItemDropRate.js')).default
         const DropRate = (await import('../models/DropRate.js')).default
-        const dropRates = await DropRate.find({ mapId: map._id }).lean()
+
+        const [dropRates, itemDropRates] = await Promise.all([
+            DropRate.find({ mapId: map._id }).lean(),
+            ItemDropRate.find({ mapId: map._id }).populate('itemId').lean(),
+        ])
+
+        const itemDropRate = typeof map.itemDropRate === 'number' ? map.itemDropRate : 0
+        const shouldDropItem = itemDropRates.length > 0 && Math.random() < itemDropRate
+        let droppedItem = null
+
+        if (shouldDropItem) {
+            const itemTotalWeight = itemDropRates.reduce((sum, dr) => sum + dr.weight, 0)
+            let itemRandom = Math.random() * itemTotalWeight
+            let selectedItemDrop = null
+
+            for (const dr of itemDropRates) {
+                if (itemRandom < dr.weight) {
+                    selectedItemDrop = dr
+                    break
+                }
+                itemRandom -= dr.weight
+            }
+
+            if (!selectedItemDrop && itemDropRates.length > 0) {
+                selectedItemDrop = itemDropRates[itemDropRates.length - 1]
+            }
+
+            if (selectedItemDrop?.itemId) {
+                const storedItem = selectedItemDrop.itemId
+                droppedItem = {
+                    _id: selectedItemDrop.itemId._id,
+                    name: storedItem.name,
+                    description: storedItem.description || '',
+                    imageUrl: storedItem.imageUrl || '',
+                }
+
+                await UserInventory.findOneAndUpdate(
+                    { userId, itemId: storedItem._id },
+                    { $inc: { quantity: 1 } },
+                    { upsert: true, new: true }
+                )
+            }
+        }
+
+        if (Math.random() > encounterRate) {
+            return res.json({
+                ok: true,
+                encountered: false,
+                message: droppedItem ? `Bạn nhặt được ${droppedItem.name}!` : 'Không tìm thấy Pokemon nào.',
+                mapProgress: formatMapProgress(mapProgress),
+                itemDrop: droppedItem,
+            })
+        }
 
         if (dropRates.length === 0) {
             return res.json({
                 ok: true,
                 encountered: false,
-                message: 'No pokemon in this area.',
+                message: droppedItem ? `Bạn nhặt được ${droppedItem.name}!` : 'No pokemon in this area.',
                 mapProgress: formatMapProgress(mapProgress),
+                itemDrop: droppedItem,
             })
         }
 
@@ -320,6 +376,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             level,
             hp,
             maxHp,
+            itemDrop: droppedItem,
             mapProgress: formatMapProgress(mapProgress),
         })
 

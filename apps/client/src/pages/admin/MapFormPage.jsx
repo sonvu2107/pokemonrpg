@@ -21,6 +21,8 @@ export default function MapFormPage() {
         iconId: '',
         specialPokemonIds: [],
         requiredSearches: 0,
+        encounterRate: 1,
+        itemDropRate: 0,
         orderIndex: 0,
     })
 
@@ -70,6 +72,8 @@ export default function MapFormPage() {
                 specialPokemonIds: normalizeSpecialPokemonIds(data.map.specialPokemonIds),
                 isLegendary: data.map.isLegendary || false,
                 requiredSearches: data.map.requiredSearches || 0,
+                encounterRate: data.map.encounterRate ?? 1,
+                itemDropRate: data.map.itemDropRate ?? 0,
                 orderIndex: data.map.orderIndex || 0,
             })
         } catch (err) {
@@ -268,6 +272,38 @@ export default function MapFormPage() {
                                         className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Số nhỏ hơn → hiện trước</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-6 mt-4">
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>Tỷ Lệ Gặp Pokemon (0-1)</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={formData.encounterRate}
+                                        onChange={(e) => setFormData({ ...formData, encounterRate: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Ví dụ: 0.6 = 60% gặp</p>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>Tỷ Lệ Rơi Vật Phẩm (0-1)</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={formData.itemDropRate}
+                                        onChange={(e) => setFormData({ ...formData, itemDropRate: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Chỉ áp dụng khi map có cấu hình item drop</p>
                                 </div>
                             </div>
                         </div>

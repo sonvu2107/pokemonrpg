@@ -120,6 +120,9 @@ export default function MapPage() {
                     hp: res.hp,
                     maxHp: res.maxHp,
                 })
+                if (res.itemDrop) {
+                    setActionMessage(`Nhặt được: ${res.itemDrop.name}`)
+                }
             }
             if (res.mapProgress) {
                 setMapStats(res.mapProgress)
@@ -465,7 +468,12 @@ export default function MapPage() {
                     )}
 
                     {lastResult && !lastResult.encountered && (
-                        <div className="text-slate-800 font-bold text-xs mt-1">+3 EXP Bản Đồ</div>
+                        <div className="text-slate-800 font-bold text-xs mt-1">
+                            +3 EXP Bản Đồ
+                            {lastResult.itemDrop && (
+                                <span className="ml-2 text-emerald-600">Nhặt được {lastResult.itemDrop.name}</span>
+                            )}
+                        </div>
                     )}
                 </div>
 

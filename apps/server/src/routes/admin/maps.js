@@ -136,6 +136,8 @@ router.post('/', async (req, res) => {
             specialPokemonImages,
             specialPokemonIds,
             requiredSearches,
+            encounterRate,
+            itemDropRate,
             orderIndex,
         } = req.body
 
@@ -167,6 +169,16 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredSearches must be between 0 and 10000' })
         }
 
+        // Validate encounterRate
+        if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'encounterRate must be between 0 and 1' })
+        }
+
+        // Validate itemDropRate
+        if (itemDropRate !== undefined && (itemDropRate < 0 || itemDropRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'itemDropRate must be between 0 and 1' })
+        }
+
         // Validate orderIndex  
         if (orderIndex !== undefined && orderIndex < 0) {
             return res.status(400).json({ ok: false, message: 'orderIndex must be >= 0' })
@@ -183,6 +195,8 @@ router.post('/', async (req, res) => {
             specialPokemonImages: specialPokemonImages || [],
             specialPokemonIds: normalizedSpecialPokemonIds,
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
+            encounterRate: encounterRate !== undefined ? encounterRate : 1,
+            itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
         })
 
@@ -214,6 +228,8 @@ router.put('/:id', async (req, res) => {
             specialPokemonImages,
             specialPokemonIds,
             requiredSearches,
+            encounterRate,
+            itemDropRate,
             orderIndex,
         } = req.body
 
@@ -250,6 +266,16 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredSearches must be between 0 and 10000' })
         }
 
+        // Validate encounterRate
+        if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'encounterRate must be between 0 and 1' })
+        }
+
+        // Validate itemDropRate
+        if (itemDropRate !== undefined && (itemDropRate < 0 || itemDropRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'itemDropRate must be between 0 and 1' })
+        }
+
         // Validate orderIndex
         if (orderIndex !== undefined && orderIndex < 0) {
             return res.status(400).json({ ok: false, message: 'orderIndex must be >= 0' })
@@ -265,6 +291,8 @@ router.put('/:id', async (req, res) => {
         map.specialPokemonImages = specialPokemonImages !== undefined ? specialPokemonImages : map.specialPokemonImages
         map.specialPokemonIds = shouldUpdateSpecialPokemonIds ? normalizedSpecialPokemonIds : map.specialPokemonIds
         map.requiredSearches = requiredSearches !== undefined ? requiredSearches : map.requiredSearches
+        map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
+        map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate
         map.orderIndex = orderIndex !== undefined ? orderIndex : map.orderIndex
 
         await map.save()

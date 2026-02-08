@@ -18,6 +18,7 @@ import { errorHandler, notFound } from './utils/errorHandler.js'
 import boxRoutes from './routes/box.js'
 import pokemonRoutes from './routes/pokemon.js'
 import partyRoutes from './routes/party.js'
+import inventoryRoutes from './routes/inventory.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -73,6 +74,7 @@ app.use('/api/stats', statsRoutes)
 app.use('/api/box', boxRoutes)
 app.use('/api/pokemon', pokemonRoutes)
 app.use('/api/party', partyRoutes)
+app.use('/api/inventory', inventoryRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, pokemonAdminRoutes)
