@@ -11,6 +11,7 @@ import EditProfilePage from './pages/EditProfilePage'
 import PokemonBoxPage from './pages/PokemonBoxPage'
 import PokemonInfoPage from './pages/PokemonInfoPage'
 import ChangePartyPage from './pages/ChangePartyPage'
+import RankingsPage from './pages/RankingsPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -24,6 +25,7 @@ import ItemFormPage from './pages/admin/ItemFormPage'
 import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
+import BattleTrainerPage from './pages/admin/BattleTrainerPage'
 
 export default function App() {
     return (
@@ -44,6 +46,9 @@ export default function App() {
                 <Route path="/box" element={<PokemonBoxPage />} />
                 <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
                 <Route path="/party" element={<ChangePartyPage />} />
+                <Route path="/rankings/overall" element={<RankingsPage />} />
+                <Route path="/rankings/pokemon" element={<RankingsPage />} />
+                <Route path="/rankings/daily" element={<RankingsPage />} />
 
                 {/* Admin Routes */}
                 <Route path="/admin" element={<AdminDashboard />} />
@@ -60,6 +65,7 @@ export default function App() {
                 <Route path="/admin/items" element={<ItemListPage />} />
                 <Route path="/admin/items/create" element={<ItemFormPage />} />
                 <Route path="/admin/items/:id/edit" element={<ItemFormPage />} />
+                <Route path="/admin/battle" element={<BattleTrainerPage />} />
             </Route>
         </Routes>
     )

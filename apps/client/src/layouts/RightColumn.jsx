@@ -91,6 +91,7 @@ export default function RightColumn() {
                     <SidebarLink to="/admin/pokemon">Quản lý Pokemon</SidebarLink>
                     <SidebarLink to="/admin/maps">Quản lý Bản Đồ</SidebarLink>
                     <SidebarLink to="/admin/items">Quản lý Vật Phẩm</SidebarLink>
+                    <SidebarLink to="/admin/battle">Quản lý Battle</SidebarLink>
                     <SidebarLink to="/admin/config">Cấu Hình Game</SidebarLink>
                 </SidebarSection>
             )}

@@ -68,6 +68,29 @@ const updateMapProgress = async (userId, mapId) => {
     return progress
 }
 
+const updatePlayerLevel = async (userId) => {
+    let playerState = await PlayerState.findOne({ userId })
+    if (!playerState) {
+        playerState = await PlayerState.create({ userId })
+    }
+
+    // Grant EXP for map search
+    playerState.experience += EXP_PER_SEARCH
+
+    // Level up if enough EXP
+    let leveledUp = false
+    let levelsGained = 0
+    while (playerState.experience >= expToNext(playerState.level)) {
+        playerState.experience -= expToNext(playerState.level)
+        playerState.level += 1
+        levelsGained += 1
+        leveledUp = true
+    }
+
+    await playerState.save()
+    return { playerState, leveledUp, levelsGained }
+}
+
 const formatMapProgress = (progress) => ({
     level: progress.level,
     exp: progress.exp,
@@ -218,6 +241,10 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         }
 
         const mapProgress = await updateMapProgress(userId, map._id)
+
+        // Update player level based on search
+        const { playerState, leveledUp, levelsGained } = await updatePlayerLevel(userId)
+
         if (!isAdmin) {
             const requiredToUnlockNext = Math.max(0, map.requiredSearches || 0)
             if (mapProgress.totalSearches >= requiredToUnlockNext && mapIndex < orderedMaps.length - 1) {
@@ -281,6 +308,13 @@ router.post('/search', authMiddleware, async (req, res, next) => {
                 message: droppedItem ? `Bạn nhặt được ${droppedItem.name}!` : 'Không tìm thấy Pokemon nào.',
                 mapProgress: formatMapProgress(mapProgress),
                 itemDrop: droppedItem,
+                playerLevel: {
+                    level: playerState.level,
+                    experience: playerState.experience,
+                    expToNext: expToNext(playerState.level),
+                    leveledUp,
+                    levelsGained,
+                },
             })
         }
 
@@ -291,6 +325,13 @@ router.post('/search', authMiddleware, async (req, res, next) => {
                 message: droppedItem ? `Bạn nhặt được ${droppedItem.name}!` : 'No pokemon in this area.',
                 mapProgress: formatMapProgress(mapProgress),
                 itemDrop: droppedItem,
+                playerLevel: {
+                    level: playerState.level,
+                    experience: playerState.experience,
+                    expToNext: expToNext(playerState.level),
+                    leveledUp,
+                    levelsGained,
+                },
             })
         }
 
@@ -378,6 +419,13 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             maxHp,
             itemDrop: droppedItem,
             mapProgress: formatMapProgress(mapProgress),
+            playerLevel: {
+                level: playerState.level,
+                experience: playerState.experience,
+                expToNext: expToNext(playerState.level),
+                leveledUp,
+                levelsGained,
+            },
         })
 
     } catch (error) {
@@ -601,6 +649,128 @@ router.post('/encounter/:id/run', authMiddleware, async (req, res, next) => {
         await encounter.save()
 
         res.json({ ok: true, message: 'Bạn đã bỏ chạy.' })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// POST /api/game/battle/resolve (protected)
+router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const { opponentTeam = [] } = req.body
+
+        if (!Array.isArray(opponentTeam) || opponentTeam.length === 0) {
+            return res.status(400).json({ ok: false, message: 'Opponent team is required' })
+        }
+
+        const totalLevel = opponentTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
+        const coinsAwarded = Math.max(1, Math.floor(totalLevel * 5))
+        const expAwarded = Math.max(1, Math.floor(totalLevel * 20))
+        const happinessAwarded = 13
+
+        const party = await UserPokemon.find({ userId, location: 'party' }).sort({ partyIndex: 1 })
+        const activePokemon = party.find(p => p) || null
+
+        if (!activePokemon) {
+            return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
+        }
+
+        activePokemon.experience += expAwarded
+        let levelsGained = 0
+        while (activePokemon.experience >= activePokemon.level * 100) {
+            activePokemon.experience -= activePokemon.level * 100
+            activePokemon.level += 1
+            levelsGained += 1
+        }
+        activePokemon.friendship = Math.min(255, (activePokemon.friendship || 0) + happinessAwarded)
+        await activePokemon.save()
+
+        let playerState = await PlayerState.findOne({ userId })
+        if (!playerState) {
+            playerState = await PlayerState.create({ userId })
+        }
+        playerState.gold += coinsAwarded
+        playerState.experience += Math.floor(expAwarded / 2)
+        playerState.wins += 1
+        await playerState.save()
+        emitPlayerState(userId.toString(), playerState)
+
+        res.json({
+            ok: true,
+            results: {
+                pokemon: {
+                    name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Pokemon',
+                    level: activePokemon.level,
+                    exp: activePokemon.experience,
+                    expToNext: activePokemon.level * 100,
+                    levelsGained,
+                    happiness: activePokemon.friendship,
+                    happinessGained: happinessAwarded,
+                },
+                rewards: {
+                    coins: coinsAwarded,
+                    trainerExp: Math.floor(expAwarded / 2),
+                },
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// GET /api/game/encounter/active (protected)
+router.get('/encounter/active', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const encounter = await Encounter.findOne({ userId, isActive: true }).lean()
+
+        if (!encounter) {
+            return res.json({ ok: true, encounter: null })
+        }
+
+        const Pokemon = (await import('../models/Pokemon.js')).default
+        const pokemon = await Pokemon.findById(encounter.pokemonId)
+            .select('name pokedexNumber sprites imageUrl types rarity baseStats forms defaultFormId catchRate')
+            .lean()
+
+        if (!pokemon) {
+            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+        }
+
+        const defaultFormId = pokemon.defaultFormId || 'normal'
+        let formId = encounter.formId || defaultFormId
+        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+        let resolvedForm = forms.find((form) => form.formId === formId) || null
+        if (!resolvedForm && forms.length > 0) {
+            formId = defaultFormId || forms[0].formId
+            resolvedForm = forms.find((form) => form.formId === formId) || forms[0]
+        }
+        const formStats = resolvedForm?.stats || null
+        const formSprites = resolvedForm?.sprites || null
+        const formImageUrl = resolvedForm?.imageUrl || ''
+        const baseStats = formStats || pokemon.baseStats
+
+        const scaledStats = calcStatsForLevel(baseStats, encounter.level, pokemon.rarity)
+
+        res.json({
+            ok: true,
+            encounter: {
+                _id: encounter._id,
+                level: encounter.level,
+                hp: encounter.hp,
+                maxHp: encounter.maxHp,
+                mapId: encounter.mapId,
+                pokemon: {
+                    ...pokemon,
+                    formId,
+                    stats: scaledStats,
+                    form: resolvedForm || null,
+                    resolvedSprites: formSprites || pokemon.sprites,
+                    resolvedImageUrl: formImageUrl || pokemon.imageUrl,
+                },
+            },
+        })
     } catch (error) {
         next(error)
     }

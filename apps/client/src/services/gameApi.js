@@ -104,6 +104,35 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/game/encounter/active
+    async getActiveEncounter() {
+        const res = await fetch(`${API_URL}/game/encounter/active`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch encounter')
+        }
+        return res.json()
+    },
+
+    // POST /api/game/battle/resolve
+    async resolveBattle(opponentTeam) {
+        const res = await fetch(`${API_URL}/game/battle/resolve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ opponentTeam }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to resolve battle')
+        }
+        return res.json()
+    },
+
     // GET /api/stats - Get server statistics
     async getServerStats() {
         const res = await fetch(`${API_URL}/stats`)
@@ -151,15 +180,61 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/auth/me
+    async getProfile() {
+        const res = await fetch(`${API_URL}/auth/me`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch profile')
+        }
+        return res.json()
+    },
+
+    // GET /api/box
+    async getBox(params = {}) {
+        const searchParams = new URLSearchParams(params)
+        const res = await fetch(`${API_URL}/box?${searchParams.toString()}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch box')
+        }
+        return res.json()
+    },
+
+    // GET /api/pokemon
+    async getPokemonList(params = {}) {
+        const searchParams = new URLSearchParams(params)
+        const res = await fetch(`${API_URL}/pokemon?${searchParams.toString()}`)
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch pokemon list')
+        }
+        return res.json()
+    },
+
+    // GET /api/battle-trainers
+    async getBattleTrainers() {
+        const res = await fetch(`${API_URL}/battle-trainers`)
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch battle trainers')
+        }
+        return res.json()
+    },
+
     // POST /api/inventory/use
-    async useItem(itemId, quantity = 1) {
+    async useItem(itemId, quantity = 1, encounterId = null) {
         const res = await fetch(`${API_URL}/inventory/use`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify({ itemId, quantity }),
+            body: JSON.stringify({ itemId, quantity, encounterId }),
         })
         if (!res.ok) {
             const err = await res.json()
@@ -215,6 +290,18 @@ export const gameApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Remove from party failed')
+        }
+        return res.json()
+    },
+
+    // GET /api/rankings/:type - Get rankings
+    async getRankings(type = 'overall', page = 1, limit = 35) {
+        const res = await fetch(`${API_URL}/rankings/${type}?page=${page}&limit=${limit}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch rankings')
         }
         return res.json()
     },

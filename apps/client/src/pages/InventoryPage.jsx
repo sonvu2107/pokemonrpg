@@ -35,7 +35,7 @@ export default function InventoryPage() {
             id: entry.item?._id || entry._id,
             name: entry.item?.name || 'Unknown Item',
             image: entry.item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png',
-            type: entry.item?.type || 'Other',
+            type: entry.item?.type || 'misc',
             quantity: entry.quantity || 0,
         }))
     }, [inventory])
@@ -44,7 +44,7 @@ export default function InventoryPage() {
         if (activeTab === 'Tất Cả') return items
         if (activeTab === 'Vật Phẩm Chiến Đấu') return items.filter((item) => item.type === 'battle')
         if (activeTab === 'Vật Phẩm Quan Trọng') return items.filter((item) => item.type === 'key')
-        if (activeTab === 'Vật Phẩm Khác') return items.filter((item) => item.type === 'other')
+        if (activeTab === 'Vật Phẩm Khác') return items.filter((item) => !['battle', 'key'].includes(item.type))
         return items
     }, [activeTab, items])
 

@@ -1,8 +1,41 @@
 import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
+import Pokemon from '../models/Pokemon.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 
 const router = express.Router()
+
+// GET /api/pokemon - Public master list (lightweight)
+router.get('/', async (req, res) => {
+    try {
+        const { page = 1, limit = 200 } = req.query
+        const skip = (parseInt(page) - 1) * parseInt(limit)
+
+        const [pokemon, total] = await Promise.all([
+            Pokemon.find({})
+                .sort({ pokedexNumber: 1 })
+                .skip(skip)
+                .limit(parseInt(limit))
+                .select('name pokedexNumber imageUrl sprites types rarity forms defaultFormId')
+                .lean(),
+            Pokemon.countDocuments(),
+        ])
+
+        res.json({
+            ok: true,
+            pokemon,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / parseInt(limit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
 
 // GET /api/pokemon/:id
 // Publicly accessible or protected? Let's make it open so people can share links.

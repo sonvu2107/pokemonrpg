@@ -31,6 +31,8 @@ export default function MapPage() {
     const [encounter, setEncounter] = useState(null) // { id, pokemon, level, hp, maxHp }
     const [actionLoading, setActionLoading] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
+    const [inventory, setInventory] = useState([])
+    const [selectedBallId, setSelectedBallId] = useState('')
     const [mapStats, setMapStats] = useState({
         level: MOCK_STATS.mapLevel,
         exp: MOCK_STATS.exp,
@@ -90,6 +92,15 @@ export default function MapPage() {
         }
     }
 
+    const loadInventory = async () => {
+        try {
+            const data = await gameApi.getInventory()
+            setInventory(data.inventory || [])
+        } catch (err) {
+            setActionMessage(err.message)
+        }
+    }
+
     const handleSearch = async () => {
         if (isLocked) {
             setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
@@ -120,6 +131,7 @@ export default function MapPage() {
                     hp: res.hp,
                     maxHp: res.maxHp,
                 })
+                await loadInventory()
                 if (res.itemDrop) {
                     setActionMessage(`Nhặt được: ${res.itemDrop.name}`)
                 }
@@ -165,6 +177,37 @@ export default function MapPage() {
         } finally {
             setActionLoading(false)
         }
+    }
+
+    const handleUseBall = async () => {
+        if (!encounter?.id || !selectedBallId) return
+        try {
+            setActionLoading(true)
+            const res = await gameApi.useItem(selectedBallId, 1, encounter.id)
+            setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : 'Bắt thất bại!'))
+            await loadInventory()
+            if (res.caught) {
+                setEncounter(null)
+            }
+        } catch (err) {
+            setActionMessage(err.message)
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const getBallMultiplier = (item) => {
+        if (item?.effectType === 'catchMultiplier' && Number.isFinite(item.effectValue)) {
+            return item.effectValue || 1
+        }
+        return 1
+    }
+
+    const calcCatchChance = ({ catchRate, hp, maxHp }) => {
+        const rate = Math.min(255, Math.max(1, catchRate || 45))
+        const hpFactor = (3 * maxHp - 2 * hp) / (3 * maxHp)
+        const raw = (rate / 255) * hpFactor
+        return Math.min(0.99, Math.max(0.02, raw))
     }
 
     const handleRun = async () => {
@@ -345,7 +388,7 @@ export default function MapPage() {
                             </tr>
                             <tr className="border-b border-slate-300">
                                 <td className="bg-sky-100 px-3 py-1 text-right border-r border-slate-300">
-                                    {isLocked ? 'Tien do mo khoa map:' : 'Tien do mo map tiep theo:'}
+                                    {isLocked ? 'Tiến độ mở khóa map:' : 'Tiến độ mở map tiếp theo:'}
                                 </td>
                                 <td className="px-3 py-1 bg-white flex items-center gap-2">
                                     {requiredSearches > 0 ? (
@@ -436,16 +479,43 @@ export default function MapPage() {
                                 >Chiến đấu</button> ]
                                 {' - '}
                                 [ <button
-                                    onClick={handleCatch}
-                                    disabled={actionLoading}
-                                    className="text-red-600 hover:underline font-bold disabled:opacity-50"
-                                >Bắt ngay</button> ]
-                                {' - '}
-                                [ <button
                                     onClick={handleRun}
                                     disabled={actionLoading}
                                     className="text-slate-600 hover:underline font-bold disabled:opacity-50"
                                 >Bỏ chạy</button> ]
+                            </div>
+                            <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+                                <select
+                                    value={selectedBallId}
+                                    onChange={(e) => setSelectedBallId(e.target.value)}
+                                    className="px-2 py-1 border border-slate-300 rounded bg-white"
+                                >
+                                    <option value="">Chọn bóng để bắt</option>
+                                    {inventory
+                                        .filter((entry) => entry.item?.type === 'pokeball' && entry.quantity > 0)
+                                        .map((entry) => {
+                                            const baseChance = calcCatchChance({
+                                                catchRate: encounter?.pokemon?.catchRate,
+                                                hp: encounter?.hp,
+                                                maxHp: encounter?.maxHp,
+                                            })
+                                            const multiplier = getBallMultiplier(entry.item)
+                                            const finalChance = Math.min(0.99, baseChance * multiplier)
+                                            const percent = Math.round(finalChance * 100)
+                                            return (
+                                                <option key={entry.item._id} value={entry.item._id}>
+                                                    {entry.item.name} (x{entry.quantity}) - ~{percent}%
+                                                </option>
+                                            )
+                                        })}
+                                </select>
+                                <button
+                                    onClick={handleUseBall}
+                                    disabled={actionLoading || !selectedBallId}
+                                    className="px-2 py-1 bg-emerald-600 text-white rounded font-bold disabled:opacity-50"
+                                >
+                                    Dùng bóng
+                                </button>
                             </div>
                             {actionMessage && (
                                 <div className="mt-2 text-xs font-bold text-blue-700">

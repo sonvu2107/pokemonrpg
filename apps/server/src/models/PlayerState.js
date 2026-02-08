@@ -16,6 +16,14 @@ const playerStateSchema = new mongoose.Schema(
             type: Number,
             default: 100,
         },
+        mp: {
+            type: Number,
+            default: 50,
+        },
+        maxMp: {
+            type: Number,
+            default: 50,
+        },
         gold: {
             type: Number,
             default: 0,

@@ -72,7 +72,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/admin/items - Create item
 router.post('/', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description } = req.body
+        const { name, type, rarity, imageUrl, description, effectType, effectValue, effectValueMp } = req.body
 
         if (!name) {
             return res.status(400).json({ ok: false, message: 'Missing required fields' })
@@ -98,6 +98,9 @@ router.post('/', async (req, res) => {
             rarity: rarity || 'common',
             imageUrl: imageUrl || '',
             description: description || '',
+            effectType: effectType || 'none',
+            effectValue: effectValue !== undefined ? effectValue : 0,
+            effectValueMp: effectValueMp !== undefined ? effectValueMp : 0,
         })
 
         await item.save()
@@ -112,7 +115,7 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/items/:id - Update item
 router.put('/:id', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description } = req.body
+        const { name, type, rarity, imageUrl, description, effectType, effectValue, effectValueMp } = req.body
 
         const item = await Item.findById(req.params.id)
 
@@ -140,6 +143,9 @@ router.put('/:id', async (req, res) => {
         if (rarity !== undefined) item.rarity = rarity
         if (imageUrl !== undefined) item.imageUrl = imageUrl
         if (description !== undefined) item.description = description
+        if (effectType !== undefined) item.effectType = effectType
+        if (effectValue !== undefined) item.effectValue = effectValue
+        if (effectValueMp !== undefined) item.effectValueMp = effectValueMp
 
         await item.save()
 

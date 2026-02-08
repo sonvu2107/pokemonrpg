@@ -34,6 +34,9 @@ export default function ItemFormPage() {
         rarity: 'common',
         imageUrl: '',
         description: '',
+        effectType: 'none',
+        effectValue: 0,
+        effectValueMp: 0,
     })
 
     useEffect(() => {
@@ -52,6 +55,9 @@ export default function ItemFormPage() {
                 rarity: data.item.rarity || 'common',
                 imageUrl: data.item.imageUrl || '',
                 description: data.item.description || '',
+                effectType: data.item.effectType || 'none',
+                effectValue: data.item.effectValue ?? 0,
+                effectValueMp: data.item.effectValueMp ?? 0,
             })
         } catch (err) {
             setError(err.message)
@@ -131,6 +137,45 @@ export default function ItemFormPage() {
                                     <option key={item.value} value={item.value}>{item.label}</option>
                                 ))}
                             </select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Hiệu Ứng</label>
+                            <select
+                                value={formData.effectType}
+                                onChange={(e) => setFormData({ ...formData, effectType: e.target.value })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            >
+                                <option value="none">Không có</option>
+                                <option value="catchMultiplier">Tăng tỉ lệ bắt</option>
+                                <option value="heal">Hồi HP/MP</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị HP</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={formData.effectValue}
+                                onChange={(e) => setFormData({ ...formData, effectValue: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị MP</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={formData.effectValueMp}
+                                onChange={(e) => setFormData({ ...formData, effectValueMp: parseFloat(e.target.value) || 0 })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            />
                         </div>
                     </div>
 

@@ -51,6 +51,21 @@ const itemSchema = new Schema(
             type: String,
             default: '',
         },
+        effectType: {
+            type: String,
+            enum: ['none', 'catchMultiplier', 'heal', 'healAmount'],
+            default: 'none',
+        },
+        effectValue: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        effectValueMp: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
     },
     {
         timestamps: true,

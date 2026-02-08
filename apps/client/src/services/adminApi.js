@@ -279,6 +279,58 @@ export const itemApi = {
     },
 }
 
+// Battle trainer endpoints
+export const battleTrainerApi = {
+    async list() {
+        const res = await fetch(`${API_URL}/admin/battle-trainers`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to fetch battle trainers')
+        return res.json()
+    },
+
+    async create(data) {
+        const res = await fetch(`${API_URL}/admin/battle-trainers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to create trainer')
+        }
+        return res.json()
+    },
+
+    async update(id, data) {
+        const res = await fetch(`${API_URL}/admin/battle-trainers/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to update trainer')
+        }
+        return res.json()
+    },
+
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/battle-trainers/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to delete trainer')
+        return res.json()
+    },
+}
+
 // Item DropRate endpoints
 export const itemDropRateApi = {
     async upsert(data) {
