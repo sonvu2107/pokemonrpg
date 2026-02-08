@@ -141,6 +141,14 @@ export const mapApi = {
         return res.json()
     },
 
+    async getItemDropRates(mapId) {
+        const res = await fetch(`${API_URL}/admin/maps/${mapId}/item-drop-rates`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to fetch item drop rates')
+        return res.json()
+    },
+
     // POST /api/admin/maps/upload-special-image
     async uploadSpecialImage(file) {
         const formData = new FormData()
@@ -206,6 +214,95 @@ export const dropRateApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) throw new Error('Failed to delete drop rate')
+        return res.json()
+    },
+}
+
+// Item endpoints
+export const itemApi = {
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/items?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to fetch items')
+        return res.json()
+    },
+
+    async getById(id) {
+        const res = await fetch(`${API_URL}/admin/items/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to fetch item')
+        return res.json()
+    },
+
+    async create(data) {
+        const res = await fetch(`${API_URL}/admin/items`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to create item')
+        }
+        return res.json()
+    },
+
+    async update(id, data) {
+        const res = await fetch(`${API_URL}/admin/items/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to update item')
+        }
+        return res.json()
+    },
+
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/items/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to delete item')
+        return res.json()
+    },
+}
+
+// Item DropRate endpoints
+export const itemDropRateApi = {
+    async upsert(data) {
+        const res = await fetch(`${API_URL}/admin/item-drop-rates`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to save item drop rate')
+        }
+        return res.json()
+    },
+
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/item-drop-rates/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Failed to delete item drop rate')
         return res.json()
     },
 }

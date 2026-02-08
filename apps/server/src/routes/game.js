@@ -259,7 +259,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         // 4. Populate Pokemon Details for response
         const Pokemon = (await import('../models/Pokemon.js')).default
         const pokemon = await Pokemon.findById(selectedDrop.pokemonId)
-            .select('name pokedexNumber sprites imageUrl types rarity baseStats catchRate')
+            .select('name pokedexNumber sprites imageUrl types rarity baseStats catchRate forms defaultFormId')
             .lean()
 
         if (!pokemon) {
@@ -272,9 +272,22 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             { $set: { isActive: false, endedAt: new Date() } }
         )
 
+        const defaultFormId = pokemon.defaultFormId || 'normal'
+        let formId = selectedDrop.formId || defaultFormId
+        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+        let resolvedForm = forms.find((form) => form.formId === formId) || null
+        if (!resolvedForm && forms.length > 0) {
+            formId = defaultFormId || forms[0].formId
+            resolvedForm = forms.find((form) => form.formId === formId) || forms[0]
+        }
+        const formStats = resolvedForm?.stats || null
+        const formSprites = resolvedForm?.sprites || null
+        const formImageUrl = resolvedForm?.imageUrl || ''
+        const baseStats = formStats || pokemon.baseStats
+
         const level = Math.floor(Math.random() * (map.levelMax - map.levelMin + 1)) + map.levelMin
-        const scaledStats = calcStatsForLevel(pokemon.baseStats, level, pokemon.rarity)
-        const maxHp = calcMaxHp(pokemon.baseStats?.hp, level, pokemon.rarity)
+        const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
+        const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
         const hp = maxHp
 
         const encounter = await Encounter.create({
@@ -285,6 +298,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             hp,
             maxHp,
             isShiny: false,
+            formId,
         })
 
         // 5. Update Player State (consume energy? currently free)
@@ -297,7 +311,11 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             encounterId: encounter._id,
             pokemon: {
                 ...pokemon,
+                formId,
                 stats: scaledStats,
+                form: resolvedForm || null,
+                resolvedSprites: formSprites || pokemon.sprites,
+                resolvedImageUrl: formImageUrl || pokemon.imageUrl,
             },
             level,
             hp,
@@ -488,7 +506,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 level: encounter.level,
                 experience: 0,
                 moves,
-                formId: 'normal',
+                formId: encounter.formId || 'normal',
                 isShiny: encounter.isShiny,
                 location: 'box',
             })

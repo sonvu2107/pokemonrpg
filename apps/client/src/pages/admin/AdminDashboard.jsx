@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
     map: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/town-map.png",
+    items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/bag.png",
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
@@ -62,6 +63,9 @@ export default function AdminDashboard() {
                     <Link to="/admin/pokemon/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-blue-600 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
                         <span className="text-xs md:text-sm">+</span> Pokemon
                     </Link>
+                    <Link to="/admin/items/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-amber-500 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-amber-600 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
+                        <span className="text-xs md:text-sm">+</span> Vật phẩm
+                    </Link>
                     <Link to="/admin/maps/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
                         <span className="text-xs md:text-sm">+</span> Bản Đồ
                     </Link>
@@ -87,11 +91,11 @@ export default function AdminDashboard() {
                         color="emerald"
                     />
                     <DashboardCard
-                        title="Người Chơi"
-                        description="Quản lý tài khoản, quyền hạn & dữ liệu"
-                        to="/admin/users"
-                        icon={ICONS.users}
-                        color="orange"
+                        title="Quản Lý Vật Phẩm"
+                        description="Danh sách, loại, độ hiếm & ảnh"
+                        to="/admin/items"
+                        icon={ICONS.items}
+                        color="amber"
                     />
                     <DashboardCard
                         title="Tin Tức & Sự Kiện"
@@ -99,6 +103,13 @@ export default function AdminDashboard() {
                         to="/admin/news"
                         icon={ICONS.news}
                         color="blue"
+                    />
+                    <DashboardCard
+                        title="Người Chơi"
+                        description="Quản lý tài khoản, quyền hạn & dữ liệu"
+                        to="/admin/users"
+                        icon={ICONS.users}
+                        color="orange"
                     />
                 </div>
 

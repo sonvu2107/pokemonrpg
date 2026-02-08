@@ -102,6 +102,8 @@ mapSchema.pre('deleteOne', { document: true, query: false }, async function (nex
     try {
         const DropRate = mongoose.model('DropRate')
         await DropRate.deleteMany({ mapId: this._id })
+        const ItemDropRate = mongoose.model('ItemDropRate')
+        await ItemDropRate.deleteMany({ mapId: this._id })
         console.log(`Cascade deleted DropRates for map: ${this.name}`)
         next()
     } catch (err) {

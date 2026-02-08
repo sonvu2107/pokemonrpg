@@ -14,6 +14,21 @@ const toSpecialPokemonDisplay = (pokemon) => {
     }
 }
 
+const resolveFormForDrop = (pokemon, formId) => {
+    if (!pokemon) return { formId: 'normal', form: null }
+    const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+    const defaultFormId = pokemon.defaultFormId || 'normal'
+    let resolvedFormId = formId || defaultFormId
+    let form = forms.find((entry) => entry.formId === resolvedFormId) || null
+
+    if (!form && forms.length > 0) {
+        resolvedFormId = defaultFormId || forms[0].formId
+        form = forms.find((entry) => entry.formId === resolvedFormId) || forms[0]
+    }
+
+    return { formId: resolvedFormId, form }
+}
+
 // GET /api/maps/legendary - Get all legendary maps (public endpoint)
 router.get('/legendary', async (req, res) => {
     try {
@@ -72,7 +87,7 @@ router.get('/:slug', async (req, res) => {
         const DropRate = (await import('../models/DropRate.js')).default
 
         const dropRates = await DropRate.find({ mapId: map._id })
-            .populate('pokemonId', 'name pokedexNumber sprites imageUrl types rarity')
+            .populate('pokemonId', 'name pokedexNumber sprites imageUrl types rarity forms defaultFormId')
             .sort({ weight: -1 }) // Show common ones first or rares? Maybe rares first for hype? Let's sort by weight for now.
             // Actually usually games show rares first. Let's do nothing here and let frontend sort or sort by rarity.
             .lean()
@@ -82,7 +97,20 @@ router.get('/:slug', async (req, res) => {
             specialPokemons: (map.specialPokemonIds || []).map(toSpecialPokemonDisplay).filter(Boolean),
         }
 
-        res.json({ ok: true, map: resolvedMap, dropRates })
+        const resolvedDropRates = dropRates.map((dr) => {
+            const { formId, form } = resolveFormForDrop(dr.pokemonId, dr.formId)
+            const resolvedSprites = form?.sprites || dr.pokemonId?.sprites || {}
+            const resolvedImageUrl = form?.imageUrl || dr.pokemonId?.imageUrl || ''
+            return {
+                ...dr,
+                formId,
+                form,
+                resolvedSprites,
+                resolvedImageUrl,
+            }
+        })
+
+        res.json({ ok: true, map: resolvedMap, dropRates: resolvedDropRates })
     } catch (error) {
         console.error(`GET /api/maps/${req.params.slug} error:`, error)
         res.status(500).json({ ok: false, message: 'Server error' })

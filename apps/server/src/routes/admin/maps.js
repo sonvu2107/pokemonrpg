@@ -6,6 +6,21 @@ import { uploadMapImageToCloudinary, uploadSpecialPokemonImageToCloudinary } fro
 
 const router = express.Router()
 
+const resolveFormForDrop = (pokemon, formId) => {
+    if (!pokemon) return { formId: 'normal', form: null }
+    const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+    const defaultFormId = pokemon.defaultFormId || 'normal'
+    let resolvedFormId = formId || defaultFormId
+    let form = forms.find((entry) => entry.formId === resolvedFormId) || null
+
+    if (!form && forms.length > 0) {
+        resolvedFormId = defaultFormId || forms[0].formId
+        form = forms.find((entry) => entry.formId === resolvedFormId) || forms[0]
+    }
+
+    return { formId: resolvedFormId, form }
+}
+
 const normalizeSpecialPokemonIds = (value) => {
     if (!Array.isArray(value)) return []
     return [...new Set(value.map((id) => String(id || '').trim()).filter(Boolean))]
@@ -298,12 +313,21 @@ router.get('/:mapId/drop-rates', async (req, res) => {
         // Calculate total weight and relative percentages
         const totalWeight = dropRates.reduce((sum, dr) => sum + dr.weight, 0)
 
-        const enrichedDropRates = dropRates.map(dr => ({
+        const enrichedDropRates = dropRates.map(dr => {
+            const { formId, form } = resolveFormForDrop(dr.pokemonId, dr.formId)
+            const resolvedSprites = form?.sprites || dr.pokemonId?.sprites || {}
+            const resolvedImageUrl = form?.imageUrl || dr.pokemonId?.imageUrl || ''
+            return {
             _id: dr._id,
             pokemon: dr.pokemonId,
+            formId,
+            form,
+            resolvedSprites,
+            resolvedImageUrl,
             weight: dr.weight,
             relativePercent: totalWeight > 0 ? ((dr.weight / totalWeight) * 100).toFixed(2) : 0,
-        }))
+            }
+        })
 
         res.json({
             ok: true,
@@ -313,6 +337,42 @@ router.get('/:mapId/drop-rates', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/maps/:mapId/drop-rates error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
+// GET /api/admin/maps/:mapId/item-drop-rates - Get all Items + drop rates for a map (populated)
+router.get('/:mapId/item-drop-rates', async (req, res) => {
+    try {
+        const map = await Map.findById(req.params.mapId)
+
+        if (!map) {
+            return res.status(404).json({ ok: false, message: 'Map not found' })
+        }
+
+        const ItemDropRate = (await import('../../models/ItemDropRate.js')).default
+        const itemDropRates = await ItemDropRate.find({ mapId: map._id })
+            .populate('itemId')
+            .sort({ weight: -1 })
+            .lean()
+
+        const totalWeight = itemDropRates.reduce((sum, dr) => sum + dr.weight, 0)
+
+        const enrichedItemDropRates = itemDropRates.map(dr => ({
+            _id: dr._id,
+            item: dr.itemId,
+            weight: dr.weight,
+            relativePercent: totalWeight > 0 ? ((dr.weight / totalWeight) * 100).toFixed(2) : 0,
+        }))
+
+        res.json({
+            ok: true,
+            map,
+            itemDropRates: enrichedItemDropRates,
+            totalWeight,
+        })
+    } catch (error) {
+        console.error('GET /api/admin/maps/:mapId/item-drop-rates error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })
     }
 })

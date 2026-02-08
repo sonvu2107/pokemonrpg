@@ -12,6 +12,12 @@ const dropRateSchema = new mongoose.Schema(
             ref: 'Pokemon',
             required: true,
         },
+        formId: {
+            type: String,
+            required: true,
+            trim: true,
+            default: 'normal',
+        },
         weight: {
             type: Number,
             required: true,
@@ -26,7 +32,7 @@ const dropRateSchema = new mongoose.Schema(
 )
 
 // Indexes
-dropRateSchema.index({ mapId: 1, pokemonId: 1 }, { unique: true }) // Compound unique
+dropRateSchema.index({ mapId: 1, pokemonId: 1, formId: 1 }, { unique: true }) // Compound unique
 dropRateSchema.index({ mapId: 1, weight: -1 }) // For sorting by weight
 dropRateSchema.index({ pokemonId: 1 }) // For querying maps by pokemon
 

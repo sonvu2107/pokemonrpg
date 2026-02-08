@@ -55,6 +55,7 @@ router.get('/', async (req, res) => {
                 .sort({ pokedexNumber: 1 })
                 .skip(skip)
                 .limit(parseInt(limit))
+                .populate('evolution.evolvesTo', 'name pokedexNumber')
                 .lean(),
             Pokemon.countDocuments(query),
         ])
@@ -94,7 +95,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/admin/pokemon - Create Pokemon
 router.post('/', async (req, res) => {
     try {
-        const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId } = req.body
+        const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = normalizeForms(req.body.forms)
         const resolvedBaseStats = baseStats || forms[0]?.stats
 
@@ -130,6 +131,11 @@ router.post('/', async (req, res) => {
             rarityWeight,
             defaultFormId: defaultFormId || forms[0]?.formId || 'normal',
             forms,
+            evolution,
+            levelUpMoves: levelUpMoves || [],
+            catchRate,
+            baseExperience,
+            growthRate,
         })
 
         await pokemon.save()

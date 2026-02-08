@@ -5,6 +5,7 @@ const encounterSchema = new mongoose.Schema(
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
         mapId: { type: mongoose.Schema.Types.ObjectId, ref: 'Map', required: true, index: true },
         pokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pokemon', required: true },
+        formId: { type: String, default: 'normal', trim: true },
         level: { type: Number, required: true, min: 1 },
         hp: { type: Number, required: true, min: 0 },
         maxHp: { type: Number, required: true, min: 1 },

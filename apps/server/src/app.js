@@ -10,6 +10,8 @@ import statsRoutes from './routes/stats.js'
 import pokemonAdminRoutes from './routes/admin/pokemon.js'
 import mapsAdminRoutes from './routes/admin/maps.js'
 import dropRatesAdminRoutes from './routes/admin/dropRates.js'
+import itemAdminRoutes from './routes/admin/items.js'
+import itemDropRatesAdminRoutes from './routes/admin/itemDropRates.js'
 import userAdminRoutes from './routes/admin/user.js'
 import { authMiddleware, requireAdmin } from './middleware/auth.js'
 import { errorHandler, notFound } from './utils/errorHandler.js'
@@ -76,6 +78,8 @@ app.use('/api/party', partyRoutes)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, pokemonAdminRoutes)
 app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, mapsAdminRoutes)
 app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, dropRatesAdminRoutes)
+app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, itemAdminRoutes)
+app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, itemDropRatesAdminRoutes)
 app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, userAdminRoutes)
 
 // Error handlers

@@ -19,6 +19,9 @@ import PokemonFormPage from './pages/admin/PokemonFormPage'
 import MapListPage from './pages/admin/MapListPage'
 import MapFormPage from './pages/admin/MapFormPage'
 import DropRateManagerPage from './pages/admin/DropRateManagerPage'
+import ItemListPage from './pages/admin/ItemListPage'
+import ItemFormPage from './pages/admin/ItemFormPage'
+import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
 
@@ -53,6 +56,10 @@ export default function App() {
                 <Route path="/admin/maps/create" element={<MapFormPage />} />
                 <Route path="/admin/maps/:id/edit" element={<MapFormPage />} />
                 <Route path="/admin/maps/:mapId/drop-rates" element={<DropRateManagerPage />} />
+                <Route path="/admin/maps/:mapId/item-drop-rates" element={<ItemDropRateManagerPage />} />
+                <Route path="/admin/items" element={<ItemListPage />} />
+                <Route path="/admin/items/create" element={<ItemFormPage />} />
+                <Route path="/admin/items/:id/edit" element={<ItemFormPage />} />
             </Route>
         </Routes>
     )

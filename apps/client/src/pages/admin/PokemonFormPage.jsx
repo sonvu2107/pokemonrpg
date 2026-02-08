@@ -325,388 +325,461 @@ export default function PokemonFormPage() {
     if (loading && isEdit && !formData.name) return <div className="text-blue-800 text-center py-8">Đang tải...</div>
 
     return (
-        <div className="rounded border border-blue-400 bg-white shadow-sm max-w-4xl mx-auto mb-10">
-            <div className="border-b border-blue-400 bg-gradient-to-t from-blue-600 to-cyan-500 px-4 py-2">
-                <h1 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm">
-                    {isEdit ? 'Cập Nhật Pokemon' : 'Thêm Mới Pokemon'}
+        <div className="rounded border border-blue-400 bg-white shadow-sm max-w-5xl mx-auto mb-10">
+            <div className="border-b border-blue-400 bg-gradient-to-t from-blue-600 to-cyan-500 px-6 py-3 sticky top-0 z-10 shadow-md flex justify-between items-center">
+                <h1 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm flex items-center gap-2">
+                    {isEdit ? (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                            </svg>
+                            Cập Nhật Pokemon
+                        </>
+                    ) : (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            Thêm Mới Pokemon
+                        </>
+                    )}
                 </h1>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => navigate('/admin/pokemon')}
+                        className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-xs font-bold transition-colors"
+                    >
+                        Quay lại
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        onClick={handleSubmit} // Trigger form submit externally if needed
+                        className="px-6 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-bold shadow-sm transition-colors uppercase tracking-wide"
+                    >
+                        {loading ? 'Đang Lưu...' : 'Lưu Dữ Liệu'}
+                    </button>
+                </div>
             </div>
 
-            <div className="p-6">
-                {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}
+            <div className="p-6 bg-slate-50 min-h-screen">
+                {error && <div className="p-4 mb-6 bg-red-50 text-red-700 border border-red-200 rounded text-sm flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    {error}
+                </div>}
 
-                <form onSubmit={handleSubmit} className="space-y-8">
+                <form onSubmit={handleSubmit} className="space-y-6">
 
-                    {/* --- Basic Info --- */}
-                    <div>
-                        <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">1. Thông Tin Chung</h3>
-                        <div className="grid grid-cols-1 gap-6">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Số Pokedex *</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        min="1"
-                                        max="9999"
-                                        value={formData.pokedexNumber}
-                                        onChange={(e) => setFormData({ ...formData, pokedexNumber: parseInt(e.target.value) || '' })}
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded text-slate-800 text-sm focus:border-blue-500"
-                                    />
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* --- LEFT COLUMN (Basic Info) --- */}
+                        <div className="lg:col-span-4 space-y-6">
+                            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center gap-2 border-b pb-2">
+                                    <span className="bg-blue-100 text-blue-800 p-1 rounded">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z" />
+                                        </svg>
+                                    </span>
+                                    Thông Tin Chung
+                                </h3>
+
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Số Pokedex</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2 text-slate-400 font-mono text-sm">#</span>
+                                                <input
+                                                    type="number"
+                                                    required
+                                                    min="1"
+                                                    max="9999"
+                                                    value={formData.pokedexNumber}
+                                                    onChange={(e) => setFormData({ ...formData, pokedexNumber: parseInt(e.target.value) || '' })}
+                                                    className="w-full pl-6 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded text-slate-800 text-sm font-mono font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                    placeholder="001"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Độ Hiếm</label>
+                                            <select
+                                                value={formData.rarity}
+                                                onChange={(e) => setFormData({ ...formData, rarity: e.target.value })}
+                                                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm font-medium focus:border-blue-500"
+                                            >
+                                                {RARITIES.map(r => (
+                                                    <option key={r} value={r}>{r.toUpperCase().replace('_', ' ')}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Tên Pokemon</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-slate-800 text-sm font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Bulbasaur"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Hệ (Chọn 1-2)</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {TYPES.map(type => (
+                                                <button
+                                                    key={type}
+                                                    type="button"
+                                                    onClick={() => toggleType(type)}
+                                                    className={`px-2 py-1 rounded text-[10px] font-bold uppercase border transition-all ${formData.types.includes(type)
+                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                                        : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                                                        }`}
+                                                >
+                                                    {type.slice(0, 3)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {/* Selected Types Preview */}
+                                        <div className="flex gap-2 min-h-[24px]">
+                                            {formData.types.map(t => (
+                                                <span key={t} className="px-2 py-0.5 bg-slate-800 text-white text-xs font-bold uppercase rounded shadow-sm">
+                                                    {t}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Mô Tả</label>
+                                        <textarea
+                                            value={formData.description}
+                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                            rows="4"
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-sm text-slate-600 focus:border-blue-500"
+                                            placeholder="Mô tả ngắn gọn về Pokemon..."
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tên Pokemon *</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded text-slate-800 text-sm focus:border-blue-500"
-                                    />
+                            </div>
+                        </div>
+
+                        {/* --- RIGHT COLUMN (Stats, Mechanics, Evolution) --- */}
+                        <div className="lg:col-span-8 space-y-6">
+
+                            {/* Stats & Mechanics Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Base Stats */}
+                                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                                    <h3 className="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center gap-2 border-b pb-2">
+                                        <span className="bg-green-100 text-green-800 p-1 rounded">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                                            </svg>
+                                        </span>
+                                        Chỉ Số Cơ Bản
+                                    </h3>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        {['hp', 'atk', 'def', 'spatk', 'spldef', 'spd'].map(stat => (
+                                            <div key={stat}>
+                                                <label className="block text-slate-400 text-[10px] font-bold uppercase mb-1 text-center">{stat}</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="255"
+                                                    value={formData.baseStats[stat]}
+                                                    onChange={(e) => updateStat(stat, e.target.value)}
+                                                    className={`w-full px-1 py-1.5 border border-slate-200 rounded text-sm text-center font-bold focus:border-blue-500 ${formData.baseStats[stat] >= 100 ? 'text-green-600 bg-green-50' :
+                                                        formData.baseStats[stat] >= 60 ? 'text-slate-700 bg-slate-50' : 'text-red-500 bg-red-50'
+                                                        }`}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Mechanics */}
+                                <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                                    <h3 className="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center gap-2 border-b pb-2">
+                                        <span className="bg-purple-100 text-purple-800 p-1 rounded">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
+                                            </svg>
+                                        </span>
+                                        Cơ Chế
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Tỷ Lệ Bắt</label>
+                                                <input
+                                                    type="number"
+                                                    value={formData.catchRate}
+                                                    onChange={(e) => setFormData({ ...formData, catchRate: parseInt(e.target.value) || 45 })}
+                                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm"
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Base EXP</label>
+                                                <input
+                                                    type="number"
+                                                    value={formData.baseExperience}
+                                                    onChange={(e) => setFormData({ ...formData, baseExperience: parseInt(e.target.value) || 50 })}
+                                                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1">Tốc Độ Lớn</label>
+                                            <select
+                                                value={formData.growthRate}
+                                                onChange={(e) => setFormData({ ...formData, growthRate: e.target.value })}
+                                                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm"
+                                            >
+                                                {GROWTH_RATES.map(rate => (
+                                                    <option key={rate} value={rate}>{rate.replace('_', ' ').toUpperCase()}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
+                            {/* Evolution */}
+                            <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-5 rounded-lg border border-orange-100 shadow-sm relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 opacity-10">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={5} stroke="currentColor" className="w-24 h-24 text-orange-500">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-sm font-bold text-orange-800 uppercase mb-4 flex items-center gap-2 border-b border-orange-200 pb-2 relative z-10">
+                                    <span className="bg-orange-200 text-orange-800 p-1 rounded">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+                                        </svg>
+                                    </span>
+                                    Tiến Hóa
+                                </h3>
+
+                                <div className="flex flex-col md:flex-row gap-4 items-center relative z-10">
+                                    {/* From (Current) */}
+                                    <div className="flex-1 bg-white/50 p-3 rounded border border-orange-100 text-center">
+                                        <div className="text-xs text-slate-500 uppercase font-bold mb-1">Hiện Tại</div>
+                                        <div className="font-bold text-slate-800">{formData.name || '(Chưa đặt tên)'}</div>
+                                    </div>
+
+                                    {/* Arrow & Level */}
+                                    <div className="flex flex-col items-center gap-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-orange-400">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
+                                        </svg>
+                                        <div className="w-24">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                placeholder="Lv. Min"
+                                                className="w-full text-center px-2 py-1 bg-white border border-orange-200 rounded text-xs font-bold focus:ring-1 focus:ring-orange-400 placeholder-orange-300"
+                                                value={formData.evolution.minLevel || ''}
+                                                onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, minLevel: e.target.value } })}
+                                                disabled={!formData.evolution.evolvesTo}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* To (Target) */}
+                                    <div className="flex-1 w-full md:w-auto">
+                                        <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1 text-center md:text-left">Tiến Hóa Thành</label>
+                                        <select
+                                            value={formData.evolution.evolvesTo}
+                                            onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, evolvesTo: e.target.value } })}
+                                            className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm shadow-sm focus:ring-2 focus:ring-orange-200"
+                                        >
+                                            <option value="">-- Không tiến hóa --</option>
+                                            {allPokemon.map(p => (
+                                                <option key={p._id} value={p._id} disabled={p._id === id}>
+                                                    #{p.pokedexNumber} {p.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    {/* --- Forms --- */}
-                    <div>
-                        <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">2. Các Dạng</h3>
-                        <div className="mb-4">
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Dạng Mặc Định</label>
-                            <select
-                                value={defaultFormId}
-                                onChange={(e) => setDefaultFormId(normalizeFormId(e.target.value))}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                    {/* --- FULL WIDTH SECTIONS --- */}
+
+                    {/* Moves */}
+                    <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm mt-6">
+                        <h3 className="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center gap-2 border-b pb-2">
+                            <span className="bg-indigo-100 text-indigo-800 p-1 rounded">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                                </svg>
+                            </span>
+                            Bộ Chiêu Thức (Level Up)
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {formData.levelUpMoves.map((move, index) => (
+                                <div key={index} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
+                                    <div className="w-16">
+                                        <label className="text-[10px] text-slate-400 font-bold uppercase block text-center">Lv</label>
+                                        <input
+                                            type="number"
+                                            value={move.level}
+                                            onChange={(e) => updateMove(index, 'level', e.target.value)}
+                                            className="w-full text-center bg-white border border-slate-300 rounded px-1 py-1 text-sm font-bold"
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-[10px] text-slate-400 font-bold uppercase block">Move Name</label>
+                                        <input
+                                            type="text"
+                                            value={move.moveName}
+                                            onChange={(e) => updateMove(index, 'moveName', e.target.value)}
+                                            className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-sm"
+                                            placeholder="Tackle"
+                                        />
+                                    </div>
+                                    <div className="mt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => removeMove(index)}
+                                            className="text-red-400 hover:text-red-600 p-1"
+                                            title="Xóa chiêu"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={addMove}
+                                className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded hover:border-blue-400 hover:bg-slate-50 text-slate-400 hover:text-blue-500 transition-colors"
                             >
-                                {forms.filter(f => f.formId).length === 0 && (
-                                    <option value="normal">normal</option>
-                                )}
-                                {forms.filter(f => f.formId).map((form) => (
-                                    <option key={form.formId} value={form.formId}>
-                                        {form.formName ? `${form.formName} (${form.formId})` : form.formId}
-                                    </option>
-                                ))}
-                            </select>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 mb-1">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                <span className="text-xs font-bold uppercase">Thêm Chiêu</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Forms */}
+                    <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm mt-6">
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 className="text-sm font-bold text-slate-800 uppercase flex items-center gap-2">
+                                <span className="bg-pink-100 text-pink-800 p-1 rounded">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
+                                    </svg>
+                                </span>
+                                Các Biến Thể (Forms)
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <label className="text-xs text-slate-500 font-bold uppercase">Form Mặc Định:</label>
+                                <select
+                                    value={defaultFormId}
+                                    onChange={(e) => setDefaultFormId(normalizeFormId(e.target.value))}
+                                    className="px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-bold"
+                                >
+                                    {forms.map(f => (
+                                        <option key={f.formId} value={f.formId}>{f.formName || f.formId}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-6">
                             {forms.map((form, index) => (
-                                <div key={`${form.formId || 'form'}-${index}`} className="rounded border border-slate-200 bg-slate-50 p-4">
-                                    <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-                                            <div>
-                                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">ID dạng *</label>
+                                <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-6 bg-slate-50 p-4 rounded border border-slate-200 relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => removeForm(index)}
+                                        className="absolute top-2 right-2 text-red-300 hover:text-red-500"
+                                        title="Xóa Form"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+
+                                    {/* Left: Identity of Form */}
+                                    <div className="md:col-span-4 space-y-4 border-r border-slate-200 pr-4">
+                                        <div>
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">ID Biến Thể</label>
+                                            <div className="flex gap-2">
                                                 <select
                                                     value=""
                                                     onChange={(e) => {
                                                         applyPresetToForm(index, e.target.value)
                                                         e.target.value = ''
                                                     }}
-                                                    className="w-full mb-2 px-3 py-2 bg-white border border-slate-300 rounded text-xs"
+                                                    className="w-1/3 px-2 py-1 bg-white border border-slate-300 rounded text-xs"
                                                 >
-                                                    <option value="">Chọn nhanh dạng có sẵn...</option>
+                                                    <option value="">Preset...</option>
                                                     {FORM_VARIANTS.map((variant) => (
                                                         <option key={variant.id} value={variant.id}>
-                                                            {variant.name} ({variant.id})
+                                                            {variant.name}
                                                         </option>
                                                     ))}
                                                 </select>
                                                 <input
                                                     type="text"
                                                     value={form.formId}
-                                                    onChange={(e) => {
-                                                        const nextFormId = normalizeFormId(e.target.value).toLowerCase()
-                                                        const nextPatch = { formId: nextFormId }
-                                                        if (!normalizeFormId(form.formName) && FORM_VARIANT_NAME_BY_ID[nextFormId]) {
-                                                            nextPatch.formName = FORM_VARIANT_NAME_BY_ID[nextFormId]
-                                                        }
-                                                        updateForm(index, nextPatch)
-                                                    }}
-                                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tên dạng</label>
-                                                <input
-                                                    type="text"
-                                                    value={form.formName || ''}
-                                                    onChange={(e) => updateForm(index, { formName: e.target.value })}
-                                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                                    onChange={(e) => updateForm(index, { formId: e.target.value })}
+                                                    className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded text-sm font-bold font-mono text-blue-700"
+                                                    placeholder="normal"
                                                 />
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => { e.preventDefault(); removeForm(index) }}
-                                                className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 rounded text-xs font-bold"
-                                            >
-                                                Xóa dạng
-                                            </button>
+                                        <div>
+                                            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Tên Hiển Thị</label>
+                                            <input
+                                                type="text"
+                                                value={form.formName}
+                                                onChange={(e) => updateForm(index, { formName: e.target.value })}
+                                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-sm"
+                                                placeholder="Normal Form"
+                                            />
                                         </div>
                                     </div>
 
-                                    <ImageUpload
-                                        currentImage={form.imageUrl}
-                                        onUploadSuccess={(urls) => {
-                                            const nextUrl = Array.isArray(urls) ? (urls[0] || '') : (urls || '')
-                                            updateForm(index, { imageUrl: nextUrl })
-                                        }}
-                                        multiple
-                                        label="Hình ảnh dạng"
-                                    />
-                                </div>
-                            ))}
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={addForm}
-                            className="mt-4 w-full py-2 border-2 border-dashed border-slate-300 text-slate-500 rounded hover:border-blue-400 hover:text-blue-600 font-bold text-xs"
-                        >
-                            Thêm Form
-                        </button>
-                    </div>
-
-                    {/* --- Types & Stats --- */}
-                    <div>
-                        <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">3. Hệ & Chỉ Số</h3>
-
-                        {/* Types */}
-                        <div className="mb-6">
-                            <label className="block text-slate-700 text-xs font-bold mb-2 uppercase">Hệ (Chọn 1-2)</label>
-                            <div className="flex flex-wrap gap-2">
-                                {TYPES.map(type => (
-                                    <button
-                                        key={type}
-                                        type="button"
-                                        onClick={() => toggleType(type)}
-                                        className={`px-3 py-1.5 rounded text-xs font-bold uppercase border transition-all ${formData.types.includes(type)
-                                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm transform -translate-y-0.5'
-                                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                                            }`}
-                                    >
-                                        {type}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Base Stats */}
-                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                                {['hp', 'atk', 'def', 'spatk', 'spldef', 'spd'].map(stat => (
-                                    <div key={stat}>
-                                        <label className="block text-slate-500 text-[10px] font-bold uppercase mb-1 text-center">{stat}</label>
-                                        <input
-                                            type="number"
-                                            required
-                                            min="1"
-                                            max="255"
-                                            value={formData.baseStats[stat]}
-                                            onChange={(e) => updateStat(stat, e.target.value)}
-                                            className="w-full px-1 py-1.5 bg-white border border-slate-300 rounded text-slate-800 text-sm text-center focus:border-blue-500 font-bold"
+                                    {/* Right: Images */}
+                                    <div className="md:col-span-8">
+                                        <ImageUpload
+                                            currentImage={form.imageUrl}
+                                            onUploadSuccess={(urls) => {
+                                                const nextUrl = Array.isArray(urls) ? (urls[0] || '') : (urls || '')
+                                                updateForm(index, { imageUrl: nextUrl })
+                                            }}
+                                            label="Hình Ảnh (Sprite)"
                                         />
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                                </div>
+                            ))}
 
-                    {/* --- Game Mechanics --- */}
-                    <div>
-                        <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">4. Cơ Chế Game</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Catch Rate */}
-                            <div>
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tỷ Lệ Bắt (1-255)</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="255"
-                                    value={formData.catchRate}
-                                    onChange={(e) => setFormData({ ...formData, catchRate: parseInt(e.target.value) || 45 })}
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1">Cao = Dễ bắt (VD: Pidgey 255)</p>
-                            </div>
-
-                            {/* Base Exp */}
-                            <div>
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">EXP Cơ Bản</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={formData.baseExperience}
-                                    onChange={(e) => setFormData({ ...formData, baseExperience: parseInt(e.target.value) || 50 })}
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1">EXP nhận được khi đánh bại</p>
-                            </div>
-
-                            {/* Growth Rate */}
-                            <div>
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tốc Độ Lớn</label>
-                                <select
-                                    value={formData.growthRate}
-                                    onChange={(e) => setFormData({ ...formData, growthRate: e.target.value })}
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                >
-                                    {GROWTH_RATES.map(rate => (
-                                        <option key={rate} value={rate}>{rate.replace('_', ' ').toUpperCase()}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* --- Evolution --- */}
-                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                        <h3 className="text-sm font-bold text-orange-800 uppercase mb-3">5. Tiến Hóa</h3>
-                        <div className="flex gap-4 items-start">
-                            <div className="flex-1">
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tiến hóa thành</label>
-                                <select
-                                    value={formData.evolution.evolvesTo}
-                                    onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, evolvesTo: e.target.value } })}
-                                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
-                                >
-                                    <option value="">-- Không tiến hóa --</option>
-                                    {allPokemon.map(p => (
-                                        <option key={p._id} value={p._id} disabled={p._id === id}>
-                                            #{p.pokedexNumber} {p.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="w-32">
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Cấp độ</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    placeholder="Lv."
-                                    value={formData.evolution.minLevel}
-                                    onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, minLevel: e.target.value } })}
-                                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
-                                    disabled={!formData.evolution.evolvesTo}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* --- Moves --- */}
-                    <div>
-                        <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">6. Bộ Chiêu Thức (Theo Cấp)</h3>
-                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-100 text-slate-600 text-xs uppercase font-bold">
-                                    <tr>
-                                        <th className="px-4 py-2 text-left w-24">Level</th>
-                                        <th className="px-4 py-2 text-left">Tên Chiêu Thức</th>
-                                        <th className="px-4 py-2 w-20"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200">
-                                    {formData.levelUpMoves.map((move, index) => (
-                                        <tr key={index}>
-                                            <td className="p-2">
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    max="100"
-                                                    value={move.level}
-                                                    onChange={(e) => updateMove(index, 'level', e.target.value)}
-                                                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-center"
-                                                />
-                                            </td>
-                                            <td className="p-2">
-                                                <input
-                                                    type="text"
-                                                    placeholder="VD: Tackle"
-                                                    value={move.moveName}
-                                                    onChange={(e) => updateMove(index, 'moveName', e.target.value)}
-                                                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded"
-                                                />
-                                            </td>
-                                            <td className="p-2 text-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeMove(index)}
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                    </svg>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            <div className="p-2 bg-slate-100 border-t border-slate-200">
-                                <button
-                                    type="button"
-                                    onClick={addMove}
-                                    className="w-full py-1.5 border-2 border-dashed border-slate-300 text-slate-500 rounded hover:border-blue-400 hover:text-blue-600 font-bold text-xs"
-                                >
-                                    + Thêm Chiêu Thức
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Metadata */}
-                    <div className="grid grid-cols-2 gap-6">
-                        <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Độ Hiếm</label>
-                            <select
-                                value={formData.rarity}
-                                onChange={(e) => setFormData({ ...formData, rarity: e.target.value })}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            <button
+                                type="button"
+                                onClick={addForm}
+                                className="w-full py-2 border-2 border-dashed border-slate-300 text-slate-500 rounded hover:border-blue-400 hover:text-blue-600 font-bold text-xs uppercase"
                             >
-                                {RARITIES.map(r => (
-                                    <option key={r} value={r}>{r.toUpperCase().replace('_', ' ')}</option>
-                                ))}
-                            </select>
+                                + Thêm Biến Thể Mới
+                            </button>
                         </div>
-                        <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Mô Tả</label>
-                            <textarea
-                                value={formData.description}
-                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                rows="3"
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-3 pt-6 border-t border-slate-200 sticky bottom-0 bg-white/95 backdrop-blur py-4 -mx-6 px-6 shadow-up">
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-bold shadow-md transform transition-all active:scale-[0.98]"
-                        >
-                            {loading ? 'Đang Xử Lý...' : isEdit ? 'LƯU THAY ĐỔI' : 'TẠO POKEMON MỚI'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => navigate('/admin/pokemon')}
-                            className="px-8 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-all"
-                        >
-                            Hủy
-                        </button>
                     </div>
                 </form>
             </div>
         </div>
     )
 }
-
-
-
-
-
-
-

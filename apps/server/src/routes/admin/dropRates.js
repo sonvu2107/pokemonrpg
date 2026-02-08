@@ -1,12 +1,14 @@
 import express from 'express'
 import DropRate from '../../models/DropRate.js'
+import Pokemon from '../../models/Pokemon.js'
 
 const router = express.Router()
 
 // POST /api/admin/drop-rates - Create or Update drop rate (upsert)
 router.post('/', async (req, res) => {
     try {
-        const { mapId, pokemonId, weight } = req.body
+        const { mapId, pokemonId, formId, weight } = req.body
+        const normalizedFormId = String(formId || '').trim() || 'normal'
 
         if (!mapId || !pokemonId || weight === undefined) {
             return res.status(400).json({ ok: false, message: 'Missing required fields' })
@@ -16,10 +18,29 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Weight must be between 0 and 100000' })
         }
 
+        const pokemon = await Pokemon.findById(pokemonId).select('forms defaultFormId').lean()
+        if (!pokemon) {
+            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+        }
+
+        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+        const availableFormIds = forms.map((form) => form.formId)
+        const fallbackFormId = pokemon.defaultFormId || 'normal'
+        const isValidFormId = forms.length
+            ? availableFormIds.includes(normalizedFormId)
+            : normalizedFormId === fallbackFormId || normalizedFormId === 'normal'
+
+        if (!isValidFormId) {
+            return res.status(400).json({
+                ok: false,
+                message: 'formId is not valid for this Pokemon',
+            })
+        }
+
         // Upsert: update if exists, create if not
         const dropRate = await DropRate.findOneAndUpdate(
-            { mapId, pokemonId },
-            { weight },
+            { mapId, pokemonId, formId: normalizedFormId },
+            { weight, formId: normalizedFormId },
             { new: true, upsert: true, setDefaultsOnInsert: true }
         )
 
@@ -33,11 +54,13 @@ router.post('/', async (req, res) => {
 // GET /api/admin/drop-rates - Get drop rates by mapId or pokemonId
 router.get('/', async (req, res) => {
     try {
-        const { mapId, pokemonId } = req.query
+        const { mapId, pokemonId, formId } = req.query
+        const normalizedFormId = String(formId || '').trim()
 
         const query = {}
         if (mapId) query.mapId = mapId
         if (pokemonId) query.pokemonId = pokemonId
+        if (normalizedFormId) query.formId = normalizedFormId
 
         const dropRates = await DropRate.find(query)
             .populate('mapId')

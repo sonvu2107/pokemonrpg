@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 
@@ -25,8 +25,12 @@ const TYPE_COLORS = {
 
 export default function PokemonListPage() {
     const [pokemon, setPokemon] = useState([])
+    const [allPokemon, setAllPokemon] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [evolutionEdits, setEvolutionEdits] = useState({})
+    const [savingId, setSavingId] = useState('')
+    const [expandedIds, setExpandedIds] = useState(() => new Set())
 
     // Filters
     const [search, setSearch] = useState('')
@@ -38,16 +42,87 @@ export default function PokemonListPage() {
         loadPokemon()
     }, [search, typeFilter, page])
 
+    useEffect(() => {
+        loadAllPokemon()
+    }, [])
+
     const loadPokemon = async () => {
         try {
             setLoading(true)
             const data = await pokemonApi.list({ search, type: typeFilter, page, limit: 20 })
             setPokemon(data.pokemon)
             setPagination(data.pagination)
+            setEvolutionEdits((prev) => {
+                const next = { ...prev }
+                data.pokemon.forEach((p) => {
+                    const evolvesTo = typeof p.evolution?.evolvesTo === 'string'
+                        ? p.evolution.evolvesTo
+                        : p.evolution?.evolvesTo?._id || ''
+                    const minLevel = p.evolution?.minLevel ?? ''
+                    next[p._id] = { evolvesTo, minLevel: minLevel === null ? '' : minLevel }
+                })
+                return next
+            })
         } catch (err) {
             setError(err.message)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadAllPokemon = async () => {
+        try {
+            const data = await pokemonApi.list({ limit: 1000 })
+            setAllPokemon(data.pokemon || [])
+        } catch (err) {
+            setError(err.message)
+        }
+    }
+
+    const updateEvolutionEdit = (id, patch) => {
+        setEvolutionEdits((prev) => ({
+            ...prev,
+            [id]: { ...prev[id], ...patch },
+        }))
+    }
+
+    const handleSaveEvolution = async (p) => {
+        const edit = evolutionEdits[p._id] || { evolvesTo: '', minLevel: '' }
+        const evolvesToValue = edit.evolvesTo || null
+        const minLevelValue = evolvesToValue ? (parseInt(edit.minLevel) || null) : null
+
+        try {
+            setSavingId(p._id)
+            setError('')
+
+            const payload = {
+                pokedexNumber: p.pokedexNumber,
+                name: p.name,
+                baseStats: p.baseStats,
+                types: p.types,
+                initialMoves: p.initialMoves || [],
+                sprites: p.sprites || {},
+                imageUrl: p.imageUrl || '',
+                description: p.description || '',
+                rarity: p.rarity,
+                rarityWeight: p.rarityWeight,
+                defaultFormId: p.defaultFormId,
+                evolution: {
+                    evolvesTo: evolvesToValue,
+                    minLevel: minLevelValue,
+                },
+                levelUpMoves: p.levelUpMoves || [],
+                catchRate: p.catchRate,
+                baseExperience: p.baseExperience,
+                growthRate: p.growthRate,
+            }
+
+            await pokemonApi.update(p._id, payload)
+            await loadPokemon()
+        } catch (err) {
+            setError(`Lưu tiến hóa thất bại: ${err.message}`)
+        } finally {
+            setSavingId('')
         }
     }
 
@@ -60,6 +135,18 @@ export default function PokemonListPage() {
         } catch (err) {
             alert('Xóa thất bại: ' + err.message)
         }
+    }
+
+    const toggleExpanded = (id) => {
+        setExpandedIds((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
     }
 
     return (
@@ -103,72 +190,194 @@ export default function PokemonListPage() {
                 ) : (
                     <>
                         {/* Table */}
-                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                            <table className="w-full text-sm">
-                                <thead className="bg-blue-50 border-b border-blue-100">
+                        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto shadow-sm">
+                            <table className="w-full text-sm min-w-[1200px]">
+                                <thead className="bg-blue-600 text-white border-b border-blue-700">
                                     <tr>
-                                        <th className="px-3 py-3 text-left text-blue-900 font-bold uppercase text-xs">#</th>
-                                        <th className="px-3 py-3 text-left text-blue-900 font-bold uppercase text-xs">Hình</th>
-                                        <th className="px-3 py-3 text-left text-blue-900 font-bold uppercase text-xs">Tên</th>
-                                        <th className="px-3 py-3 text-left text-blue-900 font-bold uppercase text-xs">Hệ</th>
-                                        <th className="px-3 py-3 text-center text-blue-900 font-bold uppercase text-xs">HP</th>
-                                        <th className="px-3 py-3 text-center text-blue-900 font-bold uppercase text-xs">TC</th>
-                                        <th className="px-3 py-3 text-center text-blue-900 font-bold uppercase text-xs">PT</th>
-                                        <th className="px-3 py-3 text-right text-blue-900 font-bold uppercase text-xs">Hành Động</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs w-14 whitespace-nowrap">#</th>
+                                        <th className="px-3 py-3 text-center font-bold uppercase text-xs w-20 whitespace-nowrap">Hình</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[200px] whitespace-nowrap">Tên</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs w-32 whitespace-nowrap">Hệ</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs w-28 whitespace-nowrap">Dạng</th>
+                                        <th className="px-3 py-3 text-left font-bold uppercase text-xs min-w-[300px] whitespace-nowrap">Tiến Hóa</th>
+                                        <th className="px-3 py-3 text-right font-bold uppercase text-xs w-28 whitespace-nowrap">Hành Động</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {pokemon.map((p) => (
-                                        <tr key={p._id} className="hover:bg-blue-50 transition-colors">
-                                            <td className="px-3 py-2 text-slate-500 font-mono text-xs">#{p.pokedexNumber.toString().padStart(3, '0')}</td>
-                                            <td className="px-3 py-2">
-                                                {p.imageUrl ? (
-                                                    <img
-                                                        src={p.imageUrl}
-                                                        alt={p.name}
-                                                        className="w-12 h-12 object-cover rounded border border-slate-200 shadow-sm"
-                                                    />
-                                                ) : (
-                                                    <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
-                                                        ?
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2 text-slate-800 font-bold">{p.name}</td>
-                                            <td className="px-3 py-2">
-                                                <div className="flex gap-1">
-                                                    {p.types.map(type => (
+                                    {pokemon.map((p) => {
+                                        const forms = Array.isArray(p.forms) && p.forms.length > 0
+                                            ? p.forms
+                                            : [{
+                                                formId: p.defaultFormId || 'normal',
+                                                formName: p.defaultFormId || 'normal',
+                                                imageUrl: p.imageUrl || '',
+                                            }]
+                                        const defaultFormId = p.defaultFormId || forms[0]?.formId || 'normal'
+                                        const defaultForm = forms.find((form) => form.formId === defaultFormId) || forms[0]
+                                        const extraForms = forms.filter((form) => form.formId !== defaultFormId)
+                                        const isExpanded = expandedIds.has(p._id)
+
+                                        return (
+                                            <React.Fragment key={p._id}>
+                                                <tr className="hover:bg-blue-50/30 transition-colors border-b border-slate-100 last:border-0">
+                                                    <td className="px-3 py-3 text-slate-500 font-mono text-xs">#{p.pokedexNumber.toString().padStart(3, '0')}</td>
+                                                    <td className="px-3 py-3 text-center">
+                                                        {(defaultForm?.imageUrl || p.imageUrl) ? (
+                                                            <img
+                                                                src={defaultForm?.imageUrl || p.imageUrl}
+                                                                alt={p.name}
+                                                                className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
+                                                                ?
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[200px]" title={p.name}>
+                                                        {p.name}
+                                                    </td>
+                                                    <td className="px-3 py-3">
+                                                        <div className="flex gap-1 flex-wrap max-w-[120px]">
+                                                            {p.types.map(type => (
+                                                                <span
+                                                                    key={type}
+                                                                    className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                                >
+                                                                    {type.slice(0, 3)}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-3">
                                                         <span
-                                                            key={type}
-                                                            className={`px-1.5 py-0.5 rounded text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                            className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                                                            title={defaultForm?.formName ? `${defaultForm.formName} (${defaultForm.formId})` : defaultForm?.formId}
                                                         >
-                                                            {type}
+                                                            {defaultForm?.formName || defaultForm?.formId}
                                                         </span>
-                                                    ))}
-                                                </div>
-                                            </td>
-                                            <td className="px-3 py-2 text-center text-slate-600">{p.baseStats.hp}</td>
-                                            <td className="px-3 py-2 text-center text-slate-600">{p.baseStats.atk}</td>
-                                            <td className="px-3 py-2 text-center text-slate-600">{p.baseStats.def}</td>
-                                            <td className="px-3 py-2 text-right">
-                                                <Link
-                                                    to={`/admin/pokemon/${p._id}/edit`}
-                                                    className="inline-block px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-bold mr-2 shadow-sm"
-                                                >
-                                                    Sửa
-                                                </Link>
-                                                <button
-                                                    onClick={() => handleDelete(p._id, p.name)}
-                                                    className="inline-block px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-bold shadow-sm"
-                                                >
-                                                    Xóa
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-slate-600">
+                                                        <div className="flex items-center gap-2">
+                                                            <select
+                                                                value={evolutionEdits[p._id]?.evolvesTo || ''}
+                                                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                                                className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
+                                                            >
+                                                                <option value="">--</option>
+                                                                {allPokemon.map((target) => (
+                                                                    <option key={target._id} value={target._id} disabled={target._id === p._id}>
+                                                                        #{target.pokedexNumber} {target.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                placeholder="Lv"
+                                                                value={evolutionEdits[p._id]?.minLevel ?? ''}
+                                                                onChange={(e) => updateEvolutionEdit(p._id, { minLevel: e.target.value })}
+                                                                className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                                                                disabled={!evolutionEdits[p._id]?.evolvesTo}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSaveEvolution(p)}
+                                                                disabled={savingId === p._id}
+                                                                title="Lưu tiến hóa"
+                                                                className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center transition-colors"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right whitespace-nowrap">
+                                                        <div className="flex justify-end gap-1">
+                                                            {extraForms.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleExpanded(p._id)}
+                                                                    title={isExpanded ? 'Ẩn dạng' : 'Xem dạng'}
+                                                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-bold shadow-sm transition-colors"
+                                                                >
+                                                                    {isExpanded ? 'Ẩn' : `+${extraForms.length}`}
+                                                                </button>
+                                                            )}
+                                                            <Link
+                                                                to={`/admin/pokemon/${p._id}/edit`}
+                                                                title="Sửa"
+                                                                className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded shadow-sm transition-colors"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                                                                </svg>
+                                                            </Link>
+                                                            <button
+                                                                onClick={() => handleDelete(p._id, p.name)}
+                                                                title="Xóa"
+                                                                className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded shadow-sm transition-colors"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {isExpanded && extraForms.map((form) => (
+                                                    <tr key={`${p._id}-${form.formId}`} className="bg-slate-50/60">
+                                                        <td className="px-3 py-3 text-slate-400 font-mono text-xs border-t border-slate-100/50">
+                                                            <div className="flex justify-end pr-2">↳</div>
+                                                        </td>
+                                                        <td className="px-3 py-3 text-center border-t border-slate-100/50">
+                                                            {(form.imageUrl || p.imageUrl) ? (
+                                                                <img
+                                                                    src={form.imageUrl || p.imageUrl}
+                                                                    alt={`${p.name} ${form.formName || form.formId}`.trim()}
+                                                                    className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
+                                                                    ?
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-3 py-3 text-slate-600 font-medium text-sm truncate max-w-[200px] border-t border-slate-100/50">
+                                                            {p.name} <span className="text-xs text-slate-400 italic">({form.formName || form.formId})</span>
+                                                        </td>
+                                                        <td className="px-3 py-3 border-t border-slate-100/50">
+                                                            <div className="flex gap-1 flex-wrap max-w-[120px] opacity-60">
+                                                                {p.types.map(type => (
+                                                                    <span
+                                                                        key={type}
+                                                                        className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                                    >
+                                                                        {type.slice(0, 3)}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-3 border-t border-slate-100/50">
+                                                            <span
+                                                                className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200"
+                                                            >
+                                                                {form.formName || form.formId}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3 py-3 text-slate-600 border-t border-slate-100/50">
+                                                            {/* Sub-form evolution placeholder if needed */}
+                                                        </td>
+                                                        <td className="px-3 py-3 text-right whitespace-nowrap border-t border-slate-100/50"></td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        )
+                                    })}
                                     {pokemon.length === 0 && (
                                         <tr>
-                                            <td colSpan="8" className="px-4 py-8 text-center text-slate-500 italic">
+                                            <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">
                                                 Không tìm thấy Pokemon nào.
                                             </td>
                                         </tr>
@@ -178,27 +387,73 @@ export default function PokemonListPage() {
                         </div>
 
                         {/* Pagination */}
-                        <div className="flex justify-between items-center mt-4 text-slate-600 text-xs font-medium">
-                            <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
-                                Trang <span className="text-blue-700 font-bold">{pagination.page}</span> / {pagination.pages} (Tổng {pagination.total})
+                        {pagination.pages > 1 && (
+                            <div className="flex justify-between items-center mt-4 text-slate-600 text-xs font-medium">
+                                <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
+                                    Tổng <span className="font-bold">{pagination.total}</span> bản ghi &bull; Trang <span className="font-bold text-blue-700">{page}</span>/{pagination.pages}
+                                </div>
+                                <div className="flex gap-1">
+                                    <button
+                                        disabled={page === 1}
+                                        onClick={() => setPage(page - 1)}
+                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
+                                    >
+                                        &laquo;
+                                    </button>
+
+                                    {(() => {
+                                        const totalPages = pagination.pages
+                                        const delta = 2
+                                        const range = []
+                                        const rangeWithDots = []
+                                        let l
+
+                                        for (let i = 1; i <= totalPages; i++) {
+                                            if (i === 1 || i === totalPages || (i >= page - delta && i <= page + delta)) {
+                                                range.push(i)
+                                            }
+                                        }
+
+                                        for (let i of range) {
+                                            if (l) {
+                                                if (i - l === 2) {
+                                                    rangeWithDots.push(l + 1)
+                                                } else if (i - l !== 1) {
+                                                    rangeWithDots.push('...')
+                                                }
+                                            }
+                                            rangeWithDots.push(i)
+                                            l = i
+                                        }
+
+                                        return rangeWithDots.map((pageNum, index) => (
+                                            pageNum === '...' ? (
+                                                <span key={`dots-${index}`} className="px-2 py-1 text-slate-400">...</span>
+                                            ) : (
+                                                <button
+                                                    key={pageNum}
+                                                    onClick={() => setPage(pageNum)}
+                                                    className={`min-w-[32px] px-2 py-1 border rounded text-xs font-bold transition-colors shadow-sm ${page === pageNum
+                                                        ? 'bg-blue-600 border-blue-600 text-white'
+                                                        : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+                                                        }`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            )
+                                        ))
+                                    })()}
+
+                                    <button
+                                        disabled={page >= pagination.pages}
+                                        onClick={() => setPage(page + 1)}
+                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
+                                    >
+                                        &raquo;
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex gap-2">
-                                <button
-                                    disabled={page === 1}
-                                    onClick={() => setPage(page - 1)}
-                                    className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-bold text-slate-700 shadow-sm"
-                                >
-                                    &laquo; Trước
-                                </button>
-                                <button
-                                    disabled={page >= pagination.pages}
-                                    onClick={() => setPage(page + 1)}
-                                    className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-bold text-slate-700 shadow-sm"
-                                >
-                                    Sau &raquo;
-                                </button>
-                            </div>
-                        </div>
+                        )}
                     </>
                 )}
             </div>
