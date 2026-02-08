@@ -34,7 +34,19 @@ const ProgressBar = ({ current, max, colorClass, label }) => {
     )
 }
 
-const ActiveBattleView = ({ party, encounter, playerState, opponent, onAttack, actionMessage }) => {
+const ActiveBattleView = ({
+    party,
+    encounter,
+    playerState,
+    opponent,
+    onAttack,
+    actionMessage,
+    activeTab,
+    onSelectTab,
+    inventory,
+    onUseItem,
+    onRun,
+}) => {
     const [selectedMove, setSelectedMove] = useState(0) // Index of selected move
 
     // Find first alive pokemon (for now just first slot)
@@ -150,15 +162,40 @@ const ActiveBattleView = ({ party, encounter, playerState, opponent, onAttack, a
             <div className="border border-slate-400 bg-white rounded overflow-hidden">
                 {/* Tabs */}
                 <div className="flex border-b border-slate-300 text-xs font-bold bg-slate-50">
-                    <button className="flex-1 py-1 px-2 text-green-700 border-b-2 border-green-500 bg-white">Chiến đấu</button>
-                    <button className="flex-1 py-1 px-2 text-slate-500 hover:bg-slate-100">Vật phẩm</button>
-                    <button className="flex-1 py-1 px-2 text-blue-700 hover:bg-slate-100">Tập trung</button>
-                    <button className="flex-1 py-1 px-2 text-blue-700 hover:bg-slate-100">Đổi đội</button>
-                    <button className="flex-1 py-1 px-2 text-red-700 hover:bg-slate-100">Bỏ chạy</button>
+                    <button
+                        onClick={() => onSelectTab('fight')}
+                        className={`flex-1 py-1 px-2 ${activeTab === 'fight' ? 'text-green-700 border-b-2 border-green-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                    >
+                        Chiến đấu
+                    </button>
+                    <button
+                        onClick={() => onSelectTab('item')}
+                        className={`flex-1 py-1 px-2 ${activeTab === 'item' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                    >
+                        Vật phẩm
+                    </button>
+                    <button
+                        onClick={() => onSelectTab('focus')}
+                        className={`flex-1 py-1 px-2 ${activeTab === 'focus' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                    >
+                        Tập trung
+                    </button>
+                    <button
+                        onClick={() => onSelectTab('party')}
+                        className={`flex-1 py-1 px-2 ${activeTab === 'party' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                    >
+                        Đổi đội
+                    </button>
+                    <button
+                        onClick={() => onSelectTab('run')}
+                        className={`flex-1 py-1 px-2 ${activeTab === 'run' ? 'text-red-700 border-b-2 border-red-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                    >
+                        Bỏ chạy
+                    </button>
                 </div>
 
                 {/* Moves Grid */}
-                {moves.length > 0 ? (
+                {activeTab === 'fight' && (moves.length > 0 ? (
                     <div className="p-2 grid grid-cols-2 gap-2">
                         {moves.map((move, idx) => {
                             const isSelected = selectedMove === idx
@@ -184,26 +221,68 @@ const ActiveBattleView = ({ party, encounter, playerState, opponent, onAttack, a
                     </div>
                 ) : (
                     <div className="p-3 text-center text-xs text-slate-500">Chưa có kỹ năng để hiển thị.</div>
+                ))}
+
+                {activeTab === 'item' && (
+                    <div className="p-3 text-xs text-slate-600">
+                        {inventory.length === 0 ? (
+                            <div className="text-center text-slate-500">Không có vật phẩm.</div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                                {inventory.map((entry) => (
+                                    <button
+                                        key={entry.item._id}
+                                        onClick={() => onUseItem?.(entry)}
+                                        className="border border-slate-200 rounded p-2 text-left hover:bg-slate-50"
+                                    >
+                                        <div className="font-bold text-slate-700">{entry.item.name}</div>
+                                        <div className="text-[10px] text-slate-500">x{entry.quantity}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'focus' && (
+                    <div className="p-3 text-center text-xs text-slate-500">Chức năng tập trung sẽ có sau.</div>
+                )}
+
+                {activeTab === 'party' && (
+                    <div className="p-3 text-center text-xs text-slate-500">Đổi đội sẽ có sau.</div>
+                )}
+
+                {activeTab === 'run' && (
+                    <div className="p-3 text-center">
+                        <button
+                            onClick={onRun}
+                            className="px-4 py-2 bg-white border border-slate-300 rounded text-sm font-bold text-slate-700"
+                        >
+                            Bỏ chạy
+                        </button>
+                    </div>
                 )}
 
                 {/* Footer Action */}
-                <div className="p-2 text-center border-t border-slate-200 bg-slate-50">
-                    {moves.length > 0 ? (
-                        <div className="text-xs text-slate-500 mb-2">Chọn kỹ năng hoặc hành động rồi nhấn nút bên dưới.</div>
-                    ) : (
-                        <div className="text-xs text-slate-500 mb-2">Chưa có kỹ năng. Bạn vẫn có thể tấn công cơ bản.</div>
-                    )}
-                    <button
-                        onClick={() => onAttack?.(playerMon)}
-                        disabled={!playerMon}
-                        className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm text-sm flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
-                    >
-                        <span className="text-lg">🍃</span> Tấn công
-                    </button>
-                    {actionMessage && (
-                        <div className="mt-2 text-xs font-bold text-blue-700">{actionMessage}</div>
-                    )}
-                </div>
+                {activeTab === 'fight' && (
+                    <div className="p-2 text-center border-t border-slate-200 bg-slate-50">
+                        {moves.length > 0 ? (
+                            <div className="text-xs text-slate-500 mb-2">Chọn kỹ năng hoặc hành động rồi nhấn nút bên dưới.</div>
+                        ) : (
+                            <div className="text-xs text-slate-500 mb-2">Chưa có kỹ năng. Bạn vẫn có thể tấn công cơ bản.</div>
+                        )}
+                        <button
+                            onClick={() => onAttack?.(playerMon)}
+                            disabled={!playerMon}
+                            className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm text-sm flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
+                        >
+                            <span className="text-lg">🍃</span> Tấn công
+                        </button>
+                    </div>
+                )}
+                {actionMessage && (
+                    <div className="p-2 text-center text-xs font-bold text-blue-700">{actionMessage}</div>
+                )}
             </div>
 
             {!encounter && (
@@ -231,6 +310,8 @@ export function BattlePage() {
     const [masterPokemon, setMasterPokemon] = useState([])
     const [completedEntries, setCompletedEntries] = useState([])
     const [hoveredCompletedId, setHoveredCompletedId] = useState(null)
+    const [activeTab, setActiveTab] = useState('fight')
+    const [inventory, setInventory] = useState([])
 
     useEffect(() => {
         loadData()
@@ -238,18 +319,20 @@ export function BattlePage() {
 
     const loadData = async () => {
         try {
-            const [allMaps, partyData, encounterData, profileData, trainerData] = await Promise.all([
+            const [allMaps, partyData, encounterData, profileData, trainerData, inventoryData] = await Promise.all([
                 gameApi.getMaps(),
                 gameApi.getParty(),
                 gameApi.getActiveEncounter(),
                 gameApi.getProfile(),
                 gameApi.getBattleTrainers(),
+                gameApi.getInventory(),
             ])
             setMaps(allMaps)
             setParty(partyData)
             setEncounter(encounterData?.encounter || null)
             setPlayerState(profileData?.playerState || null)
             setMasterPokemon(trainerData?.trainers || [])
+            setInventory(inventoryData?.inventory || [])
             if (!opponent) {
                 const builtOpponent = buildOpponent(encounterData?.encounter || null, trainerData?.trainers || [])
                 setOpponent(builtOpponent)
@@ -304,6 +387,29 @@ export function BattlePage() {
             } catch (err) {
                 setActionMessage(err.message)
             }
+        }
+    }
+
+    const handleUseItem = async (entry) => {
+        if (!entry?.item?._id) return
+        try {
+            const res = await gameApi.useItem(entry.item._id, 1, encounter?._id || null)
+            setActionMessage(res.message || 'Đã dùng vật phẩm')
+            const inventoryData = await gameApi.getInventory()
+            setInventory(inventoryData?.inventory || [])
+        } catch (err) {
+            setActionMessage(err.message)
+        }
+    }
+
+    const handleRun = async () => {
+        if (!encounter?._id) return
+        try {
+            const res = await gameApi.runEncounter(encounter._id)
+            setActionMessage(res.message || 'Bạn đã bỏ chạy')
+            setView('lobby')
+        } catch (err) {
+            setActionMessage(err.message)
         }
     }
 
@@ -399,6 +505,11 @@ export function BattlePage() {
                     opponent={battleOpponent || opponent}
                     onAttack={handleAttack}
                     actionMessage={actionMessage}
+                    activeTab={activeTab}
+                    onSelectTab={setActiveTab}
+                    inventory={inventory}
+                    onUseItem={handleUseItem}
+                    onRun={handleRun}
                 />
                 {battleResults && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

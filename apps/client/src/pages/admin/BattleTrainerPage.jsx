@@ -52,6 +52,23 @@ export default function BattleTrainerPage() {
         }))
     }
 
+    const buildRandomTeam = () => {
+        if (!pokemon.length) return []
+        const picked = []
+        const used = new Set()
+        while (picked.length < Math.min(3, pokemon.length)) {
+            const index = Math.floor(Math.random() * pokemon.length)
+            if (used.has(index)) continue
+            used.add(index)
+            picked.push({
+                pokemonId: pokemon[index]._id,
+                level: Math.floor(Math.random() * 8) + 3,
+                formId: 'normal',
+            })
+        }
+        return picked
+    }
+
     const handleUpdateTeam = (index, key, value) => {
         setForm((prev) => {
             const team = [...prev.team]
@@ -71,10 +88,14 @@ export default function BattleTrainerPage() {
         e.preventDefault()
         setError('')
         try {
+            const payload = {
+                ...form,
+                team: form.team.length ? form.team : buildRandomTeam(),
+            }
             if (editingId) {
-                await battleTrainerApi.update(editingId, form)
+                await battleTrainerApi.update(editingId, payload)
             } else {
-                await battleTrainerApi.create(form)
+                await battleTrainerApi.create(payload)
             }
             resetForm()
             loadData()
@@ -187,13 +208,22 @@ export default function BattleTrainerPage() {
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label className="block text-slate-700 text-xs font-bold uppercase">Đội hình</label>
-                            <button
-                                type="button"
-                                onClick={handleAddTeam}
-                                className="px-2 py-1 text-xs font-bold bg-blue-600 text-white rounded"
-                            >
-                                + Thêm Pokémon
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setForm((prev) => ({ ...prev, team: buildRandomTeam() }))}
+                                    className="px-2 py-1 text-xs font-bold bg-emerald-600 text-white rounded"
+                                >
+                                    Random đội hình
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleAddTeam}
+                                    className="px-2 py-1 text-xs font-bold bg-blue-600 text-white rounded"
+                                >
+                                    + Thêm Pokémon
+                                </button>
+                            </div>
                         </div>
                         <div className="space-y-2">
                             {form.team.map((entry, index) => (
