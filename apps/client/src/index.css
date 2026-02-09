@@ -49,3 +49,42 @@ body {
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
 }
+
+/* Rarity Frames */
+@layer components {
+  .rarity-frame-sss {
+    position: relative;
+    background: linear-gradient(#1e293b, #0f172a) padding-box,
+      linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) border-box !important;
+    border: 3px solid transparent !important;
+    animation: border-rotate 4s linear infinite;
+  }
+
+  .rarity-frame-ss {
+    animation: border-pulse-red 2s infinite;
+  }
+}
+
+@keyframes border-rotate {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes border-pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}

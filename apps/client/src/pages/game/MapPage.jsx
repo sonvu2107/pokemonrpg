@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
+import { getRarityStyle } from '../../utils/rarityStyles'
 
 // Mock Data for "Retro" UI Stats
 const MOCK_STATS = {
@@ -306,7 +307,7 @@ export default function MapPage() {
                     {((specialPokemons.length > 0) || (map.specialPokemonImages && map.specialPokemonImages.length > 0)) && (
                         <>
                             <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-b border-blue-200">
-                                Pokemon Dac Biet
+                                Pokemon Đặc Biệt
                             </div>
                             <div className="flex justify-center flex-wrap gap-4 sm:gap-6 py-6 min-h-[120px] items-center bg-gradient-to-b from-purple-50/30 to-white">
                                 {specialPokemons.length > 0
@@ -417,28 +418,28 @@ export default function MapPage() {
                 {/* Map Visualization & Search Button */}
                 <div className="p-4 flex flex-col items-center gap-4 bg-white">
                     {/* Map Image container with shadow */}
-                    <div className="relative shadow-xl rounded overflow-hidden border-2 border-slate-600">
-                        {/* Placeholder Map Image - Using a generic tile visual or the one from screenshot if possible. 
-                             Ideally this should come from map.imageUrl in DB. Using a sturdy placeholder. */}
-                        <div
-                            className="w-full max-w-[300px] h-auto aspect-[5/3] bg-cover bg-center pixelated relative"
-                            style={{
-                                backgroundImage: `url('${map.mapImageUrl || 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png'}')`,
-                                imageRendering: 'pixelated'
+                    {/* Map Image container with shadow */}
+                    <div className="relative shadow-xl rounded overflow-hidden border-2 border-slate-600 w-full max-w-[300px]">
+                        <img
+                            src={map.mapImageUrl || 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png'}
+                            alt={`Bản đồ ${map.name}`}
+                            className="w-full h-auto aspect-[5/3] object-cover pixelated bg-slate-200"
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png';
                             }}
-                        >
+                        />
 
-
-                            {/* Encounter Overlay */}
-                            {encounter && (
-                                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center animate-fadeIn">
-                                    <img
-                                        src={encounter.pokemon.imageUrl || encounter.pokemon.sprites?.front_default || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.pokemon.pokedexNumber}.png`}
-                                        className="w-32 h-32 animate-bounce drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                                    />
-                                </div>
-                            )}
-                        </div>
+                        {/* Encounter Overlay */}
+                        {encounter && (
+                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center animate-fadeIn z-20">
+                                <img
+                                    src={encounter.pokemon.imageUrl || encounter.pokemon.sprites?.front_default || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.pokemon.pokedexNumber}.png`}
+                                    alt={encounter.pokemon.name}
+                                    className="w-32 h-32 animate-bounce drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {encounter && (
@@ -470,7 +471,7 @@ export default function MapPage() {
                 <div className="border-t-2 border-slate-200 p-2 text-center min-h-[40px] bg-slate-50">
                     {encounter ? (
                         <div className="text-green-700 font-bold">
-                            Một <span className="uppercase">{encounter.pokemon.name}</span> (Lvl {encounter.level}) hoang dã xuất hiện!
+                            Một <span className="uppercase">{encounter.pokemon.name}</span> (Lvl {encounter.level}) <span className={`font-bold ${getRarityStyle(encounter.pokemon.rarity).text}`}>[{getRarityStyle(encounter.pokemon.rarity).label}]</span> hoang dã xuất hiện!
                             <div className="mt-2 text-xs font-normal text-slate-600">
                                 [ <button
                                     onClick={handleAttack}
