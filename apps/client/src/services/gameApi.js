@@ -117,18 +117,35 @@ export const gameApi = {
     },
 
     // POST /api/game/battle/resolve
-    async resolveBattle(opponentTeam) {
+    async resolveBattle(opponentTeam, trainerId = null) {
         const res = await fetch(`${API_URL}/game/battle/resolve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify({ opponentTeam }),
+            body: JSON.stringify({ opponentTeam, trainerId }),
         })
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Failed to resolve battle')
+        }
+        return res.json()
+    },
+
+    // POST /api/game/battle/attack
+    async battleAttack(payload) {
+        const res = await fetch(`${API_URL}/game/battle/attack`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Battle attack failed')
         }
         return res.json()
     },

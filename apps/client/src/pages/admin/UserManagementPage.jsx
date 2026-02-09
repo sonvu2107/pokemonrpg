@@ -101,10 +101,10 @@ export default function UserManagementPage() {
             )}
 
             {/* User Table */}
-            <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200">
+            <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden flex flex-col">
+                <div className="overflow-auto max-h-[60vh] custom-scrollbar">
+                    <table className="w-full text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
                                 <th className="px-6 py-3 text-left font-bold">Email</th>
                                 <th className="px-6 py-3 text-left font-bold">Username</th>
@@ -127,8 +127,8 @@ export default function UserManagementPage() {
                                             onChange={(e) => handleRoleChange(user._id, e.target.value)}
                                             disabled={updatingUserId === user._id}
                                             className={`px-3 py-1 rounded-md text-xs font-bold border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${user.role === 'admin'
-                                                    ? 'bg-amber-100 text-amber-700 border-amber-300'
-                                                    : 'bg-slate-100 text-slate-700 border-slate-300'
+                                                ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                                : 'bg-slate-100 text-slate-700 border-slate-300'
                                                 } ${updatingUserId === user._id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-95'}`}
                                         >
                                             <option value="user">User</option>

@@ -308,14 +308,14 @@ export default function MapPage() {
                             <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-b border-blue-200">
                                 Pokemon Dac Biet
                             </div>
-                            <div className="flex justify-center flex-wrap gap-6 py-6 min-h-[120px] items-center bg-gradient-to-b from-purple-50/30 to-white">
+                            <div className="flex justify-center flex-wrap gap-4 sm:gap-6 py-6 min-h-[120px] items-center bg-gradient-to-b from-purple-50/30 to-white">
                                 {specialPokemons.length > 0
                                     ? specialPokemons.map((pokemon) => (
                                         <div key={pokemon.id || pokemon._id} className="flex flex-col items-center">
                                             <img
                                                 src={pokemon.imageUrl || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`}
                                                 alt={pokemon.name || 'Special Pokemon'}
-                                                className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
+                                                className="w-24 h-24 sm:w-32 sm:h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
                                             />
                                             {pokemon.name && (
                                                 <p className="text-xs font-bold text-blue-800 mt-1">{pokemon.name}</p>
@@ -327,7 +327,7 @@ export default function MapPage() {
                                             <img
                                                 src={imageUrl}
                                                 alt={`Special Pokemon ${index + 1}`}
-                                                className="w-32 h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
+                                                className="w-24 h-24 sm:w-32 sm:h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
                                             />
                                         </div>
                                     ))}
@@ -339,7 +339,7 @@ export default function MapPage() {
                         <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-y border-blue-200">
                             Pokemon Thường
                         </div>
-                        <div className="flex justify-center flex-wrap gap-6 py-4 min-h-[80px] items-center bg-white">
+                        <div className="flex justify-center flex-wrap gap-3 sm:gap-6 py-4 min-h-[80px] items-center bg-white">
                             {dropRates
                                 .filter(dr => dr.pokemonId && NORMAL_RARITIES.has(dr.pokemonId.rarity))
                                 .map(dr => (
@@ -360,8 +360,8 @@ export default function MapPage() {
                 </div>
 
                 {/* Stats Table */}
-                <div className="border-t border-slate-300">
-                    <table className="w-full text-xs font-bold text-slate-800">
+                <div className="border-t border-slate-300 overflow-x-auto">
+                    <table className="w-full text-xs font-bold text-slate-800 min-w-[300px]">
                         <tbody>
                             <tr className="border-b border-slate-300">
                                 <td className="w-1/3 bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Tỷ lệ hiện tại:</td>
@@ -421,7 +421,7 @@ export default function MapPage() {
                         {/* Placeholder Map Image - Using a generic tile visual or the one from screenshot if possible. 
                              Ideally this should come from map.imageUrl in DB. Using a sturdy placeholder. */}
                         <div
-                            className="w-[300px] h-[180px] bg-cover bg-center pixelated relative"
+                            className="w-full max-w-[300px] h-auto aspect-[5/3] bg-cover bg-center pixelated relative"
                             style={{
                                 backgroundImage: `url('${map.mapImageUrl || 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png'}')`,
                                 imageRendering: 'pixelated'
@@ -460,7 +460,7 @@ export default function MapPage() {
                     <button
                         onClick={handleSearch}
                         disabled={searching || Boolean(encounter) || isLocked} // If found, force decision? Or just re-search as user requested simple loop
-                        className="px-6 py-1 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-sm shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded disabled:opacity-50"
+                        className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded disabled:opacity-50 touch-manipulation"
                     >
                         {searching ? 'Đang tìm...' : 'Tìm kiếm'}
                     </button>
@@ -475,20 +475,20 @@ export default function MapPage() {
                                 [ <button
                                     onClick={handleAttack}
                                     disabled={actionLoading}
-                                    className="text-blue-600 hover:underline font-bold disabled:opacity-50"
+                                    className="text-blue-600 hover:underline font-bold disabled:opacity-50 px-2 py-1"
                                 >Chiến đấu</button> ]
                                 {' - '}
                                 [ <button
                                     onClick={handleRun}
                                     disabled={actionLoading}
-                                    className="text-slate-600 hover:underline font-bold disabled:opacity-50"
+                                    className="text-slate-600 hover:underline font-bold disabled:opacity-50 px-2 py-1"
                                 >Bỏ chạy</button> ]
                             </div>
-                            <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+                            <div className="mt-2 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs w-full">
                                 <select
                                     value={selectedBallId}
                                     onChange={(e) => setSelectedBallId(e.target.value)}
-                                    className="px-2 py-1 border border-slate-300 rounded bg-white"
+                                    className="px-3 py-2 border border-slate-300 rounded bg-white w-full sm:w-auto text-sm"
                                 >
                                     <option value="">Chọn bóng để bắt</option>
                                     {inventory
@@ -512,7 +512,7 @@ export default function MapPage() {
                                 <button
                                     onClick={handleUseBall}
                                     disabled={actionLoading || !selectedBallId}
-                                    className="px-2 py-1 bg-emerald-600 text-white rounded font-bold disabled:opacity-50"
+                                    className="px-4 py-2 bg-emerald-600 text-white rounded font-bold disabled:opacity-50 w-full sm:w-auto"
                                 >
                                     Dùng bóng
                                 </button>

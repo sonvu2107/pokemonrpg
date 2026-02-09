@@ -10,6 +10,8 @@ const emptyTrainer = {
     orderIndex: 0,
     team: [],
     prizePokemonId: '',
+    platinumCoinsReward: 0,
+    expReward: 0,
 }
 
 export default function BattleTrainerPage() {
@@ -118,6 +120,8 @@ export default function BattleTrainerPage() {
                 formId: entry.formId || 'normal',
             })),
             prizePokemonId: trainer.prizePokemonId?._id || trainer.prizePokemonId || '',
+            platinumCoinsReward: trainer.platinumCoinsReward || 0,
+            expReward: trainer.expReward || 0,
         })
     }
 
@@ -169,7 +173,7 @@ export default function BattleTrainerPage() {
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                         />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Thứ tự</label>
                             <input
@@ -203,6 +207,28 @@ export default function BattleTrainerPage() {
                                     <option key={p._id} value={p._id}>{p.name}</option>
                                 ))}
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🪙 Xu Bạch Kim</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={form.platinumCoinsReward}
+                                onChange={(e) => setForm({ ...form, platinumCoinsReward: parseInt(e.target.value) || 0 })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                placeholder="0"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">⭐ Exp Nhận Được</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={form.expReward}
+                                onChange={(e) => setForm({ ...form, expReward: parseInt(e.target.value) || 0 })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                placeholder="0 = dùng công thức mặc định"
+                            />
                         </div>
                     </div>
                     <div>

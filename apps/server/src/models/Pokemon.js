@@ -190,7 +190,7 @@ const pokemonSchema = new Schema(
         rarity: {
             type: String,
             required: true,
-            enum: ['ss', 's', 'a', 'b', 'c', 'd'],
+            enum: ['sss', 'ss', 's', 'a', 'b', 'c', 'd'],
             default: 'd',
         },
 
@@ -204,6 +204,7 @@ const pokemonSchema = new Schema(
                     a: 5,
                     s: 1,
                     ss: 0.2,
+                    sss: 0.05,
                 }
                 return weights[this.rarity] || 100
             },

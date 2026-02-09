@@ -10,7 +10,7 @@ const TYPES = [
     'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'
 ]
 
-const RARITIES = ['ss', 's', 'a', 'b', 'c', 'd']
+const RARITIES = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 const FORM_VARIANTS = [
     { id: 'normal', name: 'Normal' },

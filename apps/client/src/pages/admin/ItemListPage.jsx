@@ -114,65 +114,67 @@ export default function ItemListPage() {
                     <div className="text-center py-8 text-blue-800 font-medium">Đang tải dữ liệu...</div>
                 ) : (
                     <>
-                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                            <table className="w-full text-sm">
-                                <thead className="bg-blue-50 border-b border-blue-100">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Hình</th>
-                                        <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Tên</th>
-                                        <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Loại</th>
-                                        <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Độ Hiếm</th>
-                                        <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Hành Động</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {items.map((item) => (
-                                        <tr key={item._id} className="hover:bg-blue-50 transition-colors">
-                                            <td className="px-4 py-3">
-                                                {item.imageUrl ? (
-                                                    <img
-                                                        src={item.imageUrl}
-                                                        alt={item.name}
-                                                        className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
-                                                    />
-                                                ) : (
-                                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
-                                                        ?
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 text-slate-800 font-bold">{item.name}</td>
-                                            <td className="px-4 py-3 text-slate-600">{TYPE_LABELS[item.type] || item.type}</td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${RARITY_STYLES[item.rarity] || ''}`}>
-                                                    {RARITY_LABELS[item.rarity] || item.rarity}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <Link
-                                                    to={`/admin/items/${item._id}/edit`}
-                                                    className="inline-block px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-bold mr-2 shadow-sm"
-                                                >
-                                                    Sửa
-                                                </Link>
-                                                <button
-                                                    onClick={() => handleDelete(item._id, item.name)}
-                                                    className="inline-block px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-bold shadow-sm"
-                                                >
-                                                    Xóa
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {items.length === 0 && (
+                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm flex flex-col">
+                            <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] overscroll-contain">
+                                <table className="w-full text-sm whitespace-nowrap">
+                                    <thead className="bg-blue-50 border-b border-blue-100 sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <td colSpan="5" className="px-4 py-8 text-center text-slate-500 italic">
-                                                Chưa có vật phẩm nào.
-                                            </td>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Hình</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Tên</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Loại</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Độ Hiếm</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Hành Động</th>
                                         </tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {items.map((item) => (
+                                            <tr key={item._id} className="hover:bg-blue-50 transition-colors">
+                                                <td className="px-4 py-3">
+                                                    {item.imageUrl ? (
+                                                        <img
+                                                            src={item.imageUrl}
+                                                            alt={item.name}
+                                                            className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs">
+                                                            ?
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-800 font-bold">{item.name}</td>
+                                                <td className="px-4 py-3 text-slate-600">{TYPE_LABELS[item.type] || item.type}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${RARITY_STYLES[item.rarity] || ''}`}>
+                                                        {RARITY_LABELS[item.rarity] || item.rarity}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <Link
+                                                        to={`/admin/items/${item._id}/edit`}
+                                                        className="inline-block px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-bold mr-2 shadow-sm"
+                                                    >
+                                                        Sửa
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => handleDelete(item._id, item.name)}
+                                                        className="inline-block px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs font-bold shadow-sm"
+                                                    >
+                                                        Xóa
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {items.length === 0 && (
+                                            <tr>
+                                                <td colSpan="5" className="px-4 py-8 text-center text-slate-500 italic">
+                                                    Chưa có vật phẩm nào.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
 
                         {pagination.pages > 1 && (

@@ -101,40 +101,75 @@ export default function AppShell() {
                 </div>
             </main>
 
-            {/* Mobile Menu Drawer (Right) */}
+            {/* Mobile Menu Drawer (Left) */}
             {isMenuOpen && (
                 <div className="fixed inset-0 z-[60] lg:hidden">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)} />
-                    <div className="absolute right-0 top-0 bottom-0 w-[280px] bg-white border-l border-blue-400 p-4 shadow-xl">
-                        <div className="flex items-center justify-between mb-4 border-b border-blue-200 pb-2">
-                            <h2 className="text-lg font-bold text-blue-800">Menu</h2>
-                            <button onClick={() => setIsMenuOpen(false)} className="text-blue-400 hover:text-blue-600">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <div className="absolute left-0 top-0 bottom-0 w-[300px] bg-white border-r border-blue-400 shadow-xl flex flex-col">
+                        {/* Drawer Header */}
+                        <div className="flex items-center justify-between p-4 border-b border-blue-200 bg-white z-10">
+                            <h2 className="text-lg font-bold text-blue-800 uppercase tracking-widest">Menu</h2>
+                            <button
+                                onClick={() => setIsMenuOpen(false)}
+                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
-                        <div className="space-y-4" onClick={() => setIsMenuOpen(false)}>
-                            <RightColumn />
+
+                        {/* Scrollable Content */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-6" onClick={(e) => {
+                            // Prevent closing when clicking scrollbar or empty space, but allow links to close it
+                            if (e.target.tagName === 'A') setIsMenuOpen(false);
+                        }}>
+
+                            {/* User Profile Summary */}
                             {user && (
-                                <div className="pt-4 border-t border-slate-800">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className="font-medium text-slate-200">{user.username}</div>
-                                        {user.role === 'admin' && (
-                                            <span className="px-1.5 py-0.5 bg-purple-600 rounded text-[10px] text-white font-bold uppercase">ADMIN</span>
-                                        )}
+                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold text-xl shadow-md">
+                                            {user.username.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-slate-800 text-base">{user.username}</div>
+                                            <div className="flex gap-2 text-xs">
+                                                {user.role === 'admin' && (
+                                                    <span className="px-1.5 py-0.5 bg-purple-600 rounded text-white font-bold uppercase">ADMIN</span>
+                                                )}
+                                                <span className="text-slate-500">Level {user.level || 1}</span>
+                                            </div>
+                                        </div>
                                     </div>
+
                                     <button
-                                        onClick={logout}
-                                        className="w-full px-3 py-2 bg-red-50 hover:bg-red-100 rounded text-red-700 text-sm transition-colors text-left flex items-center gap-2 border border-red-200"
+                                        onClick={() => {
+                                            logout();
+                                            setIsMenuOpen(false);
+                                        }}
+                                        className="w-full py-1.5 bg-white hover:bg-red-50 border border-red-200 text-red-600 hover:text-red-700 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-sm"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
                                         </svg>
                                         Đăng xuất
                                     </button>
                                 </div>
                             )}
+
+                            {/* Main Navigation (Left Column) */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Chức năng chính</div>
+                                <LeftColumn />
+                            </div>
+
+                            {/* Secondary Navigation (Right Column) */}
+                            <div className="space-y-2">
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Thông tin khác</div>
+                                <RightColumn />
+                            </div>
+
                         </div>
                     </div>
                 </div>

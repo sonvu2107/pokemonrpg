@@ -41,7 +41,7 @@ router.get('/', async (req, res) => {
 // POST /api/admin/battle-trainers
 router.post('/', async (req, res) => {
     try {
-        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId } = req.body
+        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId, platinumCoinsReward, expReward } = req.body
 
         if (!name) {
             return res.status(400).json({ ok: false, message: 'Name is required' })
@@ -61,6 +61,8 @@ router.post('/', async (req, res) => {
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
             team: normalizedTeam,
             prizePokemonId: prizePokemonId || null,
+            platinumCoinsReward: platinumCoinsReward !== undefined ? platinumCoinsReward : 0,
+            expReward: expReward !== undefined ? expReward : 0,
         })
 
         await trainer.save()
@@ -75,7 +77,7 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/battle-trainers/:id
 router.put('/:id', async (req, res) => {
     try {
-        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId } = req.body
+        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId, platinumCoinsReward, expReward } = req.body
 
         const trainer = await BattleTrainer.findById(req.params.id)
         if (!trainer) {
@@ -98,6 +100,8 @@ router.put('/:id', async (req, res) => {
         if (orderIndex !== undefined) trainer.orderIndex = orderIndex
         if (shouldUpdateTeam) trainer.team = normalizedTeam
         if (prizePokemonId !== undefined) trainer.prizePokemonId = prizePokemonId
+        if (platinumCoinsReward !== undefined) trainer.platinumCoinsReward = platinumCoinsReward
+        if (expReward !== undefined) trainer.expReward = expReward
 
         await trainer.save()
 

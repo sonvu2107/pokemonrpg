@@ -7,6 +7,7 @@ import UserPokemon from '../models/UserPokemon.js'
 import UserInventory from '../models/UserInventory.js'
 import MapProgress from '../models/MapProgress.js'
 import MapModel from '../models/Map.js'
+import BattleTrainer from '../models/BattleTrainer.js'
 
 const router = express.Router()
 
@@ -14,7 +15,8 @@ import {
     EXP_PER_SEARCH,
     expToNext,
     calcStatsForLevel,
-    calcMaxHp
+    calcMaxHp,
+    getRarityExpMultiplier,
 } from '../utils/gameUtils.js'
 
 
@@ -22,6 +24,33 @@ import {
 const rollDamage = (level) => {
     const base = Math.max(5, Math.floor(level * 0.6))
     return base + Math.floor(Math.random() * 6)
+}
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+const normalizeMoveName = (value) => String(value || '').trim().toLowerCase()
+
+const inferMoveType = (name = '') => {
+    const normalized = normalizeMoveName(name)
+    if (normalized.includes('fire')) return 'fire'
+    if (normalized.includes('water')) return 'water'
+    if (normalized.includes('grass') || normalized.includes('leaf') || normalized.includes('vine')) return 'grass'
+    if (normalized.includes('electric') || normalized.includes('thunder') || normalized.includes('spark')) return 'electric'
+    if (normalized.includes('ice') || normalized.includes('frost')) return 'ice'
+    if (normalized.includes('dragon')) return 'dragon'
+    if (normalized.includes('shadow') || normalized.includes('ghost')) return 'ghost'
+    if (normalized.includes('poison') || normalized.includes('toxic')) return 'poison'
+    return 'normal'
+}
+
+const calcBattleDamage = ({ attackerLevel, movePower, attackStat, defenseStat }) => {
+    const level = Math.max(1, Number(attackerLevel) || 1)
+    const power = Math.max(1, Number(movePower) || 1)
+    const atk = Math.max(1, Number(attackStat) || 1)
+    const def = Math.max(1, Number(defenseStat) || 1)
+    const base = (((2 * level) / 5 + 2) * power * (atk / def)) / 50 + 2
+    const randomFactor = 0.85 + Math.random() * 0.15
+    return Math.max(1, Math.floor(base * randomFactor))
 }
 
 const calcCatchChance = ({ catchRate, hp, maxHp }) => {
@@ -654,29 +683,193 @@ router.post('/encounter/:id/run', authMiddleware, async (req, res, next) => {
     }
 })
 
+// POST /api/game/battle/attack (protected)
+router.post('/battle/attack', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const {
+            moveName = '',
+            move = null,
+            opponent = {},
+        } = req.body || {}
+
+        const party = await UserPokemon.find({ userId, location: 'party' })
+            .sort({ partyIndex: 1 })
+            .populate('pokemonId', 'name baseStats')
+
+        const activePokemon = party.find(Boolean) || null
+        if (!activePokemon) {
+            return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
+        }
+
+        const knownMoves = Array.isArray(activePokemon.moves)
+            ? activePokemon.moves.map((item) => String(item || '').trim()).filter(Boolean)
+            : []
+        const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
+
+        let selectedMoveName = String(moveName || move?.name || knownMoves[0] || 'Struggle').trim()
+        if (!selectedMoveName) selectedMoveName = 'Struggle'
+
+        const selectedMoveKey = normalizeMoveName(selectedMoveName)
+        if (knownMoves.length > 0 && !normalizedKnownMoves.has(selectedMoveKey)) {
+            selectedMoveName = knownMoves[0]
+        }
+
+        const Move = (await import('../models/Move.js')).default
+        const moveDoc = await Move.findOne({ nameLower: normalizeMoveName(selectedMoveName) }).lean()
+
+        let resolvedPower = Number(moveDoc?.power)
+        if (!Number.isFinite(resolvedPower) || resolvedPower <= 0) {
+            resolvedPower = Number(move?.power)
+        }
+        if (!Number.isFinite(resolvedPower) || resolvedPower <= 0) {
+            resolvedPower = normalizeMoveName(selectedMoveName) === 'struggle' ? 35 : 50
+        }
+        resolvedPower = clamp(Math.floor(resolvedPower), 1, 250)
+
+        let mpCost = Number(move?.mp)
+        if (!Number.isFinite(mpCost) || mpCost < 0) {
+            const fromPp = Number(moveDoc?.pp)
+            mpCost = Number.isFinite(fromPp) && fromPp > 0
+                ? clamp(Math.floor(fromPp / 2), 1, 20)
+                : clamp(Math.floor(resolvedPower / 15), 1, 20)
+        }
+        if (normalizeMoveName(selectedMoveName) === 'struggle') {
+            mpCost = 0
+        }
+
+        let playerState = await PlayerState.findOne({ userId })
+        if (!playerState) {
+            playerState = await PlayerState.create({ userId })
+        }
+
+        // If not enough MP, force Struggle (0 MP) to keep battle flow uninterrupted.
+        if ((playerState.mp || 0) < mpCost) {
+            selectedMoveName = 'Struggle'
+            resolvedPower = 35
+            mpCost = 0
+        }
+
+        if (mpCost > 0) {
+            playerState.mp = Math.max(0, (playerState.mp || 0) - mpCost)
+            await playerState.save()
+            emitPlayerState(userId.toString(), playerState)
+        }
+
+        const targetLevel = Math.max(1, Number(opponent.level) || 1)
+        const targetMaxHp = Math.max(1, Number(opponent.maxHp) || 1)
+        const parsedCurrentHp = Number(opponent.currentHp)
+        const targetCurrentHp = clamp(
+            Math.floor(Number.isFinite(parsedCurrentHp) ? parsedCurrentHp : targetMaxHp),
+            0,
+            targetMaxHp
+        )
+        const targetDef = Math.max(
+            1,
+            Number(opponent.baseStats?.def) ||
+            Number(opponent.baseStats?.spdef) ||
+            (20 + targetLevel * 2)
+        )
+
+        const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
+        const attackerAtk = Math.max(
+            1,
+            Number(activePokemon?.pokemonId?.baseStats?.atk) ||
+            Number(activePokemon?.pokemonId?.baseStats?.spatk) ||
+            (20 + attackerLevel * 2)
+        )
+
+        const damage = calcBattleDamage({
+            attackerLevel,
+            movePower: resolvedPower,
+            attackStat: attackerAtk,
+            defenseStat: targetDef,
+        })
+        const currentHp = Math.max(0, targetCurrentHp - damage)
+
+        res.json({
+            ok: true,
+            battle: {
+                damage,
+                currentHp,
+                maxHp: targetMaxHp,
+                defeated: currentHp <= 0,
+                move: {
+                    name: selectedMoveName,
+                    type: moveDoc?.type || inferMoveType(selectedMoveName),
+                    power: resolvedPower,
+                    mp: mpCost,
+                },
+                player: {
+                    name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
+                    mp: playerState.mp,
+                    maxMp: playerState.maxMp,
+                },
+                log: `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage.`,
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
 // POST /api/game/battle/resolve (protected)
 router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
-        const { opponentTeam = [] } = req.body
+        const { opponentTeam = [], trainerId = null } = req.body
 
-        if (!Array.isArray(opponentTeam) || opponentTeam.length === 0) {
+        let sourceTeam = Array.isArray(opponentTeam) ? opponentTeam : []
+        let trainerRewardCoins = 0
+        let trainerExpReward = 0
+        let trainerPrizePokemonId = null
+        let trainerRewardMarker = ''
+
+        if (trainerId) {
+            const trainer = await BattleTrainer.findById(trainerId)
+                .populate('prizePokemonId', 'name imageUrl sprites')
+                .lean()
+            if (!trainer) {
+                return res.status(404).json({ ok: false, message: 'Battle trainer not found' })
+            }
+
+            if (Array.isArray(trainer.team) && trainer.team.length > 0) {
+                sourceTeam = trainer.team
+            }
+            trainerRewardCoins = Math.max(0, Number(trainer.platinumCoinsReward) || 0)
+            trainerExpReward = Math.max(0, Number(trainer.expReward) || 0)
+            trainerPrizePokemonId = trainer.prizePokemonId?._id || null
+            trainerRewardMarker = `battle_trainer_reward:${trainer._id}`
+        }
+
+        if (!Array.isArray(sourceTeam) || sourceTeam.length === 0) {
             return res.status(400).json({ ok: false, message: 'Opponent team is required' })
         }
 
-        const totalLevel = opponentTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
-        const coinsAwarded = Math.max(1, Math.floor(totalLevel * 5))
-        const expAwarded = Math.max(1, Math.floor(totalLevel * 20))
+        const totalLevel = sourceTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
+        const coinsAwarded = trainerRewardCoins > 0
+            ? Math.floor(trainerRewardCoins)
+            : Math.max(1, Math.floor(totalLevel * 5))
+        const expAwarded = trainerExpReward > 0
+            ? Math.floor(trainerExpReward)
+            : Math.max(1, Math.floor(totalLevel * 20))
         const happinessAwarded = 13
 
-        const party = await UserPokemon.find({ userId, location: 'party' }).sort({ partyIndex: 1 })
+        const party = await UserPokemon.find({ userId, location: 'party' })
+            .sort({ partyIndex: 1 })
+            .populate('pokemonId', 'rarity name imageUrl sprites')
         const activePokemon = party.find(p => p) || null
 
         if (!activePokemon) {
             return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
         }
 
-        activePokemon.experience += expAwarded
+        // Apply rarity exp multiplier (SSS gets 1.5x exp)
+        const pokemonRarity = activePokemon.pokemonId?.rarity || 'd'
+        const expMultiplier = getRarityExpMultiplier(pokemonRarity)
+        const finalExp = Math.floor(expAwarded * expMultiplier)
+
+        activePokemon.experience += finalExp
         let levelsGained = 0
         while (activePokemon.experience >= activePokemon.level * 100) {
             activePokemon.experience -= activePokemon.level * 100
@@ -696,11 +889,47 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         await playerState.save()
         emitPlayerState(userId.toString(), playerState)
 
+        let prizePokemon = null
+        if (trainerPrizePokemonId && trainerRewardMarker) {
+            const Pokemon = (await import('../models/Pokemon.js')).default
+            const prizeData = await Pokemon.findById(trainerPrizePokemonId)
+                .select('name imageUrl sprites levelUpMoves')
+                .lean()
+
+            if (prizeData) {
+                const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
+                const moves = buildMovesForLevel(prizeData, prizeLevel)
+                await UserPokemon.create({
+                    userId,
+                    pokemonId: trainerPrizePokemonId,
+                    level: prizeLevel,
+                    experience: 0,
+                    moves,
+                    formId: 'normal',
+                    isShiny: false,
+                    location: 'box',
+                    originalTrainer: trainerRewardMarker,
+                })
+
+                prizePokemon = {
+                    id: trainerPrizePokemonId,
+                    name: prizeData.name,
+                    imageUrl: prizeData.imageUrl || prizeData.sprites?.normal || prizeData.sprites?.front_default || '',
+                    claimed: true,
+                    alreadyClaimed: false,
+                }
+            }
+        }
+
         res.json({
             ok: true,
             results: {
                 pokemon: {
                     name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Pokemon',
+                    imageUrl: activePokemon.pokemonId?.imageUrl ||
+                        activePokemon.pokemonId?.sprites?.normal ||
+                        activePokemon.pokemonId?.sprites?.front_default ||
+                        '',
                     level: activePokemon.level,
                     exp: activePokemon.experience,
                     expToNext: activePokemon.level * 100,
@@ -711,6 +940,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 rewards: {
                     coins: coinsAwarded,
                     trainerExp: Math.floor(expAwarded / 2),
+                    prizePokemon,
                 },
             },
         })

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 
 // Helper for the blue gradient header
@@ -13,7 +12,72 @@ const typeColors = {
     grass: 'bg-green-100 text-green-800 border-green-300',
     fire: 'bg-red-100 text-red-800 border-red-300',
     water: 'bg-blue-100 text-blue-800 border-blue-300',
+    electric: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    ice: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+    dragon: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    poison: 'bg-purple-100 text-purple-800 border-purple-300',
     normal: 'bg-slate-100 text-slate-800 border-slate-300',
+}
+
+const normalizeMoveType = (name = '') => {
+    const normalized = String(name || '').toLowerCase()
+    if (normalized.includes('fire')) return 'fire'
+    if (normalized.includes('water')) return 'water'
+    if (normalized.includes('grass') || normalized.includes('leaf') || normalized.includes('vine')) return 'grass'
+    if (normalized.includes('electric') || normalized.includes('spark') || normalized.includes('thunder')) return 'electric'
+    if (normalized.includes('ice') || normalized.includes('frost')) return 'ice'
+    if (normalized.includes('dragon')) return 'dragon'
+    if (normalized.includes('poison') || normalized.includes('toxic')) return 'poison'
+    return 'normal'
+}
+
+const inferMovePower = (name = '') => {
+    const normalized = String(name || '').toLowerCase()
+    if (!normalized) return 35
+    if (normalized === 'struggle') return 35
+    if (normalized.includes('quick')) return 70
+    if (normalized.includes('tackle')) return 80
+    if (normalized.includes('leaf')) return 90
+    if (normalized.includes('power') || normalized.includes('beam')) return 110
+    if (normalized.includes('blast')) return 120
+    return 85
+}
+
+const inferMoveMp = (name = '') => {
+    const normalized = String(name || '').toLowerCase()
+    if (!normalized || normalized === 'struggle') return 0
+    if (normalized.includes('power') || normalized.includes('blast')) return 12
+    if (normalized.includes('leaf')) return 7
+    if (normalized.includes('quick')) return 3
+    return 6
+}
+
+const normalizeMoveList = (moves = []) => {
+    const list = Array.isArray(moves) ? moves : []
+    const mapped = list
+        .map((entry, index) => {
+            const name = typeof entry === 'string'
+                ? entry
+                : String(entry?.name || entry?.moveName || '').trim()
+            if (!name) return null
+            const type = normalizeMoveType(name)
+            return {
+                id: `${name}-${index}`,
+                name,
+                type,
+                power: inferMovePower(name),
+                mp: inferMoveMp(name),
+            }
+        })
+        .filter(Boolean)
+    if (mapped.length > 0) return mapped.slice(0, 4)
+    return [{
+        id: 'struggle',
+        name: 'Struggle',
+        type: 'normal',
+        power: 35,
+        mp: 0,
+    }]
 }
 
 const ProgressBar = ({ current, max, colorClass, label }) => {
@@ -46,29 +110,30 @@ const ActiveBattleView = ({
     inventory,
     onUseItem,
     onRun,
+    selectedMoveIndex,
+    onSelectMove,
+    battleLog,
+    isAttacking,
 }) => {
-    const [selectedMove, setSelectedMove] = useState(0) // Index of selected move
-
-    // Find first alive pokemon (for now just first slot)
     const activePokemon = party.find(p => p) || null
 
     const playerMon = activePokemon ? {
-        name: activePokemon.pokemonId?.name || 'Không rõ',
+        name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Unknown',
         level: activePokemon.level,
         maxHp: activePokemon.stats?.hp || 100,
-        hp: activePokemon.stats?.hp || 100, // No current HP yet, assume full
+        hp: activePokemon.stats?.hp || 100,
         maxMp: playerState?.maxMp || 0,
         mp: playerState?.mp || 0,
         exp: activePokemon.experience,
-        maxExp: activePokemon.level * 100, // Simple formula for now
+        maxExp: activePokemon.level * 100,
         sprite: activePokemon.pokemonId?.sprites?.back_default || activePokemon.pokemonId?.imageUrl || activePokemon.pokemonId?.sprites?.normal || activePokemon.pokemonId?.sprites?.front_default,
-        moves: activePokemon.moves || []
+        moves: normalizeMoveList(activePokemon.moves || []),
     } : null
 
     const activeOpponent = opponent?.team?.[opponent.currentIndex || 0] || null
     const enemyMon = activeOpponent ? {
-        name: activeOpponent.name || 'Pokémon hoang dã',
-        owner: opponent?.trainerName || 'Hoang dã',
+        name: activeOpponent.name || 'Pokemon Hoang Dã',
+        owner: opponent?.trainerName || 'Hoang Dã',
         level: activeOpponent.level,
         maxHp: activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1,
         hp: activeOpponent.currentHp ?? (activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1),
@@ -76,39 +141,27 @@ const ActiveBattleView = ({
         mp: activeOpponent.currentMp || 0,
         sprite: activeOpponent.sprite || '',
     } : {
-        name: 'Pokémon hoang dã',
-        owner: 'Hoang dã',
+        name: 'Pokemon Hoang Dã',
+        owner: 'Hoang Dã',
         level: 1,
         maxHp: 1,
         hp: 1,
         maxMp: 0,
         mp: 0,
-        sprite: ''
+        sprite: '',
     }
 
-    // Map real moves to UI structure, or use placeholders if string only
-    const moves = playerMon?.moves?.length > 0
-        ? playerMon.moves.map((m, i) => ({
-            id: i,
-            name: typeof m === 'string' ? m : m.name,
-            type: 'normal',
-            mp: 5,
-            power: 50,
-            icon: '👊'
-        }))
-        : []
+    const moves = playerMon?.moves || normalizeMoveList([])
+    const selectedMove = moves[selectedMoveIndex] || moves[0] || normalizeMoveList([])[0]
 
     return (
-        <div className="space-y-4 animate-fadeIn">
-            {/* Battle Arena */}
+        <div className="space-y-3 animate-fadeIn">
             <div className="grid grid-cols-2 gap-1 bg-white border border-slate-400 p-1 rounded">
-                {/* Player Side */}
                 <div className="border-2 border-double border-slate-300 rounded p-2 bg-white flex flex-col items-center">
                     <h3 className="font-bold text-sm mb-1">
-                        {playerMon ? `Của bạn: ${playerMon.name}` : 'Chưa có Pokémon trong đội'}
+                        {playerMon ? `Của bạn: ${playerMon.name}` : 'Không có Pokemon trong đội'}
                     </h3>
 
-                    {/* Bars */}
                     {playerMon && (
                         <div className="w-full grid grid-cols-2 gap-1 mb-2">
                             <ProgressBar current={playerMon.hp} max={playerMon.maxHp} colorClass="bg-green-500" label="HP" />
@@ -134,7 +187,6 @@ const ActiveBattleView = ({
                     )}
                 </div>
 
-                {/* Enemy Side */}
                 <div className="border-2 border-double border-slate-300 rounded p-2 bg-white flex flex-col items-center">
                     <h3 className="font-bold text-sm mb-1">{enemyMon.owner} - {enemyMon.name}</h3>
 
@@ -158,51 +210,48 @@ const ActiveBattleView = ({
                 </div>
             </div>
 
-            {/* Action Menu */}
             <div className="border border-slate-400 bg-white rounded overflow-hidden">
-                {/* Tabs */}
                 <div className="flex border-b border-slate-300 text-xs font-bold bg-slate-50">
                     <button
                         onClick={() => onSelectTab('fight')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'fight' ? 'text-green-700 border-b-2 border-green-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Chiến đấu
+                        Chiến Đấu
                     </button>
                     <button
                         onClick={() => onSelectTab('item')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'item' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Vật phẩm
+                        Vật Phẩm
                     </button>
                     <button
                         onClick={() => onSelectTab('focus')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'focus' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Tập trung
+                        Tập Trung
                     </button>
                     <button
                         onClick={() => onSelectTab('party')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'party' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Đổi đội
+                        Đổi Đội Hình
                     </button>
                     <button
                         onClick={() => onSelectTab('run')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'run' ? 'text-red-700 border-b-2 border-red-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Bỏ chạy
+                        Thoát
                     </button>
                 </div>
 
-                {/* Moves Grid */}
                 {activeTab === 'fight' && (moves.length > 0 ? (
                     <div className="p-2 grid grid-cols-2 gap-2">
                         {moves.map((move, idx) => {
-                            const isSelected = selectedMove === idx
+                            const isSelected = selectedMoveIndex === idx
                             return (
                                 <button
                                     key={move.id}
-                                    onClick={() => setSelectedMove(idx)}
+                                    onClick={() => onSelectMove?.(idx)}
                                     className={`text-left p-1 border rounded flex justify-between items-center ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'border-slate-200 hover:bg-slate-50'}`}
                                 >
                                     <div>
@@ -212,15 +261,13 @@ const ActiveBattleView = ({
                                         <span className="text-xs font-bold text-slate-800">{move.name}</span>
                                         <div className="text-[10px] text-slate-500 mt-0.5">{move.mp} MP</div>
                                     </div>
-                                    <div className="text-xs font-bold">
-                                        {move.type === 'grass' ? '🍃' : move.type === 'fire' ? '🔥' : move.type === 'water' ? '💧' : '👊'} {move.power}
-                                    </div>
+                                    <div className="text-xs font-bold">{move.power}</div>
                                 </button>
                             )
                         })}
                     </div>
                 ) : (
-                    <div className="p-3 text-center text-xs text-slate-500">Chưa có kỹ năng để hiển thị.</div>
+                    <div className="p-3 text-center text-xs text-slate-500">Không có chiêu thức.</div>
                 ))}
 
                 {activeTab === 'item' && (
@@ -245,11 +292,11 @@ const ActiveBattleView = ({
                 )}
 
                 {activeTab === 'focus' && (
-                    <div className="p-3 text-center text-xs text-slate-500">Chức năng tập trung sẽ có sau.</div>
+                    <div className="p-3 text-center text-xs text-slate-500">Sắp ra mắt.</div>
                 )}
 
                 {activeTab === 'party' && (
-                    <div className="p-3 text-center text-xs text-slate-500">Đổi đội sẽ có sau.</div>
+                    <div className="p-3 text-center text-xs text-slate-500">Sắp ra mắt.</div>
                 )}
 
                 {activeTab === 'run' && (
@@ -258,44 +305,53 @@ const ActiveBattleView = ({
                             onClick={onRun}
                             className="px-4 py-2 bg-white border border-slate-300 rounded text-sm font-bold text-slate-700"
                         >
-                            Bỏ chạy
+                            Thoát
                         </button>
                     </div>
                 )}
 
-                {/* Footer Action */}
                 {activeTab === 'fight' && (
                     <div className="p-2 text-center border-t border-slate-200 bg-slate-50">
-                        {moves.length > 0 ? (
-                            <div className="text-xs text-slate-500 mb-2">Chọn kỹ năng hoặc hành động rồi nhấn nút bên dưới.</div>
-                        ) : (
-                            <div className="text-xs text-slate-500 mb-2">Chưa có kỹ năng. Bạn vẫn có thể tấn công cơ bản.</div>
-                        )}
+                        <div className="text-xs text-slate-500 mb-2">
+                            Chọn chiêu thức hoặc hành động, sau đó nhấn dưới đây.
+                        </div>
                         <button
-                            onClick={() => onAttack?.(playerMon)}
-                            disabled={!playerMon}
-                            className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm text-sm flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
+                            onClick={() => onAttack?.(selectedMove)}
+                            disabled={!playerMon || isAttacking}
+                            className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm text-sm mx-auto disabled:opacity-50"
                         >
-                            <span className="text-lg">🍃</span> Tấn công
+                            {isAttacking ? 'Đang tấn công...' : 'Tấn Công'}
                         </button>
                     </div>
-                )}
-                {actionMessage && (
-                    <div className="p-2 text-center text-xs font-bold text-blue-700">{actionMessage}</div>
                 )}
             </div>
 
-            {!encounter && (
+            <div className="border border-slate-400 bg-white rounded overflow-hidden">
+                <div className="bg-amber-50 border-b border-slate-300 text-center text-sm font-bold py-1.5">
+                    Kết Quả Trận Đấu
+                </div>
+                <div className="p-3 text-center text-sm text-slate-700 min-h-20">
+                    {actionMessage && <div className="font-semibold mb-1">{actionMessage}</div>}
+                    {battleLog?.length > 0 ? (
+                        battleLog.map((line, idx) => (
+                            <div key={`${line}-${idx}`}>{line}</div>
+                        ))
+                    ) : (
+                        <div className="text-slate-500">Chưa có hành động.</div>
+                    )}
+                </div>
+            </div>
+
+            {(!opponent?.team || opponent.team.length === 0) && (
                 <div className="border border-slate-400 bg-white rounded overflow-hidden">
                     <div className="p-3 text-center text-xs text-slate-500">
-                        Chưa có trận chiến nào. Hãy vào bản đồ để gặp Pokemon.
+                        Chưa cấu hình đội hình huấn luyện viên.
                     </div>
                 </div>
             )}
         </div>
     )
 }
-
 export function BattlePage() {
     const [maps, setMaps] = useState([])
     const [party, setParty] = useState([])
@@ -312,6 +368,9 @@ export function BattlePage() {
     const [hoveredCompletedId, setHoveredCompletedId] = useState(null)
     const [activeTab, setActiveTab] = useState('fight')
     const [inventory, setInventory] = useState([])
+    const [selectedMoveIndex, setSelectedMoveIndex] = useState(0)
+    const [battleLog, setBattleLog] = useState([])
+    const [isAttacking, setIsAttacking] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -333,14 +392,11 @@ export function BattlePage() {
             setPlayerState(profileData?.playerState || null)
             setMasterPokemon(trainerData?.trainers || [])
             setInventory(inventoryData?.inventory || [])
-            if (!opponent) {
-                const builtOpponent = buildOpponent(encounterData?.encounter || null, trainerData?.trainers || [])
-                setOpponent(builtOpponent)
-                setBattleOpponent(builtOpponent)
-            }
-            if ((profileData?.playerState?.wins || 0) > 0 && completedEntries.length === 0) {
-                setCompletedEntries(buildCompletedEntries(trainerData?.trainers || []))
-            }
+
+            const builtOpponent = buildOpponent(encounterData?.encounter || null, trainerData?.trainers || [])
+            setOpponent(builtOpponent)
+            setBattleOpponent(builtOpponent)
+
         } catch (error) {
             console.error('Failed to load data', error)
         } finally {
@@ -348,45 +404,113 @@ export function BattlePage() {
         }
     }
 
-    const handleAttack = async () => {
-        if (!battleOpponent?.team?.length) return
-        let resolveBattle = false
-        setBattleOpponent((prev) => {
-            if (!prev) return prev
-            const currentIndex = prev.currentIndex || 0
-            const team = prev.team.map((member, idx) => {
-                if (idx !== currentIndex) return member
-                const baseHp = member.maxHp || member.baseStats?.hp || 1
-                const currentHp = member.currentHp ?? baseHp
-                const nextHp = Math.max(0, currentHp - 10)
-                return {
-                    ...member,
-                    currentHp: nextHp,
-                }
+    const appendBattleLog = (lines) => {
+        const normalized = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
+        if (normalized.length === 0) return
+        setBattleLog((prev) => [...normalized, ...prev].slice(0, 8))
+    }
+
+    const handleAttack = async (selectedMove) => {
+        if (isAttacking || !battleOpponent?.team?.length) return
+
+        const currentIndex = battleOpponent.currentIndex || 0
+        const target = battleOpponent.team[currentIndex]
+        if (!target) return
+
+        const activePokemon = party.find((p) => p) || null
+        const activeName = activePokemon?.nickname || activePokemon?.pokemonId?.name || 'Pokemon'
+
+        setIsAttacking(true)
+        try {
+            const res = await gameApi.battleAttack({
+                moveName: selectedMove?.name,
+                move: selectedMove,
+                opponent: {
+                    level: target.level,
+                    currentHp: target.currentHp ?? target.maxHp,
+                    maxHp: target.maxHp,
+                    baseStats: target.baseStats || {},
+                },
             })
 
-            const active = team[currentIndex]
-            if (active && active.currentHp === 0) {
-                const nextIndex = Math.min(team.length - 1, currentIndex + 1)
-                if (nextIndex !== currentIndex) {
-                    setActionMessage(`Đã hạ ${active.name}. ${team[nextIndex]?.name || 'Đối thủ mới'} xuất hiện!`)
-                    return { ...prev, team, currentIndex: nextIndex }
-                }
-                setActionMessage('Bạn đã đánh bại toàn bộ đội hình!')
-                resolveBattle = true
-                return { ...prev, team }
+            const battle = res?.battle || {}
+            const damage = Number.isFinite(battle.damage) ? battle.damage : 1
+            const nextHp = Number.isFinite(battle.currentHp)
+                ? Math.max(0, battle.currentHp)
+                : Math.max(0, (target.currentHp ?? target.maxHp) - damage)
+            const moveName = battle?.move?.name || selectedMove?.name || 'Attack'
+
+            if (battle?.player && Number.isFinite(battle.player.mp)) {
+                setPlayerState((prev) => (prev
+                    ? { ...prev, mp: battle.player.mp, maxMp: battle.player.maxMp ?? prev.maxMp }
+                    : prev
+                ))
             }
 
-            setActionMessage('Bạn tấn công và gây sát thương!')
-            return { ...prev, team }
-        })
-        if (resolveBattle) {
-            try {
-                const res = await gameApi.resolveBattle(battleOpponent.team)
-                setBattleResults(res.results)
-            } catch (err) {
-                setActionMessage(err.message)
+            let defeatedAll = false
+            let defeatedName = ''
+            let nextName = ''
+            const currentBattleState = battleOpponent
+            const currentBattleIndex = currentBattleState?.currentIndex || 0
+            const teamForResolve = (currentBattleState?.team || []).map((member, index) => {
+                if (index !== currentBattleIndex) return member
+                return { ...member, currentHp: nextHp }
+            })
+
+            let nextBattleState = currentBattleState
+            const activeEnemy = teamForResolve[currentBattleIndex]
+            if (activeEnemy && activeEnemy.currentHp <= 0) {
+                defeatedName = activeEnemy.name || 'Pokemon'
+                const nextIndex = teamForResolve.findIndex((member, memberIndex) => {
+                    if (memberIndex <= currentBattleIndex) return false
+                    const hp = member.currentHp ?? member.maxHp ?? 0
+                    return hp > 0
+                })
+                if (nextIndex !== -1) {
+                    nextName = teamForResolve[nextIndex]?.name || 'Pokemon'
+                    nextBattleState = { ...currentBattleState, team: teamForResolve, currentIndex: nextIndex }
+                } else {
+                    defeatedAll = true
+                    nextBattleState = { ...currentBattleState, team: teamForResolve }
+                }
+            } else {
+                nextBattleState = { ...currentBattleState, team: teamForResolve }
             }
+
+            setBattleOpponent(nextBattleState)
+
+            const logLines = [`${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`]
+            if (nextHp <= 0) {
+                logLines.push(`${target.name || 'Đối thủ'} đã bại trận.`)
+            }
+            appendBattleLog(logLines)
+
+            if (defeatedAll) {
+                setActionMessage('Bạn đã đánh bại toàn bộ đội hình đối thủ.')
+                try {
+                    const resResolve = await gameApi.resolveBattle(
+                        teamForResolve || battleOpponent.team,
+                        currentBattleState?.trainerId || null
+                    )
+                    setBattleResults(resResolve.results)
+                    setCompletedEntries((prev) => {
+                        const entry = buildCompletedEntryFromBattle(currentBattleState)
+                        if (!entry) return prev
+                        if (prev.some((item) => item.id === entry.id)) return prev
+                        return [entry, ...prev]
+                    })
+                } catch (err) {
+                    setActionMessage(err.message)
+                }
+            } else if (nextName) {
+                setActionMessage(`${defeatedName} bại trận. ${nextName} tham chiến.`)
+            } else {
+                setActionMessage(`${moveName} gây ${damage} sát thương.`)
+            }
+        } catch (err) {
+            setActionMessage(err.message)
+        } finally {
+            setIsAttacking(false)
         }
     }
 
@@ -394,7 +518,8 @@ export function BattlePage() {
         if (!entry?.item?._id) return
         try {
             const res = await gameApi.useItem(entry.item._id, 1, encounter?._id || null)
-            setActionMessage(res.message || 'Đã dùng vật phẩm')
+            setActionMessage(res.message || 'Đã dùng vật phẩm.')
+            appendBattleLog([res.message || 'Đã dùng vật phẩm.'])
             const inventoryData = await gameApi.getInventory()
             setInventory(inventoryData?.inventory || [])
         } catch (err) {
@@ -403,16 +528,22 @@ export function BattlePage() {
     }
 
     const handleRun = async () => {
-        if (!encounter?._id) return
+        if (!encounter?._id) {
+            setActionMessage('Bạn đã thoát.')
+            appendBattleLog(['Bạn đã thoát.'])
+            setView('lobby')
+            return
+        }
         try {
             const res = await gameApi.runEncounter(encounter._id)
-            setActionMessage(res.message || 'Bạn đã bỏ chạy')
+            setActionMessage(res.message || 'Bạn đã thoát.')
+            appendBattleLog([res.message || 'Bạn đã thoát.'])
             setView('lobby')
+            setEncounter(null)
         } catch (err) {
             setActionMessage(err.message)
         }
     }
-
     const getPokemonSprite = (pokemon) => {
         if (!pokemon) return ''
         return pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.front_default || ''
@@ -455,15 +586,35 @@ export function BattlePage() {
         })
 
         return {
+            trainerId: trainer?._id || null,
             trainerName: trainer?.name || 'Trainer',
             trainerImage: trainer?.imageUrl || '/assests/08_trainer_female.png',
-            trainerQuote: trainer?.quote || 'Chúc bạn may mắn!',
+            trainerQuote: trainer?.quote || 'Good luck!',
+            trainerPrize: trainer?.prizePokemonId?.name || 'Không có',
             currentIndex: 0,
             level: currentEncounter?.level || 1,
             hp: currentEncounter?.hp || 1,
             maxHp: currentEncounter?.maxHp || 1,
             pokemon: currentEncounter?.pokemon || null,
             team,
+        }
+    }
+
+    const buildCompletedEntryFromBattle = (battleData) => {
+        if (!battleData) return null
+        const team = (battleData.team || []).map((poke, index) => ({
+            id: poke.id || `${battleData.trainerId || battleData.trainerName || 'trainer'}-${index}`,
+            name: poke.name || 'Pokemon',
+            level: poke.level || 1,
+            sprite: poke.sprite || '',
+        }))
+        return {
+            id: battleData.trainerId || battleData.trainerName || `trainer-${Date.now()}`,
+            name: battleData.trainerName || 'Trainer',
+            image: battleData.trainerImage || '/assests/08_trainer_female.png',
+            quote: battleData.trainerQuote || '',
+            team,
+            prize: battleData.trainerPrize || 'Không có',
         }
     }
 
@@ -494,7 +645,7 @@ export function BattlePage() {
             <div className="space-y-6 animate-fadeIn max-w-4xl mx-auto font-sans">
                 <div className="text-center space-y-2">
                     <div className="text-slate-600 font-bold text-sm">
-                        🪙 {playerState?.gold ?? 0} Platinum Coins <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Moon Points
+                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
                     </div>
                 </div>
 
@@ -510,6 +661,10 @@ export function BattlePage() {
                     inventory={inventory}
                     onUseItem={handleUseItem}
                     onRun={handleRun}
+                    selectedMoveIndex={selectedMoveIndex}
+                    onSelectMove={setSelectedMoveIndex}
+                    battleLog={battleLog}
+                    isAttacking={isAttacking}
                 />
                 {battleResults && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -518,7 +673,15 @@ export function BattlePage() {
                             <div className="p-4 text-center text-xs">
                                 <div className="mb-2">Trận đấu đã kết thúc thành công!</div>
                                 <div className="border border-slate-200 rounded p-3 flex items-center gap-3 justify-center">
-                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
+                                    {battleResults.pokemon?.imageUrl ? (
+                                        <img
+                                            src={battleResults.pokemon.imageUrl}
+                                            alt={battleResults.pokemon.name}
+                                            className="w-10 h-10 object-contain pixelated bg-slate-100 rounded border border-slate-200"
+                                        />
+                                    ) : (
+                                        <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
+                                    )}
                                     <div className="text-left">
                                         <div className="font-bold text-sm">{battleResults.pokemon.name}</div>
                                         <div>+{battleResults.pokemon.levelsGained} cấp</div>
@@ -526,14 +689,29 @@ export function BattlePage() {
                                         <div className="text-slate-500">EXP: {battleResults.pokemon.exp}/{battleResults.pokemon.expToNext}</div>
                                     </div>
                                 </div>
-                                <div className="mt-3 text-sm font-bold text-slate-700">+{battleResults.rewards.coins} Coins</div>
+                                <div className="mt-3 text-sm font-bold text-slate-700">+{battleResults.rewards.coins} Xu</div>
                                 <div className="text-xs text-slate-500">+{battleResults.rewards.trainerExp} EXP Huấn luyện viên</div>
+                                {battleResults.rewards?.prizePokemon?.claimed && (
+                                    <div className="text-xs text-emerald-600 mt-1">
+                                        + Phần thưởng: {battleResults.rewards.prizePokemon.name}
+                                    </div>
+                                )}
+                                {battleResults.rewards?.prizePokemon?.alreadyClaimed && (
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        Phần thưởng đã nhận: {battleResults.rewards.prizePokemon.name}
+                                    </div>
+                                )}
                             </div>
                             <div className="border-t border-slate-200 p-3 text-center">
                                 <button
                                     onClick={() => {
                                         setBattleResults(null)
                                         setView('lobby')
+                                        setBattleLog([])
+                                        setActionMessage('')
+                                        setSelectedMoveIndex(0)
+                                        setActiveTab('fight')
+                                        loadData()
                                     }}
                                     className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
                                 >
@@ -552,7 +730,7 @@ export function BattlePage() {
 
             <div className="text-center space-y-2">
                 <div className="text-slate-600 font-bold text-sm">
-                    🪙 {playerState?.gold ?? 0} Platinum Coins <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Moon Points
+                    🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
                 </div>
                 <h1 className="text-3xl font-extrabold text-blue-900 drop-shadow-sm uppercase tracking-wide">
                     Khu Vực Chiến Đấu
@@ -585,15 +763,23 @@ export function BattlePage() {
                         </div>
                     )}
 
-                    {encounter ? (
+                    {opponent?.team?.length ? (
                         <button
-                            onClick={() => setView('battle')}
+                            onClick={() => {
+                                setBattleResults(null)
+                                setBattleLog([])
+                                setActionMessage('')
+                                setSelectedMoveIndex(0)
+                                setActiveTab('fight')
+                                setBattleOpponent(opponent || buildOpponent(null, masterPokemon))
+                                setView('battle')
+                            }}
                             className="text-3xl font-extrabold text-blue-800 hover:text-blue-600 hover:scale-105 transition-transform drop-shadow-sm my-2"
                         >
                             Chiến đấu!
                         </button>
                     ) : (
-                        <div className="text-slate-500 text-sm">Chưa có trận chiến nào. Hãy vào bản đồ để gặp Pokemon.</div>
+                        <div className="text-slate-500 text-sm">Không có đội hình huấn luyện viên để chiến đấu.</div>
                     )}
 
                     <div className="w-full mt-4 border-t border-blue-100"></div>
@@ -619,9 +805,9 @@ export function BattlePage() {
 
                     <div className="w-full py-2">
                         <div className="text-xs font-bold text-slate-500 uppercase">Phần Thưởng Pokémon</div>
-                        {encounter ? (
+                        {opponent?.team?.length ? (
                             <div className="text-sm font-bold text-slate-700 mt-1">
-                                {encounter.pokemon?.name || 'Pokemon'} (Lv. {encounter.level})
+                                {opponent?.trainerPrize || 'Khong co'}
                             </div>
                         ) : (
                             <div className="text-sm font-bold text-slate-400 mt-1">Không có</div>
@@ -630,7 +816,7 @@ export function BattlePage() {
                 </div>
             </div>
 
-            {(playerState?.wins || 0) > 0 && (
+            {completedEntries.length > 0 && (
                 <>
                     <div className="rounded border border-blue-400 bg-white shadow-sm overflow-visible">
                         <SectionHeader title="Đã Hoàn Thành" />
@@ -701,3 +887,10 @@ export function ExplorePage() {
         </div>
     )
 }
+
+
+
+
+
+
+

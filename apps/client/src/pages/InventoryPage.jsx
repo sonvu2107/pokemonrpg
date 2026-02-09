@@ -68,13 +68,13 @@ export default function InventoryPage() {
                 <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
                     Kho Đồ
                 </div>
-
                 <div className="bg-white p-2 sm:p-4 space-y-4">
 
                     {/* Toggle Item Views */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title="Phân Loại Vật Phẩm" />
-                        <div className="bg-blue-50/50 p-3 text-center">
+                        {/* Desktop: Buttons */}
+                        <div className="hidden sm:block bg-blue-50/50 p-3 text-center">
                             <div className="flex flex-wrap justify-center gap-2 text-xs font-bold text-blue-700">
                                 {['Tất Cả', 'Vật Phẩm Chiến Đấu', 'Vật Phẩm Khác', 'Vật Phẩm Quan Trọng'].map((tab) => (
                                     <button
@@ -87,49 +87,65 @@ export default function InventoryPage() {
                                 ))}
                             </div>
                         </div>
-                    </div>
-
-                    {/* Result / Items Grid */}
-                    <div className="border border-blue-400 rounded overflow-hidden shadow-sm min-h-[200px]">
-                        <SectionHeader title="Danh Sách" />
-                        <div className="bg-white p-4">
-                            {error && (
-                                <div className="text-center text-red-500 font-bold py-4">
-                                    {error}
-                                </div>
-                            )}
-                            {loading ? (
-                                <div className="text-center text-slate-500 italic py-8">
-                                    Đang tải kho đồ...
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
-                                        {filteredItems.map(item => (
-                                            <div key={item.id} className="flex flex-col items-center justify-center group">
-                                                <div className="w-12 h-12 flex items-center justify-center transition-transform group-hover:scale-110">
-                                                    <img src={item.image} alt={item.name} className="w-10 h-10 pixelated rendering-pixelated" />
-                                                </div>
-                                                <div className="mt-1 text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight">
-                                                    {item.name}
-                                                </div>
-                                                <div className="text-[10px] text-slate-500">x{item.quantity}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {filteredItems.length === 0 && (
-                                        <div className="text-center text-slate-400 italic py-8">
-                                            Túi đồ trống
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                        {/* Mobile: Dropdown */}
+                        <div className="sm:hidden bg-blue-50/50 p-3">
+                            <select
+                                value={activeTab}
+                                onChange={(e) => setActiveTab(e.target.value)}
+                                className="w-full px-3 py-2 border border-blue-300 rounded bg-white text-sm font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                {['Tất Cả', 'Vật Phẩm Chiến Đấu', 'Vật Phẩm Khác', 'Vật Phẩm Quan Trọng'].map((tab) => (
+                                    <option key={tab} value={tab}>{tab}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
+                    {/* Result / Items Grid */}
+                    <div className="border border-blue-400 rounded overflow-hidden shadow-sm min-h-[200px] flex flex-col bg-white">
+                        <SectionHeader title="Danh Sách" />
+                        <div className="p-1">
+                            {/* Mobile: max-height viewport relative, Desktop: fixed height */}
+                            <div className="overflow-y-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] p-3 overscroll-contain touch-pan-y">
+                                {error && (
+                                    <div className="text-center text-red-500 font-bold py-4">
+                                        {error}
+                                    </div>
+                                )}
+                                {loading ? (
+                                    <div className="text-center text-slate-500 italic py-8">
+                                        Đang tải kho đồ...
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Mobile: 3 cols, Tablet: 5 cols, Desktop: 8 cols */}
+                                        <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4">
+                                            {filteredItems.map(item => (
+                                                <div key={item.id} className="flex flex-col items-center justify-center group">
+                                                    <div className="w-14 h-14 sm:w-12 sm:h-12 flex items-center justify-center transition-transform group-hover:scale-110">
+                                                        <img src={item.image} alt={item.name} className="w-12 h-12 sm:w-10 sm:h-10 pixelated rendering-pixelated" />
+                                                    </div>
+                                                    <div className="mt-1 text-xs sm:text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight">
+                                                        {item.name}
+                                                    </div>
+                                                    <div className="text-xs sm:text-[10px] text-slate-500">x{item.quantity}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {filteredItems.length === 0 && (
+                                            <div className="text-center text-slate-400 italic py-8">
+                                                Túi đồ trống
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
+
         </div>
     )
 }

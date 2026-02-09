@@ -454,10 +454,10 @@ export default function PokemonListPage() {
                         </div>
                         <div
                             ref={tableContainerRef}
-                            className="bg-white border border-slate-200 rounded-b-lg overflow-x-auto shadow-sm rounded-t-none"
+                            className="bg-white border border-slate-200 rounded-b-lg overflow-auto shadow-sm rounded-t-none max-h-[70vh] custom-scrollbar"
                         >
                             <table className="w-full text-sm min-w-[1200px]">
-                                <thead className="bg-blue-600 text-white border-b border-blue-700">
+                                <thead className="bg-blue-600 text-white border-b border-blue-700 sticky top-0 z-10">
                                     <tr>
                                         <th className="px-3 py-3 text-left font-bold uppercase text-xs w-14 whitespace-nowrap">#</th>
                                         <th className="px-3 py-3 text-center font-bold uppercase text-xs w-20 whitespace-nowrap">Hình</th>

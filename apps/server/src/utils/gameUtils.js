@@ -9,6 +9,27 @@ export const RARITY_STAT_GAIN = {
     a: 9,
     s: 13,
     ss: 20,
+    sss: 50,
+}
+
+export const RARITY_STAT_MULTIPLIER = {
+    d: 1.0,
+    c: 1.0,
+    b: 1.0,
+    a: 1.05,
+    s: 1.10,
+    ss: 1.12,
+    sss: 1.15,
+}
+
+export const RARITY_EXP_MULTIPLIER = {
+    d: 1.0,
+    c: 1.0,
+    b: 1.0,
+    a: 1.1,
+    s: 1.25,
+    ss: 1.35,
+    sss: 1.5,
 }
 
 export const RARITY_ALIASES = {
@@ -27,16 +48,21 @@ export const normalizeRarity = (rarity) => {
 
 export const getRarityStatGain = (rarity) => RARITY_STAT_GAIN[normalizeRarity(rarity)] ?? 1
 
+export const getRarityStatMultiplier = (rarity) => RARITY_STAT_MULTIPLIER[normalizeRarity(rarity)] ?? 1.0
+
+export const getRarityExpMultiplier = (rarity) => RARITY_EXP_MULTIPLIER[normalizeRarity(rarity)] ?? 1.0
+
 export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
     const gain = getRarityStatGain(rarity)
+    const multiplier = getRarityStatMultiplier(rarity)
     const step = Math.max(0, level - 1) * gain
     return {
-        hp: Math.max(1, (baseStats.hp || 0) + step),
-        atk: Math.max(1, (baseStats.atk || 0) + step),
-        def: Math.max(1, (baseStats.def || 0) + step),
-        spatk: Math.max(1, (baseStats.spatk || 0) + step),
-        spdef: Math.max(1, (baseStats.spldef || 0) + step),
-        spd: Math.max(1, (baseStats.spd || 0) + step),
+        hp: Math.max(1, Math.floor(((baseStats.hp || 0) + step) * multiplier)),
+        atk: Math.max(1, Math.floor(((baseStats.atk || 0) + step) * multiplier)),
+        def: Math.max(1, Math.floor(((baseStats.def || 0) + step) * multiplier)),
+        spatk: Math.max(1, Math.floor(((baseStats.spatk || 0) + step) * multiplier)),
+        spdef: Math.max(1, Math.floor(((baseStats.spldef || 0) + step) * multiplier)),
+        spd: Math.max(1, Math.floor(((baseStats.spd || 0) + step) * multiplier)),
     }
 }
 
