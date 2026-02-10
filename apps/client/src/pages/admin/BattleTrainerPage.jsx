@@ -93,6 +93,7 @@ export default function BattleTrainerPage() {
             const payload = {
                 ...form,
                 team: form.team.length ? form.team : buildRandomTeam(),
+                prizePokemonId: form.prizePokemonId || null,
             }
             if (editingId) {
                 await battleTrainerApi.update(editingId, payload)

@@ -99,7 +99,7 @@ router.put('/:id', async (req, res) => {
         if (isActive !== undefined) trainer.isActive = isActive
         if (orderIndex !== undefined) trainer.orderIndex = orderIndex
         if (shouldUpdateTeam) trainer.team = normalizedTeam
-        if (prizePokemonId !== undefined) trainer.prizePokemonId = prizePokemonId
+        if (prizePokemonId !== undefined) trainer.prizePokemonId = prizePokemonId || null
         if (platinumCoinsReward !== undefined) trainer.platinumCoinsReward = platinumCoinsReward
         if (expReward !== undefined) trainer.expReward = expReward
 
