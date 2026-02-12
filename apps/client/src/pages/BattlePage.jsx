@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { gameApi } from '../services/gameApi'
 
+const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
+
 // Helper for the blue gradient header
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm first:rounded-t">
@@ -372,6 +374,31 @@ export function BattlePage() {
     const [battleLog, setBattleLog] = useState([])
     const [isAttacking, setIsAttacking] = useState(false)
 
+    const getStoredTrainerOrder = () => {
+        const raw = window.localStorage.getItem(TRAINER_ORDER_STORAGE_KEY)
+        const parsed = Number.parseInt(raw || '0', 10)
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+    }
+
+    const getTrainerByOrder = (trainers = []) => {
+        if (!Array.isArray(trainers) || trainers.length === 0) {
+            return { trainer: null, trainerOrder: 0 }
+        }
+        const trainerOrder = getStoredTrainerOrder() % trainers.length
+        return {
+            trainer: trainers[trainerOrder],
+            trainerOrder,
+        }
+    }
+
+    const advanceTrainerOrder = (currentOrder, total) => {
+        if (!Number.isFinite(total) || total <= 0) return 0
+        const current = Number.isFinite(currentOrder) ? currentOrder : 0
+        const nextOrder = (current + 1) % total
+        window.localStorage.setItem(TRAINER_ORDER_STORAGE_KEY, String(nextOrder))
+        return nextOrder
+    }
+
     useEffect(() => {
         loadData()
     }, [])
@@ -390,10 +417,12 @@ export function BattlePage() {
             setParty(partyData)
             setEncounter(encounterData?.encounter || null)
             setPlayerState(profileData?.playerState || null)
-            setMasterPokemon(trainerData?.trainers || [])
+            const trainerList = trainerData?.trainers || []
+            setMasterPokemon(trainerList)
             setInventory(inventoryData?.inventory || [])
 
-            const builtOpponent = buildOpponent(encounterData?.encounter || null, trainerData?.trainers || [])
+            const { trainer, trainerOrder } = getTrainerByOrder(trainerList)
+            const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
             setOpponent(builtOpponent)
             setBattleOpponent(builtOpponent)
 
@@ -499,6 +528,12 @@ export function BattlePage() {
                         if (prev.some((item) => item.id === entry.id)) return prev
                         return [entry, ...prev]
                     })
+
+                    if (masterPokemon.length > 0) {
+                        const nextOrder = advanceTrainerOrder(currentBattleState?.trainerOrder || 0, masterPokemon.length)
+                        const nextTrainer = masterPokemon[nextOrder] || null
+                        setOpponent(buildOpponent(null, nextTrainer, nextOrder))
+                    }
                 } catch (err) {
                     setActionMessage(err.message)
                 }
@@ -544,6 +579,42 @@ export function BattlePage() {
             setActionMessage(err.message)
         }
     }
+
+    const resolveBattleStats = (pokemonStats = {}, formStats = {}) => {
+        const baseHp = Number(formStats?.hp) || Number(pokemonStats?.hp) || 1
+        const baseAtk = Number(formStats?.atk) || Number(pokemonStats?.atk) || 1
+        const baseDef = Number(formStats?.def) || Number(pokemonStats?.def) || 1
+        const baseSpAtk = Number(formStats?.spatk) || Number(pokemonStats?.spatk) || 1
+        const baseSpDef = Number(formStats?.spdef) || Number(formStats?.spldef) || Number(pokemonStats?.spdef) || Number(pokemonStats?.spldef) || 1
+        const baseSpd = Number(formStats?.spd) || Number(pokemonStats?.spd) || 1
+
+        return {
+            hp: Math.max(1, Math.floor(baseHp)),
+            atk: Math.max(1, Math.floor(baseAtk)),
+            def: Math.max(1, Math.floor(baseDef)),
+            spatk: Math.max(1, Math.floor(baseSpAtk)),
+            spdef: Math.max(1, Math.floor(baseSpDef)),
+            spd: Math.max(1, Math.floor(baseSpd)),
+        }
+    }
+
+    const resolveTrainerTeamEntry = (entry = {}) => {
+        const poke = entry.pokemonId || entry.pokemon || null
+        const normalizedFormId = String(entry?.formId || poke?.defaultFormId || 'normal').trim() || 'normal'
+        const forms = Array.isArray(poke?.forms) ? poke.forms : []
+        const form = forms.find((candidate) => String(candidate?.formId || '').trim() === normalizedFormId) || null
+        const resolvedStats = resolveBattleStats(poke?.baseStats || {}, form?.stats || {})
+        const resolvedSprite = form?.imageUrl || form?.sprites?.normal || form?.sprites?.icon || getPokemonSprite(poke)
+
+        return {
+            poke,
+            formId: normalizedFormId,
+            formName: form?.formName || normalizedFormId,
+            baseStats: resolvedStats,
+            sprite: resolvedSprite,
+        }
+    }
+
     const getPokemonSprite = (pokemon) => {
         if (!pokemon) return ''
         return pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.front_default || ''
@@ -562,20 +633,20 @@ export function BattlePage() {
         return picked
     }
 
-    const buildOpponent = (currentEncounter, trainers = []) => {
-        const trainer = trainers.length
-            ? trainers[Math.floor(Math.random() * trainers.length)]
-            : null
+    const buildOpponent = (currentEncounter, trainer = null, trainerOrder = 0) => {
 
         const team = (trainer?.team || []).map((entry) => {
-            const poke = entry.pokemonId || entry.pokemon || null
-            const baseStats = poke?.baseStats || {}
+            const resolvedEntry = resolveTrainerTeamEntry(entry)
+            const poke = resolvedEntry.poke
+            const baseStats = resolvedEntry.baseStats
             const hp = Math.max(1, (baseStats.hp || 1) + ((entry.level || 1) - 1))
             return {
                 id: poke?._id || entry.pokemonId,
                 name: poke?.name || 'Pokemon',
                 level: entry.level || 1,
-                sprite: getPokemonSprite(poke),
+                sprite: resolvedEntry.sprite,
+                formId: resolvedEntry.formId,
+                formName: resolvedEntry.formName,
                 baseStats,
                 pokemon: poke,
                 currentHp: hp,
@@ -587,10 +658,13 @@ export function BattlePage() {
 
         return {
             trainerId: trainer?._id || null,
+            trainerOrder,
             trainerName: trainer?.name || 'Trainer',
             trainerImage: trainer?.imageUrl || '/assests/08_trainer_female.png',
             trainerQuote: trainer?.quote || 'Good luck!',
             trainerPrize: trainer?.prizePokemonId?.name || 'Không có',
+            trainerCoinsReward: Math.max(0, Number(trainer?.platinumCoinsReward) || 0),
+            trainerExpReward: Math.max(0, Number(trainer?.expReward) || 0),
             currentIndex: 0,
             level: currentEncounter?.level || 1,
             hp: currentEncounter?.hp || 1,
@@ -621,12 +695,13 @@ export function BattlePage() {
     const buildCompletedEntries = (trainerList) => {
         return trainerList.map((trainer) => {
             const team = (trainer.team || []).map((entry) => {
-                const poke = entry.pokemonId || entry.pokemon || null
+                const resolvedEntry = resolveTrainerTeamEntry(entry)
+                const poke = resolvedEntry.poke
                 return {
                     id: poke?._id || entry.pokemonId,
                     name: poke?.name || 'Pokemon',
                     level: entry.level || 1,
-                    sprite: getPokemonSprite(poke),
+                    sprite: resolvedEntry.sprite,
                 }
             })
             return {
@@ -771,7 +846,8 @@ export function BattlePage() {
                                 setActionMessage('')
                                 setSelectedMoveIndex(0)
                                 setActiveTab('fight')
-                                setBattleOpponent(opponent || buildOpponent(null, masterPokemon))
+                                const fallbackSelection = getTrainerByOrder(masterPokemon)
+                                setBattleOpponent(opponent || buildOpponent(null, fallbackSelection.trainer, fallbackSelection.trainerOrder))
                                 setView('battle')
                             }}
                             className="text-3xl font-extrabold text-blue-800 hover:text-blue-600 hover:scale-105 transition-transform drop-shadow-sm my-2"
@@ -798,16 +874,29 @@ export function BattlePage() {
                                         <div className="w-10 h-10 bg-slate-100 border border-slate-200 rounded" />
                                     )}
                                     <span className="text-[10px] font-bold text-slate-700">L. {poke.level}</span>
+                                    {poke.formId && poke.formId !== 'normal' && (
+                                        <span className="text-[9px] text-slate-500">{poke.formName || poke.formId}</span>
+                                    )}
                                 </div>
                             ))}
                         </div>
                     </div>
 
                     <div className="w-full py-2">
-                        <div className="text-xs font-bold text-slate-500 uppercase">Phần Thưởng Pokémon</div>
+                        <div className="text-xs font-bold text-slate-500 uppercase">Phần Thưởng</div>
                         {opponent?.team?.length ? (
-                            <div className="text-sm font-bold text-slate-700 mt-1">
-                                {opponent?.trainerPrize || 'Khong co'}
+                            <div className="mt-1 space-y-0.5 text-sm font-bold text-slate-700">
+                                <div>Pokémon: {opponent?.trainerPrize || 'Không có'}</div>
+                                <div>
+                                    Xu Bạch Kim: {opponent?.trainerCoinsReward > 0
+                                        ? `+${opponent.trainerCoinsReward}`
+                                        : 'Theo cấp đội hình'}
+                                </div>
+                                <div>
+                                    EXP huấn luyện viên: {opponent?.trainerExpReward > 0
+                                        ? `+${opponent.trainerExpReward}`
+                                        : 'Theo cấp đội hình'}
+                                </div>
                             </div>
                         ) : (
                             <div className="text-sm font-bold text-slate-400 mt-1">Không có</div>
