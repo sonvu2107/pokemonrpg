@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { getEffectiveAdminPermissions, hasAdminPermission } from '../constants/adminPermissions'
 
 const AuthContext = createContext(null)
 
@@ -34,8 +35,11 @@ export const AuthProvider = ({ children }) => {
         setUser(null)
     }
 
+    const adminPermissions = getEffectiveAdminPermissions(user)
+    const canAccessAdminModule = (permission) => hasAdminPermission(user, permission)
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, adminPermissions, canAccessAdminModule }}>
             {children}
         </AuthContext.Provider>
     )

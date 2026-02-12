@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { mapApi, pokemonApi } from '../../services/adminApi'
+import { mapApi } from '../../services/adminApi'
+import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
 
 export default function MapFormPage() {
@@ -51,7 +52,7 @@ export default function MapFormPage() {
     const loadPokemonOptions = async () => {
         try {
             setLoadingPokemon(true)
-            const data = await pokemonApi.list({ page: 1, limit: 5000 })
+            const data = await gameApi.getPokemonList({ page: 1, limit: 5000 })
             setAllPokemon(data.pokemon || [])
         } catch (err) {
             setError(err.message)

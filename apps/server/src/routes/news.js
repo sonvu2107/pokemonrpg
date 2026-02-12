@@ -1,6 +1,7 @@
 import express from 'express'
 import Post from '../models/Post.js'
-import { authMiddleware, requireAdmin } from '../middleware/auth.js'
+import { authMiddleware, requireAdmin, requireAdminPermission } from '../middleware/auth.js'
+import { ADMIN_PERMISSIONS } from '../constants/adminPermissions.js'
 
 const router = express.Router()
 
@@ -39,7 +40,7 @@ router.get('/:id', async (req, res) => {
 })
 
 // GET /api/news/admin/all - Get all posts including unpublished (admin only)
-router.get('/admin/all', authMiddleware, requireAdmin, async (req, res) => {
+router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
         const posts = await Post.find()
             .populate('author', 'username')
@@ -54,7 +55,7 @@ router.get('/admin/all', authMiddleware, requireAdmin, async (req, res) => {
 })
 
 // POST /api/news - Create post (admin only)
-router.post('/', authMiddleware, requireAdmin, async (req, res) => {
+router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
         const { title, content, type, isPublished } = req.body
 
@@ -81,7 +82,7 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
 })
 
 // PUT /api/news/:id - Update post (admin only)
-router.put('/:id', authMiddleware, requireAdmin, async (req, res) => {
+router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
         const { title, content, type, isPublished } = req.body
 
@@ -107,7 +108,7 @@ router.put('/:id', authMiddleware, requireAdmin, async (req, res) => {
 })
 
 // DELETE /api/news/:id - Delete post (admin only)
-router.delete('/:id', authMiddleware, requireAdmin, async (req, res) => {
+router.delete('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
         const post = await Post.findById(req.params.id)
 

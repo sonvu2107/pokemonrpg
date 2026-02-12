@@ -2,8 +2,15 @@ import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
+import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
+
+const toBoolean = (value) => {
+    if (typeof value === 'boolean') return value
+    const normalized = String(value || '').trim().toLowerCase()
+    return ['1', 'true', 'yes', 'on'].includes(normalized)
+}
 
 // GET /api/pokemon - Public master list (lightweight)
 router.get('/', async (req, res) => {
@@ -33,6 +40,87 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/pokemon error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
+// GET /api/pokemon/pokedex (protected)
+router.get('/pokedex', authMiddleware, async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50))
+        const skip = (page - 1) * limit
+
+        const search = String(req.query.search || '').trim()
+        const showIncomplete = toBoolean(req.query.incomplete)
+
+        const userId = req.user.userId
+        const ownedPokemonIds = await UserPokemon.distinct('pokemonId', { userId })
+        const ownedSet = new Set(ownedPokemonIds.map((id) => id.toString()))
+
+        const query = {}
+        if (showIncomplete && ownedPokemonIds.length > 0) {
+            query._id = { $nin: ownedPokemonIds }
+        }
+
+        if (search) {
+            const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+            const numericSearch = Number.parseInt(search, 10)
+            if (Number.isFinite(numericSearch)) {
+                query.$or = [
+                    { pokedexNumber: numericSearch },
+                    { name: searchRegex },
+                ]
+            } else {
+                query.name = searchRegex
+            }
+        }
+
+        const [pokemon, total, totalSpecies, ownedCount] = await Promise.all([
+            Pokemon.find(query)
+                .sort({ pokedexNumber: 1 })
+                .skip(skip)
+                .limit(limit)
+                .select('name pokedexNumber imageUrl sprites types')
+                .lean(),
+            Pokemon.countDocuments(query),
+            Pokemon.countDocuments(),
+            Pokemon.countDocuments({ _id: { $in: ownedPokemonIds } }),
+        ])
+
+        const rows = pokemon.map((entry) => ({
+            _id: entry._id,
+            pokedexNumber: entry.pokedexNumber,
+            name: entry.name,
+            types: Array.isArray(entry.types) ? entry.types : [],
+            imageUrl: entry.imageUrl || '',
+            sprite: entry.sprites?.icon || entry.sprites?.normal || entry.imageUrl || '',
+            got: ownedSet.has(entry._id.toString()),
+        }))
+
+        const completionPercent = totalSpecies > 0 ? Math.round((ownedCount / totalSpecies) * 100) : 0
+
+        res.json({
+            ok: true,
+            pokemon: rows,
+            pagination: {
+                page,
+                limit,
+                total,
+                pages: Math.max(1, Math.ceil(total / limit)),
+            },
+            completion: {
+                owned: ownedCount,
+                total: totalSpecies,
+                percent: completionPercent,
+            },
+            filters: {
+                search,
+                incomplete: showIncomplete,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon/pokedex error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })
     }
 })

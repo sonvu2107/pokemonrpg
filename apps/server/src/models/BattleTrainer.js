@@ -38,7 +38,6 @@ const battleTrainerSchema = new mongoose.Schema(
                         type: Number,
                         default: 5,
                         min: 1,
-                        max: 100,
                     },
                     formId: {
                         type: String,

@@ -2,10 +2,10 @@ import { NavLink } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
+import { ADMIN_PERMISSIONS } from "../constants/adminPermissions"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
-        {/* Header */}
         <div className="bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600">
             {iconId && (
                 <img
@@ -16,7 +16,6 @@ const SidebarSection = ({ title, iconId, children }) => (
             )}
             <span className="text-sm font-bold text-white drop-shadow-md">{title}</span>
         </div>
-        {/* Body */}
         <div className="bg-cyan-400 p-2 space-y-0.5">
             {children}
         </div>
@@ -43,19 +42,26 @@ const InfoRow = ({ label, value }) => (
     </div>
 )
 
-// Helper function to format numbers with commas
 const formatNumber = (num) => {
     if (num === null || num === undefined) return '...'
     return num.toLocaleString('vi-VN')
 }
 
 export default function RightColumn() {
-    const { user } = useAuth()
+    const { user, canAccessAdminModule } = useAuth()
     const isAdmin = user?.role === 'admin'
-    const [serverStats, setServerStats] = useState({ totalUsers: null, onlineUsers: null })
-    const [loadingStats, setLoadingStats] = useState(true)
+    const adminLinks = [
+        { to: '/admin', label: 'Tổng quan', permission: null },
+        { to: '/admin/users', label: 'Quản lý Người Chơi', permission: ADMIN_PERMISSIONS.USERS },
+        { to: '/admin/pokemon', label: 'Quản lý Pokémon', permission: ADMIN_PERMISSIONS.POKEMON },
+        { to: '/admin/maps', label: 'Quản lý Bản Đồ', permission: ADMIN_PERMISSIONS.MAPS },
+        { to: '/admin/items', label: 'Quản lý Vật Phẩm', permission: ADMIN_PERMISSIONS.ITEMS },
+        { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
+        { to: '/admin/battle', label: 'Quản lý Battle', permission: ADMIN_PERMISSIONS.BATTLE },
+    ].filter((link) => !link.permission || canAccessAdminModule(link.permission))
 
-    // Fetch server stats on mount and refresh every 30 seconds
+    const [serverStats, setServerStats] = useState({ totalUsers: null, onlineUsers: null })
+
     useEffect(() => {
         const fetchStats = async () => {
             try {
@@ -68,35 +74,24 @@ export default function RightColumn() {
                 }
             } catch (err) {
                 console.error('Failed to fetch server stats:', err)
-            } finally {
-                setLoadingStats(false)
             }
         }
 
         fetchStats()
-        const interval = setInterval(fetchStats, 30000) // Refresh every 30 seconds
-
+        const interval = setInterval(fetchStats, 30000)
         return () => clearInterval(interval)
     }, [])
 
     return (
         <div className="flex flex-col w-full">
-
-
-            {/* ADMIN (Internal) */}
-            {isAdmin && (
+            {isAdmin && adminLinks.length > 0 && (
                 <SidebarSection title="Quản Trị" iconId={150}>
-                    <SidebarLink to="/admin">Tổng quan</SidebarLink>
-                    <SidebarLink to="/admin/users">Quản lý Người Chơi</SidebarLink>
-                    <SidebarLink to="/admin/pokemon">Quản lý Pokemon</SidebarLink>
-                    <SidebarLink to="/admin/maps">Quản lý Bản Đồ</SidebarLink>
-                    <SidebarLink to="/admin/items">Quản lý Vật Phẩm</SidebarLink>
-                    <SidebarLink to="/admin/battle">Quản lý Battle</SidebarLink>
-                    <SidebarLink to="/admin/config">Cấu Hình Game</SidebarLink>
+                    {adminLinks.map((link) => (
+                        <SidebarLink key={link.to} to={link.to}>{link.label}</SidebarLink>
+                    ))}
                 </SidebarSection>
             )}
 
-            {/* INFORMATION */}
             <SidebarSection title="Thông Tin" iconId={137}>
                 <InfoRow label="Tổng người chơi" value={formatNumber(serverStats.totalUsers)} />
                 <InfoRow label="Đang online" value={formatNumber(serverStats.onlineUsers)} />
@@ -104,7 +99,6 @@ export default function RightColumn() {
                 <SidebarLink to="/stats">Thống kê ngày</SidebarLink>
             </SidebarSection>
 
-            {/* ACCOUNT */}
             <SidebarSection title="Tài Khoản" iconId={403}>
                 <SidebarLink to="/profile">Hồ sơ ({user?.username || 'Khách'})</SidebarLink>
                 <SidebarLink to="/inventory">Túi đồ</SidebarLink>
@@ -112,40 +106,32 @@ export default function RightColumn() {
                 <SidebarLink to="/titles">Danh hiệu</SidebarLink>
             </SidebarSection>
 
-            {/* POKEMON */}
             <SidebarSection title="Pokemon" iconId={823}>
-                <SidebarLink to="/box">Kho Pokemon</SidebarLink>
+                <SidebarLink to="/box">Kho Pokémon</SidebarLink>
                 <SidebarLink to="/party">Thay đổi đội hình</SidebarLink>
                 <SidebarLink to="/evolve">Tiến hóa</SidebarLink>
-                <SidebarLink to="/pokedex">Pokedex</SidebarLink>
+                <SidebarLink to="/pokedex">Pokédex</SidebarLink>
             </SidebarSection>
 
-            {/* FREE STUFF */}
             <SidebarSection title="Quà Tặng" iconId={385}>
-                <SidebarLink to="/promo">Pokemon Sự Kiện</SidebarLink>
-                <SidebarLink to="/daily">Quà Hàng Ngày</SidebarLink>
+                <SidebarLink to="/promo">Pokémon Sự Kiện</SidebarLink>
+                <SidebarLink to="/daily">Quà Hằng Ngày</SidebarLink>
             </SidebarSection>
 
-            {/* RANKS */}
             <SidebarSection title="Xếp Hạng" iconId={215}>
-                <SidebarLink to="/rankings/pokemon">BXH Pokemon</SidebarLink>
+                <SidebarLink to="/rankings/pokemon">BXH Pokémon</SidebarLink>
                 <SidebarLink to="/rankings/overall">BXH Tổng</SidebarLink>
                 <SidebarLink to="/rankings/daily">BXH Ngày</SidebarLink>
             </SidebarSection>
 
-            {/* ECONOMY */}
             <SidebarSection title="Kinh Tế" iconId={304}>
-                <SidebarLink to="/shop/buy">Mua Pokemon</SidebarLink>
-                <SidebarLink to="/shop/sell">Bán Pokemon</SidebarLink>
+                <SidebarLink to="/shop/buy">Mua Pokémon</SidebarLink>
+                <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>
                 <SidebarLink to="/shop/items">Cửa hàng Vật Phẩm</SidebarLink>
                 <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>
                 <SidebarLink to="/shop/mine">Cửa hàng Hầm Mỏ</SidebarLink>
                 <SidebarLink to="/shop/parrot" isSpecial>Cửa hàng Vẹt</SidebarLink>
             </SidebarSection>
-
-            {/* ADMIN (Internal) */}
-
-
         </div>
     )
 }

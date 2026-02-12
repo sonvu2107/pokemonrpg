@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 
 const router = express.Router()
 
@@ -46,8 +47,9 @@ router.post('/register', async (req, res, next) => {
         await PlayerState.create({ userId: user._id })
 
         // Generate JWT with role
+        const adminPermissions = getEffectiveAdminPermissions(user)
         const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role },
+            { userId: user._id, email: user.email, role: user.role, adminPermissions },
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         )
@@ -60,6 +62,7 @@ router.post('/register', async (req, res, next) => {
                 email: user.email,
                 username: user.username,
                 role: user.role,
+                adminPermissions,
             },
         })
     } catch (error) {
@@ -104,8 +107,9 @@ router.post('/login', async (req, res, next) => {
         await user.save()
 
         // Generate JWT with role
+        const adminPermissions = getEffectiveAdminPermissions(user)
         const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role },
+            { userId: user._id, email: user.email, role: user.role, adminPermissions },
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         )
@@ -118,6 +122,7 @@ router.post('/login', async (req, res, next) => {
                 email: user.email,
                 username: user.username,
                 role: user.role,
+                adminPermissions,
             },
         })
     } catch (error) {
@@ -147,6 +152,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 avatar: user.avatar,
                 signature: user.signature,
                 role: user.role,
+                adminPermissions: getEffectiveAdminPermissions(user),
                 createdAt: user.createdAt,
             },
             playerState: playerState || {
@@ -199,6 +205,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
                 avatar: user.avatar,
                 signature: user.signature,
                 role: user.role,
+                adminPermissions: getEffectiveAdminPermissions(user),
                 createdAt: user.createdAt,
             },
         })

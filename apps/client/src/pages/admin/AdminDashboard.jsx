@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import { ADMIN_PERMISSIONS } from '../../constants/adminPermissions'
 
-// Pokemon Icon URLs (using official sprites for authenticity)
 const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
     map: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/town-map.png",
     items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/bag.png",
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
+    battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
 }
 
@@ -44,9 +46,67 @@ const QuickStats = ({ label, value, color }) => (
 )
 
 export default function AdminDashboard() {
+    const { canAccessAdminModule } = useAuth()
+
+    const cards = [
+        {
+            permission: ADMIN_PERMISSIONS.POKEMON,
+            title: 'Quan Ly Pokemon',
+            description: 'Danh sach, chi so, ky nang va tien hoa',
+            to: '/admin/pokemon',
+            icon: ICONS.pokemon,
+            color: 'red',
+        },
+        {
+            permission: ADMIN_PERMISSIONS.MAPS,
+            title: 'He Thong Ban Do',
+            description: 'Khu vuc, ti le xuat hien va su kien',
+            to: '/admin/maps',
+            icon: ICONS.map,
+            color: 'emerald',
+        },
+        {
+            permission: ADMIN_PERMISSIONS.ITEMS,
+            title: 'Quan Ly Vat Pham',
+            description: 'Danh sach, loai, do hiem va anh',
+            to: '/admin/items',
+            icon: ICONS.items,
+            color: 'amber',
+        },
+        {
+            permission: ADMIN_PERMISSIONS.NEWS,
+            title: 'Tin Tuc va Su Kien',
+            description: 'Thong bao, su kien game va nhat ky',
+            to: '/admin/news',
+            icon: ICONS.news,
+            color: 'blue',
+        },
+        {
+            permission: ADMIN_PERMISSIONS.USERS,
+            title: 'Nguoi Choi',
+            description: 'Quan ly tai khoan va phan quyen admin',
+            to: '/admin/users',
+            icon: ICONS.users,
+            color: 'orange',
+        },
+        {
+            permission: ADMIN_PERMISSIONS.BATTLE,
+            title: 'Quan Ly Battle',
+            description: 'Trainer AI, doi hinh va phan thuong',
+            to: '/admin/battle',
+            icon: ICONS.battle,
+            color: 'violet',
+        },
+    ].filter((card) => canAccessAdminModule(card.permission))
+
+    const quickActions = [
+        { permission: ADMIN_PERMISSIONS.POKEMON, to: '/admin/pokemon/create', label: 'Pokemon', className: 'bg-blue-600 hover:bg-blue-700' },
+        { permission: ADMIN_PERMISSIONS.ITEMS, to: '/admin/items/create', label: 'Vat pham', className: 'bg-amber-500 hover:bg-amber-600' },
+        { permission: ADMIN_PERMISSIONS.MAPS, to: '/admin/maps/create', label: 'Ban do', className: 'bg-emerald-600 hover:bg-emerald-700' },
+    ].filter((action) => canAccessAdminModule(action.permission))
+
     return (
         <div className="max-w-5xl mx-auto space-y-5 bg-slate-50/50 p-5 rounded-3xl animate-fade-in relative z-0">
-            {/* Header */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center">
@@ -56,64 +116,25 @@ export default function AdminDashboard() {
                         <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">
                             Admin Center
                         </h1>
-                        <p className="text-xs text-slate-500 font-medium">Hệ thống quản trị Pokemon World</p>
+                        <p className="text-xs text-slate-500 font-medium">He thong quan tri Pokemon World</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <Link to="/admin/pokemon/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-blue-600 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
-                        <span className="text-xs md:text-sm">+</span> Pokemon
-                    </Link>
-                    <Link to="/admin/items/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-amber-500 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-amber-600 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
-                        <span className="text-xs md:text-sm">+</span> Vật phẩm
-                    </Link>
-                    <Link to="/admin/maps/create" className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] md:text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer whitespace-nowrap">
-                        <span className="text-xs md:text-sm">+</span> Bản Đồ
-                    </Link>
+                    {quickActions.map((action) => (
+                        <Link key={action.to} to={action.to} className={`flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 text-white rounded-lg text-[10px] md:text-xs font-bold transition-colors shadow-sm cursor-pointer whitespace-nowrap ${action.className}`}>
+                            <span className="text-xs md:text-sm">+</span> {action.label}
+                        </Link>
+                    ))}
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-
-                {/* Main Menu Grid - Takes 8/12 columns */}
                 <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3 auto-rows-fr">
-                    <DashboardCard
-                        title="Quản Lý Pokemon"
-                        description="Danh sách, chỉ số, kỹ năng & tiến hóa"
-                        to="/admin/pokemon"
-                        icon={ICONS.pokemon}
-                        color="red"
-                    />
-                    <DashboardCard
-                        title="Hệ Thống Bản Đồ"
-                        description="Khu vực, tỷ lệ xuất hiện & sự kiện"
-                        to="/admin/maps"
-                        icon={ICONS.map}
-                        color="emerald"
-                    />
-                    <DashboardCard
-                        title="Quản Lý Vật Phẩm"
-                        description="Danh sách, loại, độ hiếm & ảnh"
-                        to="/admin/items"
-                        icon={ICONS.items}
-                        color="amber"
-                    />
-                    <DashboardCard
-                        title="Tin Tức & Sự Kiện"
-                        description="Thông báo, sự kiện game & nhật ký"
-                        to="/admin/news"
-                        icon={ICONS.news}
-                        color="blue"
-                    />
-                    <DashboardCard
-                        title="Người Chơi"
-                        description="Quản lý tài khoản, quyền hạn & dữ liệu"
-                        to="/admin/users"
-                        icon={ICONS.users}
-                        color="orange"
-                    />
+                    {cards.map((card) => (
+                        <DashboardCard key={card.to} {...card} />
+                    ))}
                 </div>
 
-                {/* Sidebar Stats - Takes 4/12 columns */}
                 <div className="lg:col-span-4 flex flex-col gap-3">
                     <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex-1">
                         <div className="flex items-center justify-between mb-3">
@@ -124,15 +145,15 @@ export default function AdminDashboard() {
                             <QuickStats label="Server" value="ON" color="emerald" />
                             <QuickStats label="Version" value="1.0" color="blue" />
                             <QuickStats label="Latency" value="24ms" color="emerald" />
-                            <QuickStats label="Users" value="-" color="slate" />
+                            <QuickStats label="Modules" value={cards.length} color="slate" />
                         </div>
                     </div>
 
                     <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 rounded-xl text-white shadow-md relative overflow-hidden group min-h-[100px] flex flex-col justify-center">
                         <div className="relative z-10 pr-8">
-                            <h3 className="font-bold text-sm mb-0.5">Mẹo Quản Trị</h3>
+                            <h3 className="font-bold text-sm mb-0.5">Meo Quan Tri</h3>
                             <p className="text-indigo-100 text-[11px] leading-relaxed">
-                                Kiểm tra kỹ chỉ số trước khi cập nhật để tránh lỗi balance.
+                                Kiem tra quyen truoc khi phan admin de tranh mo nham module nhay cam.
                             </p>
                         </div>
                         <img

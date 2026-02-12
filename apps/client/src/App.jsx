@@ -11,7 +11,9 @@ import EditProfilePage from './pages/EditProfilePage'
 import PokemonBoxPage from './pages/PokemonBoxPage'
 import PokemonInfoPage from './pages/PokemonInfoPage'
 import ChangePartyPage from './pages/ChangePartyPage'
+import PokedexPage from './pages/PokedexPage'
 import RankingsPage from './pages/RankingsPage'
+import PokemonRankingsPage from './pages/PokemonRankingsPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -26,6 +28,8 @@ import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
 import BattleTrainerPage from './pages/admin/BattleTrainerPage'
+import AdminRouteGuard from './components/AdminRouteGuard'
+import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
 export default function App() {
     return (
@@ -44,28 +48,29 @@ export default function App() {
                 <Route path="/explore" element={<ExplorePage />} />
                 <Route path="/map/:slug" element={<MapPage />} />
                 <Route path="/box" element={<PokemonBoxPage />} />
+                <Route path="/pokedex" element={<PokedexPage />} />
                 <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
                 <Route path="/party" element={<ChangePartyPage />} />
                 <Route path="/rankings/overall" element={<RankingsPage />} />
-                <Route path="/rankings/pokemon" element={<RankingsPage />} />
+                <Route path="/rankings/pokemon" element={<PokemonRankingsPage />} />
                 <Route path="/rankings/daily" element={<RankingsPage />} />
 
                 {/* Admin Routes */}
-                <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/admin/news" element={<AdminNewsPage />} />
-                <Route path="/admin/users" element={<UserManagementPage />} />
-                <Route path="/admin/pokemon" element={<PokemonListPage />} />
-                <Route path="/admin/pokemon/create" element={<PokemonFormPage />} />
-                <Route path="/admin/pokemon/:id/edit" element={<PokemonFormPage />} />
-                <Route path="/admin/maps" element={<MapListPage />} />
-                <Route path="/admin/maps/create" element={<MapFormPage />} />
-                <Route path="/admin/maps/:id/edit" element={<MapFormPage />} />
-                <Route path="/admin/maps/:mapId/drop-rates" element={<DropRateManagerPage />} />
-                <Route path="/admin/maps/:mapId/item-drop-rates" element={<ItemDropRateManagerPage />} />
-                <Route path="/admin/items" element={<ItemListPage />} />
-                <Route path="/admin/items/create" element={<ItemFormPage />} />
-                <Route path="/admin/items/:id/edit" element={<ItemFormPage />} />
-                <Route path="/admin/battle" element={<BattleTrainerPage />} />
+                <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
+                <Route path="/admin/news" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.NEWS}><AdminNewsPage /></AdminRouteGuard>} />
+                <Route path="/admin/users" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.USERS}><UserManagementPage /></AdminRouteGuard>} />
+                <Route path="/admin/pokemon" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonListPage /></AdminRouteGuard>} />
+                <Route path="/admin/pokemon/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/pokemon/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/maps" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MAPS}><MapListPage /></AdminRouteGuard>} />
+                <Route path="/admin/maps/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MAPS}><MapFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/maps/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MAPS}><MapFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/maps/:mapId/drop-rates" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MAPS}><DropRateManagerPage /></AdminRouteGuard>} />
+                <Route path="/admin/maps/:mapId/item-drop-rates" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MAPS}><ItemDropRateManagerPage /></AdminRouteGuard>} />
+                <Route path="/admin/items" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemListPage /></AdminRouteGuard>} />
+                <Route path="/admin/items/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/items/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/battle" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BATTLE}><BattleTrainerPage /></AdminRouteGuard>} />
             </Route>
         </Routes>
     )

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcrypt'
+import { ALL_ADMIN_PERMISSIONS } from '../constants/adminPermissions.js'
 
 const userSchema = new mongoose.Schema(
     {
@@ -22,6 +23,15 @@ const userSchema = new mongoose.Schema(
             type: String,
             enum: ['user', 'admin'],
             default: 'user',
+        },
+        adminPermissions: {
+            type: [
+                {
+                    type: String,
+                    enum: ALL_ADMIN_PERMISSIONS,
+                }
+            ],
+            default: [],
         },
         isOnline: {
             type: Boolean,

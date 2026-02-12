@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { mapApi, itemApi, itemDropRateApi } from '../../services/adminApi'
+import { mapApi, itemDropRateApi } from '../../services/adminApi'
 
 export default function ItemDropRateManagerPage() {
     const { mapId } = useParams()
@@ -30,7 +30,7 @@ export default function ItemDropRateManagerPage() {
             setLoading(true)
             const [mapData, itemData] = await Promise.all([
                 mapApi.getItemDropRates(mapId),
-                itemApi.list({ limit: 1000 })
+                mapApi.getLookupItems()
             ])
 
             setMap(mapData.map)

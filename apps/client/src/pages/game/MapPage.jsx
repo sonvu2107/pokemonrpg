@@ -4,17 +4,6 @@ import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
 
-// Mock Data for "Retro" UI Stats
-const MOCK_STATS = {
-    exp: 3,
-    totalSearches: 3,
-    expToNext: 250,
-    mapLevel: 1,
-    currentChances: '1 in 415',
-    platinumCoins: '102,150',
-    moonPoints: 0
-}
-
 const NORMAL_RARITIES = new Set(['d', 'c', 'common', 'uncommon'])
 
 export default function MapPage() {
@@ -34,12 +23,18 @@ export default function MapPage() {
     const [actionMessage, setActionMessage] = useState('')
     const [inventory, setInventory] = useState([])
     const [selectedBallId, setSelectedBallId] = useState('')
-    const [mapStats, setMapStats] = useState({
-        level: MOCK_STATS.mapLevel,
-        exp: MOCK_STATS.exp,
-        expToNext: MOCK_STATS.expToNext,
-        totalSearches: MOCK_STATS.totalSearches,
+    const [playerState, setPlayerState] = useState({
+        gold: 0,
+        moonPoints: 0,
     })
+    const [mapStats, setMapStats] = useState({
+        level: 1,
+        exp: 0,
+        expToNext: 250,
+        totalSearches: 0,
+    })
+    const formattedGold = Number(playerState.gold || 0).toLocaleString('vi-VN')
+    const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
     const requiredSearches = Math.max(
         0,
@@ -74,6 +69,12 @@ export default function MapPage() {
             setDropRates(mapData.dropRates)
             if (stateData?.mapProgress) {
                 setMapStats(stateData.mapProgress)
+            }
+            if (stateData?.playerState) {
+                setPlayerState({
+                    gold: stateData.playerState.gold || 0,
+                    moonPoints: stateData.playerState.moonPoints || 0,
+                })
             }
             if (stateData?.unlock) {
                 setUnlockInfo(stateData.unlock)
@@ -240,11 +241,11 @@ export default function MapPage() {
                         <div className="flex flex-col items-center justify-center gap-0.5">
                             <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                                 <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png" className="w-4 h-4" alt="Coins" />
-                                <span>${MOCK_STATS.platinumCoins} Xu Bạch Kim</span>
+                                <span>${formattedGold} Xu Bạch Kim</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                                 <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png" className="w-4 h-4" alt="Points" />
-                                <span>{MOCK_STATS.moonPoints} Điểm Nguyệt Các</span>
+                                <span>{formattedMoonPoints} Điểm Nguyệt Các</span>
                             </div>
                         </div>
                         <div className="mt-2 text-slate-800 text-sm">
@@ -266,11 +267,11 @@ export default function MapPage() {
                     <div className="flex flex-col items-center justify-center gap-0.5">
                         <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                             <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png" className="w-4 h-4" alt="Coins" />
-                            <span>${MOCK_STATS.platinumCoins} Xu Bạch Kim</span>
+                            <span>${formattedGold} Xu Bạch Kim</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
                             <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png" className="w-4 h-4" alt="Points" />
-                            <span>{MOCK_STATS.moonPoints} Điểm Nguyệt Các</span>
+                            <span>{formattedMoonPoints} Điểm Nguyệt Các</span>
                         </div>
                     </div>
                 </div>
@@ -335,7 +336,8 @@ export default function MapPage() {
                             </div>
                         </>
                     )}
-                    {/* Normal Pokemon (Common/Uncommon) */}
+                    {/* Normal Pokemon SECTION HIDDEN AS REQUESTED */}
+                    {/* 
                     <div>
                         <div className="bg-sky-100/50 text-center py-1 text-blue-900 font-bold text-xs border-y border-blue-200">
                             Pokemon Thường
@@ -357,7 +359,8 @@ export default function MapPage() {
                                 <span className="text-slate-400 text-xs italic">Chưa có Pokemon thường nào...</span>
                             )}
                         </div>
-                    </div>
+                    </div> 
+                    */}
                 </div>
 
                 {/* Stats Table */}

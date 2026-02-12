@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import React from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { mapApi, pokemonApi, dropRateApi } from '../../services/adminApi'
+import { mapApi, dropRateApi } from '../../services/adminApi'
+import { gameApi } from '../../services/gameApi'
 
 export default function DropRateManagerPage() {
     const { mapId } = useParams()
@@ -34,7 +35,7 @@ export default function DropRateManagerPage() {
             setLoading(true)
             const [mapData, pokemonData] = await Promise.all([
                 mapApi.getDropRates(mapId),
-                pokemonApi.list({ limit: 1000 }) // Get all pokemon for dropdown
+                gameApi.getPokemonList({ limit: 1000 })
             ])
 
             setMap(mapData.map)

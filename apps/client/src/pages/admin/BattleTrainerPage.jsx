@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { battleTrainerApi, pokemonApi } from '../../services/adminApi'
+import { battleTrainerApi } from '../../services/adminApi'
+import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
 
 const emptyTrainer = {
@@ -31,7 +32,7 @@ export default function BattleTrainerPage() {
             setLoading(true)
             const [trainerData, pokemonData] = await Promise.all([
                 battleTrainerApi.list(),
-                pokemonApi.list({ page: 1, limit: 5000 }),
+                gameApi.getPokemonList({ page: 1, limit: 5000 }),
             ])
             setTrainers(trainerData.trainers || [])
             setPokemon(pokemonData.pokemon || [])

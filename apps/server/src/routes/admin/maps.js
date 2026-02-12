@@ -1,6 +1,7 @@
 import express from 'express'
 import Map from '../../models/Map.js'
 import Pokemon from '../../models/Pokemon.js'
+import Item from '../../models/Item.js'
 import upload from '../../middleware/upload.js'
 import { uploadMapImageToCloudinary, uploadSpecialPokemonImageToCloudinary } from '../../utils/cloudinary.js'
 
@@ -51,6 +52,21 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/admin/maps error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
+// GET /api/admin/maps/lookup/items - Lightweight item list for map drop-rate config
+router.get('/lookup/items', async (req, res) => {
+    try {
+        const items = await Item.find({})
+            .select('name type rarity imageUrl')
+            .sort({ name: 1 })
+            .lean()
+
+        res.json({ ok: true, items })
+    } catch (error) {
+        console.error('GET /api/admin/maps/lookup/items error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })
     }
 })

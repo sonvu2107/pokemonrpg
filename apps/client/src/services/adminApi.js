@@ -149,6 +149,17 @@ export const mapApi = {
         return res.json()
     },
 
+    async getLookupItems() {
+        const res = await fetch(`${API_URL}/admin/maps/lookup/items`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to fetch items')
+        }
+        return res.json()
+    },
+
     // POST /api/admin/maps/upload-special-image
     async uploadSpecialImage(file) {
         const formData = new FormData()
@@ -384,6 +395,23 @@ export const userApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Failed to update role')
+        }
+        return res.json()
+    },
+
+    // PUT /api/admin/users/:id/permissions
+    async updatePermissions(userId, permissions) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/permissions`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ permissions }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Failed to update permissions')
         }
         return res.json()
     },

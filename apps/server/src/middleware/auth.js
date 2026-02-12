@@ -1,4 +1,6 @@
 import jwt from 'jsonwebtoken'
+import User from '../models/User.js'
+import { hasAdminPermission } from '../constants/adminPermissions.js'
 
 export const authMiddleware = async (req, res, next) => {
     try {
@@ -40,13 +42,73 @@ export const authMiddleware = async (req, res, next) => {
 }
 
 export const requireAdmin = (req, res, next) => {
-    // req.user should contain { userId, role } from decoded JWT
-    if (!req.user || req.user.role !== 'admin') {
-        return res.status(403).json({
+    return requireAdminFromDb(req, res, next)
+}
+
+const requireAdminFromDb = async (req, res, next) => {
+    try {
+        if (!req.user?.userId) {
+            return res.status(403).json({
+                ok: false,
+                errorCode: 'FORBIDDEN',
+                message: 'Admin access required',
+            })
+        }
+
+        const dbUser = await User.findById(req.user.userId)
+            .select('role adminPermissions')
+            .lean()
+
+        if (!dbUser || dbUser.role !== 'admin') {
+            return res.status(403).json({
+                ok: false,
+                errorCode: 'FORBIDDEN',
+                message: 'Admin access required',
+            })
+        }
+
+        req.user.role = dbUser.role
+        req.user.adminPermissions = dbUser.adminPermissions
+        req.adminUser = dbUser
+        next()
+    } catch (error) {
+        return res.status(500).json({
             ok: false,
-            errorCode: 'FORBIDDEN',
-            message: 'Admin access required'
+            message: 'Failed to verify admin access',
         })
     }
-    next()
+}
+
+export const requireAdminPermission = (permission) => async (req, res, next) => {
+    try {
+        if (!req.adminUser) {
+            return requireAdminFromDb(req, res, async () => {
+                if (!hasAdminPermission(req.adminUser, permission)) {
+                    return res.status(403).json({
+                        ok: false,
+                        errorCode: 'ADMIN_PERMISSION_DENIED',
+                        message: 'You do not have permission to access this admin module',
+                        requiredPermission: permission,
+                    })
+                }
+                next()
+            })
+        }
+
+        if (!hasAdminPermission(req.adminUser, permission)) {
+            return res.status(403).json({
+                ok: false,
+                errorCode: 'ADMIN_PERMISSION_DENIED',
+                message: 'You do not have permission to access this admin module',
+                requiredPermission: permission,
+            })
+        }
+
+        next()
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            message: 'Failed to verify admin permission',
+        })
+    }
 }

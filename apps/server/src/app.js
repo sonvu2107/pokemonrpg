@@ -16,7 +16,8 @@ import itemDropRatesAdminRoutes from './routes/admin/itemDropRates.js'
 import userAdminRoutes from './routes/admin/user.js'
 import battleTrainersAdminRoutes from './routes/admin/battleTrainers.js'
 import battleTrainersRoutes from './routes/battleTrainers.js'
-import { authMiddleware, requireAdmin } from './middleware/auth.js'
+import { authMiddleware, requireAdmin, requireAdminPermission } from './middleware/auth.js'
+import { ADMIN_PERMISSIONS } from './constants/adminPermissions.js'
 import { errorHandler, notFound } from './utils/errorHandler.js'
 import boxRoutes from './routes/box.js'
 import pokemonRoutes from './routes/pokemon.js'
@@ -103,13 +104,13 @@ app.use('/api/battle-trainers', battleTrainersRoutes)
 app.use('/api/inventory', inventoryRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
-app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, pokemonAdminRoutes)
-app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, mapsAdminRoutes)
-app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, dropRatesAdminRoutes)
-app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, itemAdminRoutes)
-app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, itemDropRatesAdminRoutes)
-app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, userAdminRoutes)
-app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin, battleTrainersAdminRoutes)
+app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.POKEMON), pokemonAdminRoutes)
+app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), mapsAdminRoutes)
+app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), dropRatesAdminRoutes)
+app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.ITEMS), itemAdminRoutes)
+app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), itemDropRatesAdminRoutes)
+app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.USERS), userAdminRoutes)
+app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BATTLE), battleTrainersAdminRoutes)
 
 // Error handlers
 app.use(notFound)

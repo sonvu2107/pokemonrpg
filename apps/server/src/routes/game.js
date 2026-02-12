@@ -8,6 +8,7 @@ import UserInventory from '../models/UserInventory.js'
 import MapProgress from '../models/MapProgress.js'
 import MapModel from '../models/Map.js'
 import BattleTrainer from '../models/BattleTrainer.js'
+import DailyActivity from '../models/DailyActivity.js'
 
 const router = express.Router()
 
@@ -126,6 +127,42 @@ const formatMapProgress = (progress) => ({
     expToNext: expToNext(progress.level),
     totalSearches: progress.totalSearches,
 })
+
+const toDailyDateKey = (date = new Date()) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
+const trackDailyActivity = async (userId, increments = {}) => {
+    const searchableKeys = ['searches', 'mapExp', 'moonPoints']
+    const $inc = {}
+
+    searchableKeys.forEach((key) => {
+        const value = Number(increments[key])
+        if (Number.isFinite(value) && value > 0) {
+            $inc[key] = Math.floor(value)
+        }
+    })
+
+    if (Object.keys($inc).length === 0) {
+        return
+    }
+
+    const date = toDailyDateKey()
+    await DailyActivity.findOneAndUpdate(
+        { userId, date },
+        {
+            $inc,
+            $setOnInsert: {
+                userId,
+                date,
+            },
+        },
+        { upsert: true }
+    )
+}
 
 const getOrderedMaps = async () => {
     return MapModel.find({})
@@ -273,6 +310,11 @@ router.post('/search', authMiddleware, async (req, res, next) => {
 
         // Update player level based on search
         const { playerState, leveledUp, levelsGained } = await updatePlayerLevel(userId)
+
+        await trackDailyActivity(userId, {
+            searches: 1,
+            mapExp: EXP_PER_SEARCH,
+        })
 
         if (!isAdmin) {
             const requiredToUnlockNext = Math.max(0, map.requiredSearches || 0)
@@ -508,6 +550,13 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
+        const playerState = await PlayerState.findOne({ userId })
+            .select('gold moonPoints')
+            .lean()
+        const playerCurrencyState = {
+            gold: playerState?.gold || 0,
+            moonPoints: playerState?.moonPoints || 0,
+        }
         const map = await MapModel.findOne({ slug: req.params.slug })
 
         if (!map) {
@@ -538,6 +587,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
                 locked: true,
                 message: 'Map is locked',
                 unlock: unlockRequirement,
+                playerState: playerCurrencyState,
             })
         }
 
@@ -555,9 +605,18 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             await progress.save()
         }
 
+        let currentPlayerState = await PlayerState.findOne({ userId })
+        if (!currentPlayerState) {
+            currentPlayerState = await PlayerState.create({ userId })
+        }
+
         res.json({
             ok: true,
             mapProgress: formatMapProgress(progress),
+            playerState: {
+                gold: currentPlayerState.gold || 0,
+                moonPoints: currentPlayerState.moonPoints || 0,
+            },
             unlock: {
                 requiredSearches: Math.max(0, map.requiredSearches || 0),
                 currentSearches: progress.totalSearches,
@@ -883,10 +942,15 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         if (!playerState) {
             playerState = await PlayerState.create({ userId })
         }
+        const moonPointsBefore = playerState.moonPoints || 0
         playerState.gold += coinsAwarded
         playerState.experience += Math.floor(expAwarded / 2)
         playerState.wins += 1
         await playerState.save()
+        const moonPointsGained = Math.max(0, (playerState.moonPoints || 0) - moonPointsBefore)
+        if (moonPointsGained > 0) {
+            await trackDailyActivity(userId, { moonPoints: moonPointsGained })
+        }
         emitPlayerState(userId.toString(), playerState)
 
         let prizePokemon = null
