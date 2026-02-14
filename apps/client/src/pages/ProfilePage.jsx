@@ -103,9 +103,6 @@ export default function ProfilePage() {
         <div className="max-w-4xl mx-auto font-sans pb-12">
             {/* Top Header Area */}
             <div className="text-center mb-6">
-                <div className="text-amber-400 font-bold tracking-wider text-xs mb-1 uppercase drop-shadow-sm">
-                    ⭐ Đang có sự kiện nhân đôi kinh nghiệm!
-                </div>
                 <h1 className="text-4xl font-bold text-slate-800 mb-2 drop-shadow-sm tracking-tight">{username}</h1>
                 <div className="flex justify-center gap-6 text-sm font-bold text-slate-500">
                     <div className="flex items-center gap-1 text-slate-700 drop-shadow-sm">

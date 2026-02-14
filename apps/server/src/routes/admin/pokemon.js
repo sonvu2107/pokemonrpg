@@ -21,13 +21,27 @@ const normalizeRarity = (rarity) => {
 const normalizeForms = (forms) => {
     if (!Array.isArray(forms)) return []
     return forms
-        .map(f => ({
-            formId: String(f?.formId || '').trim(),
-            formName: String(f?.formName || '').trim(),
-            imageUrl: String(f?.imageUrl || '').trim(),
-            sprites: f?.sprites || {},
-            stats: f?.stats || {},
-        }))
+        .map((f) => {
+            const rawEvolvesTo = f?.evolution?.evolvesTo
+            const evolvesTo = typeof rawEvolvesTo === 'object'
+                ? (rawEvolvesTo?._id || null)
+                : (rawEvolvesTo || null)
+            const parsedMinLevel = Number.parseInt(f?.evolution?.minLevel, 10)
+
+            return {
+                formId: String(f?.formId || '').trim(),
+                formName: String(f?.formName || '').trim(),
+                imageUrl: String(f?.imageUrl || '').trim(),
+                sprites: f?.sprites || {},
+                stats: f?.stats || {},
+                evolution: evolvesTo
+                    ? {
+                        evolvesTo,
+                        minLevel: Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null,
+                    }
+                    : null,
+            }
+        })
         .filter(f => f.formId)
 }
 

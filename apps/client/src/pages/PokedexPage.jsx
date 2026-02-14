@@ -93,6 +93,36 @@ export default function PokedexPage() {
         return types.map((type) => toTitle(type)).join('/')
     }
 
+    const getAlternateForms = (entry) => {
+        const defaultFormId = String(entry?.defaultFormId || 'normal').trim() || 'normal'
+        const forms = Array.isArray(entry?.forms) ? entry.forms : []
+        return forms.filter((form) => {
+            const formId = String(form?.formId || '').trim()
+            return formId && formId !== defaultFormId
+        })
+    }
+
+    const pokedexRows = useMemo(() => {
+        return (Array.isArray(pokemon) ? pokemon : []).flatMap((entry) => {
+            const alternates = getAlternateForms(entry)
+            const baseRow = {
+                ...entry,
+                rowKey: `${entry._id}-base`,
+                displayName: entry.name,
+                displaySprite: entry.sprite,
+            }
+
+            const formRows = alternates.map((form) => ({
+                ...entry,
+                rowKey: `${entry._id}-${form.formId}`,
+                displayName: `${entry.name} (${form.formName || toTitle(form.formId)})`,
+                displaySprite: form.sprite || entry.sprite,
+            }))
+
+            return [baseRow, ...formRows]
+        })
+    }, [pokemon])
+
     return (
         <div className="max-w-4xl mx-auto pb-12">
             <div className="text-center mb-5">
@@ -187,15 +217,15 @@ export default function PokedexPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {!loading && pokemon.length === 0 ? (
+                            {!loading && pokedexRows.length === 0 ? (
                                 <tr>
                                     <td colSpan="5" className="text-center py-8 italic text-slate-500">
                                         Không tìm thấy kết quả
                                     </td>
                                 </tr>
                             ) : (
-                                pokemon.map((entry) => (
-                                    <tr key={entry._id} className="border-b border-slate-300">
+                                pokedexRows.map((entry) => (
+                                    <tr key={entry.rowKey} className="border-b border-slate-300">
                                         <td className="border-r border-slate-300 text-center py-1">#{entry.pokedexNumber}</td>
                                         <td className="border-r border-slate-300 text-center py-1">
                                             <img
@@ -206,8 +236,8 @@ export default function PokedexPage() {
                                         </td>
                                         <td className="border-r border-slate-300 text-center py-1">
                                             <img
-                                                src={entry.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${entry.pokedexNumber}.png`}
-                                                alt={entry.name}
+                                                src={entry.displaySprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${entry.pokedexNumber}.png`}
+                                                alt={entry.displayName}
                                                 className="w-16 h-16 mx-auto pixelated"
                                                 onError={(event) => {
                                                     event.target.onerror = null
@@ -216,7 +246,7 @@ export default function PokedexPage() {
                                             />
                                         </td>
                                         <td className="border-r border-slate-300 text-center py-1 text-blue-800 font-bold">
-                                            [ {entry.name} ]
+                                            [ {entry.displayName} ]
                                         </td>
                                         <td className="text-center py-1">{typeLabel(entry.types)}</td>
                                     </tr>

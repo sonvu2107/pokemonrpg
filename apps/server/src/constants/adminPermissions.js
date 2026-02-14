@@ -24,7 +24,7 @@ export const getEffectiveAdminPermissions = (userLike) => {
     if (!userLike || userLike.role !== 'admin') return []
 
     const normalized = normalizeAdminPermissions(userLike.adminPermissions)
-    if (normalized === null) {
+    if (normalized === null || normalized.length === 0) {
         return [...ALL_ADMIN_PERMISSIONS]
     }
     return normalized

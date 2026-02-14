@@ -9,6 +9,7 @@ import MapProgress from '../models/MapProgress.js'
 import MapModel from '../models/Map.js'
 import BattleTrainer from '../models/BattleTrainer.js'
 import DailyActivity from '../models/DailyActivity.js'
+import Pokemon from '../models/Pokemon.js'
 
 const router = express.Router()
 
@@ -69,6 +70,67 @@ const buildMovesForLevel = (pokemon, level) => {
         .map(m => m.moveName || '')
         .filter(Boolean)
     return learned.slice(-4)
+}
+
+const resolveEvolutionRule = (species, currentFormId) => {
+    const normalizedFormId = String(currentFormId || '').trim()
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const form = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
+    const formEvolution = form?.evolution || null
+    if (formEvolution?.evolvesTo) return formEvolution
+    return species?.evolution || null
+}
+
+const applyLevelEvolution = async (userPokemon) => {
+    const evolutions = []
+    let currentSpeciesId = userPokemon?.pokemonId?._id || userPokemon?.pokemonId
+
+    for (let i = 0; i < 10; i += 1) {
+        if (!currentSpeciesId) break
+
+        const currentSpecies = await Pokemon.findById(currentSpeciesId)
+            .select('name evolution forms defaultFormId levelUpMoves')
+            .lean()
+        if (!currentSpecies) break
+
+        const rule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
+        const minLevel = Number.parseInt(rule?.minLevel, 10)
+        if (!rule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1 || userPokemon.level < minLevel) {
+            break
+        }
+
+        const nextSpecies = await Pokemon.findById(rule.evolvesTo)
+            .select('name forms defaultFormId levelUpMoves')
+            .lean()
+        if (!nextSpecies) break
+
+        if (String(nextSpecies._id) === String(currentSpecies._id)) {
+            break
+        }
+
+        const nextForms = Array.isArray(nextSpecies.forms) ? nextSpecies.forms : []
+        const currentFormId = String(userPokemon.formId || '').trim()
+        const canKeepForm = currentFormId && nextForms.some((form) => String(form?.formId || '').trim() === currentFormId)
+        const nextFormId = canKeepForm
+            ? currentFormId
+            : (String(nextSpecies.defaultFormId || '').trim() || 'normal')
+
+        userPokemon.pokemonId = nextSpecies._id
+        userPokemon.formId = nextFormId
+        userPokemon.moves = buildMovesForLevel(nextSpecies, userPokemon.level)
+
+        evolutions.push({
+            fromPokemonId: currentSpecies._id,
+            from: currentSpecies.name,
+            toPokemonId: nextSpecies._id,
+            to: nextSpecies.name,
+            level: userPokemon.level,
+        })
+
+        currentSpeciesId = nextSpecies._id
+    }
+
+    return evolutions
 }
 
 const updateMapProgress = async (userId, mapId) => {
@@ -750,6 +812,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             moveName = '',
             move = null,
             opponent = {},
+            player = {},
         } = req.body || {}
 
         const party = await UserPokemon.find({ userId, location: 'party' })
@@ -846,6 +909,53 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         })
         const currentHp = Math.max(0, targetCurrentHp - damage)
 
+        let counterAttack = null
+        if (currentHp > 0) {
+            const playerLevelForDefense = Math.max(1, Number(player.level) || attackerLevel)
+            const playerMaxHp = Math.max(1, Number(player.maxHp) || 1)
+            const parsedPlayerCurrentHp = Number(player.currentHp)
+            const playerCurrentHp = clamp(
+                Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
+                0,
+                playerMaxHp
+            )
+            const playerDef = Math.max(
+                1,
+                Number(player.baseStats?.def) ||
+                Number(player.baseStats?.spdef) ||
+                (20 + playerLevelForDefense * 2)
+            )
+
+            const opponentAtk = Math.max(
+                1,
+                Number(opponent.baseStats?.atk) ||
+                Number(opponent.baseStats?.spatk) ||
+                (20 + targetLevel * 2)
+            )
+            const opponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
+            const counterDamage = calcBattleDamage({
+                attackerLevel: targetLevel,
+                movePower: opponentMovePower,
+                attackStat: opponentAtk,
+                defenseStat: playerDef,
+            })
+            const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
+
+            counterAttack = {
+                damage: counterDamage,
+                currentHp: nextPlayerHp,
+                maxHp: playerMaxHp,
+                defeatedPlayer: nextPlayerHp <= 0,
+                move: {
+                    name: 'Counter Strike',
+                    type: 'normal',
+                    power: opponentMovePower,
+                    mp: 0,
+                },
+                log: `${opponent.name || 'Opponent Pokemon'} retaliated for ${counterDamage} damage.`,
+            }
+        }
+
         res.json({
             ok: true,
             battle: {
@@ -864,6 +974,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     mp: playerState.mp,
                     maxMp: playerState.maxMp,
                 },
+                counterAttack,
                 log: `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage.`,
             },
         })
@@ -936,7 +1047,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             levelsGained += 1
         }
         activePokemon.friendship = Math.min(255, (activePokemon.friendship || 0) + happinessAwarded)
+        const evolutions = levelsGained > 0 ? await applyLevelEvolution(activePokemon) : []
         await activePokemon.save()
+        await activePokemon.populate('pokemonId', 'rarity name imageUrl sprites')
 
         let playerState = await PlayerState.findOne({ userId })
         if (!playerState) {
@@ -955,7 +1068,6 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
 
         let prizePokemon = null
         if (trainerPrizePokemonId && trainerRewardMarker) {
-            const Pokemon = (await import('../models/Pokemon.js')).default
             const prizeData = await Pokemon.findById(trainerPrizePokemonId)
                 .select('name imageUrl sprites levelUpMoves')
                 .lean()
@@ -1006,6 +1118,10 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                     trainerExp: Math.floor(expAwarded / 2),
                     prizePokemon,
                 },
+                evolution: {
+                    evolved: evolutions.length > 0,
+                    chain: evolutions,
+                },
             },
         })
     } catch (error) {
@@ -1023,7 +1139,6 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
             return res.json({ ok: true, encounter: null })
         }
 
-        const Pokemon = (await import('../models/Pokemon.js')).default
         const pokemon = await Pokemon.findById(encounter.pokemonId)
             .select('name pokedexNumber sprites imageUrl types rarity baseStats forms defaultFormId catchRate')
             .lean()

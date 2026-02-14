@@ -14,6 +14,7 @@ import ChangePartyPage from './pages/ChangePartyPage'
 import PokedexPage from './pages/PokedexPage'
 import RankingsPage from './pages/RankingsPage'
 import PokemonRankingsPage from './pages/PokemonRankingsPage'
+import EvolvePage from './pages/EvolvePage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -50,6 +51,8 @@ export default function App() {
                 <Route path="/box" element={<PokemonBoxPage />} />
                 <Route path="/pokedex" element={<PokedexPage />} />
                 <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
+                <Route path="/pokemon/:id/evolve" element={<EvolvePage />} />
+                <Route path="/evolve" element={<EvolvePage />} />
                 <Route path="/party" element={<ChangePartyPage />} />
                 <Route path="/rankings/overall" element={<RankingsPage />} />
                 <Route path="/rankings/pokemon" element={<PokemonRankingsPage />} />
@@ -58,6 +61,7 @@ export default function App() {
                 {/* Admin Routes */}
                 <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
                 <Route path="/admin/news" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.NEWS}><AdminNewsPage /></AdminRouteGuard>} />
+                <Route path="/admin/events" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.NEWS}><AdminNewsPage mode="events" /></AdminRouteGuard>} />
                 <Route path="/admin/users" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.USERS}><UserManagementPage /></AdminRouteGuard>} />
                 <Route path="/admin/pokemon" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonListPage /></AdminRouteGuard>} />
                 <Route path="/admin/pokemon/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonFormPage /></AdminRouteGuard>} />

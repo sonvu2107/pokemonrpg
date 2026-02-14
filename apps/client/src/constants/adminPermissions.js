@@ -21,7 +21,7 @@ export const ADMIN_PERMISSION_OPTIONS = Object.freeze([
 export const getEffectiveAdminPermissions = (userLike) => {
     if (!userLike || userLike.role !== 'admin') return []
 
-    if (!Array.isArray(userLike.adminPermissions)) {
+    if (!Array.isArray(userLike.adminPermissions) || userLike.adminPermissions.length === 0) {
         return [...ALL_ADMIN_PERMISSIONS]
     }
 

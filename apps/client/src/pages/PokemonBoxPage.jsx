@@ -73,9 +73,6 @@ export default function PokemonBoxPage() {
             {/* Top Banner / Info from screenshot */}
             {/* Top Banner / Info from screenshot */}
             <div className="text-center mb-6">
-                <div className="text-amber-400 font-bold tracking-wider text-xs mb-1 uppercase drop-shadow-sm flex items-center justify-center gap-2">
-                    <span className="animate-pulse">⭐</span> Sự kiện X2 kinh nghiệm đang diễn ra!
-                </div>
                 <div className="text-slate-600 text-xs font-bold flex justify-center gap-4 mb-2">
                     <span className="flex items-center gap-1">🪙 0 Xu Bạch Kim</span>
                     <span className="flex items-center gap-1 text-purple-700">🌑 0 Điểm Nguyệt Các</span>

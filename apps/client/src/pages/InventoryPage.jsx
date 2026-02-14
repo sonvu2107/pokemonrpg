@@ -53,9 +53,6 @@ export default function InventoryPage() {
 
             {/* Header Title Area */}
             <div className="text-center mb-6">
-                <div className="text-amber-400 font-bold tracking-wider text-xs mb-1 uppercase drop-shadow-sm">
-                    ⭐ Đang có sự kiện nhân đôi kinh nghiệm!
-                </div>
                 <div className="text-slate-600 text-sm font-bold flex justify-center gap-4 mb-2">
                     <span className="flex items-center gap-1">🪙 0 Xu Bạch Kim</span>
                     <span className="flex items-center gap-1 text-purple-700">🌑 0 Điểm Nguyệt Các</span>

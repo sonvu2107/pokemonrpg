@@ -1,7 +1,7 @@
 export const RARITY_STYLES = {
     sss: {
         border: 'border-[3px] border-transparent', // Handled by CSS
-        bg: 'bg-slate-900',
+        bg: 'bg-white',
         text: 'text-rose-500 font-extrabold',
         shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.6)]',
         overlay: 'bg-gradient-to-t from-rose-900/20 to-transparent',

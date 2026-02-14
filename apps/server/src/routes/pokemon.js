@@ -12,6 +12,33 @@ const toBoolean = (value) => {
     return ['1', 'true', 'yes', 'on'].includes(normalized)
 }
 
+const buildMovesForLevel = (pokemon, level) => {
+    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
+    const learned = pool
+        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
+        .sort((a, b) => a.level - b.level)
+        .map((entry) => entry.moveName || '')
+        .filter(Boolean)
+    return learned.slice(-4)
+}
+
+const resolveEvolutionRule = (species, currentFormId) => {
+    const normalizedFormId = String(currentFormId || '').trim()
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const matchedForm = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
+    const formEvolution = matchedForm?.evolution || null
+    if (formEvolution?.evolvesTo) return formEvolution
+    return species?.evolution || null
+}
+
+const resolvePokemonSprite = (pokemonLike) => {
+    if (!pokemonLike) return ''
+    const forms = Array.isArray(pokemonLike.forms) ? pokemonLike.forms : []
+    const defaultFormId = String(pokemonLike.defaultFormId || 'normal').trim() || 'normal'
+    const defaultForm = forms.find((entry) => String(entry?.formId || '').trim() === defaultFormId) || null
+    return defaultForm?.sprites?.normal || defaultForm?.sprites?.icon || defaultForm?.imageUrl || pokemonLike.imageUrl || pokemonLike.sprites?.normal || pokemonLike.sprites?.icon || ''
+}
+
 // GET /api/pokemon - Public master list (lightweight)
 router.get('/', async (req, res) => {
     try {
@@ -81,7 +108,7 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
                 .sort({ pokedexNumber: 1 })
                 .skip(skip)
                 .limit(limit)
-                .select('name pokedexNumber imageUrl sprites types')
+                .select('name pokedexNumber imageUrl sprites types forms defaultFormId')
                 .lean(),
             Pokemon.countDocuments(query),
             Pokemon.countDocuments(),
@@ -95,6 +122,12 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
             types: Array.isArray(entry.types) ? entry.types : [],
             imageUrl: entry.imageUrl || '',
             sprite: entry.sprites?.icon || entry.sprites?.normal || entry.imageUrl || '',
+            defaultFormId: String(entry.defaultFormId || 'normal').trim() || 'normal',
+            forms: (Array.isArray(entry.forms) ? entry.forms : []).map((form) => ({
+                formId: String(form?.formId || '').trim(),
+                formName: String(form?.formName || '').trim(),
+                sprite: form?.sprites?.icon || form?.sprites?.normal || form?.imageUrl || '',
+            })),
             got: ownedSet.has(entry._id.toString()),
         }))
 
@@ -162,9 +195,34 @@ router.get('/:id', async (req, res) => {
                 maxHp,
                 currentHp: maxHp // Assuming full health for display or retrieve from separate state if tracked
             },
-            // Helper to show total wins/losses if we had them. 
-            // Currently UserPokemon schema doesn't seem to track wins/losses directly?
-            // Checking schema... it has 'firstCatcher', 'originalTrainer' etc.
+        }
+
+        const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)
+        const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
+        const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1
+        let targetPokemon = null
+
+        if (hasValidRule) {
+            const target = await Pokemon.findById(evolutionRule.evolvesTo)
+                .select('name pokedexNumber imageUrl sprites forms defaultFormId')
+                .lean()
+
+            if (target) {
+                targetPokemon = {
+                    _id: target._id,
+                    name: target.name,
+                    pokedexNumber: target.pokedexNumber,
+                    sprites: {
+                        normal: resolvePokemonSprite(target),
+                    },
+                }
+            }
+        }
+
+        responseData.evolution = {
+            canEvolve: Boolean(targetPokemon) && level >= minLevel,
+            evolutionLevel: hasValidRule ? minLevel : null,
+            targetPokemon,
         }
 
         res.json({
@@ -175,6 +233,70 @@ router.get('/:id', async (req, res) => {
     } catch (error) {
         console.error('Get Pokemon Detail Error:', error)
         res.status(500).json({ ok: false, message: 'Server Error' })
+    }
+})
+
+// POST /api/pokemon/:id/evolve (protected)
+router.post('/:id/evolve', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+            .populate('pokemonId')
+
+        if (!userPokemon) {
+            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+        }
+
+        const currentSpecies = userPokemon.pokemonId
+        if (!currentSpecies) {
+            return res.status(404).json({ ok: false, message: 'Base Pokemon data missing' })
+        }
+
+        const evolutionRule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
+        const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
+        if (!evolutionRule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1) {
+            return res.status(400).json({ ok: false, message: 'Pokemon này không có tiến hóa theo cấp độ' })
+        }
+
+        if (userPokemon.level < minLevel) {
+            return res.status(400).json({ ok: false, message: `Cần đạt cấp ${minLevel} để tiến hóa` })
+        }
+
+        const targetSpecies = await Pokemon.findById(evolutionRule.evolvesTo)
+            .select('name imageUrl sprites forms defaultFormId levelUpMoves')
+            .lean()
+
+        if (!targetSpecies) {
+            return res.status(404).json({ ok: false, message: 'Pokemon tiến hóa không tồn tại' })
+        }
+
+        const targetForms = Array.isArray(targetSpecies.forms) ? targetSpecies.forms : []
+        const currentFormId = String(userPokemon.formId || '').trim()
+        const canKeepForm = currentFormId && targetForms.some((entry) => String(entry?.formId || '').trim() === currentFormId)
+        const nextFormId = canKeepForm
+            ? currentFormId
+            : (String(targetSpecies.defaultFormId || '').trim() || 'normal')
+
+        const fromName = currentSpecies.name
+        userPokemon.pokemonId = targetSpecies._id
+        userPokemon.formId = nextFormId
+        userPokemon.moves = buildMovesForLevel(targetSpecies, userPokemon.level)
+        await userPokemon.save()
+        await userPokemon.populate('pokemonId')
+
+        res.json({
+            ok: true,
+            message: `${fromName} đã tiến hóa thành ${targetSpecies.name}!`,
+            evolution: {
+                from: fromName,
+                to: targetSpecies.name,
+                level: userPokemon.level,
+            },
+            pokemon: userPokemon,
+        })
+    } catch (error) {
+        console.error('POST /api/pokemon/:id/evolve error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
     }
 })
 

@@ -54,7 +54,7 @@ body {
 @layer components {
   .rarity-frame-sss {
     position: relative;
-    background: linear-gradient(#1e293b, #0f172a) padding-box,
+    background: linear-gradient(#ffffff, #ffffff) padding-box,
       linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) border-box !important;
     border: 3px solid transparent !important;
     animation: border-rotate 4s linear infinite;

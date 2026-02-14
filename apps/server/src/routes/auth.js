@@ -130,6 +130,30 @@ router.post('/login', async (req, res, next) => {
     }
 })
 
+// POST /api/auth/logout (protected)
+router.post('/logout', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'User not found',
+            })
+        }
+
+        user.isOnline = false
+        user.lastActive = new Date()
+        await user.save()
+
+        res.json({
+            ok: true,
+            message: 'Logout successful',
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
 // GET /api/auth/me (protected)
 router.get('/me', authMiddleware, async (req, res, next) => {
     try {

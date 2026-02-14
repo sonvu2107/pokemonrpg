@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
+import newsApi from "../services/newsApi"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -41,6 +42,9 @@ export default function LeftColumn() {
     const { logout } = useAuth()
     const [legendaryMaps, setLegendaryMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
+    const [eventPosts, setEventPosts] = useState([])
+    const [updatePosts, setUpdatePosts] = useState([])
+    const [loadingHighlights, setLoadingHighlights] = useState(true)
 
     const sortByDisplayOrder = (maps) => {
         return maps
@@ -71,20 +75,59 @@ export default function LeftColumn() {
         loadLegendaryMaps()
     }, [])
 
+    useEffect(() => {
+        const loadHighlights = async () => {
+            try {
+                const [eventRes, updateRes] = await Promise.all([
+                    newsApi.getNews({ limit: 5, type: 'event' }),
+                    newsApi.getNews({ limit: 5, type: 'update' }),
+                ])
+
+                setEventPosts(eventRes?.ok ? (eventRes.posts || []) : [])
+                setUpdatePosts(updateRes?.ok ? (updateRes.posts || []) : [])
+            } catch (err) {
+                console.error('Failed to load highlights:', err)
+                setEventPosts([])
+                setUpdatePosts([])
+            } finally {
+                setLoadingHighlights(false)
+            }
+        }
+
+        loadHighlights()
+    }, [])
+
     return (
         <div className="flex flex-col w-full">
 
-            {/* WINTER EVENT */}
-            <SidebarSection title="Sự Kiện Mùa Đông" iconId={38}> {/* Ninetales/Vulpix for winter feel */}
-                <SidebarLink to="/event/winter" isSpecial>Sự Kiện Mùa Đông</SidebarLink>
-                <SidebarLink to="/shop/snowflake" isSpecial>Cửa Hàng Tuyết</SidebarLink>
+            {/* EVENTS */}
+            <SidebarSection title="Sự Kiện" iconId={38}>
+                {loadingHighlights ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
+                ) : eventPosts.length === 0 ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Chưa có sự kiện mới.</div>
+                ) : (
+                    eventPosts.map((post) => (
+                        <SidebarLink key={post._id} to="/" isSpecial>
+                            {post.title}
+                        </SidebarLink>
+                    ))
+                )}
             </SidebarSection>
 
-            {/* RECENTLY UPDATED */}
-            <SidebarSection title="Mới Cập Nhật" iconId={89}> {/* Muk/Grimer generic placeholder, or use something else */}
-                <SidebarLink to="/explore/sunless" isSpecial>Sunless Galaxy</SidebarLink>
-                <SidebarLink to="/explore/enigma" isSpecial>Đảo Bí Ẩn</SidebarLink>
-                <SidebarLink to="/explore/ruins">Tàn Tích Alph</SidebarLink>
+            {/* RECENT UPDATES */}
+            <SidebarSection title="Mới Cập Nhật" iconId={89}>
+                {loadingHighlights ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
+                ) : updatePosts.length === 0 ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Chưa có cập nhật mới.</div>
+                ) : (
+                    updatePosts.map((post) => (
+                        <SidebarLink key={post._id} to="/" isSpecial>
+                            {post.title}
+                        </SidebarLink>
+                    ))
+                )}
             </SidebarSection>
 
             {/* GENERAL */}

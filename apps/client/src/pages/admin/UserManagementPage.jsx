@@ -43,7 +43,7 @@ export default function UserManagementPage() {
                 updateUserInState(res.user)
             }
         } catch (err) {
-            alert('Cap nhat role that bai: ' + err.message)
+            alert('Cập nhật vai trò thất bại: ' + err.message)
         } finally {
             setUpdatingRoleUserId(null)
         }
@@ -62,7 +62,7 @@ export default function UserManagementPage() {
                 updateUserInState(res.user)
             }
         } catch (err) {
-            alert('Cap nhat quyen that bai: ' + err.message)
+            alert('Cập nhật quyền thất bại: ' + err.message)
         } finally {
             setUpdatingPermissionUserId(null)
         }
@@ -74,30 +74,30 @@ export default function UserManagementPage() {
     }
 
     if (loading && users.length === 0) {
-        return <div className="text-center py-8 text-blue-800 font-medium">Dang tai...</div>
+        return <div className="text-center py-8 text-blue-800 font-medium">Đang tải...</div>
     }
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
             <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-blue-100">
                 <div>
-                    <h1 className="text-xl font-bold text-slate-800">Quan ly User va Phan quyen Admin</h1>
+                    <h1 className="text-xl font-bold text-slate-800">Quản lý User và Phân quyền Admin</h1>
                     <p className="text-slate-500 text-sm mt-1">
-                        Tong so: <span className="font-bold text-blue-600">{pagination?.total || 0}</span> users
+                        Tổng số: <span className="font-bold text-blue-600">{pagination?.total || 0}</span> users
                     </p>
                 </div>
                 <Link
                     to="/admin"
                     className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold shadow-sm transition-all"
                 >
-                    Quay lai
+                    Quay lại
                 </Link>
             </div>
 
             <div className="bg-white p-4 rounded-lg shadow-sm border border-blue-100">
                 <input
                     type="text"
-                    placeholder="Tim kiem theo email hoac username..."
+                    placeholder="Tìm kiếm theo email hoặc username..."
                     value={search}
                     onChange={handleSearchChange}
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -105,7 +105,7 @@ export default function UserManagementPage() {
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-md px-4 py-3 text-xs text-blue-800">
-                Moi module trong Admin Center co the bat/tat rieng cho tung admin.
+                Mỗi module trong Admin Center có thể bật/tắt riêng cho từng admin.
             </div>
 
             {error && (
@@ -123,7 +123,7 @@ export default function UserManagementPage() {
                                 <th className="px-4 py-3 text-left font-bold">Username</th>
                                 <th className="px-4 py-3 text-center font-bold">Role</th>
                                 <th className="px-4 py-3 text-left font-bold">Admin Modules</th>
-                                <th className="px-4 py-3 text-center font-bold">Ngay tao</th>
+                                <th className="px-4 py-3 text-center font-bold">Ngày tạo</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -153,7 +153,7 @@ export default function UserManagementPage() {
                                         </td>
                                         <td className="px-4 py-3">
                                             {!isAdmin ? (
-                                                <span className="text-xs text-slate-400">Khong ap dung</span>
+                                                <span className="text-xs text-slate-400">Không áp dụng</span>
                                             ) : (
                                                 <div className="flex flex-wrap gap-2">
                                                     {ADMIN_PERMISSION_OPTIONS.map((option) => {
@@ -200,7 +200,7 @@ export default function UserManagementPage() {
                                 disabled={page <= 1}
                                 className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-bold shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Truoc
+                                Trước
                             </button>
                             <button
                                 onClick={() => setPage(page + 1)}

@@ -8,8 +8,18 @@ const getAuthHeader = () => {
 
 const newsApi = {
     // Get all published news (public)
-    getNews: async (limit = 10) => {
-        const res = await fetch(`${API_URL}/news?limit=${limit}`)
+    getNews: async (options = 10) => {
+        const normalized = typeof options === 'number'
+            ? { limit: options }
+            : (options || {})
+        const limit = Number.isFinite(Number(normalized.limit)) ? Number(normalized.limit) : 10
+        const type = String(normalized.type || '').trim().toLowerCase()
+        const searchParams = new URLSearchParams({ limit: String(limit) })
+        if (type) {
+            searchParams.set('type', type)
+        }
+
+        const res = await fetch(`${API_URL}/news?${searchParams.toString()}`)
         if (!res.ok) throw new Error('Failed to fetch news')
         return res.json()
     },

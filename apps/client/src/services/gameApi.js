@@ -172,6 +172,20 @@ export const gameApi = {
         const data = await res.json()
         return data.pokemon
     },
+
+    // POST /api/pokemon/:id/evolve
+    async evolvePokemon(id) {
+        const res = await fetch(`${API_URL}/pokemon/${id}/evolve`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.message || 'Failed to evolve pokemon')
+        }
+        return data
+    },
+
     // GET /api/party
     async getParty() {
         const res = await fetch(`${API_URL}/party`, {

@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { api } from "../services/api"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -40,6 +42,32 @@ const InfoRow = ({ label, value }) => (
 
 // Simplified RightColumn specifically for Login Page (Guest mode)
 export default function GuestRightColumn() {
+    const [stats, setStats] = useState({ totalUsers: 0, onlineUsers: 0 })
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const data = await api.getStats()
+                setStats(data)
+            } catch (error) {
+                console.error("Failed to fetch stats:", error)
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        fetchStats()
+        // Refresh stats periodically
+        const interval = setInterval(fetchStats, 60000)
+        return () => clearInterval(interval)
+    }, [])
+
+    const formatNumber = (num) => {
+        if (loading) return "..."
+        return num ? num.toLocaleString() : "0"
+    }
+
     return (
         <div className="flex flex-col w-full">
 
@@ -52,8 +80,8 @@ export default function GuestRightColumn() {
 
             {/* STATISTICS */}
             <SidebarSection title="Thống Kê" iconId={137}> {/* Porygon */}
-                <InfoRow label="Tổng Người Chơi" value="1,089,947" />
-                <InfoRow label="Đang Online" value="682" />
+                <InfoRow label="Tổng Người Chơi" value={formatNumber(stats.totalUsers)} />
+                <InfoRow label="Đang Online" value={formatNumber(stats.onlineUsers)} />
             </SidebarSection>
 
             {/* MISCELLANEOUS */}

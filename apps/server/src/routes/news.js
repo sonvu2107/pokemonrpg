@@ -9,7 +9,17 @@ const router = express.Router()
 router.get('/', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 10
-        const posts = await Post.find({ isPublished: true })
+        const allowedTypes = ['news', 'event', 'maintenance', 'update']
+        const requestedType = String(req.query.type || '').trim().toLowerCase()
+        const query = { isPublished: true }
+        if (requestedType) {
+            if (!allowedTypes.includes(requestedType)) {
+                return res.status(400).json({ ok: false, message: 'Invalid post type filter' })
+            }
+            query.type = requestedType
+        }
+
+        const posts = await Post.find(query)
             .populate('author', 'username')
             .sort({ createdAt: -1 })
             .limit(limit)

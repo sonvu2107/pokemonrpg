@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import newsApi from '../../services/newsApi'
 
-export default function AdminNewsPage() {
+export default function AdminNewsPage({ mode = 'all' }) {
     const [posts, setPosts] = useState([])
     const [loading, setLoading] = useState(true)
     const [showForm, setShowForm] = useState(false)
@@ -10,19 +10,25 @@ export default function AdminNewsPage() {
     const [formData, setFormData] = useState({
         title: '',
         content: '',
-        type: 'news',
+        type: mode === 'events' ? 'event' : 'news',
         isPublished: true,
     })
 
+    const isEventManager = mode === 'events'
+
     useEffect(() => {
         loadPosts()
-    }, [])
+    }, [isEventManager])
 
     const loadPosts = async () => {
         try {
             const response = await newsApi.getAllNews()
             if (response.ok) {
-                setPosts(response.posts)
+                const allPosts = response.posts || []
+                const filteredPosts = isEventManager
+                    ? allPosts.filter((post) => post.type === 'event' || post.type === 'update')
+                    : allPosts
+                setPosts(filteredPosts)
             }
         } catch (error) {
             console.error('Failed to load posts:', error)
@@ -43,7 +49,7 @@ export default function AdminNewsPage() {
 
             setShowForm(false)
             setEditingPost(null)
-            setFormData({ title: '', content: '', type: 'news', isPublished: true })
+            setFormData({ title: '', content: '', type: isEventManager ? 'event' : 'news', isPublished: true })
             loadPosts()
         } catch (error) {
             console.error('Failed to save post:', error)
@@ -100,17 +106,17 @@ export default function AdminNewsPage() {
             <div className="rounded border border-blue-400 bg-white shadow-sm">
                 <div className="border-b border-blue-400 bg-gradient-to-t from-blue-600 to-cyan-500 px-3 py-2 flex justify-between items-center">
                     <h1 className="text-lg font-bold text-white uppercase tracking-wider drop-shadow-sm">
-                        Quản Lý Tin Tức
+                        {isEventManager ? 'Quản Lý Sự Kiện & Cập Nhật' : 'Quản Lý Tin Tức'}
                     </h1>
                     <button
                         onClick={() => {
                             setShowForm(!showForm)
                             setEditingPost(null)
-                            setFormData({ title: '', content: '', type: 'news', isPublished: true })
+                            setFormData({ title: '', content: '', type: isEventManager ? 'event' : 'news', isPublished: true })
                         }}
                         className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-700 rounded text-sm font-bold shadow-sm transition-colors"
                     >
-                        {showForm ? 'Hủy' : '+ Thêm Tin Tức'}
+                        {showForm ? 'Hủy' : (isEventManager ? '+ Thêm Sự Kiện/Cập Nhật' : '+ Thêm Tin Tức')}
                     </button>
                 </div>
 
@@ -153,9 +159,9 @@ export default function AdminNewsPage() {
                                         onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                         className="w-full px-3 py-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="news">Tin tức</option>
+                                        {!isEventManager && <option value="news">Tin tức</option>}
                                         <option value="event">Sự kiện</option>
-                                        <option value="maintenance">Bảo trì</option>
+                                        {!isEventManager && <option value="maintenance">Bảo trì</option>}
                                         <option value="update">Cập nhật</option>
                                     </select>
                                 </div>
@@ -189,7 +195,7 @@ export default function AdminNewsPage() {
                                     onClick={() => {
                                         setShowForm(false)
                                         setEditingPost(null)
-                                        setFormData({ title: '', content: '', type: 'news', isPublished: true })
+                                        setFormData({ title: '', content: '', type: isEventManager ? 'event' : 'news', isPublished: true })
                                     }}
                                     className="px-4 py-2 bg-slate-400 hover:bg-slate-500 text-white rounded font-bold shadow-sm transition-colors"
                                 >
@@ -204,7 +210,9 @@ export default function AdminNewsPage() {
                     {loading ? (
                         <div className="text-center py-8 text-slate-500">Đang tải...</div>
                     ) : posts.length === 0 ? (
-                        <div className="text-center py-8 text-slate-500">Chưa có tin tức nào.</div>
+                        <div className="text-center py-8 text-slate-500">
+                            {isEventManager ? 'Chưa có sự kiện/cập nhật nào.' : 'Chưa có tin tức nào.'}
+                        </div>
                     ) : (
                         <div className="space-y-3">
                             {posts.map((post) => (

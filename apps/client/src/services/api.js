@@ -42,6 +42,13 @@ export const api = {
         return data
     },
 
+    async getStats() {
+        const res = await fetch(`${API_URL}/stats`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Failed to fetch stats')
+        return data
+    },
+
     // Game endpoints
     async clickAttack() {
         const res = await fetch(`${API_URL}/game/click`, {
