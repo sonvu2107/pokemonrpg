@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
         {title}
@@ -235,9 +237,13 @@ export default function PokemonRankingsPage() {
                                     <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center p-2 gap-1">
                                         <div className="w-10 h-10 rounded overflow-hidden mb-1">
                                             <img
-                                                src={entry.owner?.avatar || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/red.png'}
+                                                src={String(entry.owner?.avatar || '').trim() || DEFAULT_AVATAR}
                                                 className="w-full h-full object-cover"
                                                 alt="Avatar"
+                                                onError={(e) => {
+                                                    e.currentTarget.onerror = null
+                                                    e.currentTarget.src = DEFAULT_AVATAR
+                                                }}
                                             />
                                         </div>
                                         <div className={`font-bold text-sm sm:text-base ${getUsernameColor(entry.rank)}`}>

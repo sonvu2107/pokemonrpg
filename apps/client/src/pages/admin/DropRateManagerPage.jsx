@@ -125,6 +125,23 @@ export default function DropRateManagerPage() {
         }
     }
 
+    const handleDeleteAll = async () => {
+        const totalEntries = dropRates.length
+        const message = totalEntries > 0
+            ? `Xóa toàn bộ ${totalEntries} tỷ lệ rơi Pokemon của bản đồ ${map?.name || ''}? Hành động này không thể hoàn tác.`
+            : `Bản đồ ${map?.name || ''} hiện không có tỷ lệ rơi Pokemon. Bạn vẫn muốn tiếp tục?`
+
+        if (!confirm(message)) return
+
+        try {
+            const res = await dropRateApi.deleteAll(mapId)
+            await loadData()
+            alert(`Đã xóa ${res?.deletedCount || 0} tỷ lệ rơi.`)
+        } catch (err) {
+            alert('Xóa tất cả thất bại: ' + err.message)
+        }
+    }
+
     if (loading) return <div className="text-blue-800 font-medium text-center py-8">Đang tải dữ liệu...</div>
     if (!map) return <div className="text-red-500 font-medium text-center py-8">Không tìm thấy bản đồ</div>
 
@@ -229,15 +246,26 @@ export default function DropRateManagerPage() {
                             Tổng trọng số: <span className="font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{totalWeight}</span>
                         </p>
                     </div>
-                    <button
-                        onClick={() => setShowAddModal(true)}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Thêm Pokemon
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleDeleteAll}
+                            className="px-4 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded-md text-sm font-bold shadow-sm transition-all flex items-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            Xóa Tất Cả
+                        </button>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Thêm Pokemon
+                        </button>
+                    </div>
                 </div>
 
                 {dropRates.length === 0 ? (

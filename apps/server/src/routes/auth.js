@@ -63,6 +63,7 @@ router.post('/register', async (req, res, next) => {
                 username: user.username,
                 role: user.role,
                 adminPermissions,
+                completedBattleTrainers: user.completedBattleTrainers || [],
             },
         })
     } catch (error) {
@@ -123,6 +124,7 @@ router.post('/login', async (req, res, next) => {
                 username: user.username,
                 role: user.role,
                 adminPermissions,
+                completedBattleTrainers: user.completedBattleTrainers || [],
             },
         })
     } catch (error) {
@@ -177,6 +179,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 signature: user.signature,
                 role: user.role,
                 adminPermissions: getEffectiveAdminPermissions(user),
+                completedBattleTrainers: user.completedBattleTrainers || [],
                 createdAt: user.createdAt,
             },
             playerState: playerState || {
@@ -184,6 +187,39 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 level: 1, experience: 0, stamina: 100, maxStamina: 100,
                 moonPoints: 0, wins: 0, losses: 0
             },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// POST /api/auth/complete-trainer (protected)
+router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
+    try {
+        const trainerId = String(req.body?.trainerId || '').trim()
+        if (!trainerId) {
+            return res.status(400).json({
+                ok: false,
+                message: 'trainerId is required',
+            })
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.user.userId,
+            { $addToSet: { completedBattleTrainers: trainerId } },
+            { new: true }
+        ).select('_id completedBattleTrainers')
+
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'User not found',
+            })
+        }
+
+        res.json({
+            ok: true,
+            completedBattleTrainers: user.completedBattleTrainers || [],
         })
     } catch (error) {
         next(error)
@@ -230,6 +266,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
                 signature: user.signature,
                 role: user.role,
                 adminPermissions: getEffectiveAdminPermissions(user),
+                completedBattleTrainers: user.completedBattleTrainers || [],
                 createdAt: user.createdAt,
             },
         })

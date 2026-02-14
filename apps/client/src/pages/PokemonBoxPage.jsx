@@ -67,6 +67,34 @@ export default function PokemonBoxPage() {
 
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
+    const getEvolutionRule = (species = {}, currentFormId = 'normal') => {
+        const normalizedFormId = String(currentFormId || '').trim()
+        const forms = Array.isArray(species?.forms) ? species.forms : []
+        const matchedForm = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
+        const evolution = matchedForm?.evolution?.evolvesTo
+            ? matchedForm.evolution
+            : (species?.evolution || {})
+
+        const rawEvolvesTo = evolution?.evolvesTo
+        const evolvesTo = rawEvolvesTo
+            ? (typeof rawEvolvesTo === 'string'
+                ? rawEvolvesTo
+                : String(rawEvolvesTo?._id || rawEvolvesTo).trim())
+            : ''
+        const minLevel = Number.parseInt(evolution?.minLevel, 10)
+        return {
+            evolvesTo,
+            minLevel: Number.isFinite(minLevel) && minLevel > 0 ? minLevel : null,
+        }
+    }
+
+    const canEvolve = (pokemonEntry) => {
+        const species = pokemonEntry?.pokemonId || {}
+        const { evolvesTo, minLevel } = getEvolutionRule(species, pokemonEntry?.formId)
+        if (!evolvesTo || minLevel === null) return false
+        return Number(pokemonEntry?.level || 0) >= minLevel
+    }
+
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
 
@@ -228,9 +256,20 @@ export default function PokemonBoxPage() {
                                     const name = p.nickname || species.name || 'Unknown'
                                     const rarity = species.rarity || 'd'
                                     const style = getRarityStyle(rarity)
+                                    const isEvolvable = canEvolve(p)
 
                                     return (
                                         <div key={p._id} className={`group relative flex flex-col items-center p-2 rounded cursor-pointer transition-all hover:scale-105 ${style.border} ${style.bg} ${style.shadow} ${style.frameClass}`}>
+                                            {isEvolvable && (
+                                                <Link
+                                                    to={`/pokemon/${p._id}/evolve`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="absolute top-0 left-0 z-30"
+                                                    title="Pokemon có thể tiến hóa"
+                                                >
+                                                    <span className="bg-emerald-600 text-white text-[8px] px-1.5 py-0.5 rounded-br font-bold uppercase shadow-sm">UP</span>
+                                                </Link>
+                                            )}
                                             <Link to={`/pokemon/${p._id}`} className="flex flex-col items-center w-full relative z-10">
                                                 {/* Rarity Badge */}
                                                 <span className={`absolute top-0 right-0 text-[9px] font-bold px-1.5 py-0.5 rounded-bl ${style.badge} z-20 shadow-sm opacity-90`}>
@@ -282,7 +321,7 @@ export default function PokemonBoxPage() {
                                                 </button>
                                             )}
                                             {p.location === 'party' && (
-                                                <div className="absolute top-0 left-0">
+                                                <div className={`absolute left-0 ${isEvolvable ? 'top-5' : 'top-0'}`}>
                                                     <span className="bg-blue-600 text-white text-[8px] px-1 py-0.5 rounded-br font-bold uppercase shadow-sm">Party</span>
                                                 </div>
                                             )}

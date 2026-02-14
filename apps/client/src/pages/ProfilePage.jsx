@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
 
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
 // Helper component for section headers with the blue gradient style
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -98,6 +100,7 @@ export default function ProfilePage() {
     const maxStamina = playerState?.maxStamina || 100
     const wins = playerState?.wins || 0
     const losses = playerState?.losses || 0
+    const avatarSrc = String(user?.avatar || '').trim() || DEFAULT_AVATAR
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
@@ -143,12 +146,12 @@ export default function ProfilePage() {
                                 {/* Avatar Display */}
                                 <div className="mx-auto w-32 h-32 mb-6 flex items-center justify-center">
                                     <img
-                                        src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/red.png"
+                                        src={avatarSrc}
                                         alt="Trainer Avatar"
                                         className="h-full object-contain pixelated drop-shadow-md"
                                         onError={(e) => {
-                                            e.target.onerror = null;
-                                            e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+                                            e.currentTarget.onerror = null
+                                            e.currentTarget.src = DEFAULT_AVATAR
                                         }}
                                     />
                                 </div>

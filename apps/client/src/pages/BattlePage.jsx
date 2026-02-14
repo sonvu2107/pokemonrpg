@@ -2,23 +2,6 @@ import { useState, useEffect } from 'react'
 import { gameApi } from '../services/gameApi'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
-const COMPLETED_TRAINERS_STORAGE_KEY = 'battle_completed_trainers'
-
-const getStoredCompletedTrainerIds = () => {
-    try {
-        const raw = window.localStorage.getItem(COMPLETED_TRAINERS_STORAGE_KEY)
-        const parsed = JSON.parse(raw || '[]')
-        if (!Array.isArray(parsed)) return []
-        return [...new Set(parsed.map((id) => String(id || '').trim()).filter(Boolean))]
-    } catch {
-        return []
-    }
-}
-
-const saveStoredCompletedTrainerIds = (ids = []) => {
-    const normalized = [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean))]
-    window.localStorage.setItem(COMPLETED_TRAINERS_STORAGE_KEY, JSON.stringify(normalized))
-}
 
 // Helper for the blue gradient header
 const SectionHeader = ({ title }) => (
@@ -401,12 +384,18 @@ export function BattlePage() {
     const [battlePlayerIndex, setBattlePlayerIndex] = useState(0)
     const [battlePartyHpState, setBattlePartyHpState] = useState([])
 
-    const markTrainerCompleted = (trainerId) => {
+    const markTrainerCompleted = async (trainerId) => {
         const normalizedId = String(trainerId || '').trim()
-        if (!normalizedId) return
-        const stored = getStoredCompletedTrainerIds()
-        if (stored.includes(normalizedId)) return
-        saveStoredCompletedTrainerIds([...stored, normalizedId])
+        if (!normalizedId) return null
+        const res = await gameApi.completeTrainer(normalizedId)
+        const completedTrainerIds = Array.isArray(res?.completedBattleTrainers)
+            ? res.completedBattleTrainers
+            : []
+        return new Set(
+            completedTrainerIds
+                .map((id) => String(id || '').trim())
+                .filter(Boolean)
+        )
     }
 
     const buildBattlePartyState = (partySlots = []) => {
@@ -481,10 +470,17 @@ export function BattlePage() {
             setMasterPokemon(trainerList)
             setInventory(inventoryData?.inventory || [])
 
-            const storedCompletedIds = new Set(getStoredCompletedTrainerIds())
-            const storedCompletedEntries = buildCompletedEntries(trainerList)
-                .filter((entry) => storedCompletedIds.has(String(entry.id)))
-            setCompletedEntries(storedCompletedEntries)
+            const completedTrainerIds = new Set(
+                (Array.isArray(profileData?.user?.completedBattleTrainers)
+                    ? profileData.user.completedBattleTrainers
+                    : []
+                )
+                    .map((id) => String(id || '').trim())
+                    .filter(Boolean)
+            )
+            const completedFromServer = buildCompletedEntries(trainerList)
+                .filter((entry) => completedTrainerIds.has(String(entry.id)))
+            setCompletedEntries(completedFromServer)
 
             const { trainer, trainerOrder } = getTrainerByOrder(trainerList)
             const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
@@ -669,11 +665,17 @@ export function BattlePage() {
                     setBattleResults(resResolve.results)
                     const entry = buildCompletedEntryFromBattle(currentBattleState)
                     if (entry) {
-                        markTrainerCompleted(entry.id)
-                        setCompletedEntries((prev) => {
-                            if (prev.some((item) => String(item.id) === String(entry.id))) return prev
-                            return [entry, ...prev]
-                        })
+                        try {
+                            const completedTrainerIds = await markTrainerCompleted(entry.id)
+                            if (completedTrainerIds) {
+                                setCompletedEntries((prev) => {
+                                    if (prev.some((item) => String(item.id) === String(entry.id))) return prev
+                                    return [entry, ...prev]
+                                })
+                            }
+                        } catch (saveProgressError) {
+                            console.error('Failed to save completed trainer progress', saveProgressError)
+                        }
                     }
 
                     if (masterPokemon.length > 0) {

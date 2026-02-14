@@ -223,6 +223,23 @@ export const gameApi = {
         return res.json()
     },
 
+    // POST /api/auth/complete-trainer
+    async completeTrainer(trainerId) {
+        const res = await fetch(`${API_URL}/auth/complete-trainer`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ trainerId }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.message || 'Failed to save trainer progress')
+        }
+        return data
+    },
+
     // GET /api/box
     async getBox(params = {}) {
         const searchParams = new URLSearchParams(params)

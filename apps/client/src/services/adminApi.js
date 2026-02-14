@@ -227,6 +227,19 @@ export const dropRateApi = {
         if (!res.ok) throw new Error('Failed to delete drop rate')
         return res.json()
     },
+
+    // DELETE /api/admin/drop-rates/map/:mapId
+    async deleteAll(mapId) {
+        const res = await fetch(`${API_URL}/admin/drop-rates/map/${mapId}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.message || 'Failed to delete all drop rates')
+        }
+        return data
+    },
 }
 
 // Item endpoints

@@ -87,6 +87,8 @@ export default function PokemonInfoPage() {
     const base = pokemon.pokemonId
     const stats = pokemon.stats
     const sprite = pokemon.isShiny ? (base.sprites?.shiny || base.imageUrl) : (base.imageUrl || base.sprites?.normal)
+    const previousPokemon = pokemon.evolution?.previousPokemon || null
+    const previousSprite = previousPokemon?.sprites?.normal || ''
 
     // Format rarity
     const rarityColor = {
@@ -126,6 +128,17 @@ export default function PokemonInfoPage() {
                                     e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
                                 }}
                             />
+                            {previousPokemon && previousSprite && (
+                                <img
+                                    src={previousSprite}
+                                    alt={previousPokemon.name}
+                                    className="absolute -right-16 top-1/2 -translate-y-1/2 w-14 h-14 object-contain pixelated opacity-90"
+                                    onError={(e) => {
+                                        e.target.onerror = null
+                                        e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                    }}
+                                />
+                            )}
                             {/* Small icon maybe? */}
                         </div>
 

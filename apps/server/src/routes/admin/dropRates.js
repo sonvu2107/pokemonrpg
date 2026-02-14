@@ -75,6 +75,28 @@ router.get('/', async (req, res) => {
     }
 })
 
+// DELETE /api/admin/drop-rates/map/:mapId - Delete all drop rates for a map
+router.delete('/map/:mapId', async (req, res) => {
+    try {
+        const { mapId } = req.params
+
+        if (!mapId) {
+            return res.status(400).json({ ok: false, message: 'mapId is required' })
+        }
+
+        const result = await DropRate.deleteMany({ mapId })
+
+        res.json({
+            ok: true,
+            message: 'All drop rates deleted',
+            deletedCount: result.deletedCount || 0,
+        })
+    } catch (error) {
+        console.error('DELETE /api/admin/drop-rates/map/:mapId error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
 // DELETE /api/admin/drop-rates/:id - Delete drop rate
 router.delete('/:id', async (req, res) => {
     try {

@@ -8,7 +8,7 @@ const SectionHeader = ({ title }) => (
     </div>
 )
 
-const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/red.png'
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const DAILY_TABS = [
     { label: 'BXH Tìm Kiếm', value: 'search' },
     { label: 'BXH EXP Bản Đồ', value: 'mapExp' },

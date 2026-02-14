@@ -17,11 +17,11 @@ router.get('/', async (req, res) => {
     try {
         let {
             page = 1,
-            limit = 28, // 7x4 grid usually
+            limit = 28,
             search = '',
             sort = 'id',
             filter = 'all',
-            type = 'all' // Added for type filtering if needed
+            type = 'all'
         } = req.query
 
         const pageNum = parseInt(page) || 1
@@ -31,12 +31,8 @@ router.get('/', async (req, res) => {
         const query = { userId: req.user.userId }
 
         // Search by nickname or species name
-        // Complex because species name is in populated 'pokemonId'.
-        // For strictly correct searching on species name, we need to filter AFTER population or find species IDs first.
-        // Fetching species IDs matching the search term:
         if (search) {
             const searchRegex = new RegExp(search, 'i')
-            // Find pokemon species matching name
             const species = await Pokemon.find({ name: searchRegex }).select('_id')
             const speciesIds = species.map(s => s._id)
 
@@ -46,22 +42,14 @@ router.get('/', async (req, res) => {
             ]
         }
 
-        // Filters from the UI: "Normal Shiny Dark Silver..."
-        // These look like "Variants" or "Forms".
         if (filter && filter !== 'all') {
-            // Map UI filter text to database values
-            // Example: 'shiny' -> { isShiny: true }
-            // Example: 'dark' -> { formId: 'dark' } ??
             const lowerFilter = filter.toLowerCase()
 
             if (lowerFilter === 'shiny') {
                 query.isShiny = true
             } else if (lowerFilter === 'normal') {
                 query.isShiny = false
-                // And maybe formId is normal?
             } else {
-                // specific forms: dark, silver, golden, etc.
-                // Assuming formId stores this.
                 query.formId = lowerFilter
             }
         }
@@ -70,44 +58,30 @@ router.get('/', async (req, res) => {
         let sortOptions = {}
         switch (sort) {
             case 'level':
-                sortOptions = { level: -1 } // Highest level first?
+                sortOptions = { level: -1 }
                 break
             case 'id':
-                // Sort by Pokedex Number (requires population or aggregation)
-                // If we can't sort by populated field easily without aggregation, 
-                // we might default to obtainedAt (IG - In Game order?)
                 sortOptions = { pokemonId: 1 }
                 break
             case 'ig':
             default:
-                sortOptions = { createdAt: -1 } // Newest first
+                sortOptions = { createdAt: -1 }
                 break
         }
 
-        // If sorting by ID (Species ID), basic find().sort() won't work well on populated fields. 
-        // For now, let's stick to simple sorting or 'createdAt' for IG.
-        // If 'id' is requested, we might sort by pokemonId (Object ID) which approximates creation time of the SPECIES, not the user pokemon.
-        // To sort by Pokedex number properly, we need aggregation. 
-
-        // Let's implement Aggregation for robust sorting/filtering if possible, or keep it simple.
-        // Simple for now.
         if (sort === 'id') {
-            // Fallback: sort by acquisition if we can't join-sort easily
             sortOptions = { pokemonId: 1 }
         }
 
         const total = await UserPokemon.countDocuments(query)
 
         const userPokemon = await UserPokemon.find(query)
-            .populate('pokemonId') // Get details of the species
+            .populate('pokemonId')
             .sort(sortOptions)
             .skip((pageNum - 1) * limitNum)
             .limit(limitNum)
 
-        // Count total owned (in box vs party)
-        // Just return counts for UI header
-        const countBox = total // Approximation since we query everything. 
-        // Real implementation might separate box/party.
+        const countBox = total
 
         res.json({
             pokemon: userPokemon,
@@ -119,7 +93,7 @@ router.get('/', async (req, res) => {
             },
             counts: {
                 total,
-                box: total, // Logic to be refined
+                box: total,
                 party: 0
             }
         })

@@ -201,6 +201,7 @@ router.get('/:id', async (req, res) => {
         const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
         const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1
         let targetPokemon = null
+        let previousPokemon = null
 
         if (hasValidRule) {
             const target = await Pokemon.findById(evolutionRule.evolvesTo)
@@ -219,10 +220,31 @@ router.get('/:id', async (req, res) => {
             }
         }
 
+        const previousSpecies = await Pokemon.findOne({
+            $or: [
+                { 'evolution.evolvesTo': basePokemon._id },
+                { 'forms.evolution.evolvesTo': basePokemon._id },
+            ],
+        })
+            .select('name pokedexNumber imageUrl sprites forms defaultFormId')
+            .lean()
+
+        if (previousSpecies) {
+            previousPokemon = {
+                _id: previousSpecies._id,
+                name: previousSpecies.name,
+                pokedexNumber: previousSpecies.pokedexNumber,
+                sprites: {
+                    normal: resolvePokemonSprite(previousSpecies),
+                },
+            }
+        }
+
         responseData.evolution = {
             canEvolve: Boolean(targetPokemon) && level >= minLevel,
             evolutionLevel: hasValidRule ? minLevel : null,
             targetPokemon,
+            previousPokemon,
         }
 
         res.json({
