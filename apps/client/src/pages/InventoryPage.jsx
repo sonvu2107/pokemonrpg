@@ -11,6 +11,7 @@ const SectionHeader = ({ title }) => (
 export default function InventoryPage() {
     const [activeTab, setActiveTab] = useState('All Items')
     const [inventory, setInventory] = useState([])
+    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
 
@@ -20,6 +21,10 @@ export default function InventoryPage() {
                 setLoading(true)
                 const data = await gameApi.getInventory()
                 setInventory(data.inventory || [])
+                setWallet({
+                    gold: Number(data?.playerState?.gold || 0),
+                    moonPoints: Number(data?.playerState?.moonPoints || 0),
+                })
             } catch (err) {
                 setError(err.message)
             } finally {
@@ -54,8 +59,8 @@ export default function InventoryPage() {
             {/* Header Title Area */}
             <div className="text-center mb-6">
                 <div className="text-slate-600 text-sm font-bold flex justify-center gap-4 mb-2">
-                    <span className="flex items-center gap-1">🪙 0 Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌑 0 Điểm Nguyệt Các</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌑 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm tracking-tight">Túi Đồ Của Bạn</h1>
             </div>

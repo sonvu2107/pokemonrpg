@@ -48,9 +48,15 @@ router.use(authMiddleware)
 // GET /api/inventory - List user's items
 router.get('/', async (req, res) => {
     try {
-        const items = await UserInventory.find({ userId: req.user.userId })
-            .populate('itemId')
-            .lean()
+        const userId = req.user.userId
+        const [items, playerState] = await Promise.all([
+            UserInventory.find({ userId })
+                .populate('itemId')
+                .lean(),
+            PlayerState.findOne({ userId })
+                .select('gold moonPoints')
+                .lean(),
+        ])
 
         const inventory = items.map((entry) => ({
             _id: entry._id,
@@ -58,7 +64,14 @@ router.get('/', async (req, res) => {
             quantity: entry.quantity,
         }))
 
-        res.json({ ok: true, inventory })
+        res.json({
+            ok: true,
+            inventory,
+            playerState: {
+                gold: Number(playerState?.gold || 0),
+                moonPoints: Number(playerState?.moonPoints || 0),
+            },
+        })
     } catch (error) {
         console.error('GET /api/inventory error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })

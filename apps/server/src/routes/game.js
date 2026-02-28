@@ -418,29 +418,29 @@ const trackDailyActivity = async (userId, increments = {}) => {
         return
     }
 
-    const mapFilter = mapSlug || mapName
     const mapInc = {}
-    if (mapSearches > 0) mapInc['mapStats.$.searches'] = mapSearches
-    if (mapExp > 0) mapInc['mapStats.$.mapExp'] = mapExp
-    if (mapMoonPoints > 0) mapInc['mapStats.$.moonPoints'] = mapMoonPoints
+    if (mapSearches > 0) mapInc['mapStats.$[entry].searches'] = mapSearches
+    if (mapExp > 0) mapInc['mapStats.$[entry].mapExp'] = mapExp
+    if (mapMoonPoints > 0) mapInc['mapStats.$[entry].moonPoints'] = mapMoonPoints
 
-    if (Object.keys(mapInc).length > 0) {
+    const mapSet = {
+        ...(mapSlug ? { 'mapStats.$[entry].mapSlug': mapSlug } : {}),
+        ...(mapName ? { 'mapStats.$[entry].mapName': mapName } : {}),
+    }
+
+    const mapArrayFilter = (mapSlug && mapName)
+        ? { $or: [{ 'entry.mapSlug': mapSlug }, { 'entry.mapName': mapName }] }
+        : (mapSlug ? { 'entry.mapSlug': mapSlug } : { 'entry.mapName': mapName })
+
+    if (Object.keys(mapInc).length > 0 || Object.keys(mapSet).length > 0) {
+        const updatePayload = {}
+        if (Object.keys(mapInc).length > 0) updatePayload.$inc = mapInc
+        if (Object.keys(mapSet).length > 0) updatePayload.$set = mapSet
+
         const updated = await DailyActivity.updateOne(
-            {
-                userId,
-                date,
-                $or: [
-                    { 'mapStats.mapSlug': mapFilter },
-                    { 'mapStats.mapName': mapFilter },
-                ],
-            },
-            {
-                $inc: mapInc,
-                $set: {
-                    ...(mapSlug ? { 'mapStats.$.mapSlug': mapSlug } : {}),
-                    ...(mapName ? { 'mapStats.$.mapName': mapName } : {}),
-                },
-            }
+            { userId, date },
+            updatePayload,
+            { arrayFilters: [mapArrayFilter] }
         )
 
         if (updated.modifiedCount > 0) {
