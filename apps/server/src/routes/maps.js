@@ -46,7 +46,7 @@ router.get('/legendary', async (req, res) => {
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/maps/legendary error:', error)
-        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+        res.status(500).json({ ok: false, message: 'Server error' })
     }
 })
 
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, maps: resolvedMaps })
     } catch (error) {
         console.error('GET /api/maps error:', error)
-        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+        res.status(500).json({ ok: false, message: 'Server error' })
     }
 })
 
@@ -79,17 +79,14 @@ router.get('/:slug', async (req, res) => {
             .lean()
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
+            return res.status(404).json({ ok: false, message: 'Map not found' })
         }
 
-        // Fetch DropRates for this map to show available pokemon
-        // We need to import DropRate model first, or use mongoose.model if circular dep issues
         const DropRate = (await import('../models/DropRate.js')).default
 
         const dropRates = await DropRate.find({ mapId: map._id })
             .populate('pokemonId', 'name pokedexNumber sprites imageUrl types rarity forms defaultFormId')
-            .sort({ weight: -1 }) // Show common ones first or rares? Maybe rares first for hype? Let's sort by weight for now.
-            // Actually usually games show rares first. Let's do nothing here and let frontend sort or sort by rarity.
+            .sort({ weight: -1 })
             .lean()
 
         const resolvedMap = {
@@ -113,7 +110,7 @@ router.get('/:slug', async (req, res) => {
         res.json({ ok: true, map: resolvedMap, dropRates: resolvedDropRates })
     } catch (error) {
         console.error(`GET /api/maps/${req.params.slug} error:`, error)
-        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+        res.status(500).json({ ok: false, message: 'Server error' })
     }
 })
 
