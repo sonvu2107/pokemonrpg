@@ -46,7 +46,7 @@ router.get('/legendary', async (req, res) => {
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/maps/legendary error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, maps: resolvedMaps })
     } catch (error) {
         console.error('GET /api/maps error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -79,7 +79,7 @@ router.get('/:slug', async (req, res) => {
             .lean()
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         const DropRate = (await import('../models/DropRate.js')).default
@@ -110,7 +110,7 @@ router.get('/:slug', async (req, res) => {
         res.json({ ok: true, map: resolvedMap, dropRates: resolvedDropRates })
     } catch (error) {
         console.error(`GET /api/maps/${req.params.slug} error:`, error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

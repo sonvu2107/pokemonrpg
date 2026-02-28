@@ -502,7 +502,7 @@ export function BattlePage() {
             setBattlePartyHpState([])
 
         } catch (error) {
-            console.error('Failed to load data', error)
+            console.error('Tải dữ liệu thất bại', error)
         } finally {
             setLoading(false)
         }
@@ -772,7 +772,7 @@ export function BattlePage() {
                                 })
                             }
                         } catch (saveProgressError) {
-                            console.error('Failed to save completed trainer progress', saveProgressError)
+                            console.error('Lưu tiến trình huấn luyện viên hoàn thành thất bại', saveProgressError)
                         }
                     }
 

@@ -16,7 +16,7 @@ export const api = {
             body: JSON.stringify({ email, username, password }),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Registration failed')
+        if (!res.ok) throw new Error(data.message || 'Đăng ký thất bại')
         return data
     },
 
@@ -27,7 +27,7 @@ export const api = {
             body: JSON.stringify({ email, password }),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Login failed')
+        if (!res.ok) throw new Error(data.message || 'Đăng nhập thất bại')
         return data
     },
 
@@ -37,16 +37,16 @@ export const api = {
         })
         const data = await res.json()
         if (res.status === 401) {
-            clearAuthSession(data?.message || 'Unauthorized')
+            clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
         }
-        if (!res.ok) throw new Error(data.message || 'Failed to fetch profile')
+        if (!res.ok) throw new Error(data.message || 'Không thể tải hồ sơ')
         return data
     },
 
     async getStats() {
         const res = await fetch(`${API_URL}/stats`)
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Failed to fetch stats')
+        if (!res.ok) throw new Error(data.message || 'Không thể tải thống kê')
         return data
     },
 
@@ -60,7 +60,7 @@ export const api = {
             },
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Click failed')
+        if (!res.ok) throw new Error(data.message || 'Click thất bại')
         return data
     },
     async updateProfile(userData) {
@@ -73,7 +73,7 @@ export const api = {
             body: JSON.stringify(userData),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Update failed')
+        if (!res.ok) throw new Error(data.message || 'Cập nhật thất bại')
         return data
     },
     async getBox(params = {}) {
@@ -82,7 +82,7 @@ export const api = {
             headers: { ...authHeaders() },
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Failed to fetch box')
+        if (!res.ok) throw new Error(data.message || 'Không thể tải hộp Pokemon')
         return data
     },
 }

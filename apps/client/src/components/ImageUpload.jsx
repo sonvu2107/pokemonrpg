@@ -68,7 +68,7 @@ export default function ImageUpload({
                 setPreview(url)
             }
         } catch (err) {
-            setError(err.message || 'Upload failed')
+            setError(err.message || 'Tải lên thất bại')
             setPreview(currentImage || '')
         } finally {
             setUploading(false)

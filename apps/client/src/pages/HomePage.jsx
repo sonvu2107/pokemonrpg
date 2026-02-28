@@ -16,7 +16,7 @@ export default function HomePage() {
                 setNews(response.posts)
             }
         } catch (error) {
-            console.error('Failed to load news:', error)
+            console.error('Không thể tải tin tức:', error)
         } finally {
             setLoading(false)
         }

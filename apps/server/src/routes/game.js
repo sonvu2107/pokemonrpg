@@ -342,7 +342,7 @@ const updateMapProgress = async (userId, mapId) => {
         }
     }
 
-    throw new Error('Failed to update map progress due to concurrent updates')
+    throw new Error('Không thể cập nhật tiến trình bản đồ do xung đột cập nhật đồng thời')
 }
 
 const updatePlayerLevel = async (userId) => {
@@ -395,7 +395,7 @@ const updatePlayerLevel = async (userId) => {
         }
     }
 
-    throw new Error('Failed to update player level due to concurrent updates')
+    throw new Error('Không thể cập nhật cấp người chơi do xung đột cập nhật đồng thời')
 }
 
 const formatMapProgress = (progress) => ({

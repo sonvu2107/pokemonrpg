@@ -84,7 +84,7 @@ export default function RightColumn() {
                     })
                 }
             } catch (err) {
-                console.error('Failed to fetch server stats:', err)
+                console.error('Không thể tải thống kê máy chủ:', err)
             }
         }
 

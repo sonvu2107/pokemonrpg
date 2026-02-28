@@ -9,7 +9,7 @@ const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
  */
 export const uploadToCloudinary = async (file, onProgress) => {
     if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
-        throw new Error('Cloudinary configuration missing. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in .env')
+        throw new Error('Thiếu cấu hình Cloudinary. Vui lòng đặt VITE_CLOUDINARY_CLOUD_NAME và VITE_CLOUDINARY_UPLOAD_PRESET trong .env')
     }
 
     const formData = new FormData()
@@ -34,15 +34,15 @@ export const uploadToCloudinary = async (file, onProgress) => {
             } else {
                 try {
                     const error = JSON.parse(xhr.responseText)
-                    reject(new Error(`Upload failed: ${error.error?.message || 'Unknown error'}`))
+                    reject(new Error(`Tải lên thất bại: ${error.error?.message || 'Lỗi không xác định'}`))
                 } catch {
-                    reject(new Error(`Upload failed with status ${xhr.status}`))
+                    reject(new Error(`Tải lên thất bại với mã trạng thái ${xhr.status}`))
                 }
             }
         })
 
         xhr.addEventListener('error', () => {
-            reject(new Error('Network error during upload'))
+            reject(new Error('Lỗi mạng khi tải lên'))
         })
 
         xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`)
@@ -88,15 +88,15 @@ export const validateImageFile = (file) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
     if (!file) {
-        return 'No file selected'
+        return 'Chưa chọn tệp'
     }
 
     if (!allowedTypes.includes(file.type)) {
-        return 'Invalid file type. Please use JPEG, PNG, GIF, or WebP'
+        return 'Loại tệp không hợp lệ. Vui lòng dùng JPEG, PNG, GIF hoặc WebP'
     }
 
     if (file.size > maxSize) {
-        return 'File too large. Maximum size is 5MB'
+        return 'Tệp quá lớn. Dung lượng tối đa là 5MB'
     }
 
     return null

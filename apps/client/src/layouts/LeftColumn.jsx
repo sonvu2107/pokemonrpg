@@ -76,7 +76,7 @@ export default function LeftColumn() {
             } catch (err) {
                 const message = String(err?.message || '')
                 if (!/unauthorized|token expired|invalid token/i.test(message)) {
-                    console.error('Failed to load legendary maps:', err)
+                    console.error('Không thể tải bản đồ huyền thoại:', err)
                 }
             } finally {
                 setLoadingMaps(false)
@@ -96,7 +96,7 @@ export default function LeftColumn() {
                 setEventPosts(eventRes?.ok ? (eventRes.posts || []) : [])
                 setUpdatePosts(updateRes?.ok ? (updateRes.posts || []) : [])
             } catch (err) {
-                console.error('Failed to load highlights:', err)
+                console.error('Không thể tải điểm nhấn:', err)
                 setEventPosts([])
                 setUpdatePosts([])
             } finally {

@@ -31,7 +31,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                 setPosts(filteredPosts)
             }
         } catch (error) {
-            console.error('Failed to load posts:', error)
+            console.error('Không thể tải bài viết:', error)
         } finally {
             setLoading(false)
         }
@@ -52,7 +52,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
             setFormData({ title: '', content: '', type: isEventManager ? 'event' : 'news', isPublished: true })
             loadPosts()
         } catch (error) {
-            console.error('Failed to save post:', error)
+            console.error('Không thể lưu bài viết:', error)
             alert('Có lỗi xảy ra khi lưu bài viết')
         }
     }
@@ -75,7 +75,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
             await newsApi.deleteNews(id)
             loadPosts()
         } catch (error) {
-            console.error('Failed to delete post:', error)
+            console.error('Không thể xóa bài viết:', error)
             alert('Có lỗi xảy ra khi xóa bài viết')
         }
     }

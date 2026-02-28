@@ -51,7 +51,7 @@ export default function GuestRightColumn() {
                 const data = await api.getStats()
                 setStats(data)
             } catch (error) {
-                console.error("Failed to fetch stats:", error)
+                console.error('Không thể tải thống kê:', error)
             } finally {
                 setLoading(false)
             }
