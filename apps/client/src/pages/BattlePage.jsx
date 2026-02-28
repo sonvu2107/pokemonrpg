@@ -126,12 +126,15 @@ const ActiveBattleView = ({
     const activeHpState = (resolvedActiveIndex >= 0 && Array.isArray(partyHpState))
         ? partyHpState[resolvedActiveIndex]
         : null
+    const activeMaxHp = Math.max(1, Number(activePokemon?.stats?.hp) || 100)
+    const activeCurrentHpRaw = Number(activeHpState?.currentHp)
+    const activeCurrentHp = Number.isFinite(activeCurrentHpRaw) ? activeCurrentHpRaw : activeMaxHp
 
     const playerMon = activePokemon ? {
         name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Unknown',
         level: activePokemon.level,
-        maxHp: activePokemon.stats?.hp || 100,
-        hp: Math.max(0, Math.min(activePokemon.stats?.hp || 100, Number(activeHpState?.currentHp) || (activePokemon.stats?.hp || 100))),
+        maxHp: activeMaxHp,
+        hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
         maxMp: playerState?.maxMp || 0,
         mp: playerState?.mp || 0,
         exp: activePokemon.experience,
@@ -416,7 +419,8 @@ export function BattlePage() {
             const slot = partySlots[idx]
             if (!slot) continue
             const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-            const currentHp = clampValue(Number(hpState?.[idx]?.currentHp) || maxHp, 0, maxHp)
+            const currentHpRaw = Number(hpState?.[idx]?.currentHp)
+            const currentHp = clampValue(Number.isFinite(currentHpRaw) ? currentHpRaw : maxHp, 0, maxHp)
             if (currentHp > 0) return idx
         }
 
@@ -528,7 +532,7 @@ export function BattlePage() {
         const activeMaxHp = Math.max(1, Number(activePokemon?.stats?.hp) || 1)
         const activeHpState = resolvedPartyState[resolvedActiveIndex] || { currentHp: activeMaxHp, maxHp: activeMaxHp }
         const playerCurrentHpForTurn = clampValue(
-            Number(activeHpState.currentHp) || activeMaxHp,
+            Number.isFinite(Number(activeHpState.currentHp)) ? Number(activeHpState.currentHp) : activeMaxHp,
             0,
             activeMaxHp
         )
@@ -713,6 +717,31 @@ export function BattlePage() {
 
             if (nextPlayerHp <= 0) {
                 setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
+                setBattleResults({
+                    resultType: 'defeat',
+                    message: 'Pokemon của bạn đã bại trận. Trận đấu kết thúc.',
+                    pokemon: {
+                        name: activeName,
+                        imageUrl: activePokemon?.pokemonId?.imageUrl ||
+                            activePokemon?.pokemonId?.sprites?.normal ||
+                            activePokemon?.pokemonId?.sprites?.front_default ||
+                            '',
+                        level: activePokemon?.level || 1,
+                        exp: activePokemon?.experience || 0,
+                        expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
+                        levelsGained: 0,
+                        happinessGained: 0,
+                    },
+                    rewards: {
+                        coins: 0,
+                        trainerExp: 0,
+                        prizePokemon: null,
+                    },
+                    evolution: {
+                        evolved: false,
+                        chain: [],
+                    },
+                })
                 return
             }
 
@@ -754,6 +783,33 @@ export function BattlePage() {
             }
         } catch (err) {
             setActionMessage(err.message)
+            if (String(err?.message || '').toLowerCase().includes('bại trận')) {
+                setBattleResults((prev) => prev || {
+                    resultType: 'defeat',
+                    message: err.message,
+                    pokemon: {
+                        name: activeName,
+                        imageUrl: activePokemon?.pokemonId?.imageUrl ||
+                            activePokemon?.pokemonId?.sprites?.normal ||
+                            activePokemon?.pokemonId?.sprites?.front_default ||
+                            '',
+                        level: activePokemon?.level || 1,
+                        exp: activePokemon?.experience || 0,
+                        expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
+                        levelsGained: 0,
+                        happinessGained: 0,
+                    },
+                    rewards: {
+                        coins: 0,
+                        trainerExp: 0,
+                        prizePokemon: null,
+                    },
+                    evolution: {
+                        evolved: false,
+                        chain: [],
+                    },
+                })
+            }
         } finally {
             setIsAttacking(false)
         }
@@ -960,47 +1016,103 @@ export function BattlePage() {
                 {battleResults && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                         <div className="bg-white border-2 border-slate-300 rounded w-[520px] max-w-[90%] shadow-lg">
-                            <div className="text-center font-bold text-sm border-b border-slate-200 py-2">Kết Quả Trận Đấu</div>
+                            <div className="text-center font-bold text-sm border-b border-slate-200 py-2">
+                                {battleResults?.resultType === 'defeat' ? 'Kết Thúc Trận Đấu' : 'Kết Quả Trận Đấu'}
+                            </div>
                             <div className="p-4 text-center text-xs">
-                                <div className="mb-2">Trận đấu đã kết thúc thành công!</div>
-                                <div className="border border-slate-200 rounded p-3 flex items-center gap-3 justify-center">
-                                    {battleResults.pokemon?.imageUrl ? (
-                                        <img
-                                            src={battleResults.pokemon.imageUrl}
-                                            alt={battleResults.pokemon.name}
-                                            className="w-10 h-10 object-contain pixelated bg-slate-100 rounded border border-slate-200"
-                                        />
-                                    ) : (
-                                        <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
-                                    )}
-                                    <div className="text-left">
-                                        <div className="font-bold text-sm">{battleResults.pokemon.name}</div>
-                                        <div>+{battleResults.pokemon.levelsGained} cấp</div>
-                                        <div>+{battleResults.pokemon.happinessGained} Hạnh phúc</div>
-                                        <div className="text-slate-500">EXP: {battleResults.pokemon.exp}/{battleResults.pokemon.expToNext}</div>
-                                    </div>
+                                <div className="mb-2">
+                                    {battleResults?.resultType === 'defeat'
+                                        ? (battleResults?.message || 'Pokemon của bạn đã bại trận.')
+                                        : 'Trận đấu đã kết thúc thành công!'}
                                 </div>
-                                <div className="mt-3 text-sm font-bold text-slate-700">+{battleResults.rewards.coins} Xu</div>
-                                <div className="text-xs text-slate-500">+{battleResults.rewards.trainerExp} EXP Huấn luyện viên</div>
-                                {battleResults.rewards?.prizePokemon?.claimed && (
-                                    <div className="text-xs text-emerald-600 mt-1">
-                                        + Phần thưởng: {battleResults.rewards.prizePokemon.name}
+                                {battleResults?.resultType === 'defeat' ? (
+                                    <div className="border border-rose-200 bg-rose-50 rounded p-3 flex items-center gap-3 justify-center">
+                                        {battleResults.pokemon?.imageUrl ? (
+                                            <img
+                                                src={battleResults.pokemon.imageUrl}
+                                                alt={battleResults.pokemon.name}
+                                                className="w-10 h-10 object-contain pixelated bg-white rounded border border-rose-200"
+                                            />
+                                        ) : (
+                                            <div className="w-10 h-10 bg-white rounded border border-rose-200" />
+                                        )}
+                                        <div className="text-left">
+                                            <div className="font-bold text-sm text-rose-700">{battleResults.pokemon?.name || 'Pokemon'}</div>
+                                            <div className="text-rose-600">Đã kiệt sức</div>
+                                        </div>
                                     </div>
-                                )}
-                                {battleResults.rewards?.prizePokemon?.alreadyClaimed && (
-                                    <div className="text-xs text-slate-500 mt-1">
-                                        Phần thưởng đã nhận: {battleResults.rewards.prizePokemon.name}
-                                    </div>
-                                )}
-                                {battleResults.evolution?.evolved && Array.isArray(battleResults.evolution.chain) && battleResults.evolution.chain.length > 0 && (
-                                    <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-left">
-                                        <div className="text-[11px] font-bold text-emerald-700">Tiến hóa</div>
-                                        {battleResults.evolution.chain.map((step, index) => (
-                                            <div key={`${step.fromPokemonId || step.from}-${step.toPokemonId || step.to}-${index}`} className="text-[11px] text-emerald-800">
-                                                {step.from} {'->'} {step.to} (Lv. {step.level})
+                                ) : (
+                                    <>
+                                        {Array.isArray(battleResults.pokemonRewards) && battleResults.pokemonRewards.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {battleResults.pokemonRewards.map((reward, index) => (
+                                                    <div
+                                                        key={`${reward.userPokemonId || reward.name || 'pokemon'}-${index}`}
+                                                        className="border border-slate-200 rounded p-3 flex items-center gap-3 justify-center"
+                                                    >
+                                                        {reward.imageUrl ? (
+                                                            <img
+                                                                src={reward.imageUrl}
+                                                                alt={reward.name}
+                                                                className="w-10 h-10 object-contain pixelated bg-slate-100 rounded border border-slate-200"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
+                                                        )}
+                                                        <div className="text-left">
+                                                            <div className="font-bold text-sm">{reward.name}</div>
+                                                            <div>Hạ gục: {reward.defeatedCount || 0} Pokemon</div>
+                                                            <div>+{reward.levelsGained || 0} cấp</div>
+                                                            <div>+{reward.happinessGained || 0} Hạnh phúc</div>
+                                                            <div className="text-slate-500">
+                                                                EXP: {reward.exp}/{reward.expToNext} (+{reward.finalExp || 0})
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
+                                        ) : (
+                                            <div className="border border-slate-200 rounded p-3 flex items-center gap-3 justify-center">
+                                                {battleResults.pokemon?.imageUrl ? (
+                                                    <img
+                                                        src={battleResults.pokemon.imageUrl}
+                                                        alt={battleResults.pokemon.name}
+                                                        className="w-10 h-10 object-contain pixelated bg-slate-100 rounded border border-slate-200"
+                                                    />
+                                                ) : (
+                                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
+                                                )}
+                                                <div className="text-left">
+                                                    <div className="font-bold text-sm">{battleResults.pokemon.name}</div>
+                                                    <div>+{battleResults.pokemon.levelsGained} cấp</div>
+                                                    <div>+{battleResults.pokemon.happinessGained} Hạnh phúc</div>
+                                                    <div className="text-slate-500">EXP: {battleResults.pokemon.exp}/{battleResults.pokemon.expToNext}</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="mt-3 text-sm font-bold text-slate-700">+{battleResults.rewards.coins} Xu</div>
+                                        <div className="text-xs text-slate-500">+{battleResults.rewards.trainerExp} EXP Huấn luyện viên</div>
+                                        {battleResults.rewards?.prizePokemon?.claimed && (
+                                            <div className="text-xs text-emerald-600 mt-1">
+                                                + Phần thưởng: {battleResults.rewards.prizePokemon.name}
+                                            </div>
+                                        )}
+                                        {battleResults.rewards?.prizePokemon?.alreadyClaimed && (
+                                            <div className="text-xs text-slate-500 mt-1">
+                                                Phần thưởng đã nhận: {battleResults.rewards.prizePokemon.name}
+                                            </div>
+                                        )}
+                                        {battleResults.evolution?.evolved && Array.isArray(battleResults.evolution.chain) && battleResults.evolution.chain.length > 0 && (
+                                            <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-left">
+                                                <div className="text-[11px] font-bold text-emerald-700">Tiến hóa</div>
+                                                {battleResults.evolution.chain.map((step, index) => (
+                                                    <div key={`${step.fromPokemonId || step.from}-${step.toPokemonId || step.to}-${index}`} className="text-[11px] text-emerald-800">
+                                                        {step.from} {'->'} {step.to} (Lv. {step.level})
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                             <div className="border-t border-slate-200 p-3 text-center">
@@ -1018,7 +1130,7 @@ export function BattlePage() {
                                     }}
                                     className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
                                 >
-                                    Chiến đấu
+                                    {battleResults?.resultType === 'defeat' ? 'Quay lại' : 'Chiến đấu'}
                                 </button>
                             </div>
                         </div>

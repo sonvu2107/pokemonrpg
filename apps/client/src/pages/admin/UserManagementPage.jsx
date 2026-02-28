@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { userApi } from '../../services/adminApi'
 import { ADMIN_PERMISSION_OPTIONS } from '../../constants/adminPermissions'
 
+const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+const DEFAULT_ITEM_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'
+
 export default function UserManagementPage() {
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(true)
@@ -12,10 +15,63 @@ export default function UserManagementPage() {
     const [pagination, setPagination] = useState(null)
     const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null)
     const [updatingPermissionUserId, setUpdatingPermissionUserId] = useState(null)
+    const [grantModal, setGrantModal] = useState({ type: '', user: null })
+    const [grantError, setGrantError] = useState('')
+    const [granting, setGranting] = useState(false)
+
+    const [pokemonLookup, setPokemonLookup] = useState([])
+    const [pokemonLookupLoading, setPokemonLookupLoading] = useState(false)
+    const [pokemonForm, setPokemonForm] = useState({
+        search: '',
+        pokemonId: '',
+        level: 5,
+        quantity: 1,
+        formId: 'normal',
+        isShiny: false,
+    })
+
+    const [itemLookup, setItemLookup] = useState([])
+    const [itemLookupLoading, setItemLookupLoading] = useState(false)
+    const [itemForm, setItemForm] = useState({
+        search: '',
+        itemId: '',
+        quantity: 1,
+    })
 
     useEffect(() => {
         loadUsers()
     }, [page, search])
+
+    useEffect(() => {
+        if (grantModal.type !== 'pokemon') return
+        const timer = setTimeout(() => {
+            loadPokemonLookup(pokemonForm.search)
+        }, 220)
+        return () => clearTimeout(timer)
+    }, [grantModal.type, pokemonForm.search])
+
+    useEffect(() => {
+        if (grantModal.type !== 'item') return
+        const timer = setTimeout(() => {
+            loadItemLookup(itemForm.search)
+        }, 220)
+        return () => clearTimeout(timer)
+    }, [grantModal.type, itemForm.search])
+
+    useEffect(() => {
+        if (grantModal.type !== 'pokemon') return
+        const selectedPokemon = pokemonLookup.find((entry) => entry._id === pokemonForm.pokemonId)
+        if (!selectedPokemon) return
+
+        const forms = Array.isArray(selectedPokemon.forms) ? selectedPokemon.forms : []
+        if (forms.length === 0) return
+
+        const hasSelectedForm = forms.some((form) => String(form.formId || '').toLowerCase() === String(pokemonForm.formId || '').toLowerCase())
+        if (!hasSelectedForm) {
+            const nextFormId = selectedPokemon.defaultFormId || forms[0].formId || 'normal'
+            setPokemonForm((prev) => ({ ...prev, formId: nextFormId }))
+        }
+    }, [grantModal.type, pokemonLookup, pokemonForm.pokemonId])
 
     const loadUsers = async () => {
         try {
@@ -73,9 +129,131 @@ export default function UserManagementPage() {
         setPage(1)
     }
 
+    const loadPokemonLookup = async (searchText = '') => {
+        try {
+            setPokemonLookupLoading(true)
+            const res = await userApi.lookupPokemon({ search: searchText, limit: 30 })
+            const rows = Array.isArray(res?.pokemon) ? res.pokemon : []
+            setPokemonLookup(rows)
+
+            setPokemonForm((prev) => {
+                if (prev.pokemonId && rows.some((entry) => entry._id === prev.pokemonId)) {
+                    return prev
+                }
+                if (rows.length === 0) {
+                    return { ...prev, pokemonId: '', formId: 'normal' }
+                }
+                const first = rows[0]
+                return {
+                    ...prev,
+                    pokemonId: first._id,
+                    formId: first.defaultFormId || first.forms?.[0]?.formId || 'normal',
+                }
+            })
+        } catch (err) {
+            setGrantError(err.message || 'Không thể tải danh sách pokemon')
+        } finally {
+            setPokemonLookupLoading(false)
+        }
+    }
+
+    const loadItemLookup = async (searchText = '') => {
+        try {
+            setItemLookupLoading(true)
+            const res = await userApi.lookupItems({ search: searchText, limit: 30 })
+            const rows = Array.isArray(res?.items) ? res.items : []
+            setItemLookup(rows)
+
+            setItemForm((prev) => {
+                if (prev.itemId && rows.some((entry) => entry._id === prev.itemId)) {
+                    return prev
+                }
+                return { ...prev, itemId: rows[0]?._id || '' }
+            })
+        } catch (err) {
+            setGrantError(err.message || 'Không thể tải danh sách vật phẩm')
+        } finally {
+            setItemLookupLoading(false)
+        }
+    }
+
+    const openPokemonGrantModal = (user) => {
+        setGrantError('')
+        setGrantModal({ type: 'pokemon', user })
+        setPokemonLookup([])
+        setPokemonForm({
+            search: '',
+            pokemonId: '',
+            level: 5,
+            quantity: 1,
+            formId: 'normal',
+            isShiny: false,
+        })
+    }
+
+    const openItemGrantModal = (user) => {
+        setGrantError('')
+        setGrantModal({ type: 'item', user })
+        setItemLookup([])
+        setItemForm({ search: '', itemId: '', quantity: 1 })
+    }
+
+    const closeGrantModal = () => {
+        if (granting) return
+        setGrantModal({ type: '', user: null })
+        setGrantError('')
+    }
+
+    const handleGrantPokemon = async () => {
+        if (!grantModal?.user?._id || !pokemonForm.pokemonId) return
+        try {
+            setGrantError('')
+            setGranting(true)
+            const payload = {
+                pokemonId: pokemonForm.pokemonId,
+                level: Number(pokemonForm.level) || 5,
+                quantity: Number(pokemonForm.quantity) || 1,
+                formId: pokemonForm.formId || 'normal',
+                isShiny: Boolean(pokemonForm.isShiny),
+            }
+            const res = await userApi.grantPokemon(grantModal.user._id, payload)
+            alert(res?.message || 'Đã thêm pokemon thành công')
+            closeGrantModal()
+        } catch (err) {
+            setGrantError(err.message || 'Không thể thêm pokemon')
+        } finally {
+            setGranting(false)
+        }
+    }
+
+    const handleGrantItem = async () => {
+        if (!grantModal?.user?._id || !itemForm.itemId) return
+        try {
+            setGrantError('')
+            setGranting(true)
+            const payload = {
+                itemId: itemForm.itemId,
+                quantity: Number(itemForm.quantity) || 1,
+            }
+            const res = await userApi.grantItem(grantModal.user._id, payload)
+            alert(res?.message || 'Đã thêm vật phẩm thành công')
+            closeGrantModal()
+        } catch (err) {
+            setGrantError(err.message || 'Không thể thêm vật phẩm')
+        } finally {
+            setGranting(false)
+        }
+    }
+
     if (loading && users.length === 0) {
         return <div className="text-center py-8 text-blue-800 font-medium">Đang tải...</div>
     }
+
+    const selectedPokemon = pokemonLookup.find((entry) => entry._id === pokemonForm.pokemonId) || null
+    const selectedPokemonForms = selectedPokemon && Array.isArray(selectedPokemon.forms) && selectedPokemon.forms.length > 0
+        ? selectedPokemon.forms
+        : [{ formId: selectedPokemon?.defaultFormId || 'normal', formName: selectedPokemon?.defaultFormId || 'normal' }]
+    const selectedItem = itemLookup.find((entry) => entry._id === itemForm.itemId) || null
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
@@ -116,13 +294,14 @@ export default function UserManagementPage() {
 
             <div className="bg-white rounded-lg shadow-sm border border-blue-200 flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
                 <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full">
-                    <table className="w-full text-sm min-w-[800px] lg:min-w-[1100px]">
+                    <table className="w-full text-sm min-w-[980px] lg:min-w-[1280px]">
                         <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
                                 <th className="px-4 py-3 text-left font-bold min-w-[180px] sm:min-w-[220px]">Email</th>
                                 <th className="px-4 py-3 text-left font-bold min-w-[140px] sm:min-w-[180px]">Username</th>
                                 <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Role</th>
                                 <th className="px-4 py-3 text-left font-bold min-w-[250px] sm:min-w-[320px]">Admin Modules</th>
+                                <th className="px-4 py-3 text-center font-bold min-w-[180px]">Trao thưởng</th>
                                 <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Ngày tạo</th>
                             </tr>
                         </thead>
@@ -179,6 +358,22 @@ export default function UserManagementPage() {
                                                 </div>
                                             )}
                                         </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button
+                                                    onClick={() => openPokemonGrantModal(user)}
+                                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"
+                                                >
+                                                    Pokemon
+                                                </button>
+                                                <button
+                                                    onClick={() => openItemGrantModal(user)}
+                                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-sm"
+                                                >
+                                                    Vật phẩm
+                                                </button>
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-3 text-center text-slate-500 text-xs">
                                             {new Date(user.createdAt).toLocaleDateString('vi-VN')}
                                         </td>
@@ -213,6 +408,231 @@ export default function UserManagementPage() {
                     </div>
                 )}
             </div>
+
+            {grantModal.type && grantModal.user && (
+                <div className="fixed inset-0 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white w-full max-w-xl rounded-lg border border-slate-200 shadow-2xl max-h-[92vh] overflow-y-auto">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">
+                                    {grantModal.type === 'pokemon' ? 'Thêm Pokemon cho người chơi' : 'Thêm vật phẩm cho người chơi'}
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Mục tiêu: <span className="font-bold text-blue-700">{grantModal.user.username || grantModal.user.email}</span>
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeGrantModal}
+                                disabled={granting}
+                                className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            {grantError && (
+                                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm font-medium">
+                                    {grantError}
+                                </div>
+                            )}
+
+                            {grantModal.type === 'pokemon' ? (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Tìm Pokemon</label>
+                                        <input
+                                            type="text"
+                                            value={pokemonForm.search}
+                                            onChange={(e) => setPokemonForm((prev) => ({ ...prev, search: e.target.value }))}
+                                            placeholder="Nhập tên hoặc số Pokedex"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div className="border border-slate-200 rounded-md max-h-56 overflow-y-auto">
+                                        {pokemonLookupLoading ? (
+                                            <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải Pokemon...</div>
+                                        ) : pokemonLookup.length === 0 ? (
+                                            <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy Pokemon</div>
+                                        ) : (
+                                            pokemonLookup.map((entry) => (
+                                                <button
+                                                    type="button"
+                                                    key={entry._id}
+                                                    onClick={() => setPokemonForm((prev) => ({
+                                                        ...prev,
+                                                        pokemonId: entry._id,
+                                                        formId: entry.defaultFormId || entry.forms?.[0]?.formId || 'normal',
+                                                    }))}
+                                                    className={`w-full px-3 py-2 border-b border-slate-100 text-left flex items-center gap-3 hover:bg-blue-50 ${pokemonForm.pokemonId === entry._id ? 'bg-blue-50' : ''}`}
+                                                >
+                                                    <img
+                                                        src={entry.sprite || DEFAULT_POKEMON_IMAGE}
+                                                        alt={entry.name}
+                                                        className="w-10 h-10 object-contain pixelated"
+                                                        onError={(e) => {
+                                                            e.currentTarget.onerror = null
+                                                            e.currentTarget.src = DEFAULT_POKEMON_IMAGE
+                                                        }}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-slate-800 truncate">{entry.name}</div>
+                                                        <div className="text-xs text-slate-500 font-mono">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</div>
+                                                    </div>
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Form</label>
+                                            <select
+                                                value={pokemonForm.formId}
+                                                onChange={(e) => setPokemonForm((prev) => ({ ...prev, formId: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                {selectedPokemonForms.map((form) => (
+                                                    <option key={form.formId} value={form.formId}>{form.formName || form.formId}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Level</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={pokemonForm.level}
+                                                onChange={(e) => setPokemonForm((prev) => ({ ...prev, level: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Số lượng</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={pokemonForm.quantity}
+                                                onChange={(e) => setPokemonForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-6">
+                                            <input
+                                                id="grant-shiny"
+                                                type="checkbox"
+                                                checked={pokemonForm.isShiny}
+                                                onChange={(e) => setPokemonForm((prev) => ({ ...prev, isShiny: e.target.checked }))}
+                                                className="accent-blue-600"
+                                            />
+                                            <label htmlFor="grant-shiny" className="text-sm font-semibold text-slate-700">Shiny</label>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={handleGrantPokemon}
+                                            disabled={granting || !pokemonForm.pokemonId}
+                                            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-bold disabled:opacity-50"
+                                        >
+                                            {granting ? 'Đang thêm...' : 'Thêm Pokemon'}
+                                        </button>
+                                        <button
+                                            onClick={closeGrantModal}
+                                            disabled={granting}
+                                            className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50"
+                                        >
+                                            Hủy
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Tìm vật phẩm</label>
+                                        <input
+                                            type="text"
+                                            value={itemForm.search}
+                                            onChange={(e) => setItemForm((prev) => ({ ...prev, search: e.target.value }))}
+                                            placeholder="Nhập tên vật phẩm"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div className="border border-slate-200 rounded-md max-h-56 overflow-y-auto">
+                                        {itemLookupLoading ? (
+                                            <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải vật phẩm...</div>
+                                        ) : itemLookup.length === 0 ? (
+                                            <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy vật phẩm</div>
+                                        ) : (
+                                            itemLookup.map((entry) => (
+                                                <button
+                                                    type="button"
+                                                    key={entry._id}
+                                                    onClick={() => setItemForm((prev) => ({ ...prev, itemId: entry._id }))}
+                                                    className={`w-full px-3 py-2 border-b border-slate-100 text-left flex items-center gap-3 hover:bg-emerald-50 ${itemForm.itemId === entry._id ? 'bg-emerald-50' : ''}`}
+                                                >
+                                                    <img
+                                                        src={entry.imageUrl || DEFAULT_ITEM_IMAGE}
+                                                        alt={entry.name}
+                                                        className="w-8 h-8 object-contain"
+                                                        onError={(e) => {
+                                                            e.currentTarget.onerror = null
+                                                            e.currentTarget.src = DEFAULT_ITEM_IMAGE
+                                                        }}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-slate-800 truncate">{entry.name}</div>
+                                                        <div className="text-xs text-slate-500">{entry.type} • {entry.rarity}</div>
+                                                    </div>
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">Số lượng</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="99999"
+                                                value={itemForm.quantity}
+                                                onChange={(e) => setItemForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div className="p-3 bg-slate-50 border border-slate-200 rounded text-sm">
+                                            <span className="text-slate-500">Đã chọn:</span>{' '}
+                                            <span className="font-bold text-slate-800">{selectedItem?.name || 'Chưa chọn'}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={handleGrantItem}
+                                            disabled={granting || !itemForm.itemId}
+                                            className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-bold disabled:opacity-50"
+                                        >
+                                            {granting ? 'Đang thêm...' : 'Thêm vật phẩm'}
+                                        </button>
+                                        <button
+                                            onClick={closeGrantModal}
+                                            disabled={granting}
+                                            className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50"
+                                        >
+                                            Hủy
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="text-center mt-6 p-4">
                 <Link

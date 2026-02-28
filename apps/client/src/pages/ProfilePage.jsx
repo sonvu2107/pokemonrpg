@@ -286,7 +286,7 @@ export default function ProfilePage() {
                             <InfoRow label="Tên Nhân Vật" value={username} isOdd={true} />
                             <InfoRow label="Nhóm" value={user?.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
                             <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={true} />
-                            <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (${expToNext(level).toLocaleString()} để lên cấp)`} isOdd={false} />
+                            <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (Thiếu ${expToNext(level).toLocaleString()} EXP để lên cấp)`} isOdd={false} />
                             <InfoRow label="HP / MP" value={`${hp}/${maxHp} HP - ${mp}/${maxMp} MP`} isOdd={true} />
                             <InfoRow label="Thể Lực" value={`${stamina}/${maxStamina} AP`} isOdd={false} />
                             <InfoRow label="Xu Bạch Kim" value={`${coins.toLocaleString()} Xu`} isOdd={true} />

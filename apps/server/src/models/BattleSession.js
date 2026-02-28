@@ -21,11 +21,20 @@ const battleSessionOpponentSchema = new mongoose.Schema(
     { _id: false }
 )
 
+const battleSessionKnockoutSchema = new mongoose.Schema(
+    {
+        userPokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserPokemon', required: true },
+        defeatedCount: { type: Number, default: 0, min: 0 },
+    },
+    { _id: false }
+)
+
 const battleSessionSchema = new mongoose.Schema(
     {
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         trainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'BattleTrainer', required: true },
         team: { type: [battleSessionOpponentSchema], default: [] },
+        knockoutCounts: { type: [battleSessionKnockoutSchema], default: [] },
         currentIndex: { type: Number, default: 0, min: 0 },
         playerPokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserPokemon', default: null },
         playerCurrentHp: { type: Number, default: 0, min: 0 },

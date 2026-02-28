@@ -190,6 +190,7 @@ const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
             userId,
             trainerId,
             team: buildTrainerBattleTeam(trainer),
+            knockoutCounts: [],
             currentIndex: 0,
             expiresAt,
         })
@@ -198,6 +199,7 @@ const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
     const isActive = session.expiresAt && session.expiresAt > now && Array.isArray(session.team) && session.team.length > 0
     if (!isActive) {
         session.team = buildTrainerBattleTeam(trainer)
+        session.knockoutCounts = []
         session.currentIndex = 0
         session.playerPokemonId = null
         session.playerCurrentHp = 0
@@ -216,6 +218,56 @@ const getAliveOpponentIndex = (team, startIndex = 0) => {
         if ((team[index]?.currentHp || 0) > 0) return index
     }
     return -1
+}
+
+const distributeExpByDefeats = (totalExp, participants = []) => {
+    const normalizedTotalExp = Math.max(0, Math.floor(Number(totalExp) || 0))
+    const normalizedParticipants = (Array.isArray(participants) ? participants : [])
+        .map((entry, index) => ({
+            ...entry,
+            index,
+            defeatedCount: Math.max(0, Math.floor(Number(entry?.defeatedCount) || 0)),
+        }))
+        .filter((entry) => entry.defeatedCount > 0)
+
+    if (normalizedTotalExp <= 0 || normalizedParticipants.length === 0) {
+        return normalizedParticipants.map((entry) => ({ ...entry, baseExp: 0 }))
+    }
+
+    const totalDefeats = normalizedParticipants.reduce((sum, entry) => sum + entry.defeatedCount, 0)
+    if (totalDefeats <= 0) {
+        return normalizedParticipants.map((entry) => ({ ...entry, baseExp: 0 }))
+    }
+
+    const withAllocation = normalizedParticipants.map((entry) => {
+        const weighted = normalizedTotalExp * entry.defeatedCount
+        return {
+            ...entry,
+            baseExp: Math.floor(weighted / totalDefeats),
+            remainder: weighted % totalDefeats,
+        }
+    })
+
+    const distributed = withAllocation.reduce((sum, entry) => sum + entry.baseExp, 0)
+    let remaining = normalizedTotalExp - distributed
+
+    if (remaining > 0) {
+        const remainderSorted = [...withAllocation]
+            .sort((a, b) => (
+                (b.remainder - a.remainder) ||
+                (b.defeatedCount - a.defeatedCount) ||
+                (a.index - b.index)
+            ))
+
+        for (let i = 0; i < remaining; i += 1) {
+            const target = remainderSorted[i % remainderSorted.length]
+            target.baseExp += 1
+        }
+    }
+
+    return withAllocation
+        .sort((a, b) => a.index - b.index)
+        .map(({ remainder, index, ...entry }) => entry)
 }
 
 const normalizeLevelExpState = (level = 1, exp = 0, gain = 0) => {
@@ -1265,14 +1317,20 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
 
             const storedPlayerMaxHp = Math.max(1, Number(trainerSession.playerMaxHp) || playerMaxHp)
+            const storedPlayerCurrentHpRaw = Number(trainerSession.playerCurrentHp)
+            const storedPlayerCurrentHp = Number.isFinite(storedPlayerCurrentHpRaw)
+                ? storedPlayerCurrentHpRaw
+                : storedPlayerMaxHp
+            let effectivePlayerCurrentHp = storedPlayerCurrentHp
             if (storedPlayerMaxHp !== playerMaxHp) {
-                const currentRatio = Math.min(1, Math.max(0, (Number(trainerSession.playerCurrentHp) || storedPlayerMaxHp) / storedPlayerMaxHp))
+                const currentRatio = Math.min(1, Math.max(0, storedPlayerCurrentHp / storedPlayerMaxHp))
                 trainerSession.playerMaxHp = playerMaxHp
                 trainerSession.playerCurrentHp = clamp(Math.floor(playerMaxHp * currentRatio), 0, playerMaxHp)
+                effectivePlayerCurrentHp = trainerSession.playerCurrentHp
                 trainerSessionDirty = true
             }
             playerCurrentHp = clamp(
-                Math.floor(Number(trainerSession.playerCurrentHp) || playerMaxHp),
+                Math.floor(effectivePlayerCurrentHp),
                 0,
                 playerMaxHp
             )
@@ -1287,7 +1345,11 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             targetName = activeTrainerOpponent.name || targetName
             targetLevel = Math.max(1, Number(activeTrainerOpponent.level) || targetLevel)
             targetMaxHp = Math.max(1, Number(activeTrainerOpponent.maxHp) || targetMaxHp)
-            targetCurrentHp = clamp(Math.floor(Number(activeTrainerOpponent.currentHp) || targetMaxHp), 0, targetMaxHp)
+            const trainerTargetCurrentHpRaw = Number(activeTrainerOpponent.currentHp)
+            const trainerTargetCurrentHp = Number.isFinite(trainerTargetCurrentHpRaw)
+                ? trainerTargetCurrentHpRaw
+                : targetMaxHp
+            targetCurrentHp = clamp(Math.floor(trainerTargetCurrentHp), 0, targetMaxHp)
             targetAtk = Math.max(
                 1,
                 Number(activeTrainerOpponent.baseStats?.atk) ||
@@ -1300,6 +1362,10 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 getSpecialDefenseStat(activeTrainerOpponent.baseStats) ||
                 (20 + targetLevel * 2)
             )
+
+            if (playerCurrentHp <= 0) {
+                return res.status(400).json({ ok: false, message: 'Pokemon của bạn đã bại trận. Hãy đổi Pokemon hoặc bắt đầu lại trận đấu.' })
+            }
         }
 
         const damage = calcBattleDamage({
@@ -1311,7 +1377,25 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         const currentHp = Math.max(0, targetCurrentHp - damage)
 
         if (activeTrainerOpponent) {
+            const didDefeatOpponent = targetCurrentHp > 0 && currentHp <= 0
             activeTrainerOpponent.currentHp = currentHp
+            if (didDefeatOpponent) {
+                if (!Array.isArray(trainerSession.knockoutCounts)) {
+                    trainerSession.knockoutCounts = []
+                }
+                const activePokemonIdString = String(activePokemon._id)
+                const knockoutEntry = trainerSession.knockoutCounts.find(
+                    (entry) => String(entry?.userPokemonId || '') === activePokemonIdString
+                )
+                if (knockoutEntry) {
+                    knockoutEntry.defeatedCount = Math.max(0, Number(knockoutEntry.defeatedCount) || 0) + 1
+                } else {
+                    trainerSession.knockoutCounts.push({
+                        userPokemonId: activePokemon._id,
+                        defeatedCount: 1,
+                    })
+                }
+            }
             trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, activeOpponentIndex)
             if (trainerSession.currentIndex === -1) {
                 trainerSession.currentIndex = trainerSession.team.length
@@ -1421,6 +1505,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let trainerExpReward = 0
         let trainerPrizePokemonId = null
         let trainerRewardMarker = ''
+        let resolvedBattleSession = null
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
@@ -1453,6 +1538,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             if (!claimedSession) {
                 return res.status(409).json({ ok: false, message: 'Battle rewards already claimed. Please start a new battle.' })
             }
+            resolvedBattleSession = claimedSession
 
             if (Array.isArray(trainer.team) && trainer.team.length > 0) {
                 sourceTeam = trainer.team
@@ -1486,22 +1572,116 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
         }
 
-        // Apply rarity exp multiplier (SSS gets 1.5x exp)
-        const pokemonRarity = activePokemon.pokemonId?.rarity || 'd'
-        const expMultiplier = getRarityExpMultiplier(pokemonRarity)
-        const finalExp = Math.floor(expAwarded * expMultiplier)
+        const partyById = new Map(party.map((entry) => [String(entry._id), entry]))
+        const knockoutTotalsByPokemon = new Map()
+        const sessionKnockoutCounts = Array.isArray(resolvedBattleSession?.knockoutCounts)
+            ? resolvedBattleSession.knockoutCounts
+            : []
 
-        activePokemon.experience += finalExp
-        let levelsGained = 0
-        while (activePokemon.experience >= activePokemon.level * 100) {
-            activePokemon.experience -= activePokemon.level * 100
-            activePokemon.level += 1
-            levelsGained += 1
+        for (const knockoutEntry of sessionKnockoutCounts) {
+            const pokemonId = String(knockoutEntry?.userPokemonId || '').trim()
+            const defeatedCount = Math.max(0, Math.floor(Number(knockoutEntry?.defeatedCount) || 0))
+            if (!pokemonId || defeatedCount <= 0) continue
+            knockoutTotalsByPokemon.set(pokemonId, (knockoutTotalsByPokemon.get(pokemonId) || 0) + defeatedCount)
         }
-        activePokemon.friendship = Math.min(255, (activePokemon.friendship || 0) + happinessAwarded)
-        const evolutions = levelsGained > 0 ? await applyLevelEvolution(activePokemon) : []
-        await activePokemon.save()
-        await activePokemon.populate('pokemonId', 'rarity name imageUrl sprites')
+
+        const trackedParticipants = [...knockoutTotalsByPokemon.entries()]
+            .map(([pokemonId, defeatedCount]) => ({
+                pokemonId,
+                defeatedCount,
+                pokemon: partyById.get(pokemonId) || null,
+            }))
+            .filter((entry) => entry.pokemon)
+
+        if (trackedParticipants.length === 0) {
+            trackedParticipants.push({
+                pokemonId: String(activePokemon._id),
+                defeatedCount: Math.max(1, sourceTeam.length),
+                pokemon: activePokemon,
+            })
+        }
+
+        const expParticipants = distributeExpByDefeats(
+            expAwarded,
+            trackedParticipants.map((entry) => ({
+                pokemonId: entry.pokemonId,
+                defeatedCount: entry.defeatedCount,
+            }))
+        )
+
+        const participantByPokemonId = new Map(
+            trackedParticipants.map((entry) => [entry.pokemonId, entry.pokemon])
+        )
+        const pokemonRewards = []
+        const allEvolutions = []
+        let totalLevelsGained = 0
+
+        for (const expParticipant of expParticipants) {
+            const participantPokemon = participantByPokemonId.get(expParticipant.pokemonId)
+            if (!participantPokemon) continue
+
+            const pokemonRarity = participantPokemon.pokemonId?.rarity || 'd'
+            const expMultiplier = getRarityExpMultiplier(pokemonRarity)
+            const finalExp = Math.floor(expParticipant.baseExp * expMultiplier)
+
+            participantPokemon.experience += finalExp
+            let levelsGained = 0
+            while (participantPokemon.experience >= participantPokemon.level * 100) {
+                participantPokemon.experience -= participantPokemon.level * 100
+                participantPokemon.level += 1
+                levelsGained += 1
+            }
+
+            participantPokemon.friendship = Math.min(255, (participantPokemon.friendship || 0) + happinessAwarded)
+            const evolutions = levelsGained > 0 ? await applyLevelEvolution(participantPokemon) : []
+
+            await participantPokemon.save()
+            await participantPokemon.populate('pokemonId', 'rarity name imageUrl sprites')
+
+            totalLevelsGained += levelsGained
+            if (evolutions.length > 0) {
+                allEvolutions.push(...evolutions)
+            }
+
+            pokemonRewards.push({
+                userPokemonId: participantPokemon._id,
+                defeatedCount: expParticipant.defeatedCount,
+                baseExp: expParticipant.baseExp,
+                finalExp,
+                name: participantPokemon.nickname || participantPokemon.pokemonId?.name || 'Pokemon',
+                imageUrl: participantPokemon.pokemonId?.imageUrl ||
+                    participantPokemon.pokemonId?.sprites?.normal ||
+                    participantPokemon.pokemonId?.sprites?.front_default ||
+                    '',
+                level: participantPokemon.level,
+                exp: participantPokemon.experience,
+                expToNext: participantPokemon.level * 100,
+                levelsGained,
+                happiness: participantPokemon.friendship,
+                happinessGained: happinessAwarded,
+            })
+        }
+
+        const primaryPokemonReward = [...pokemonRewards]
+            .sort((a, b) => (
+                (b.defeatedCount - a.defeatedCount) ||
+                (b.baseExp - a.baseExp)
+            ))[0] || {
+                name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Pokemon',
+                imageUrl: activePokemon.pokemonId?.imageUrl ||
+                    activePokemon.pokemonId?.sprites?.normal ||
+                    activePokemon.pokemonId?.sprites?.front_default ||
+                    '',
+                level: activePokemon.level,
+                exp: activePokemon.experience,
+                expToNext: activePokemon.level * 100,
+                levelsGained: 0,
+                happiness: activePokemon.friendship,
+                happinessGained: 0,
+                defeatedCount: 0,
+                baseExp: 0,
+                finalExp: 0,
+            }
 
         const previousPlayerState = await PlayerState.findOne({ userId })
             .select('moonPoints')
@@ -1524,7 +1704,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         const moonPointsGained = Math.max(0, (playerState.moonPoints || 0) - moonPointsBefore)
         await trackDailyActivity(userId, {
             battles: 1,
-            levels: Math.max(0, levelsGained),
+            levels: Math.max(0, totalLevelsGained),
             battleMoonPoints: moonPointsGained,
             moonPoints: moonPointsGained,
             platinumCoins: Math.max(0, coinsAwarded),
@@ -1575,26 +1755,24 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             ok: true,
             results: {
                 pokemon: {
-                    name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Pokemon',
-                    imageUrl: activePokemon.pokemonId?.imageUrl ||
-                        activePokemon.pokemonId?.sprites?.normal ||
-                        activePokemon.pokemonId?.sprites?.front_default ||
-                        '',
-                    level: activePokemon.level,
-                    exp: activePokemon.experience,
-                    expToNext: activePokemon.level * 100,
-                    levelsGained,
-                    happiness: activePokemon.friendship,
-                    happinessGained: happinessAwarded,
+                    name: primaryPokemonReward.name,
+                    imageUrl: primaryPokemonReward.imageUrl,
+                    level: primaryPokemonReward.level,
+                    exp: primaryPokemonReward.exp,
+                    expToNext: primaryPokemonReward.expToNext,
+                    levelsGained: primaryPokemonReward.levelsGained,
+                    happiness: primaryPokemonReward.happiness,
+                    happinessGained: primaryPokemonReward.happinessGained,
                 },
+                pokemonRewards,
                 rewards: {
                     coins: coinsAwarded,
                     trainerExp: trainerExpAwarded,
                     prizePokemon,
                 },
                 evolution: {
-                    evolved: evolutions.length > 0,
-                    chain: evolutions,
+                    evolved: allEvolutions.length > 0,
+                    chain: allEvolutions,
                 },
             },
         })

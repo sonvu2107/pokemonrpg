@@ -455,4 +455,52 @@ export const userApi = {
         }
         return res.json()
     },
+
+    // GET /api/admin/users/lookup/pokemon
+    async lookupPokemon(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/users/lookup/pokemon?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Failed to lookup pokemon')
+        return res.json()
+    },
+
+    // GET /api/admin/users/lookup/items
+    async lookupItems(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/users/lookup/items?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Failed to lookup items')
+        return res.json()
+    },
+
+    // POST /api/admin/users/:id/grant-pokemon
+    async grantPokemon(userId, payload) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/grant-pokemon`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Failed to grant pokemon')
+        return res.json()
+    },
+
+    // POST /api/admin/users/:id/grant-item
+    async grantItem(userId, payload) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/grant-item`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Failed to grant item')
+        return res.json()
+    },
 }
