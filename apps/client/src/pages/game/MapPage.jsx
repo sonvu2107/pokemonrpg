@@ -4,8 +4,6 @@ import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
 
-const NORMAL_RARITIES = new Set(['d', 'c', 'common', 'uncommon'])
-
 export default function MapPage() {
     const { slug } = useParams()
     const [map, setMap] = useState(null)
@@ -48,7 +46,6 @@ export default function MapPage() {
     const unlockPercent = requiredSearches > 0
         ? Math.min(100, Math.round((currentSearches / requiredSearches) * 100))
         : 100
-    const normalDropRates = dropRates.filter(dr => dr.pokemonId && NORMAL_RARITIES.has(dr.pokemonId.rarity))
 
     useEffect(() => {
         loadMapData()
@@ -117,9 +114,12 @@ export default function MapPage() {
             const res = await gameApi.searchMap(slug)
             if (res?.locked) {
                 setUnlockInfo(res.unlock || null)
+                setIsLocked(true)
                 setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
                 return
             }
+
+            setIsLocked(false)
 
             // Artificial delay to mimic "Searching..." feel of old RPGs
             await new Promise(r => setTimeout(r, 600))
@@ -543,7 +543,7 @@ export default function MapPage() {
 
                     {lastResult && !lastResult.encountered && (
                         <div className="text-slate-800 font-bold text-xs mt-1">
-                            +3 EXP Bản Đồ
+                            +1 EXP Bản Đồ
                             {lastResult.itemDrop && (
                                 <span className="ml-2 text-emerald-600">Nhặt được {lastResult.itemDrop.name}</span>
                             )}

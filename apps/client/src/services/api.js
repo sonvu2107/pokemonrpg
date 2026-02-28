@@ -1,11 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-
-// Helper to get token from localStorage
-const getToken = () => localStorage.getItem('token')
+import { clearAuthSession, getValidTokenFromStorage } from '../utils/authSession'
 
 // Helper to set Authorization header
 const authHeaders = () => {
-    const token = getToken()
+    const token = getValidTokenFromStorage()
     return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -38,6 +36,9 @@ export const api = {
             headers: { ...authHeaders() },
         })
         const data = await res.json()
+        if (res.status === 401) {
+            clearAuthSession(data?.message || 'Unauthorized')
+        }
         if (!res.ok) throw new Error(data.message || 'Failed to fetch profile')
         return data
     },

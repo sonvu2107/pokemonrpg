@@ -114,16 +114,16 @@ export default function UserManagementPage() {
                 </div>
             )}
 
-            <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden flex flex-col">
-                <div className="overflow-auto max-h-[65vh] custom-scrollbar">
-                    <table className="w-full text-sm min-w-[1100px]">
+            <div className="bg-white rounded-lg shadow-sm border border-blue-200 flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
+                <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full">
+                    <table className="w-full text-sm min-w-[800px] lg:min-w-[1100px]">
                         <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="px-4 py-3 text-left font-bold">Email</th>
-                                <th className="px-4 py-3 text-left font-bold">Username</th>
-                                <th className="px-4 py-3 text-center font-bold">Role</th>
-                                <th className="px-4 py-3 text-left font-bold">Admin Modules</th>
-                                <th className="px-4 py-3 text-center font-bold">Ngày tạo</th>
+                                <th className="px-4 py-3 text-left font-bold min-w-[180px] sm:min-w-[220px]">Email</th>
+                                <th className="px-4 py-3 text-left font-bold min-w-[140px] sm:min-w-[180px]">Username</th>
+                                <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Role</th>
+                                <th className="px-4 py-3 text-left font-bold min-w-[250px] sm:min-w-[320px]">Admin Modules</th>
+                                <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Ngày tạo</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -212,6 +212,15 @@ export default function UserManagementPage() {
                         </div>
                     </div>
                 )}
+            </div>
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

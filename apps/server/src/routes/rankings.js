@@ -2,6 +2,8 @@ import express from 'express'
 import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import DailyActivity from '../models/DailyActivity.js'
+import User from '../models/User.js'
+import Pokemon from '../models/Pokemon.js'
 
 const router = express.Router()
 
@@ -12,17 +14,76 @@ const buildPokemonSort = (order = 'level_desc') => {
         case 'level_asc':
             return { level: 1, experience: 1, _id: 1 }
         case 'exp_desc':
-            return { experience: -1, level: -1, _id: 1 }
+            return { experience: -1, level: -1, _id: -1 }
         case 'exp_asc':
             return { experience: 1, level: 1, _id: 1 }
         case 'newest':
-            return { obtainedAt: -1, _id: 1 }
+            return { obtainedAt: -1, _id: -1 }
         case 'oldest':
             return { obtainedAt: 1, _id: 1 }
         case 'level_desc':
         default:
-            return { level: -1, experience: -1, _id: 1 }
+            return { level: -1, experience: -1, _id: -1 }
     }
+}
+
+const pokemonLookupStage = {
+    $lookup: {
+        from: 'pokemons',
+        let: { pokemonId: '$pokemonId' },
+        pipeline: [
+            {
+                $match: {
+                    $expr: { $eq: ['$_id', '$$pokemonId'] },
+                },
+            },
+            {
+                $project: {
+                    name: 1,
+                    pokedexNumber: 1,
+                    types: 1,
+                    forms: 1,
+                    sprites: 1,
+                    imageUrl: 1,
+                },
+            },
+        ],
+        as: 'pokemon',
+    },
+}
+
+const ownerLookupStage = {
+    $lookup: {
+        from: 'users',
+        let: { ownerId: '$userId' },
+        pipeline: [
+            {
+                $match: {
+                    $expr: { $eq: ['$_id', '$$ownerId'] },
+                },
+            },
+            {
+                $project: {
+                    username: 1,
+                    avatar: 1,
+                },
+            },
+        ],
+        as: 'owner',
+    },
+}
+
+const pokemonLeaderboardProjection = {
+    $project: {
+        level: 1,
+        experience: 1,
+        nickname: 1,
+        originalTrainer: 1,
+        isShiny: 1,
+        formId: 1,
+        pokemon: 1,
+        owner: 1,
+    },
 }
 
 const resolvePokemonSprite = (entry) => {
@@ -82,6 +143,7 @@ router.get('/daily', async (req, res, next) => {
         const [totalUsers, activities] = await Promise.all([
             DailyActivity.countDocuments(filter),
             DailyActivity.find(filter)
+                .select('userId searches mapExp moonPoints')
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
@@ -134,20 +196,20 @@ router.get('/daily', async (req, res, next) => {
 // GET /api/rankings/overall - Get overall rankings by EXP/Level
 router.get('/overall', async (req, res, next) => {
     try {
-        const page = Math.max(1, parseInt(req.query.page) || 1)
-        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 35))
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
 
-        // Get total count for pagination
-        const totalUsers = await PlayerState.countDocuments()
-
-        // Fetch rankings sorted by experience DESC
-        const playerStates = await PlayerState.find()
-            .sort({ experience: -1, level: -1, _id: 1 })
-            .skip(skip)
-            .limit(limit)
-            .populate('userId', 'username')
-            .lean()
+        const [totalUsers, playerStates] = await Promise.all([
+            PlayerState.countDocuments(),
+            PlayerState.find({})
+                .select('userId experience level')
+                .sort({ experience: -1, level: -1, _id: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate('userId', 'username')
+                .lean(),
+        ])
 
         // Build rankings with rank numbers
         const rankings = playerStates.map((state, index) => ({
@@ -158,7 +220,7 @@ router.get('/overall', async (req, res, next) => {
             level: state.level || 1,
         }))
 
-        const totalPages = Math.ceil(totalUsers / limit)
+        const totalPages = Math.max(1, Math.ceil(totalUsers / limit))
 
         res.json({
             ok: true,
@@ -210,57 +272,98 @@ router.get('/pokemon', async (req, res, next) => {
             baseMatch.originalTrainer = { $regex: escapeRegExp(ot), $options: 'i' }
         }
 
-        const postLookupMatch = {}
-        if (pokemonName) {
-            postLookupMatch['pokemon.name'] = { $regex: escapeRegExp(pokemonName), $options: 'i' }
+        if (pokemonName || type) {
+            const pokemonFilter = {}
+            if (pokemonName) {
+                pokemonFilter.name = { $regex: escapeRegExp(pokemonName), $options: 'i' }
+            }
+            if (type) {
+                pokemonFilter.types = type
+            }
+
+            const pokemonMatches = await Pokemon.find(pokemonFilter).select('_id').lean()
+            const pokemonIds = pokemonMatches.map((entry) => entry._id)
+            if (pokemonIds.length === 0) {
+                return res.json({
+                    ok: true,
+                    rankings: [],
+                    filters: {
+                        pokemonName,
+                        type,
+                        minLevel: normalizedMinLevel,
+                        maxLevel: normalizedMaxLevel,
+                        username,
+                        ot,
+                        order,
+                    },
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 1,
+                        total: 0,
+                        limit,
+                        hasNextPage: false,
+                        hasPrevPage: page > 1,
+                    },
+                })
+            }
+            baseMatch.pokemonId = { $in: pokemonIds }
         }
-        if (type) {
-            postLookupMatch['pokemon.types'] = type
-        }
+
         if (username) {
-            postLookupMatch['owner.username'] = { $regex: escapeRegExp(username), $options: 'i' }
+            const ownerMatches = await User.find({
+                username: { $regex: escapeRegExp(username), $options: 'i' },
+            })
+                .select('_id')
+                .lean()
+            const ownerIds = ownerMatches.map((entry) => entry._id)
+            if (ownerIds.length === 0) {
+                return res.json({
+                    ok: true,
+                    rankings: [],
+                    filters: {
+                        pokemonName,
+                        type,
+                        minLevel: normalizedMinLevel,
+                        maxLevel: normalizedMaxLevel,
+                        username,
+                        ot,
+                        order,
+                    },
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 1,
+                        total: 0,
+                        limit,
+                        hasNextPage: false,
+                        hasPrevPage: page > 1,
+                    },
+                })
+            }
+            baseMatch.userId = { $in: ownerIds }
         }
 
         const sortOptions = buildPokemonSort(order)
-        const hasPostLookupMatch = Object.keys(postLookupMatch).length > 0
 
-        const [result] = await UserPokemon.aggregate([
-            { $match: baseMatch },
-            {
-                $lookup: {
-                    from: 'pokemons',
-                    localField: 'pokemonId',
-                    foreignField: '_id',
-                    as: 'pokemon',
+        const [rows, total] = await Promise.all([
+            UserPokemon.aggregate([
+                { $match: baseMatch },
+                { $sort: sortOptions },
+                { $skip: skip },
+                { $limit: limit },
+                pokemonLookupStage,
+                { $unwind: '$pokemon' },
+                ownerLookupStage,
+                {
+                    $unwind: {
+                        path: '$owner',
+                        preserveNullAndEmptyArrays: true,
+                    },
                 },
-            },
-            { $unwind: '$pokemon' },
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'userId',
-                    foreignField: '_id',
-                    as: 'owner',
-                },
-            },
-            {
-                $unwind: {
-                    path: '$owner',
-                    preserveNullAndEmptyArrays: true,
-                },
-            },
-            ...(hasPostLookupMatch ? [{ $match: postLookupMatch }] : []),
-            { $sort: sortOptions },
-            {
-                $facet: {
-                    data: [{ $skip: skip }, { $limit: limit }],
-                    total: [{ $count: 'count' }],
-                },
-            },
+                pokemonLeaderboardProjection,
+            ]).allowDiskUse(true),
+            UserPokemon.countDocuments(baseMatch),
         ])
 
-        const rows = result?.data || []
-        const total = result?.total?.[0]?.count || 0
         const totalPages = Math.max(1, Math.ceil(total / limit))
 
         const rankings = rows.map((entry, index) => ({

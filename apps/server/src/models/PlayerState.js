@@ -46,6 +46,6 @@ const playerStateSchema = new mongoose.Schema(
 )
 
 // Index for faster queries
-playerStateSchema.index({ userId: 1 })
+playerStateSchema.index({ experience: -1, level: -1, _id: -1 })
 
 export default mongoose.model('PlayerState', playerStateSchema)

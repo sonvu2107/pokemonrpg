@@ -18,6 +18,22 @@ const normalizeRarity = (rarity) => {
     return RARITY_ALIASES[normalized] || normalized
 }
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const toSafePageLimit = (value, fallback) => Math.min(100, Math.max(1, parseInt(value, 10) || fallback))
+
+const normalizeBaseStats = (stats) => {
+    if (!stats || typeof stats !== 'object') return stats
+    const normalized = { ...stats }
+    if (normalized.spldef == null && normalized.spdef != null) {
+        normalized.spldef = normalized.spdef
+    }
+    if (normalized.spdef == null && normalized.spldef != null) {
+        normalized.spdef = normalized.spldef
+    }
+    return normalized
+}
+
 const normalizeForms = (forms) => {
     if (!Array.isArray(forms)) return []
     return forms
@@ -54,7 +70,7 @@ router.get('/', async (req, res) => {
 
         // Search by name (case-insensitive using nameLower)
         if (search) {
-            query.nameLower = { $regex: search.toLowerCase(), $options: 'i' }
+            query.nameLower = { $regex: escapeRegExp(String(search).toLowerCase()), $options: 'i' }
         }
 
         // Filter by type
@@ -62,13 +78,15 @@ router.get('/', async (req, res) => {
             query.types = type.toLowerCase()
         }
 
-        const skip = (parseInt(page) - 1) * parseInt(limit)
+        const safePage = Math.max(1, parseInt(page, 10) || 1)
+        const safeLimit = toSafePageLimit(limit, 20)
+        const skip = (safePage - 1) * safeLimit
 
         const [pokemon, total] = await Promise.all([
             Pokemon.find(query)
                 .sort({ pokedexNumber: 1 })
                 .skip(skip)
-                .limit(parseInt(limit))
+                .limit(safeLimit)
                 .populate('evolution.evolvesTo', 'name pokedexNumber')
                 .lean(),
             Pokemon.countDocuments(query),
@@ -79,10 +97,10 @@ router.get('/', async (req, res) => {
             ok: true,
             pokemon,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: safePage,
+                limit: safeLimit,
                 total,
-                pages: Math.ceil(total / parseInt(limit)),
+                pages: Math.ceil(total / safeLimit),
             },
         })
     } catch (error) {
@@ -112,7 +130,7 @@ router.post('/', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = normalizeForms(req.body.forms)
-        const resolvedBaseStats = baseStats || forms[0]?.stats
+        const resolvedBaseStats = normalizeBaseStats(baseStats || forms[0]?.stats)
 
         // Validation
         if (!pokedexNumber || !name || !resolvedBaseStats || !types || types.length < 1 || types.length > 2) {
@@ -190,7 +208,7 @@ router.put('/:id', async (req, res) => {
         // Update fields
         if (pokedexNumber !== undefined) pokemon.pokedexNumber = pokedexNumber
         if (name !== undefined) pokemon.name = name
-        if (baseStats !== undefined) pokemon.baseStats = baseStats
+        if (baseStats !== undefined) pokemon.baseStats = normalizeBaseStats(baseStats)
         pokemon.types = Array.isArray(types) ? types.map(t => t.toLowerCase()) : pokemon.types
         if (initialMoves !== undefined) pokemon.initialMoves = initialMoves || []
         if (sprites !== undefined) pokemon.sprites = sprites || pokemon.sprites

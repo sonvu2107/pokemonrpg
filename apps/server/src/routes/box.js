@@ -5,6 +5,8 @@ import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 // All routes require authentication
 router.use(authMiddleware)
 
@@ -24,15 +26,15 @@ router.get('/', async (req, res) => {
             type = 'all'
         } = req.query
 
-        const pageNum = parseInt(page) || 1
-        const limitNum = parseInt(limit) || 28
+        const pageNum = Math.max(1, parseInt(page, 10) || 1)
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 28))
 
         // Build query
         const query = { userId: req.user.userId }
 
         // Search by nickname or species name
         if (search) {
-            const searchRegex = new RegExp(search, 'i')
+            const searchRegex = new RegExp(escapeRegExp(search), 'i')
             const species = await Pokemon.find({ name: searchRegex }).select('_id')
             const speciesIds = species.map(s => s._id)
 
@@ -80,8 +82,6 @@ router.get('/', async (req, res) => {
             .sort(sortOptions)
             .skip((pageNum - 1) * limitNum)
             .limit(limitNum)
-
-        const countBox = total
 
         res.json({
             pokemon: userPokemon,

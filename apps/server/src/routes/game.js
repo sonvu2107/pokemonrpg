@@ -8,6 +8,7 @@ import UserInventory from '../models/UserInventory.js'
 import MapProgress from '../models/MapProgress.js'
 import MapModel from '../models/Map.js'
 import BattleTrainer from '../models/BattleTrainer.js'
+import BattleSession from '../models/BattleSession.js'
 import DailyActivity from '../models/DailyActivity.js'
 import Pokemon from '../models/Pokemon.js'
 
@@ -20,6 +21,8 @@ import {
     calcMaxHp,
     getRarityExpMultiplier,
 } from '../utils/gameUtils.js'
+import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
+import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 
 
 
@@ -133,54 +136,214 @@ const applyLevelEvolution = async (userPokemon) => {
     return evolutions
 }
 
-const updateMapProgress = async (userId, mapId) => {
-    let progress = await MapProgress.findOne({ userId, mapId })
-    if (!progress) {
-        progress = await MapProgress.create({
-            userId,
-            mapId,
-            isUnlocked: true,
-            unlockedAt: new Date(),
+const ACTIVE_TRAINER_BATTLE_TTL_MS = 30 * 60 * 1000
+const getBattleSessionExpiryDate = () => new Date(Date.now() + ACTIVE_TRAINER_BATTLE_TTL_MS)
+
+const getSpecialDefenseStat = (stats = {}) => (
+    Number(stats?.spdef) || Number(stats?.spldef) || 0
+)
+
+const resolveTrainerBattleForm = (pokemon, formId) => {
+    const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
+    const defaultFormId = String(pokemon?.defaultFormId || 'normal').trim() || 'normal'
+    let resolvedFormId = String(formId || defaultFormId).trim() || defaultFormId
+    let form = forms.find((entry) => String(entry?.formId || '').trim() === resolvedFormId) || null
+    if (!form && forms.length > 0) {
+        resolvedFormId = defaultFormId || String(forms[0]?.formId || 'normal').trim() || 'normal'
+        form = forms.find((entry) => String(entry?.formId || '').trim() === resolvedFormId) || forms[0]
+    }
+    return { form, formId: resolvedFormId }
+}
+
+const buildTrainerBattleTeam = (trainer) => {
+    const team = Array.isArray(trainer?.team) ? trainer.team : []
+    return team
+        .map((entry, index) => {
+            const pokemon = entry?.pokemonId
+            if (!pokemon) return null
+            const level = Math.max(1, Number(entry?.level) || 1)
+            const { form, formId } = resolveTrainerBattleForm(pokemon, entry?.formId)
+            const baseStats = form?.stats || pokemon.baseStats || {}
+            const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
+            const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
+            return {
+                slot: index,
+                pokemonId: pokemon._id,
+                name: pokemon.name || 'Pokemon',
+                level,
+                formId,
+                baseStats: scaledStats,
+                currentHp: maxHp,
+                maxHp,
+            }
         })
-    } else if (!progress.isUnlocked) {
-        progress.isUnlocked = true
-        progress.unlockedAt = progress.unlockedAt || new Date()
+        .filter(Boolean)
+}
+
+const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
+    const now = new Date()
+    const expiresAt = getBattleSessionExpiryDate()
+    let session = await BattleSession.findOne({ userId, trainerId })
+
+    if (!session) {
+        return BattleSession.create({
+            userId,
+            trainerId,
+            team: buildTrainerBattleTeam(trainer),
+            currentIndex: 0,
+            expiresAt,
+        })
     }
 
-    progress.totalSearches += 1
-    progress.exp += EXP_PER_SEARCH
-    progress.lastSearchedAt = new Date()
-
-    while (progress.exp >= expToNext(progress.level)) {
-        progress.exp -= expToNext(progress.level)
-        progress.level += 1
+    const isActive = session.expiresAt && session.expiresAt > now && Array.isArray(session.team) && session.team.length > 0
+    if (!isActive) {
+        session.team = buildTrainerBattleTeam(trainer)
+        session.currentIndex = 0
+        session.playerPokemonId = null
+        session.playerCurrentHp = 0
+        session.playerMaxHp = 1
     }
 
-    await progress.save()
-    return progress
+    session.expiresAt = expiresAt
+    session.updatedAt = now
+    await session.save()
+    return session
+}
+
+const getAliveOpponentIndex = (team, startIndex = 0) => {
+    if (!Array.isArray(team) || team.length === 0) return -1
+    for (let index = Math.max(0, startIndex); index < team.length; index += 1) {
+        if ((team[index]?.currentHp || 0) > 0) return index
+    }
+    return -1
+}
+
+const normalizeLevelExpState = (level = 1, exp = 0, gain = 0) => {
+    let nextLevel = Math.max(1, Number(level) || 1)
+    let nextExp = Math.max(0, Number(exp) || 0) + Math.max(0, Number(gain) || 0)
+    let levelsGained = 0
+
+    while (nextExp >= expToNext(nextLevel)) {
+        nextExp -= expToNext(nextLevel)
+        nextLevel += 1
+        levelsGained += 1
+    }
+
+    return {
+        level: nextLevel,
+        exp: nextExp,
+        levelsGained,
+    }
+}
+
+const isDuplicateKeyError = (error) => Number(error?.code) === 11000
+
+const updateMapProgress = async (userId, mapId) => {
+    const maxAttempts = 6
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const now = new Date()
+        const progress = await MapProgress.findOne({ userId, mapId })
+            .select('level exp totalSearches isUnlocked unlockedAt __v')
+            .lean()
+
+        if (!progress) {
+            const normalized = normalizeLevelExpState(1, 0, EXP_PER_SEARCH)
+            try {
+                const created = await MapProgress.create({
+                    userId,
+                    mapId,
+                    level: normalized.level,
+                    exp: normalized.exp,
+                    totalSearches: 1,
+                    isUnlocked: true,
+                    unlockedAt: now,
+                    lastSearchedAt: now,
+                })
+                return created
+            } catch (error) {
+                if (isDuplicateKeyError(error)) {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        const normalized = normalizeLevelExpState(progress.level, progress.exp, EXP_PER_SEARCH)
+        const updated = await MapProgress.findOneAndUpdate(
+            { _id: progress._id, __v: progress.__v },
+            {
+                $set: {
+                    level: normalized.level,
+                    exp: normalized.exp,
+                    totalSearches: (progress.totalSearches || 0) + 1,
+                    isUnlocked: true,
+                    unlockedAt: progress.unlockedAt || now,
+                    lastSearchedAt: now,
+                },
+                $inc: { __v: 1 },
+            },
+            { new: true }
+        )
+
+        if (updated) {
+            return updated
+        }
+    }
+
+    throw new Error('Failed to update map progress due to concurrent updates')
 }
 
 const updatePlayerLevel = async (userId) => {
-    let playerState = await PlayerState.findOne({ userId })
-    if (!playerState) {
-        playerState = await PlayerState.create({ userId })
+    const maxAttempts = 6
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const playerState = await PlayerState.findOne({ userId })
+            .select('level experience __v')
+            .lean()
+
+        if (!playerState) {
+            const normalized = normalizeLevelExpState(1, 0, EXP_PER_SEARCH)
+            try {
+                const created = await PlayerState.create({
+                    userId,
+                    level: normalized.level,
+                    experience: normalized.exp,
+                })
+                return {
+                    playerState: created,
+                    leveledUp: normalized.levelsGained > 0,
+                    levelsGained: normalized.levelsGained,
+                }
+            } catch (error) {
+                if (isDuplicateKeyError(error)) {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        const normalized = normalizeLevelExpState(playerState.level, playerState.experience, EXP_PER_SEARCH)
+        const updated = await PlayerState.findOneAndUpdate(
+            { _id: playerState._id, __v: playerState.__v },
+            {
+                $set: {
+                    level: normalized.level,
+                    experience: normalized.exp,
+                },
+                $inc: { __v: 1 },
+            },
+            { new: true }
+        )
+
+        if (updated) {
+            return {
+                playerState: updated,
+                leveledUp: normalized.levelsGained > 0,
+                levelsGained: normalized.levelsGained,
+            }
+        }
     }
 
-    // Grant EXP for map search
-    playerState.experience += EXP_PER_SEARCH
-
-    // Level up if enough EXP
-    let leveledUp = false
-    let levelsGained = 0
-    while (playerState.experience >= expToNext(playerState.level)) {
-        playerState.experience -= expToNext(playerState.level)
-        playerState.level += 1
-        levelsGained += 1
-        leveledUp = true
-    }
-
-    await playerState.save()
-    return { playerState, leveledUp, levelsGained }
+    throw new Error('Failed to update player level due to concurrent updates')
 }
 
 const formatMapProgress = (progress) => ({
@@ -226,12 +389,7 @@ const trackDailyActivity = async (userId, increments = {}) => {
     )
 }
 
-const getOrderedMaps = async () => {
-    return MapModel.find({})
-        .select('name slug levelMin levelMax isLegendary iconId requiredSearches orderIndex')
-        .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
-        .lean()
-}
+const getOrderedMaps = getOrderedMapsCached
 
 const buildProgressIndex = (progresses) => {
     const byId = new Map()
@@ -296,22 +454,67 @@ const ensureMapUnlocked = async (userId, mapId) => {
     return progress
 }
 
+const unlockMapsInBulk = async (userId, mapIds = []) => {
+    const uniqueMapIds = [...new Set(
+        (Array.isArray(mapIds) ? mapIds : [])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean)
+    )]
+
+    if (uniqueMapIds.length === 0) {
+        return new Map()
+    }
+
+    const now = new Date()
+    await MapProgress.bulkWrite(
+        uniqueMapIds.map((mapId) => ({
+            updateOne: {
+                filter: { userId, mapId },
+                update: {
+                    $set: { isUnlocked: true },
+                    $setOnInsert: {
+                        userId,
+                        mapId,
+                        level: 1,
+                        exp: 0,
+                        totalSearches: 0,
+                        lastSearchedAt: null,
+                        unlockedAt: now,
+                    },
+                },
+                upsert: true,
+            },
+        })),
+        { ordered: false }
+    )
+
+    await MapProgress.updateMany(
+        { userId, mapId: { $in: uniqueMapIds }, unlockedAt: null },
+        { $set: { unlockedAt: now } }
+    )
+
+    const unlockedProgresses = await MapProgress.find({ userId, mapId: { $in: uniqueMapIds } })
+        .select('mapId totalSearches isUnlocked')
+        .lean()
+    return buildProgressIndex(unlockedProgresses)
+}
+
 // POST /api/game/click (protected)
 router.post('/click', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
 
-        // Find or create player state
-        let playerState = await PlayerState.findOne({ userId })
-        if (!playerState) {
-            playerState = await PlayerState.create({ userId })
-        }
-
-        // Increment gold and clicks
-        playerState.gold += 10 // +10 gold per click
-        playerState.clicks += 1
-
-        await playerState.save()
+        const playerState = await PlayerState.findOneAndUpdate(
+            { userId },
+            {
+                $setOnInsert: { userId },
+                $inc: {
+                    gold: 10,
+                    clicks: 1,
+                },
+            },
+            { new: true, upsert: true }
+        )
 
         // Emit updated state via Socket.io
         emitPlayerState(userId.toString(), playerState)
@@ -354,6 +557,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             if (mapIndex > 0) {
                 const sourceMapId = orderedMaps[mapIndex - 1]._id
                 const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
+                    .select('mapId totalSearches')
+                    .lean()
                 progressById = buildProgressIndex(sourceProgress ? [sourceProgress] : [])
             }
             const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById)
@@ -388,19 +593,12 @@ router.post('/search', authMiddleware, async (req, res, next) => {
 
         const encounterRate = typeof map.encounterRate === 'number' ? map.encounterRate : 1
 
-        const ItemDropRate = (await import('../models/ItemDropRate.js')).default
-        const DropRate = (await import('../models/DropRate.js')).default
-
-        const [dropRates, itemDropRates] = await Promise.all([
-            DropRate.find({ mapId: map._id }).lean(),
-            ItemDropRate.find({ mapId: map._id }).populate('itemId').lean(),
-        ])
-
         const itemDropRate = typeof map.itemDropRate === 'number' ? map.itemDropRate : 0
-        const shouldDropItem = itemDropRates.length > 0 && Math.random() < itemDropRate
+        const shouldDropItem = itemDropRate > 0 && Math.random() < itemDropRate
         let droppedItem = null
 
         if (shouldDropItem) {
+            const itemDropRates = await getItemDropRatesCached(map._id)
             const itemTotalWeight = itemDropRates.reduce((sum, dr) => sum + dr.weight, 0)
             let itemRandom = Math.random() * itemTotalWeight
             let selectedItemDrop = null
@@ -451,6 +649,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             })
         }
 
+        const dropRates = await getPokemonDropRatesCached(map._id)
+
         if (dropRates.length === 0) {
             return res.json({
                 ok: true,
@@ -487,7 +687,6 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         }
 
         // 4. Populate Pokemon Details for response
-        const Pokemon = (await import('../models/Pokemon.js')).default
         const pokemon = await Pokemon.findById(selectedDrop.pokemonId)
             .select('name pokedexNumber sprites imageUrl types rarity baseStats catchRate forms defaultFormId')
             .lean()
@@ -574,32 +773,42 @@ router.get('/maps', authMiddleware, async (req, res, next) => {
         const orderedMaps = await getOrderedMaps()
         const mapIds = orderedMaps.map((map) => map._id)
         const progresses = await MapProgress.find({ userId, mapId: { $in: mapIds } })
+            .select('mapId totalSearches isUnlocked')
+            .lean()
         const progressById = buildProgressIndex(progresses)
 
-        const response = []
-        for (let i = 0; i < orderedMaps.length; i += 1) {
-            const map = orderedMaps[i]
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, i, progressById)
-            const isUnlocked = isAdmin || i === 0 || unlockRequirement.remainingSearches === 0
+        const mapsWithUnlockState = orderedMaps.map((map, index) => {
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById)
+            const isUnlocked = isAdmin || index === 0 || unlockRequirement.remainingSearches === 0
+            return { map, unlockRequirement, isUnlocked }
+        })
 
-            if (!isAdmin && isUnlocked) {
-                const existing = progressById.get(map._id.toString())
-                if (!existing || !existing.isUnlocked) {
-                    const updated = await ensureMapUnlocked(userId, map._id)
-                    progressById.set(map._id.toString(), updated)
-                }
-            }
+        if (!isAdmin) {
+            const mapIdsToUnlock = mapsWithUnlockState
+                .filter(({ map, isUnlocked }) => {
+                    if (!isUnlocked) return false
+                    const existing = progressById.get(map._id.toString())
+                    return !existing || !existing.isUnlocked
+                })
+                .map(({ map }) => map._id)
 
+            const unlockedProgressById = await unlockMapsInBulk(userId, mapIdsToUnlock)
+            unlockedProgressById.forEach((progress, key) => {
+                progressById.set(key, progress)
+            })
+        }
+
+        const response = mapsWithUnlockState.map(({ map, unlockRequirement, isUnlocked }) => {
             const progress = progressById.get(map._id.toString())
-            response.push({
+            return {
                 ...map,
                 isUnlocked,
                 unlockRequirement,
                 progress: {
                     totalSearches: progress?.totalSearches || 0,
                 },
-            })
-        }
+            }
+        })
 
         res.json({ ok: true, maps: response })
     } catch (error) {
@@ -635,6 +844,8 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
         if (mapIndex > 0) {
             const sourceMapId = orderedMaps[mapIndex - 1]._id
             const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
+                .select('mapId totalSearches')
+                .lean()
             if (sourceProgress) {
                 progresses.push(sourceProgress)
             }
@@ -653,19 +864,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             })
         }
 
-        let progress = await MapProgress.findOne({ userId, mapId: map._id })
-        if (!progress) {
-            progress = await MapProgress.create({
-                userId,
-                mapId: map._id,
-                isUnlocked: true,
-                unlockedAt: new Date(),
-            })
-        } else if (!progress.isUnlocked) {
-            progress.isUnlocked = true
-            progress.unlockedAt = progress.unlockedAt || new Date()
-            await progress.save()
-        }
+        const progress = await ensureMapUnlocked(userId, map._id)
 
         let currentPlayerState = await PlayerState.findOne({ userId })
         if (!currentPlayerState) {
@@ -731,12 +930,13 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
+            .select('pokemonId level hp maxHp isShiny formId')
+            .lean()
 
         if (!encounter) {
             return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
         }
 
-        const Pokemon = (await import('../models/Pokemon.js')).default
         const pokemon = await Pokemon.findById(encounter.pokemonId)
             .select('name pokedexNumber baseStats catchRate levelUpMoves')
             .lean()
@@ -754,6 +954,16 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
         const caught = Math.random() < chance
 
         if (caught) {
+            const resolvedEncounter = await Encounter.findOneAndUpdate(
+                { _id: req.params.id, userId, isActive: true },
+                { $set: { isActive: false, endedAt: new Date() } },
+                { new: true }
+            )
+
+            if (!resolvedEncounter) {
+                return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+            }
+
             const moves = buildMovesForLevel(pokemon, encounter.level)
             await UserPokemon.create({
                 userId,
@@ -766,18 +976,23 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 location: 'box',
             })
 
-            encounter.isActive = false
-            encounter.endedAt = new Date()
-            await encounter.save()
+            return res.json({
+                ok: true,
+                caught: true,
+                encounterId: resolvedEncounter._id,
+                hp: resolvedEncounter.hp,
+                maxHp: resolvedEncounter.maxHp,
+                message: `Đã bắt được ${pokemon.name}!`,
+            })
         }
 
         res.json({
             ok: true,
-            caught,
+            caught: false,
             encounterId: encounter._id,
             hp: encounter.hp,
             maxHp: encounter.maxHp,
-            message: caught ? `Đã bắt được ${pokemon.name}!` : 'Pokemon đã thoát khỏi bóng!'
+            message: 'Pokemon đã thoát khỏi bóng!'
         })
     } catch (error) {
         next(error)
@@ -813,13 +1028,21 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             move = null,
             opponent = {},
             player = {},
+            trainerId = null,
+            activePokemonId = null,
         } = req.body || {}
 
-        const party = await UserPokemon.find({ userId, location: 'party' })
-            .sort({ partyIndex: 1 })
-            .populate('pokemonId', 'name baseStats')
+        const normalizedTrainerId = String(trainerId || '').trim()
+        const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
-        const activePokemon = party.find(Boolean) || null
+        const party = await UserPokemon.find({ userId, location: 'party' })
+            .select('pokemonId level moves nickname formId partyIndex')
+            .sort({ partyIndex: 1 })
+            .populate('pokemonId', 'name baseStats rarity forms defaultFormId')
+
+        const activePokemon = normalizedActivePokemonId
+            ? (party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null)
+            : (party.find(Boolean) || null)
         if (!activePokemon) {
             return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
         }
@@ -860,46 +1083,147 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             mpCost = 0
         }
 
-        let playerState = await PlayerState.findOne({ userId })
-        if (!playerState) {
-            playerState = await PlayerState.create({ userId })
-        }
-
-        // If not enough MP, force Struggle (0 MP) to keep battle flow uninterrupted.
-        if ((playerState.mp || 0) < mpCost) {
-            selectedMoveName = 'Struggle'
-            resolvedPower = 35
-            mpCost = 0
-        }
+        let playerState = await PlayerState.findOneAndUpdate(
+            { userId },
+            { $setOnInsert: { userId } },
+            { new: true, upsert: true }
+        )
 
         if (mpCost > 0) {
-            playerState.mp = Math.max(0, (playerState.mp || 0) - mpCost)
-            await playerState.save()
-            emitPlayerState(userId.toString(), playerState)
+            const mpUpdatedState = await PlayerState.findOneAndUpdate(
+                {
+                    userId,
+                    mp: { $gte: mpCost },
+                },
+                {
+                    $inc: { mp: -mpCost },
+                },
+                { new: true }
+            )
+
+            if (mpUpdatedState) {
+                playerState = mpUpdatedState
+                emitPlayerState(userId.toString(), playerState)
+            } else {
+                selectedMoveName = 'Struggle'
+                resolvedPower = 35
+                mpCost = 0
+                playerState = await PlayerState.findOneAndUpdate(
+                    { userId },
+                    { $setOnInsert: { userId } },
+                    { new: true, upsert: true }
+                )
+            }
         }
 
-        const targetLevel = Math.max(1, Number(opponent.level) || 1)
-        const targetMaxHp = Math.max(1, Number(opponent.maxHp) || 1)
-        const parsedCurrentHp = Number(opponent.currentHp)
-        const targetCurrentHp = clamp(
-            Math.floor(Number.isFinite(parsedCurrentHp) ? parsedCurrentHp : targetMaxHp),
+        const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
+        const attackerSpecies = activePokemon?.pokemonId || {}
+        const { form: attackerForm } = resolveTrainerBattleForm(attackerSpecies, activePokemon.formId)
+        const attackerBaseStats = attackerForm?.stats || attackerSpecies.baseStats || {}
+        const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
+        const attackerAtk = Math.max(
+            1,
+            Number(attackerScaledStats?.atk) ||
+            Number(attackerScaledStats?.spatk) ||
+            (20 + attackerLevel * 2)
+        )
+
+        const playerMaxHp = Math.max(1, calcMaxHp(attackerBaseStats?.hp, attackerLevel, attackerSpecies.rarity))
+        const parsedPlayerCurrentHp = Number(player.currentHp)
+        let playerCurrentHp = clamp(
+            Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
+            0,
+            playerMaxHp
+        )
+        const playerDef = Math.max(
+            1,
+            Number(attackerScaledStats?.def) ||
+            Number(attackerScaledStats?.spdef) ||
+            (20 + attackerLevel * 2)
+        )
+
+        let targetName = String(opponent.name || 'Opponent Pokemon')
+        let targetLevel = Math.max(1, Number(opponent.level) || 1)
+        let targetMaxHp = Math.max(1, Number(opponent.maxHp) || 1)
+        let targetCurrentHp = clamp(
+            Math.floor(Number.isFinite(Number(opponent.currentHp)) ? Number(opponent.currentHp) : targetMaxHp),
             0,
             targetMaxHp
         )
-        const targetDef = Math.max(
+        let targetAtk = Math.max(
+            1,
+            Number(opponent.baseStats?.atk) ||
+            Number(opponent.baseStats?.spatk) ||
+            (20 + targetLevel * 2)
+        )
+        let targetDef = Math.max(
             1,
             Number(opponent.baseStats?.def) ||
-            Number(opponent.baseStats?.spdef) ||
+            getSpecialDefenseStat(opponent.baseStats) ||
             (20 + targetLevel * 2)
         )
 
-        const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
-        const attackerAtk = Math.max(
-            1,
-            Number(activePokemon?.pokemonId?.baseStats?.atk) ||
-            Number(activePokemon?.pokemonId?.baseStats?.spatk) ||
-            (20 + attackerLevel * 2)
-        )
+        let trainerSession = null
+        let activeOpponentIndex = -1
+        let activeTrainerOpponent = null
+        let trainerSessionDirty = false
+
+        if (normalizedTrainerId) {
+            const trainer = await BattleTrainer.findById(normalizedTrainerId)
+                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId')
+                .lean()
+
+            if (!trainer) {
+                return res.status(404).json({ ok: false, message: 'Battle trainer not found' })
+            }
+
+            trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer)
+
+            const activePokemonIdString = String(activePokemon._id)
+            if (String(trainerSession.playerPokemonId || '') !== activePokemonIdString) {
+                trainerSession.playerPokemonId = activePokemon._id
+                trainerSession.playerMaxHp = playerMaxHp
+                trainerSession.playerCurrentHp = playerMaxHp
+                trainerSessionDirty = true
+            }
+
+            const storedPlayerMaxHp = Math.max(1, Number(trainerSession.playerMaxHp) || playerMaxHp)
+            if (storedPlayerMaxHp !== playerMaxHp) {
+                const currentRatio = Math.min(1, Math.max(0, (Number(trainerSession.playerCurrentHp) || storedPlayerMaxHp) / storedPlayerMaxHp))
+                trainerSession.playerMaxHp = playerMaxHp
+                trainerSession.playerCurrentHp = clamp(Math.floor(playerMaxHp * currentRatio), 0, playerMaxHp)
+                trainerSessionDirty = true
+            }
+            playerCurrentHp = clamp(
+                Math.floor(Number(trainerSession.playerCurrentHp) || playerMaxHp),
+                0,
+                playerMaxHp
+            )
+
+            activeOpponentIndex = getAliveOpponentIndex(trainerSession.team, trainerSession.currentIndex)
+            trainerSession.currentIndex = activeOpponentIndex === -1 ? trainerSession.team.length : activeOpponentIndex
+            if (activeOpponentIndex === -1) {
+                return res.status(400).json({ ok: false, message: 'Trainer team has already been defeated. Resolve the battle now.' })
+            }
+
+            activeTrainerOpponent = trainerSession.team[activeOpponentIndex]
+            targetName = activeTrainerOpponent.name || targetName
+            targetLevel = Math.max(1, Number(activeTrainerOpponent.level) || targetLevel)
+            targetMaxHp = Math.max(1, Number(activeTrainerOpponent.maxHp) || targetMaxHp)
+            targetCurrentHp = clamp(Math.floor(Number(activeTrainerOpponent.currentHp) || targetMaxHp), 0, targetMaxHp)
+            targetAtk = Math.max(
+                1,
+                Number(activeTrainerOpponent.baseStats?.atk) ||
+                Number(activeTrainerOpponent.baseStats?.spatk) ||
+                (20 + targetLevel * 2)
+            )
+            targetDef = Math.max(
+                1,
+                Number(activeTrainerOpponent.baseStats?.def) ||
+                getSpecialDefenseStat(activeTrainerOpponent.baseStats) ||
+                (20 + targetLevel * 2)
+            )
+        }
 
         const damage = calcBattleDamage({
             attackerLevel,
@@ -909,37 +1233,34 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         })
         const currentHp = Math.max(0, targetCurrentHp - damage)
 
-        let counterAttack = null
-        if (currentHp > 0) {
-            const playerLevelForDefense = Math.max(1, Number(player.level) || attackerLevel)
-            const playerMaxHp = Math.max(1, Number(player.maxHp) || 1)
-            const parsedPlayerCurrentHp = Number(player.currentHp)
-            const playerCurrentHp = clamp(
-                Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
-                0,
-                playerMaxHp
-            )
-            const playerDef = Math.max(
-                1,
-                Number(player.baseStats?.def) ||
-                Number(player.baseStats?.spdef) ||
-                (20 + playerLevelForDefense * 2)
-            )
+        if (activeTrainerOpponent) {
+            activeTrainerOpponent.currentHp = currentHp
+            trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, activeOpponentIndex)
+            if (trainerSession.currentIndex === -1) {
+                trainerSession.currentIndex = trainerSession.team.length
+            }
+            trainerSession.expiresAt = getBattleSessionExpiryDate()
+            trainerSessionDirty = true
+        }
 
-            const opponentAtk = Math.max(
-                1,
-                Number(opponent.baseStats?.atk) ||
-                Number(opponent.baseStats?.spatk) ||
-                (20 + targetLevel * 2)
-            )
+        let counterAttack = null
+        let resultingPlayerHp = playerCurrentHp
+        if (currentHp > 0) {
             const opponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
             const counterDamage = calcBattleDamage({
                 attackerLevel: targetLevel,
                 movePower: opponentMovePower,
-                attackStat: opponentAtk,
+                attackStat: targetAtk,
                 defenseStat: playerDef,
             })
             const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
+            resultingPlayerHp = nextPlayerHp
+
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = nextPlayerHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
 
             counterAttack = {
                 damage: counterDamage,
@@ -952,9 +1273,29 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     power: opponentMovePower,
                     mp: 0,
                 },
-                log: `${opponent.name || 'Opponent Pokemon'} retaliated for ${counterDamage} damage.`,
+                log: `${targetName} retaliated for ${counterDamage} damage.`,
             }
         }
+
+        if (trainerSessionDirty && trainerSession) {
+            await trainerSession.save()
+        }
+
+        const trainerState = normalizedTrainerId && trainerSession
+            ? {
+                trainerId: normalizedTrainerId,
+                currentIndex: trainerSession.currentIndex,
+                defeatedAll: trainerSession.currentIndex >= trainerSession.team.length,
+                team: trainerSession.team.map((entry) => ({
+                    slot: entry.slot,
+                    pokemonId: entry.pokemonId,
+                    name: entry.name,
+                    level: entry.level,
+                    currentHp: entry.currentHp,
+                    maxHp: entry.maxHp,
+                })),
+            }
+            : null
 
         res.json({
             ok: true,
@@ -970,10 +1311,14 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     mp: mpCost,
                 },
                 player: {
+                    id: activePokemon._id,
                     name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
                     mp: playerState.mp,
                     maxMp: playerState.maxMp,
+                    currentHp: resultingPlayerHp,
+                    maxHp: playerMaxHp,
                 },
+                opponent: trainerState,
                 counterAttack,
                 log: `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage.`,
             },
@@ -987,20 +1332,49 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
-        const { opponentTeam = [], trainerId = null } = req.body
+        const { trainerId = null } = req.body
+        const normalizedTrainerId = String(trainerId || '').trim()
 
-        let sourceTeam = Array.isArray(opponentTeam) ? opponentTeam : []
+        if (!normalizedTrainerId) {
+            return res.status(400).json({ ok: false, message: 'trainerId is required for battle resolve' })
+        }
+
+        let sourceTeam = []
         let trainerRewardCoins = 0
         let trainerExpReward = 0
         let trainerPrizePokemonId = null
         let trainerRewardMarker = ''
 
-        if (trainerId) {
-            const trainer = await BattleTrainer.findById(trainerId)
+        if (normalizedTrainerId) {
+            const trainer = await BattleTrainer.findById(normalizedTrainerId)
                 .populate('prizePokemonId', 'name imageUrl sprites')
                 .lean()
             if (!trainer) {
                 return res.status(404).json({ ok: false, message: 'Battle trainer not found' })
+            }
+
+            const activeSession = await BattleSession.findOne({
+                userId,
+                trainerId: normalizedTrainerId,
+                expiresAt: { $gt: new Date() },
+            })
+                .select('currentIndex team')
+                .lean()
+            if (!activeSession || !Array.isArray(activeSession.team) || activeSession.team.length === 0) {
+                return res.status(400).json({ ok: false, message: 'Battle session not found. Please start the fight first.' })
+            }
+            if (activeSession.currentIndex < activeSession.team.length) {
+                return res.status(400).json({ ok: false, message: 'Battle is not finished yet. Defeat all opponent Pokemon first.' })
+            }
+
+            const claimedSession = await BattleSession.findOneAndDelete({
+                _id: activeSession._id,
+                userId,
+                trainerId: normalizedTrainerId,
+                expiresAt: { $gt: new Date() },
+            })
+            if (!claimedSession) {
+                return res.status(409).json({ ok: false, message: 'Battle rewards already claimed. Please start a new battle.' })
             }
 
             if (Array.isArray(trainer.team) && trainer.team.length > 0) {
@@ -1026,6 +1400,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         const happinessAwarded = 13
 
         const party = await UserPokemon.find({ userId, location: 'party' })
+            .select('pokemonId level experience friendship nickname formId partyIndex')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'rarity name imageUrl sprites')
         const activePokemon = party.find(p => p) || null
@@ -1051,15 +1426,23 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         await activePokemon.save()
         await activePokemon.populate('pokemonId', 'rarity name imageUrl sprites')
 
-        let playerState = await PlayerState.findOne({ userId })
-        if (!playerState) {
-            playerState = await PlayerState.create({ userId })
-        }
-        const moonPointsBefore = playerState.moonPoints || 0
-        playerState.gold += coinsAwarded
-        playerState.experience += Math.floor(expAwarded / 2)
-        playerState.wins += 1
-        await playerState.save()
+        const previousPlayerState = await PlayerState.findOne({ userId })
+            .select('moonPoints')
+            .lean()
+        const moonPointsBefore = previousPlayerState?.moonPoints || 0
+
+        const playerState = await PlayerState.findOneAndUpdate(
+            { userId },
+            {
+                $setOnInsert: { userId },
+                $inc: {
+                    gold: coinsAwarded,
+                    experience: Math.floor(expAwarded / 2),
+                    wins: 1,
+                },
+            },
+            { new: true, upsert: true }
+        )
         const moonPointsGained = Math.max(0, (playerState.moonPoints || 0) - moonPointsBefore)
         if (moonPointsGained > 0) {
             await trackDailyActivity(userId, { moonPoints: moonPointsGained })
@@ -1073,26 +1456,34 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 .lean()
 
             if (prizeData) {
-                const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
-                const moves = buildMovesForLevel(prizeData, prizeLevel)
-                await UserPokemon.create({
+                const alreadyClaimedPrize = await UserPokemon.exists({
                     userId,
                     pokemonId: trainerPrizePokemonId,
-                    level: prizeLevel,
-                    experience: 0,
-                    moves,
-                    formId: 'normal',
-                    isShiny: false,
-                    location: 'box',
                     originalTrainer: trainerRewardMarker,
                 })
+
+                if (!alreadyClaimedPrize) {
+                    const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
+                    const moves = buildMovesForLevel(prizeData, prizeLevel)
+                    await UserPokemon.create({
+                        userId,
+                        pokemonId: trainerPrizePokemonId,
+                        level: prizeLevel,
+                        experience: 0,
+                        moves,
+                        formId: 'normal',
+                        isShiny: false,
+                        location: 'box',
+                        originalTrainer: trainerRewardMarker,
+                    })
+                }
 
                 prizePokemon = {
                     id: trainerPrizePokemonId,
                     name: prizeData.name,
                     imageUrl: prizeData.imageUrl || prizeData.sprites?.normal || prizeData.sprites?.front_default || '',
-                    claimed: true,
-                    alreadyClaimed: false,
+                    claimed: !alreadyClaimedPrize,
+                    alreadyClaimed: Boolean(alreadyClaimedPrize),
                 }
             }
         }

@@ -51,6 +51,15 @@ const itemSchema = new Schema(
             type: String,
             default: '',
         },
+        shopPrice: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        isShopEnabled: {
+            type: Boolean,
+            default: false,
+        },
         effectType: {
             type: String,
             enum: ['none', 'catchMultiplier', 'heal', 'healAmount'],
@@ -74,6 +83,7 @@ const itemSchema = new Schema(
 
 itemSchema.index({ type: 1 })
 itemSchema.index({ rarity: 1 })
+itemSchema.index({ isShopEnabled: 1, shopPrice: 1 })
 
 itemSchema.pre('validate', function (next) {
     if (this.isModified('name') || this.isNew) {

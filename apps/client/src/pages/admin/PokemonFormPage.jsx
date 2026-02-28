@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 
@@ -706,6 +706,15 @@ export default function PokemonFormPage() {
                         </button>
                     </div>
                 </form>
+            </div>
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

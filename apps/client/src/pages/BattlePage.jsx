@@ -550,6 +550,8 @@ export function BattlePage() {
             const res = await gameApi.battleAttack({
                 moveName: selectedMove?.name,
                 move: selectedMove,
+                trainerId: battleOpponent?.trainerId || null,
+                activePokemonId: activePokemon?._id || null,
                 opponent: {
                     level: target.level,
                     currentHp: target.currentHp ?? target.maxHp,
@@ -584,51 +586,111 @@ export function BattlePage() {
             let nextName = ''
             const currentBattleState = battleOpponent
             const currentBattleIndex = currentBattleState?.currentIndex || 0
-            const teamForResolve = (currentBattleState?.team || []).map((member, index) => {
+            const localResolvedTeam = (currentBattleState?.team || []).map((member, index) => {
                 if (index !== currentBattleIndex) return member
                 return { ...member, currentHp: nextHp }
             })
 
             let nextBattleState = currentBattleState
-            const activeEnemy = teamForResolve[currentBattleIndex]
-            if (activeEnemy && activeEnemy.currentHp <= 0) {
-                defeatedName = activeEnemy.name || 'Pokemon'
-                const nextIndex = teamForResolve.findIndex((member, memberIndex) => {
-                    if (memberIndex <= currentBattleIndex) return false
-                    const hp = member.currentHp ?? member.maxHp ?? 0
-                    return hp > 0
+            const serverOpponentState = battle?.opponent
+            if (serverOpponentState && Array.isArray(serverOpponentState.team)) {
+                const mergedTeam = (currentBattleState?.team || []).map((member, index) => {
+                    const serverEntry = serverOpponentState.team[index]
+                    if (!serverEntry) return member
+                    return {
+                        ...member,
+                        ...serverEntry,
+                        currentHp: serverEntry.currentHp ?? member?.currentHp ?? member?.maxHp ?? 0,
+                        maxHp: serverEntry.maxHp ?? member?.maxHp ?? 1,
+                    }
                 })
-                if (nextIndex !== -1) {
-                    nextName = teamForResolve[nextIndex]?.name || 'Pokemon'
-                    nextBattleState = { ...currentBattleState, team: teamForResolve, currentIndex: nextIndex }
-                } else {
-                    defeatedAll = true
-                    nextBattleState = { ...currentBattleState, team: teamForResolve }
+                const serverCurrentIndex = Number.isInteger(serverOpponentState.currentIndex)
+                    ? serverOpponentState.currentIndex
+                    : currentBattleIndex
+
+                const previousTargetHp = Number(currentBattleState?.team?.[currentBattleIndex]?.currentHp)
+                const fallbackTargetHp = Number(currentBattleState?.team?.[currentBattleIndex]?.maxHp)
+                const beforeHitHp = Number.isFinite(previousTargetHp)
+                    ? previousTargetHp
+                    : (Number.isFinite(fallbackTargetHp) ? fallbackTargetHp : 0)
+                const afterHitHp = Number(mergedTeam?.[currentBattleIndex]?.currentHp ?? 0)
+                if (beforeHitHp > 0 && afterHitHp <= 0) {
+                    defeatedName = mergedTeam?.[currentBattleIndex]?.name || target.name || 'Pokemon'
+                }
+
+                defeatedAll = Boolean(serverOpponentState.defeatedAll) || serverCurrentIndex >= mergedTeam.length
+                if (!defeatedAll && serverCurrentIndex !== currentBattleIndex) {
+                    nextName = mergedTeam?.[serverCurrentIndex]?.name || 'Pokemon'
+                }
+
+                nextBattleState = {
+                    ...currentBattleState,
+                    currentIndex: serverCurrentIndex,
+                    team: mergedTeam,
                 }
             } else {
-                nextBattleState = { ...currentBattleState, team: teamForResolve }
+                const activeEnemy = localResolvedTeam[currentBattleIndex]
+                if (activeEnemy && activeEnemy.currentHp <= 0) {
+                    defeatedName = activeEnemy.name || 'Pokemon'
+                    const nextIndex = localResolvedTeam.findIndex((member, memberIndex) => {
+                        if (memberIndex <= currentBattleIndex) return false
+                        const hp = member.currentHp ?? member.maxHp ?? 0
+                        return hp > 0
+                    })
+                    if (nextIndex !== -1) {
+                        nextName = localResolvedTeam[nextIndex]?.name || 'Pokemon'
+                        nextBattleState = { ...currentBattleState, team: localResolvedTeam, currentIndex: nextIndex }
+                    } else {
+                        defeatedAll = true
+                        nextBattleState = { ...currentBattleState, team: localResolvedTeam }
+                    }
+                } else {
+                    nextBattleState = { ...currentBattleState, team: localResolvedTeam }
+                }
             }
 
             setBattleOpponent(nextBattleState)
 
             const logLines = [`${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`]
+            let nextPartyState = resolvedPartyState
+            if (battle?.player && Number.isFinite(battle.player.currentHp)) {
+                const authoritativeMaxHp = Math.max(1, Number(battle.player.maxHp) || activeMaxHp)
+                nextPartyState = resolvedPartyState.map((entry, idx) => {
+                    if (idx !== resolvedActiveIndex) return entry
+                    return {
+                        currentHp: clampValue(Number(battle.player.currentHp) || 0, 0, authoritativeMaxHp),
+                        maxHp: authoritativeMaxHp,
+                    }
+                })
+            }
+
             let switchedAfterDefeat = false
             if (counterAttack) {
                 const counterDamage = Number.isFinite(counterAttack.damage) ? counterAttack.damage : 0
                 const counterMoveName = counterAttack?.move?.name || 'Phản công'
-                const nextPlayerHp = Number.isFinite(counterAttack.currentHp)
+                const nextPlayerHpFromCounter = Number.isFinite(counterAttack.currentHp)
                     ? Math.max(0, counterAttack.currentHp)
                     : Math.max(0, playerCurrentHpForTurn - counterDamage)
-                const nextPartyState = resolvedPartyState.map((entry, idx) => {
-                    if (idx !== resolvedActiveIndex) return entry
-                    return {
-                        currentHp: clampValue(nextPlayerHp, 0, activeMaxHp),
-                        maxHp: activeMaxHp,
-                    }
-                })
-                setBattlePartyHpState(nextPartyState)
+                if (!(battle?.player && Number.isFinite(battle.player.currentHp))) {
+                    nextPartyState = resolvedPartyState.map((entry, idx) => {
+                        if (idx !== resolvedActiveIndex) return entry
+                        return {
+                            currentHp: clampValue(nextPlayerHpFromCounter, 0, activeMaxHp),
+                            maxHp: activeMaxHp,
+                        }
+                    })
+                }
                 logLines.push(`${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
-                if (nextPlayerHp <= 0) {
+            }
+
+            setBattlePartyHpState(nextPartyState)
+
+            const nextPlayerHp = clampValue(
+                Number(nextPartyState?.[resolvedActiveIndex]?.currentHp) || 0,
+                0,
+                Number(nextPartyState?.[resolvedActiveIndex]?.maxHp) || activeMaxHp
+            )
+            if (nextPlayerHp <= 0) {
                     logLines.push(`${activeName} đã bại trận.`)
 
                     const switchedIndex = getNextAlivePartyIndex(party, nextPartyState, resolvedActiveIndex)
@@ -639,7 +701,6 @@ export function BattlePage() {
                         logLines.push(`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`)
                         setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
                     }
-                }
             }
             if (nextHp <= 0) {
                 logLines.push(`${target.name || 'Đối thủ'} đã bại trận.`)
@@ -650,7 +711,7 @@ export function BattlePage() {
                 return
             }
 
-            if (counterAttack?.defeatedPlayer) {
+            if (nextPlayerHp <= 0) {
                 setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
                 return
             }
@@ -659,7 +720,7 @@ export function BattlePage() {
                 setActionMessage('Bạn đã đánh bại toàn bộ đội hình đối thủ.')
                 try {
                     const resResolve = await gameApi.resolveBattle(
-                        teamForResolve || battleOpponent.team,
+                        nextBattleState?.team || battleOpponent.team,
                         currentBattleState?.trainerId || null
                     )
                     setBattleResults(resResolve.results)
@@ -813,7 +874,7 @@ export function BattlePage() {
             trainerId: trainer?._id || null,
             trainerOrder,
             trainerName: trainer?.name || 'Trainer',
-            trainerImage: trainer?.imageUrl || '/assests/08_trainer_female.png',
+            trainerImage: trainer?.imageUrl || '/assets/08_trainer_female.png',
             trainerQuote: trainer?.quote || 'Good luck!',
             trainerPrize: trainer?.prizePokemonId?.name || 'Không có',
             trainerCoinsReward: Math.max(0, Number(trainer?.platinumCoinsReward) || 0),
@@ -838,7 +899,7 @@ export function BattlePage() {
         return {
             id: battleData.trainerId || battleData.trainerName || `trainer-${Date.now()}`,
             name: battleData.trainerName || 'Trainer',
-            image: battleData.trainerImage || '/assests/08_trainer_female.png',
+            image: battleData.trainerImage || '/assets/08_trainer_female.png',
             quote: battleData.trainerQuote || '',
             team,
             prize: battleData.trainerPrize || 'Không có',
@@ -860,7 +921,7 @@ export function BattlePage() {
             return {
                 id: trainer._id,
                 name: trainer.name,
-                image: trainer.imageUrl || '/assests/08_trainer_female.png',
+                image: trainer.imageUrl || '/assets/08_trainer_female.png',
                 quote: trainer.quote || '',
                 team,
                 prize: trainer.prizePokemonId?.name || 'Không có',

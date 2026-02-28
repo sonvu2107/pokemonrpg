@@ -1,5 +1,6 @@
 import express from 'express'
 import ItemDropRate from '../../models/ItemDropRate.js'
+import { invalidateMapDropRateCache } from '../../utils/dropRateCache.js'
 
 const router = express.Router()
 
@@ -21,6 +22,8 @@ router.post('/', async (req, res) => {
             { weight },
             { new: true, upsert: true, setDefaultsOnInsert: true }
         )
+
+        invalidateMapDropRateCache(mapId)
 
         res.json({ ok: true, itemDropRate })
     } catch (error) {
@@ -61,6 +64,7 @@ router.delete('/:id', async (req, res) => {
         }
 
         await itemDropRate.deleteOne()
+        invalidateMapDropRateCache(itemDropRate.mapId)
 
         res.json({ ok: true, message: 'Item drop rate deleted' })
     } catch (error) {

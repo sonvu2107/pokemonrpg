@@ -1,6 +1,7 @@
 import express from 'express'
 import DropRate from '../../models/DropRate.js'
 import Pokemon from '../../models/Pokemon.js'
+import { invalidateMapDropRateCache } from '../../utils/dropRateCache.js'
 
 const router = express.Router()
 
@@ -44,6 +45,8 @@ router.post('/', async (req, res) => {
             { new: true, upsert: true, setDefaultsOnInsert: true }
         )
 
+        invalidateMapDropRateCache(mapId)
+
         res.json({ ok: true, dropRate })
     } catch (error) {
         console.error('POST /api/admin/drop-rates error:', error)
@@ -85,6 +88,7 @@ router.delete('/map/:mapId', async (req, res) => {
         }
 
         const result = await DropRate.deleteMany({ mapId })
+        invalidateMapDropRateCache(mapId)
 
         res.json({
             ok: true,
@@ -107,6 +111,7 @@ router.delete('/:id', async (req, res) => {
         }
 
         await dropRate.deleteOne()
+        invalidateMapDropRateCache(dropRate.mapId)
 
         res.json({ ok: true, message: 'Drop rate deleted' })
     } catch (error) {

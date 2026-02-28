@@ -1,17 +1,29 @@
 import express from 'express'
+import mongoose from 'mongoose'
 import Item, { ITEM_TYPES, ITEM_RARITIES } from '../../models/Item.js'
+import ItemPurchaseLog from '../../models/ItemPurchaseLog.js'
 
 const router = express.Router()
+
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const toBoolean = (value, fallback = false) => {
+    if (value === undefined) return fallback
+    if (typeof value === 'boolean') return value
+    const normalized = String(value).trim().toLowerCase()
+    return normalized === 'true' || normalized === '1' || normalized === 'yes'
+}
 
 // GET /api/admin/items - List items with search & pagination
 router.get('/', async (req, res) => {
     try {
         const { search, type, rarity, page = 1, limit = 20 } = req.query
+        const safePage = Math.max(1, parseInt(page, 10) || 1)
+        const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
 
         const query = {}
 
         if (search) {
-            query.nameLower = { $regex: search.toLowerCase(), $options: 'i' }
+            query.nameLower = { $regex: escapeRegExp(String(search).toLowerCase()), $options: 'i' }
         }
 
         if (type) {
@@ -22,13 +34,13 @@ router.get('/', async (req, res) => {
             query.rarity = rarity
         }
 
-        const skip = (parseInt(page) - 1) * parseInt(limit)
+        const skip = (safePage - 1) * safeLimit
 
         const [items, total] = await Promise.all([
             Item.find(query)
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(parseInt(limit))
+                .limit(safeLimit)
                 .lean(),
             Item.countDocuments(query),
         ])
@@ -37,10 +49,10 @@ router.get('/', async (req, res) => {
             ok: true,
             items,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: safePage,
+                limit: safeLimit,
                 total,
-                pages: Math.ceil(total / parseInt(limit)),
+                pages: Math.ceil(total / safeLimit),
             },
             meta: {
                 types: ITEM_TYPES,
@@ -49,6 +61,123 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/items error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
+// GET /api/admin/items/purchase-history - Purchase audit logs
+router.get('/purchase-history', async (req, res) => {
+    try {
+        const { search, itemId, page = 1, limit = 20 } = req.query
+        const safePage = Math.max(1, parseInt(page, 10) || 1)
+        const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+        const skip = (safePage - 1) * safeLimit
+
+        const preMatch = {}
+        if (itemId && mongoose.Types.ObjectId.isValid(String(itemId))) {
+            preMatch.itemId = new mongoose.Types.ObjectId(String(itemId))
+        }
+
+        const escapedSearch = String(search || '').trim()
+        const hasSearch = escapedSearch.length > 0
+
+        const [result, shopItems] = await Promise.all([
+            ItemPurchaseLog.aggregate([
+                ...(Object.keys(preMatch).length > 0 ? [{ $match: preMatch }] : []),
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: 'buyerId',
+                        foreignField: '_id',
+                        as: 'buyer',
+                    },
+                },
+                {
+                    $unwind: {
+                        path: '$buyer',
+                        preserveNullAndEmptyArrays: true,
+                    },
+                },
+                {
+                    $lookup: {
+                        from: 'items',
+                        localField: 'itemId',
+                        foreignField: '_id',
+                        as: 'item',
+                    },
+                },
+                {
+                    $unwind: {
+                        path: '$item',
+                        preserveNullAndEmptyArrays: true,
+                    },
+                },
+                ...(hasSearch
+                    ? [{
+                        $match: {
+                            $or: [
+                                { itemName: { $regex: escapeRegExp(escapedSearch), $options: 'i' } },
+                                { 'item.name': { $regex: escapeRegExp(escapedSearch), $options: 'i' } },
+                                { 'buyer.username': { $regex: escapeRegExp(escapedSearch), $options: 'i' } },
+                            ],
+                        },
+                    }]
+                    : []),
+                {
+                    $facet: {
+                        rows: [
+                            { $sort: { createdAt: -1, _id: -1 } },
+                            { $skip: skip },
+                            { $limit: safeLimit },
+                            {
+                                $project: {
+                                    _id: 1,
+                                    quantity: 1,
+                                    unitPrice: 1,
+                                    totalCost: 1,
+                                    walletGoldBefore: 1,
+                                    walletGoldAfter: 1,
+                                    createdAt: 1,
+                                    item: {
+                                        _id: '$item._id',
+                                        name: { $ifNull: ['$item.name', '$itemName'] },
+                                    },
+                                    buyer: {
+                                        _id: '$buyer._id',
+                                        username: '$buyer.username',
+                                        email: '$buyer.email',
+                                    },
+                                },
+                            },
+                        ],
+                        total: [{ $count: 'count' }],
+                    },
+                },
+            ]).allowDiskUse(true),
+            Item.find({ isShopEnabled: true })
+                .select('_id name')
+                .sort({ nameLower: 1, _id: 1 })
+                .lean(),
+        ])
+
+        const rows = result?.[0]?.rows || []
+        const total = result?.[0]?.total?.[0]?.count || 0
+
+        res.json({
+            ok: true,
+            logs: rows,
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                pages: Math.max(1, Math.ceil(total / safeLimit)),
+            },
+            meta: {
+                shopItems,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/admin/items/purchase-history error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })
     }
 })
@@ -72,7 +201,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/admin/items - Create item
 router.post('/', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description, effectType, effectValue, effectValueMp } = req.body
+        const { name, type, rarity, imageUrl, description, shopPrice, isShopEnabled, effectType, effectValue, effectValueMp } = req.body
 
         if (!name) {
             return res.status(400).json({ ok: false, message: 'Missing required fields' })
@@ -84,6 +213,10 @@ router.post('/', async (req, res) => {
 
         if (rarity && !ITEM_RARITIES.includes(rarity)) {
             return res.status(400).json({ ok: false, message: 'Invalid item rarity' })
+        }
+
+        if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Invalid shop price' })
         }
 
         const existing = await Item.findOne({ name })
@@ -98,6 +231,8 @@ router.post('/', async (req, res) => {
             rarity: rarity || 'common',
             imageUrl: imageUrl || '',
             description: description || '',
+            shopPrice: Number.isFinite(Number(shopPrice)) ? Number(shopPrice) : 0,
+            isShopEnabled: toBoolean(isShopEnabled, false),
             effectType: effectType || 'none',
             effectValue: effectValue !== undefined ? effectValue : 0,
             effectValueMp: effectValueMp !== undefined ? effectValueMp : 0,
@@ -115,7 +250,7 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/items/:id - Update item
 router.put('/:id', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description, effectType, effectValue, effectValueMp } = req.body
+        const { name, type, rarity, imageUrl, description, shopPrice, isShopEnabled, effectType, effectValue, effectValueMp } = req.body
 
         const item = await Item.findById(req.params.id)
 
@@ -131,6 +266,10 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Invalid item rarity' })
         }
 
+        if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Invalid shop price' })
+        }
+
         if (name && name !== item.name) {
             const conflict = await Item.findOne({ _id: { $ne: item._id }, name })
             if (conflict) {
@@ -143,6 +282,8 @@ router.put('/:id', async (req, res) => {
         if (rarity !== undefined) item.rarity = rarity
         if (imageUrl !== undefined) item.imageUrl = imageUrl
         if (description !== undefined) item.description = description
+        if (shopPrice !== undefined) item.shopPrice = Number(shopPrice)
+        if (isShopEnabled !== undefined) item.isShopEnabled = toBoolean(isShopEnabled, item.isShopEnabled)
         if (effectType !== undefined) item.effectType = effectType
         if (effectValue !== undefined) item.effectValue = effectValue
         if (effectValueMp !== undefined) item.effectValueMp = effectValueMp

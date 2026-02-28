@@ -1,9 +1,25 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+import { clearAuthSession, getValidTokenFromStorage } from '../utils/authSession'
 
 // Helper to get auth header
 const getAuthHeader = () => {
-    const token = localStorage.getItem('token')
+    const token = getValidTokenFromStorage()
     return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const throwApiError = async (res, fallbackMessage) => {
+    let err = null
+    try {
+        err = await res.json()
+    } catch {
+        err = null
+    }
+
+    const message = err?.message || fallbackMessage
+    if (res.status === 401) {
+        clearAuthSession(message || 'Unauthorized')
+    }
+    throw new Error(message)
 }
 
 // Pokemon endpoints
@@ -136,7 +152,6 @@ export const mapApi = {
         const res = await fetch(`${API_URL}/admin/maps/${mapId}/drop-rates`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch drop rates')
         if (!res.ok) throw new Error('Failed to fetch drop rates')
         return res.json()
     },
@@ -301,6 +316,18 @@ export const itemApi = {
         if (!res.ok) throw new Error('Failed to delete item')
         return res.json()
     },
+
+    async getPurchaseHistory(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/items/purchase-history?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Failed to fetch purchase history')
+        }
+        return res.json()
+    },
 }
 
 // Battle trainer endpoints
@@ -391,7 +418,7 @@ export const userApi = {
         const res = await fetch(`${API_URL}/admin/users?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch users')
+        if (!res.ok) await throwApiError(res, 'Failed to fetch users')
         return res.json()
     },
 

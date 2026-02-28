@@ -56,12 +56,13 @@ export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
     const gain = getRarityStatGain(rarity)
     const multiplier = getRarityStatMultiplier(rarity)
     const step = Math.max(0, level - 1) * gain
+    const specialDefense = baseStats.spdef ?? baseStats.spldef ?? 0
     return {
         hp: Math.max(1, Math.floor(((baseStats.hp || 0) + step) * multiplier)),
         atk: Math.max(1, Math.floor(((baseStats.atk || 0) + step) * multiplier)),
         def: Math.max(1, Math.floor(((baseStats.def || 0) + step) * multiplier)),
         spatk: Math.max(1, Math.floor(((baseStats.spatk || 0) + step) * multiplier)),
-        spdef: Math.max(1, Math.floor(((baseStats.spldef || 0) + step) * multiplier)),
+        spdef: Math.max(1, Math.floor((specialDefense + step) * multiplier)),
         spd: Math.max(1, Math.floor(((baseStats.spd || 0) + step) * multiplier)),
     }
 }

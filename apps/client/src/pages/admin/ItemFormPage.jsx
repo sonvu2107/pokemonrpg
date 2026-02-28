@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { itemApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 
@@ -32,6 +32,8 @@ export default function ItemFormPage() {
         name: '',
         type: 'misc',
         rarity: 'common',
+        shopPrice: 0,
+        isShopEnabled: false,
         imageUrl: '',
         description: '',
         effectType: 'none',
@@ -53,6 +55,8 @@ export default function ItemFormPage() {
                 name: data.item.name || '',
                 type: data.item.type || 'misc',
                 rarity: data.item.rarity || 'common',
+                shopPrice: data.item.shopPrice ?? 0,
+                isShopEnabled: Boolean(data.item.isShopEnabled),
                 imageUrl: data.item.imageUrl || '',
                 description: data.item.description || '',
                 effectType: data.item.effectType || 'none',
@@ -137,6 +141,31 @@ export default function ItemFormPage() {
                                     <option key={item.value} value={item.value}>{item.label}</option>
                                 ))}
                             </select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá Bán Cửa Hàng (Xu)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={formData.shopPrice}
+                                onChange={(e) => setFormData({ ...formData, shopPrice: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            />
+                        </div>
+                        <div className="flex items-end">
+                            <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(formData.isShopEnabled)}
+                                    onChange={(e) => setFormData({ ...formData, isShopEnabled: e.target.checked })}
+                                    className="accent-blue-600"
+                                />
+                                Hiển thị trong Cửa hàng vật phẩm
+                            </label>
                         </div>
                     </div>
 
@@ -229,6 +258,15 @@ export default function ItemFormPage() {
                         </button>
                     </div>
                 </form>
+            </div>
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

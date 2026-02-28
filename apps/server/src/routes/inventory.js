@@ -70,8 +70,9 @@ router.post('/use', async (req, res) => {
     try {
         const { itemId, quantity = 1, encounterId } = req.body
         const qty = Number(quantity)
+        const userId = req.user.userId
 
-        if (!itemId || !Number.isFinite(qty) || qty <= 0) {
+        if (!itemId || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
             return res.status(400).json({ ok: false, message: 'Invalid item or quantity' })
         }
 
@@ -82,14 +83,129 @@ router.post('/use', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Item not found' })
         }
 
-        const entry = await UserInventory.findOne({ userId: req.user.userId, itemId })
+        if (item.type === 'pokeball') {
+            if (qty !== 1) {
+                return res.status(400).json({ ok: false, message: 'Pokeball can only be used one at a time' })
+            }
+
+            if (!encounterId) {
+                return res.status(400).json({ ok: false, message: 'Encounter is required to use a Pokeball' })
+            }
+
+            const encounter = await Encounter.findOne({ _id: encounterId, userId, isActive: true })
+                .select('pokemonId level hp maxHp isShiny formId')
+                .lean()
+            if (!encounter) {
+                return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
+            }
+
+            const consumedEntry = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedEntry) {
+                return res.status(400).json({ ok: false, message: 'Not enough items' })
+            }
+
+            if (consumedEntry.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
+            }
+
+            const Pokemon = (await import('../models/Pokemon.js')).default
+            const pokemon = await Pokemon.findById(encounter.pokemonId)
+                .select('name pokedexNumber baseStats catchRate levelUpMoves')
+                .lean()
+
+            if (!pokemon) {
+                await UserInventory.updateOne(
+                    { userId, itemId },
+                    { $inc: { quantity: qty } },
+                    { upsert: true }
+                )
+                return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            }
+
+            const baseChance = calcCatchChance({
+                catchRate: pokemon.catchRate,
+                hp: encounter.hp,
+                maxHp: encounter.maxHp,
+            })
+            const multiplier = getBallMultiplier(item)
+            const chance = clampChance(baseChance * multiplier, 0.02, 0.99)
+            const caught = Math.random() < chance
+
+            if (caught) {
+                const resolvedEncounter = await Encounter.findOneAndUpdate(
+                    { _id: encounterId, userId, isActive: true },
+                    { $set: { isActive: false, endedAt: new Date() } },
+                    { new: true }
+                )
+
+                if (!resolvedEncounter) {
+                    await UserInventory.updateOne(
+                        { userId, itemId },
+                        { $inc: { quantity: qty } },
+                        { upsert: true }
+                    )
+                    return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+                }
+
+                const moves = buildMovesForLevel(pokemon, encounter.level)
+                await UserPokemon.create({
+                    userId,
+                    pokemonId: encounter.pokemonId,
+                    level: encounter.level,
+                    experience: 0,
+                    moves,
+                    formId: encounter.formId || 'normal',
+                    isShiny: encounter.isShiny,
+                    location: 'box',
+                })
+
+                return res.json({
+                    ok: true,
+                    caught: true,
+                    encounterId: resolvedEncounter._id,
+                    hp: resolvedEncounter.hp,
+                    maxHp: resolvedEncounter.maxHp,
+                    message: `Đã bắt được ${pokemon.name}!`,
+                })
+            }
+
+            const isStillActive = await Encounter.exists({ _id: encounterId, userId, isActive: true })
+            if (!isStillActive) {
+                await UserInventory.updateOne(
+                    { userId, itemId },
+                    { $inc: { quantity: qty } },
+                    { upsert: true }
+                )
+                return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+            }
+
+            return res.json({
+                ok: true,
+                caught: false,
+                encounterId,
+                hp: encounter.hp,
+                maxHp: encounter.maxHp,
+                message: 'Pokemon đã thoát khỏi bóng!',
+            })
+        }
+
+        const entry = await UserInventory.findOne({ userId, itemId })
 
         if (!entry || entry.quantity < qty) {
             return res.status(400).json({ ok: false, message: 'Not enough items' })
         }
 
         if (item.type === 'healing') {
-            const playerState = await PlayerState.findOne({ userId: req.user.userId })
+            const playerState = await PlayerState.findOne({ userId })
             if (!playerState) {
                 return res.status(404).json({ ok: false, message: 'Player state not found' })
             }
@@ -97,8 +213,10 @@ router.post('/use', async (req, res) => {
             const { hpAmount, mpAmount } = getHealAmounts(item)
             const beforeHp = playerState.hp
             const beforeMp = playerState.mp
-            const nextHp = Math.min(playerState.maxHp, beforeHp + hpAmount)
-            const nextMp = Math.min(playerState.maxMp, beforeMp + mpAmount)
+            const totalHpHeal = hpAmount * qty
+            const totalMpHeal = mpAmount * qty
+            const nextHp = Math.min(playerState.maxHp, beforeHp + totalHpHeal)
+            const nextMp = Math.min(playerState.maxMp, beforeMp + totalMpHeal)
 
             if (nextHp === beforeHp && nextMp === beforeMp) {
                 return res.status(400).json({ ok: false, message: 'HP/MP is already full' })
@@ -133,69 +251,6 @@ router.post('/use', async (req, res) => {
                     mp: nextMp,
                     maxMp: playerState.maxMp,
                 },
-            })
-        }
-
-        if (item.type === 'pokeball') {
-            if (!encounterId) {
-                return res.status(400).json({ ok: false, message: 'Encounter is required to use a Pokeball' })
-            }
-
-            const encounter = await Encounter.findOne({ _id: encounterId, userId: req.user.userId, isActive: true })
-            if (!encounter) {
-                return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
-            }
-
-            const Pokemon = (await import('../models/Pokemon.js')).default
-            const pokemon = await Pokemon.findById(encounter.pokemonId)
-                .select('name pokedexNumber baseStats catchRate levelUpMoves')
-                .lean()
-
-            if (!pokemon) {
-                return res.status(404).json({ ok: false, message: 'Pokemon not found' })
-            }
-
-            const baseChance = calcCatchChance({
-                catchRate: pokemon.catchRate,
-                hp: encounter.hp,
-                maxHp: encounter.maxHp,
-            })
-            const multiplier = getBallMultiplier(item)
-            const chance = clampChance(baseChance * multiplier, 0.02, 0.99)
-            const caught = Math.random() < chance
-
-            entry.quantity -= qty
-            if (entry.quantity <= 0) {
-                await entry.deleteOne()
-            } else {
-                await entry.save()
-            }
-
-            if (caught) {
-                const moves = buildMovesForLevel(pokemon, encounter.level)
-                await UserPokemon.create({
-                    userId: req.user.userId,
-                    pokemonId: encounter.pokemonId,
-                    level: encounter.level,
-                    experience: 0,
-                    moves,
-                    formId: encounter.formId || 'normal',
-                    isShiny: encounter.isShiny,
-                    location: 'box',
-                })
-
-                encounter.isActive = false
-                encounter.endedAt = new Date()
-                await encounter.save()
-            }
-
-            return res.json({
-                ok: true,
-                caught,
-                encounterId: encounter._id,
-                hp: encounter.hp,
-                maxHp: encounter.maxHp,
-                message: caught ? `Đã bắt được ${pokemon.name}!` : 'Pokemon đã thoát khỏi bóng!',
             })
         }
 

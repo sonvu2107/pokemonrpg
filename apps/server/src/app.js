@@ -17,12 +17,14 @@ import userAdminRoutes from './routes/admin/user.js'
 import battleTrainersAdminRoutes from './routes/admin/battleTrainers.js'
 import battleTrainersRoutes from './routes/battleTrainers.js'
 import { authMiddleware, requireAdmin, requireAdminPermission } from './middleware/auth.js'
+import { apiLogger } from './middleware/apiLogger.js'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions.js'
 import { errorHandler, notFound } from './utils/errorHandler.js'
 import boxRoutes from './routes/box.js'
 import pokemonRoutes from './routes/pokemon.js'
 import partyRoutes from './routes/party.js'
 import inventoryRoutes from './routes/inventory.js'
+import shopRoutes from './routes/shop.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -58,8 +60,8 @@ const limiter = rateLimit({
     // Skip rate limiting for certain public endpoints
     skip: (req) => {
         const path = req.path
-        return path === '/api/stats' || path === '/api/stats/' ||
-            path === '/api/game/maps' || path === '/api/game/maps/'
+        return path === '/stats' || path === '/stats/' ||
+            path === '/game/maps' || path === '/game/maps/'
     },
 })
 app.use('/api/', limiter)
@@ -82,6 +84,9 @@ const adminLimiter = rateLimit({
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
+// API request logging middleware
+app.use(apiLogger)
+
 // Serve static files (uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')))
 
@@ -102,6 +107,7 @@ app.use('/api/pokemon', pokemonRoutes)
 app.use('/api/party', partyRoutes)
 app.use('/api/battle-trainers', battleTrainersRoutes)
 app.use('/api/inventory', inventoryRoutes)
+app.use('/api/shop', shopRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.POKEMON), pokemonAdminRoutes)

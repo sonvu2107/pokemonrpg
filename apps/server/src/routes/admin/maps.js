@@ -4,6 +4,8 @@ import Pokemon from '../../models/Pokemon.js'
 import Item from '../../models/Item.js'
 import upload from '../../middleware/upload.js'
 import { uploadMapImageToCloudinary, uploadSpecialPokemonImageToCloudinary } from '../../utils/cloudinary.js'
+import { invalidateOrderedMapsCache } from '../../utils/orderedMapsCache.js'
+import { invalidateMapDropRateCache } from '../../utils/dropRateCache.js'
 
 const router = express.Router()
 
@@ -217,6 +219,8 @@ router.post('/', async (req, res) => {
         })
 
         await map.save()
+        invalidateOrderedMapsCache()
+        invalidateMapDropRateCache()
 
         res.status(201).json({ ok: true, map })
     } catch (error) {
@@ -312,6 +316,8 @@ router.put('/:id', async (req, res) => {
         map.orderIndex = orderIndex !== undefined ? orderIndex : map.orderIndex
 
         await map.save()
+        invalidateOrderedMapsCache()
+        invalidateMapDropRateCache(map._id)
 
         res.json({ ok: true, map })
     } catch (error) {
@@ -331,6 +337,8 @@ router.delete('/:id', async (req, res) => {
 
         // Cascade delete handled by Map model middleware
         await map.deleteOne()
+        invalidateOrderedMapsCache()
+        invalidateMapDropRateCache(map._id)
 
         res.json({ ok: true, message: 'Map deleted' })
     } catch (error) {

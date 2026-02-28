@@ -39,7 +39,7 @@ const SidebarLink = ({ to, children, isSpecial }) => (
 )
 
 export default function LeftColumn() {
-    const { logout } = useAuth()
+    const { user, logout } = useAuth()
     const [legendaryMaps, setLegendaryMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
     const [eventPosts, setEventPosts] = useState([])
@@ -62,18 +62,28 @@ export default function LeftColumn() {
 
     useEffect(() => {
         const loadLegendaryMaps = async () => {
+            if (!user) {
+                setLegendaryMaps([])
+                setLoadingMaps(false)
+                return
+            }
+
             try {
+                setLoadingMaps(true)
                 const maps = await gameApi.getMaps()
                 const legendaryOnly = maps.filter((map) => map.isLegendary)
                 setLegendaryMaps(sortByDisplayOrder(legendaryOnly))
             } catch (err) {
-                console.error('Failed to load legendary maps:', err)
+                const message = String(err?.message || '')
+                if (!/unauthorized|token expired|invalid token/i.test(message)) {
+                    console.error('Failed to load legendary maps:', err)
+                }
             } finally {
                 setLoadingMaps(false)
             }
         }
         loadLegendaryMaps()
-    }, [])
+    }, [user])
 
     useEffect(() => {
         const loadHighlights = async () => {
@@ -134,7 +144,7 @@ export default function LeftColumn() {
             <SidebarSection title="Chung" iconId={81}> {/* Magnemite */}
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
                 <SidebarLink to="/messages">Tin Nhắn</SidebarLink>
-                <SidebarLink to="/trades">Giao Dịch</SidebarLink>
+                <SidebarLink to="/shop/buy">Giao Dịch</SidebarLink>
                 <SidebarLink to="/friends">Bạn Bè</SidebarLink>
                 <SidebarLink to="/donations">Ủng Hộ</SidebarLink>
                 <button onClick={logout} className="block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm">

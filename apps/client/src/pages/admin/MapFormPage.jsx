@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import { mapApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'

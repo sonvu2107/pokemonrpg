@@ -173,9 +173,6 @@ export default function PokemonRankingsPage() {
                             const exp = entry.experience || entry.pokemon?.experience || 0
                             const sprite = entry.sprite || entry.pokemon?.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
 
-                            // Determine gender icon (simulated for now, backend might not send it)
-                            const isFemale = Math.random() > 0.5 // TODO: Get from backend
-
                             return (
                                 <div
                                     key={detailId}

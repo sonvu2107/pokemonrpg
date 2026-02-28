@@ -8,7 +8,7 @@ const router = express.Router()
 // GET /api/news - Get latest published posts (public)
 router.get('/', async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 10
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10))
         const allowedTypes = ['news', 'event', 'maintenance', 'update']
         const requestedType = String(req.query.type || '').trim().toLowerCase()
         const query = { isPublished: true }
@@ -32,23 +32,6 @@ router.get('/', async (req, res) => {
     }
 })
 
-// GET /api/news/:id - Get single post (public)
-router.get('/:id', async (req, res) => {
-    try {
-        const post = await Post.findById(req.params.id)
-            .populate('author', 'username')
-
-        if (!post) {
-            return res.status(404).json({ ok: false, message: 'Post not found' })
-        }
-
-        res.json({ ok: true, post })
-    } catch (error) {
-        console.error('GET /api/news/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
-    }
-})
-
 // GET /api/news/admin/all - Get all posts including unpublished (admin only)
 router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
@@ -60,6 +43,23 @@ router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(AD
         res.json({ ok: true, posts })
     } catch (error) {
         console.error('GET /api/news/admin/all error:', error)
+        res.status(500).json({ ok: false, message: 'Server error' })
+    }
+})
+
+// GET /api/news/:id - Get single post (public)
+router.get('/:id', async (req, res) => {
+    try {
+        const post = await Post.findOne({ _id: req.params.id, isPublished: true })
+            .populate('author', 'username')
+
+        if (!post) {
+            return res.status(404).json({ ok: false, message: 'Post not found' })
+        }
+
+        res.json({ ok: true, post })
+    } catch (error) {
+        console.error('GET /api/news/:id error:', error)
         res.status(500).json({ ok: false, message: 'Server error' })
     }
 })

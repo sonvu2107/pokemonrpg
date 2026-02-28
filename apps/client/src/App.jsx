@@ -15,6 +15,9 @@ import PokedexPage from './pages/PokedexPage'
 import RankingsPage from './pages/RankingsPage'
 import PokemonRankingsPage from './pages/PokemonRankingsPage'
 import EvolvePage from './pages/EvolvePage'
+import TradesPage from './pages/TradesPage'
+import ShopSellPage from './pages/ShopSellPage'
+import ItemShopPage from './pages/ItemShopPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -57,6 +60,10 @@ export default function App() {
                 <Route path="/rankings/overall" element={<RankingsPage />} />
                 <Route path="/rankings/pokemon" element={<PokemonRankingsPage />} />
                 <Route path="/rankings/daily" element={<RankingsPage />} />
+                <Route path="/shop/buy" element={<TradesPage />} />
+                <Route path="/shop/sell" element={<ShopSellPage />} />
+                <Route path="/shop/items" element={<ItemShopPage />} />
+                <Route path="/trades" element={<TradesPage />} />
 
                 {/* Admin Routes */}
                 <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />

@@ -5,7 +5,7 @@ import { ADMIN_PERMISSIONS } from '../../constants/adminPermissions'
 const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
     map: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/town-map.png",
-    items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/bag.png",
+    items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/potion.png",
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
     battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
@@ -128,19 +128,19 @@ export default function AdminDashboard() {
 
     return (
         <div className="max-w-6xl mx-auto space-y-5 bg-slate-50/50 p-6 rounded-3xl animate-fade-in relative z-0">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-5">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-5">
+                <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-12 h-12 flex-shrink-0 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center">
                         <img src={ICONS.pokemon} className="w-7 h-7 pixelated" alt="Logo" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
+                        <h1 className="text-xl sm:text-2xl font-black text-slate-800 uppercase tracking-tight">
                             Trung Tâm Admin
                         </h1>
-                        <p className="text-sm text-slate-500 font-medium">Hệ thống quản trị Pokemon World</p>
+                        <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">Hệ thống quản trị Pokemon World</p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     {quickActions.map((action) => (
                         <Link key={action.to} to={action.to} className={`flex items-center gap-1.5 px-3 py-2 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer whitespace-nowrap ${action.className}`}>
                             <span className="text-sm">+</span> {action.label}

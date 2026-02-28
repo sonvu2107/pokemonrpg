@@ -418,18 +418,18 @@ export default function PokemonListPage() {
 
             <div className="p-4">
                 {/* Filters */}
-                <div className="flex gap-3 mb-4 bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="flex flex-wrap gap-2 sm:gap-3 mb-4 bg-slate-50 p-3 rounded border border-slate-200">
                     <input
                         type="text"
                         placeholder="Tìm theo tên..."
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-64 focus:outline-none focus:border-blue-500 shadow-sm"
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-64 focus:outline-none focus:border-blue-500 shadow-sm"
                     />
                     <select
                         value={typeFilter}
                         onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-auto focus:outline-none focus:border-blue-500 shadow-sm"
                     >
                         <option value="">Tất cả hệ</option>
                         {Object.keys(TYPE_COLORS).map(type => (
@@ -447,16 +447,16 @@ export default function PokemonListPage() {
                         {/* Table */}
                         <div
                             ref={topScrollRef}
-                            className="bg-slate-50 border border-slate-200 border-b-0 rounded-t-lg overflow-x-auto shadow-sm h-4 mb-[-1px] sticky-top-scrollbar"
+                            className="bg-slate-50 border border-slate-200 border-b-0 rounded-t-lg overflow-x-auto shadow-sm h-4 mb-[-1px] sticky-top-scrollbar hidden lg:block"
                             style={{ scrollbarWidth: 'thin' }}
                         >
-                            <div style={{ width: '1200px' }} className="h-full"></div>
+                            <div className="h-full min-w-[800px] lg:min-w-[1200px]"></div>
                         </div>
                         <div
                             ref={tableContainerRef}
-                            className="bg-white border border-slate-200 rounded-b-lg overflow-auto shadow-sm rounded-t-none max-h-[70vh] custom-scrollbar"
+                            className="bg-white border border-slate-200 rounded-lg lg:rounded-t-none w-full max-w-full overflow-x-auto overscroll-x-contain shadow-sm max-h-[70vh] custom-scrollbar"
                         >
-                            <table className="w-full text-sm min-w-[1200px]">
+                            <table className="w-full text-sm min-w-[800px] lg:min-w-[1200px]">
                                 <thead className="bg-blue-600 text-white border-b border-blue-700 sticky top-0 z-10">
                                     <tr>
                                         <th className="px-3 py-3 text-left font-bold uppercase text-xs w-14 whitespace-nowrap">#</th>
@@ -735,6 +735,15 @@ export default function PokemonListPage() {
                         )}
                     </>
                 )}
+            </div>
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

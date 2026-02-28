@@ -1,9 +1,25 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+import { clearAuthSession, getValidTokenFromStorage } from '../utils/authSession'
 
 // Helper to get auth header
 const getAuthHeader = () => {
-    const token = localStorage.getItem('token')
+    const token = getValidTokenFromStorage()
     return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const throwApiError = async (res, fallbackMessage) => {
+    let err = null
+    try {
+        err = await res.json()
+    } catch {
+        err = null
+    }
+
+    const message = err?.message || fallbackMessage
+    if (res.status === 401) {
+        clearAuthSession(message || 'Unauthorized')
+    }
+    throw new Error(message)
 }
 
 export const gameApi = {
@@ -58,8 +74,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch maps')
+            await throwApiError(res, 'Failed to fetch maps')
         }
         const data = await res.json()
         return data.maps || []
@@ -117,14 +132,14 @@ export const gameApi = {
     },
 
     // POST /api/game/battle/resolve
-    async resolveBattle(opponentTeam, trainerId = null) {
+    async resolveBattle(_opponentTeam, trainerId = null) {
         const res = await fetch(`${API_URL}/game/battle/resolve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify({ opponentTeam, trainerId }),
+            body: JSON.stringify({ trainerId }),
         })
         if (!res.ok) {
             const err = await res.json()
@@ -192,8 +207,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch party')
+            await throwApiError(res, 'Failed to fetch party')
         }
         const data = await res.json()
         return data.party
@@ -205,8 +219,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch inventory')
+            await throwApiError(res, 'Failed to fetch inventory')
         }
         return res.json()
     },
@@ -217,8 +230,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch profile')
+            await throwApiError(res, 'Failed to fetch profile')
         }
         return res.json()
     },
@@ -376,6 +388,116 @@ export const gameApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Failed to fetch pokemon rankings')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/buy
+    async getShopBuyListings(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/buy${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to fetch shop listings')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/buy/:listingId
+    async buyPokemon(listingId) {
+        const res = await fetch(`${API_URL}/shop/buy/${listingId}`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to buy Pokemon')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/items
+    async getShopItems(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/items${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to fetch item shop')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/items/:itemId/buy
+    async buyShopItem(itemId, quantity = 1) {
+        const res = await fetch(`${API_URL}/shop/items/${itemId}/buy`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ quantity }),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to purchase item')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/sell
+    async getShopSellData(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/sell${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to fetch sell data')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/sell/list
+    async createShopListing(payload) {
+        const res = await fetch(`${API_URL}/shop/sell/list`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to create listing')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/sell/:listingId/cancel
+    async cancelShopListing(listingId) {
+        const res = await fetch(`${API_URL}/shop/sell/${listingId}/cancel`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to cancel listing')
         }
         return res.json()
     },

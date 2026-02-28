@@ -52,15 +52,15 @@ export default function MapListPage() {
                 {loading ? (
                     <div className="text-center py-8 text-blue-800 font-medium">Đang tải dữ liệu...</div>
                 ) : (
-                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm flex flex-col">
-                        <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] overscroll-contain">
-                            <table className="w-full text-sm whitespace-nowrap">
+                    <div className="bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
+                        <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] w-full">
+                            <table className="w-full text-sm whitespace-nowrap min-w-[800px] lg:min-w-[1000px]">
                                 <thead className="bg-blue-50 border-b border-blue-100 sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs w-[35%]">Bản Đồ</th>
-                                        <th className="px-3 py-2 text-center text-blue-900 font-bold uppercase text-xs w-[10%]">Thứ Tự</th>
-                                        <th className="px-3 py-2 text-center text-blue-900 font-bold uppercase text-xs w-[25%]">Thông Tin</th>
-                                        <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs w-[30%]">Hành Động</th>
+                                        <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs min-w-[200px] sm:min-w-[280px]">Bản Đồ</th>
+                                        <th className="px-3 py-2 text-center text-blue-900 font-bold uppercase text-xs whitespace-nowrap">Thứ Tự</th>
+                                        <th className="px-3 py-2 text-center text-blue-900 font-bold uppercase text-xs min-w-[180px] sm:min-w-[220px]">Thông Tin</th>
+                                        <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs min-w-[140px] sm:min-w-[180px] whitespace-nowrap">Hành Động</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -150,6 +150,15 @@ export default function MapListPage() {
                         </div>
                     </div>
                 )}
+            </div>
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

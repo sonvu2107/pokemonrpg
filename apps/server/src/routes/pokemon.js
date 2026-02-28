@@ -43,13 +43,15 @@ const resolvePokemonSprite = (pokemonLike) => {
 router.get('/', async (req, res) => {
     try {
         const { page = 1, limit = 200 } = req.query
-        const skip = (parseInt(page) - 1) * parseInt(limit)
+        const safePage = Math.max(1, parseInt(page, 10) || 1)
+        const safeLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 200))
+        const skip = (safePage - 1) * safeLimit
 
         const [pokemon, total] = await Promise.all([
             Pokemon.find({})
                 .sort({ pokedexNumber: 1 })
                 .skip(skip)
-                .limit(parseInt(limit))
+                .limit(safeLimit)
                 .select('name pokedexNumber imageUrl sprites types rarity forms defaultFormId')
                 .lean(),
             Pokemon.countDocuments(),
@@ -59,10 +61,10 @@ router.get('/', async (req, res) => {
             ok: true,
             pokemon,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: safePage,
+                limit: safeLimit,
                 total,
-                pages: Math.ceil(total / parseInt(limit)),
+                pages: Math.max(1, Math.ceil(total / safeLimit)),
             },
         })
     } catch (error) {

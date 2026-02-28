@@ -10,6 +10,8 @@ import {
 
 const router = express.Router()
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const buildUserResponse = (user) => {
     const raw = user?.toObject ? user.toObject() : user
     return {
@@ -22,25 +24,28 @@ const buildUserResponse = (user) => {
 router.get('/', async (req, res) => {
     try {
         const { search, page = 1, limit = 20 } = req.query
+        const safePage = Math.max(1, parseInt(page, 10) || 1)
+        const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
 
         const query = {}
 
         // Search by email or username
         if (search) {
+            const escapedSearch = escapeRegExp(search)
             query.$or = [
-                { email: { $regex: search, $options: 'i' } },
-                { username: { $regex: search, $options: 'i' } }
+                { email: { $regex: escapedSearch, $options: 'i' } },
+                { username: { $regex: escapedSearch, $options: 'i' } }
             ]
         }
 
-        const skip = (parseInt(page) - 1) * parseInt(limit)
+        const skip = (safePage - 1) * safeLimit
 
         const [users, total] = await Promise.all([
             User.find(query)
                 .select('-password') // Exclude password field
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(parseInt(limit))
+                .limit(safeLimit)
                 .lean(),
             User.countDocuments(query),
         ])
@@ -51,10 +56,10 @@ router.get('/', async (req, res) => {
             ok: true,
             users: normalizedUsers,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: safePage,
+                limit: safeLimit,
                 total,
-                pages: Math.ceil(total / parseInt(limit)),
+                pages: Math.ceil(total / safeLimit),
             },
             permissions: ALL_ADMIN_PERMISSIONS,
         })

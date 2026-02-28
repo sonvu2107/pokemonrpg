@@ -37,9 +37,22 @@ export default function ItemListPage() {
     const [page, setPage] = useState(1)
     const [pagination, setPagination] = useState({ total: 0, pages: 0 })
 
+    const [historyLogs, setHistoryLogs] = useState([])
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const [historyError, setHistoryError] = useState('')
+    const [historySearch, setHistorySearch] = useState('')
+    const [historyItemId, setHistoryItemId] = useState('')
+    const [historyPage, setHistoryPage] = useState(1)
+    const [historyPagination, setHistoryPagination] = useState({ total: 0, pages: 0 })
+    const [historyShopItems, setHistoryShopItems] = useState([])
+
     useEffect(() => {
         loadItems()
     }, [search, typeFilter, rarityFilter, page])
+
+    useEffect(() => {
+        loadPurchaseHistory()
+    }, [historySearch, historyItemId, historyPage])
 
     const loadItems = async () => {
         try {
@@ -52,6 +65,33 @@ export default function ItemListPage() {
         } finally {
             setLoading(false)
         }
+    }
+
+    const loadPurchaseHistory = async () => {
+        try {
+            setHistoryLoading(true)
+            setHistoryError('')
+            const data = await itemApi.getPurchaseHistory({
+                search: historySearch,
+                itemId: historyItemId,
+                page: historyPage,
+                limit: 20,
+            })
+            setHistoryLogs(data.logs || [])
+            setHistoryPagination(data.pagination || { total: 0, pages: 0 })
+            setHistoryShopItems(data?.meta?.shopItems || [])
+        } catch (err) {
+            setHistoryError(err.message)
+        } finally {
+            setHistoryLoading(false)
+        }
+    }
+
+    const formatDateTime = (value) => {
+        if (!value) return '--'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '--'
+        return date.toLocaleString('vi-VN')
     }
 
     const handleDelete = async (id, name) => {
@@ -78,18 +118,18 @@ export default function ItemListPage() {
             </div>
 
             <div className="p-4">
-                <div className="flex flex-wrap gap-3 mb-4 bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="flex flex-wrap gap-2 sm:gap-3 mb-4 bg-slate-50 p-3 rounded border border-slate-200">
                     <input
                         type="text"
                         placeholder="Tìm theo tên..."
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-64 focus:outline-none focus:border-blue-500 shadow-sm"
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-64 focus:outline-none focus:border-blue-500 shadow-sm"
                     />
                     <select
                         value={typeFilter}
                         onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-auto focus:outline-none focus:border-blue-500 shadow-sm"
                     >
                         <option value="">Tất cả loại</option>
                         {Object.entries(TYPE_LABELS).map(([key, label]) => (
@@ -99,7 +139,7 @@ export default function ItemListPage() {
                     <select
                         value={rarityFilter}
                         onChange={(e) => { setRarityFilter(e.target.value); setPage(1) }}
-                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-auto focus:outline-none focus:border-blue-500 shadow-sm"
                     >
                         <option value="">Tất cả độ hiếm</option>
                         {Object.entries(RARITY_LABELS).map(([key, label]) => (
@@ -114,16 +154,18 @@ export default function ItemListPage() {
                     <div className="text-center py-8 text-blue-800 font-medium">Đang tải dữ liệu...</div>
                 ) : (
                     <>
-                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm flex flex-col">
-                            <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] overscroll-contain">
-                                <table className="w-full text-sm whitespace-nowrap">
+                        <div className="bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
+                            <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] w-full">
+                                <table className="w-full text-sm whitespace-nowrap min-w-[800px] lg:min-w-[1200px]">
                                     <thead className="bg-blue-50 border-b border-blue-100 sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Hình</th>
-                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Tên</th>
-                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Loại</th>
-                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Độ Hiếm</th>
-                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Hành Động</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[56px] w-[56px]">Hình</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[150px] sm:min-w-[200px]">Tên</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Loại</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Độ Hiếm</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Shop</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Shop</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px] sm:min-w-[160px] whitespace-nowrap">Hành Động</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -149,6 +191,20 @@ export default function ItemListPage() {
                                                         {RARITY_LABELS[item.rarity] || item.rarity}
                                                     </span>
                                                 </td>
+                                                <td className="px-4 py-3">
+                                                    {item.isShopEnabled ? (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                                            Đang bán
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                                                            Ẩn shop
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-700 font-bold">
+                                                    {Number(item.shopPrice || 0).toLocaleString('vi-VN')}
+                                                </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <Link
                                                         to={`/admin/items/${item._id}/edit`}
@@ -167,7 +223,7 @@ export default function ItemListPage() {
                                         ))}
                                         {items.length === 0 && (
                                             <tr>
-                                                <td colSpan="5" className="px-4 py-8 text-center text-slate-500 italic">
+                                                <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">
                                                     Chưa có vật phẩm nào.
                                                 </td>
                                             </tr>
@@ -214,6 +270,116 @@ export default function ItemListPage() {
                         )}
                     </>
                 )}
+
+                <div className="mt-8 border border-blue-200 rounded-lg overflow-hidden shadow-sm bg-white">
+                    <div className="bg-gradient-to-t from-blue-600 to-cyan-500 px-3 py-2 border-b border-blue-600">
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider drop-shadow-sm">Lịch Sử Mua Vật Phẩm (Audit)</h2>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-2">
+                        <input
+                            type="text"
+                            placeholder="Tìm theo người mua / vật phẩm..."
+                            value={historySearch}
+                            onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1) }}
+                            className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-64 focus:outline-none focus:border-blue-500 shadow-sm"
+                        />
+                        <select
+                            value={historyItemId}
+                            onChange={(e) => { setHistoryItemId(e.target.value); setHistoryPage(1) }}
+                            className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                        >
+                            <option value="">Tất cả vật phẩm shop</option>
+                            {historyShopItems.map((entry) => (
+                                <option key={entry._id} value={entry._id}>{entry.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {historyError && (
+                        <div className="p-3 bg-red-50 text-red-700 border-b border-red-200 text-sm">{historyError}</div>
+                    )}
+
+                    <div className="overflow-auto custom-scrollbar max-h-[400px]">
+                        <table className="w-full text-sm min-w-[980px]">
+                            <thead className="bg-blue-50 border-b border-blue-100 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Thời gian</th>
+                                    <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Người mua</th>
+                                    <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Vật phẩm</th>
+                                    <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">SL</th>
+                                    <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">Đơn giá</th>
+                                    <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">Tổng</th>
+                                    <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">Ví trước/sau</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {historyLoading ? (
+                                    <tr>
+                                        <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">Đang tải lịch sử...</td>
+                                    </tr>
+                                ) : historyLogs.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">Chưa có dữ liệu mua vật phẩm.</td>
+                                    </tr>
+                                ) : historyLogs.map((log) => (
+                                    <tr key={log._id} className="hover:bg-blue-50 transition-colors">
+                                        <td className="px-3 py-2 text-slate-700">{formatDateTime(log.createdAt)}</td>
+                                        <td className="px-3 py-2 text-slate-800 font-semibold">{log?.buyer?.username || 'Không rõ'}</td>
+                                        <td className="px-3 py-2 text-slate-700">{log?.item?.name || 'Vật phẩm đã xóa'}</td>
+                                        <td className="px-3 py-2 text-right font-bold text-slate-700">{Number(log.quantity || 0).toLocaleString('vi-VN')}</td>
+                                        <td className="px-3 py-2 text-right text-slate-700">{Number(log.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                                        <td className="px-3 py-2 text-right font-bold text-slate-800">{Number(log.totalCost || 0).toLocaleString('vi-VN')}</td>
+                                        <td className="px-3 py-2 text-right text-slate-600">{Number(log.walletGoldBefore || 0).toLocaleString('vi-VN')} → {Number(log.walletGoldAfter || 0).toLocaleString('vi-VN')}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {historyPagination.pages > 1 && (
+                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 justify-between items-center p-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+                            <span className="text-center sm:text-left">Tổng {historyPagination.total} giao dịch • Trang {historyPage}/{historyPagination.pages}</span>
+                            <div className="flex flex-wrap justify-center gap-1">
+                                <button
+                                    disabled={historyPage <= 1}
+                                    onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
+                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
+                                >
+                                    &laquo;
+                                </button>
+                                {Array.from({ length: historyPagination.pages }, (_, i) => i + 1).slice(0, 10).map((pageNum) => (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() => setHistoryPage(pageNum)}
+                                        className={`min-w-[32px] px-2 py-1 border rounded font-bold text-center ${historyPage === pageNum
+                                            ? 'bg-blue-600 border-blue-600 text-white'
+                                            : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+                                            }`}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                ))}
+                                <button
+                                    disabled={historyPage >= historyPagination.pages}
+                                    onClick={() => setHistoryPage((prev) => Math.min(historyPagination.pages, prev + 1))}
+                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
+                                >
+                                    &raquo;
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="text-center mt-6">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
             </div>
         </div>
     )

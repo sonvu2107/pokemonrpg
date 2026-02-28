@@ -13,7 +13,6 @@ export default function ImageUpload({
     const [error, setError] = useState('')
     const [preview, setPreview] = useState(currentImage || '')
     const inputId = useId()
-
     const validateFiles = (files) => {
         for (const file of files) {
             const validationError = validateImageFile(file)
@@ -36,14 +35,13 @@ export default function ImageUpload({
         const list = Array.isArray(files) ? files : [files].filter(Boolean)
         if (list.length === 0) return
 
-        // Validate
+
         const validationError = validateFiles(list)
         if (validationError) {
             setError(validationError)
             return
         }
 
-        // Preview
         setPreviewFromFile(list[0])
 
         if (onFilesSelected) {
@@ -51,7 +49,6 @@ export default function ImageUpload({
             return
         }
 
-        // Upload
         try {
             setUploading(true)
             setProgress(0)
@@ -102,9 +99,7 @@ export default function ImageUpload({
     return (
         <div>
             <label className="block text-slate-700 text-xs font-bold mb-2 uppercase">{label}</label>
-
             <div className="flex items-start gap-4">
-                {/* Preview Section */}
                 <div className="relative shrink-0 group">
                     {preview ? (
                         <>
@@ -132,8 +127,6 @@ export default function ImageUpload({
                         </div>
                     )}
                 </div>
-
-                {/* Upload Section */}
                 <div className="flex-1">
                     <div
                         onDrop={handleDrop}
@@ -190,8 +183,6 @@ export default function ImageUpload({
                     </div>
                 </div>
             </div>
-
-            {/* Error */}
             {error && (
                 <div className="mt-2 text-[10px] text-red-600 font-medium">
                     {error}

@@ -182,14 +182,14 @@ export default function ItemDropRateManagerPage() {
                         <p className="text-xs mt-1">Nhấn nút "Thêm vật phẩm" để bắt đầu cấu hình</p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                    <div className="w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200">
+                        <table className="w-full text-sm min-w-[800px] lg:min-w-[1100px]">
                             <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200">
                                 <tr>
-                                    <th className="px-6 py-3 text-left font-bold">Vật phẩm</th>
-                                    <th className="px-6 py-3 text-center font-bold">Trọng số</th>
-                                    <th className="px-6 py-3 text-center font-bold">Tỷ lệ %</th>
-                                    <th className="px-6 py-3 text-right font-bold">Hành động</th>
+                                    <th className="px-6 py-3 text-left font-bold min-w-[200px]">Vật phẩm</th>
+                                    <th className="px-6 py-3 text-center font-bold whitespace-nowrap">Trọng số</th>
+                                    <th className="px-6 py-3 text-center font-bold whitespace-nowrap">Tỷ lệ %</th>
+                                    <th className="px-6 py-3 text-right font-bold min-w-[120px] whitespace-nowrap">Hành động</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -395,6 +395,15 @@ export default function ItemDropRateManagerPage() {
                     </div>
                 </div>
             )}
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
+            </div>
         </div>
     )
 }

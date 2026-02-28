@@ -279,15 +279,15 @@ export default function DropRateManagerPage() {
                         <p className="text-xs mt-1">Nhấn nút "Thêm Pokemon" để bắt đầu cấu hình</p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                    <div className="w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200">
+                        <table className="w-full min-w-[800px] lg:min-w-[1100px] text-sm">
                             <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200">
                                 <tr>
-                                    <th className="px-6 py-3 text-left font-bold">Pokemon</th>
-                                    <th className="px-6 py-3 text-center font-bold">Trọng số</th>
-                                    <th className="px-6 py-3 text-center font-bold">Dạng</th>
-                                    <th className="px-6 py-3 text-center font-bold">Tỷ lệ %</th>
-                                    <th className="px-6 py-3 text-right font-bold">Hành động</th>
+                                    <th className="px-2 py-2 sm:px-3 text-left font-bold min-w-[180px] sm:min-w-[240px]">Pokemon</th>
+                                    <th className="px-2 py-2 sm:px-3 text-center font-bold whitespace-nowrap text-xs sm:text-sm">Trọng số</th>
+                                    <th className="px-2 py-2 sm:px-3 text-center font-bold whitespace-nowrap text-xs sm:text-sm">Dạng</th>
+                                    <th className="px-2 py-2 sm:px-3 text-center font-bold whitespace-nowrap text-xs sm:text-sm">Tỷ lệ %</th>
+                                    <th className="px-2 py-2 sm:px-3 text-right font-bold min-w-[120px] sm:min-w-[160px]">Hành động</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -306,7 +306,7 @@ export default function DropRateManagerPage() {
                                     return (
                                         <React.Fragment key={group.pokemon._id}>
                                             <tr key={baseEntry._id} className={`transition-colors ${baseEntry.isMissing ? 'bg-amber-50/60' : 'hover:bg-blue-50/30'}`}>
-                                                <td className="px-6 py-3">
+                                                <td className="px-2 py-2 sm:px-3">
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex-shrink-0 w-10 h-10 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-center">
                                                             <img
@@ -327,7 +327,7 @@ export default function DropRateManagerPage() {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-3 text-center">
+                                                <td className="px-2 py-2 sm:px-3 text-center">
                                                     {baseEntry.isMissing ? (
                                                         <span className="inline-block px-2 py-1 bg-amber-100 text-amber-700 rounded font-mono font-medium border border-amber-200 min-w-[3rem]">
                                                             0
@@ -348,7 +348,7 @@ export default function DropRateManagerPage() {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-3 text-center">
+                                                <td className="px-2 py-2 sm:px-3 text-center">
                                                     <span
                                                         className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
                                                         title={baseEntry.form?.formName ? `${baseEntry.form.formName} (${baseEntry.form.formId || baseEntry.formId})` : (baseEntry.form?.formId || baseEntry.formId || 'normal')}
@@ -356,7 +356,7 @@ export default function DropRateManagerPage() {
                                                         {baseEntry.form?.formName || baseEntry.form?.formId || baseEntry.formId || 'normal'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-3 text-center">
+                                                <td className="px-2 py-2 sm:px-3 text-center">
                                                     <div className="flex flex-col items-center">
                                                         <span className="font-bold text-green-600">{baseEntry.relativePercent}%</span>
                                                         <div className="w-16 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
@@ -364,7 +364,7 @@ export default function DropRateManagerPage() {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-3 text-right">
+                                                <td className="px-2 py-2 sm:px-3 text-right">
                                                     <div className="flex items-center gap-2 justify-end">
                                                         {baseEntry.isMissing ? (
                                                             <button
@@ -421,7 +421,7 @@ export default function DropRateManagerPage() {
                                             </tr>
                                             {extraEntries.map((entry) => (
                                                 <tr key={entry._id} className={`${entry.isMissing ? 'bg-amber-50/60' : 'bg-slate-50/60'}`}>
-                                                    <td className="px-6 py-3">
+                                                    <td className="px-2 py-2 sm:px-3">
                                                         <div className="flex items-center gap-3">
                                                             <div className="text-slate-400 font-mono text-xs">↳</div>
                                                             <div className="flex-shrink-0 w-10 h-10 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-center">
@@ -441,7 +441,7 @@ export default function DropRateManagerPage() {
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-3 text-center">
+                                                    <td className="px-2 py-2 sm:px-3 text-center">
                                                         {entry.isMissing ? (
                                                             <span className="inline-block px-2 py-1 bg-amber-100 text-amber-700 rounded font-mono font-medium border border-amber-200 min-w-[3rem]">
                                                                 0
@@ -462,7 +462,7 @@ export default function DropRateManagerPage() {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-3 text-center">
+                                                    <td className="px-2 py-2 sm:px-3 text-center">
                                                         <span
                                                             className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200"
                                                             title={entry.form?.formName ? `${entry.form.formName} (${entry.form.formId || entry.formId})` : (entry.form?.formId || entry.formId || 'normal')}
@@ -470,7 +470,7 @@ export default function DropRateManagerPage() {
                                                             {entry.form?.formName || entry.form?.formId || entry.formId || 'normal'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-6 py-3 text-center">
+                                                    <td className="px-2 py-2 sm:px-3 text-center">
                                                         <div className="flex flex-col items-center">
                                                             <span className="font-bold text-green-600">{entry.relativePercent}%</span>
                                                             <div className="w-16 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
@@ -478,7 +478,7 @@ export default function DropRateManagerPage() {
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-3 text-right">
+                                                    <td className="px-2 py-2 sm:px-3 text-right">
                                                         <div className="flex items-center gap-2 justify-end">
                                                             {entry.isMissing ? (
                                                                 <button
@@ -662,6 +662,15 @@ export default function DropRateManagerPage() {
                     </div>
                 </div>
             )}
+
+            <div className="text-center mt-6 p-4">
+                <Link
+                    to="/admin"
+                    className="inline-block px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-bold shadow-sm"
+                >
+                    ← Quay lại Dashboard
+                </Link>
+            </div>
         </div>
     )
 }
