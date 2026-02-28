@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom"
+import { Link, NavLink } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
@@ -36,11 +36,21 @@ const SidebarLink = ({ to, children, isSpecial }) => (
     </NavLink>
 )
 
-const InfoRow = ({ label, value }) => (
-    <div className="flex flex-col text-sm font-bold text-white drop-shadow-sm px-2 py-0.5">
-        <span>{label}: {value}</span>
-    </div>
-)
+const InfoRow = ({ label, value, to }) => {
+    if (to) {
+        return (
+            <Link to={to} className="block px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm">
+                {label}: {value}
+            </Link>
+        )
+    }
+
+    return (
+        <div className="flex flex-col text-sm font-bold text-white drop-shadow-sm px-2 py-0.5">
+            <span>{label}: {value}</span>
+        </div>
+    )
+}
 
 const formatNumber = (num) => {
     if (num === null || num === undefined) return '...'
@@ -95,7 +105,7 @@ export default function RightColumn() {
 
             <SidebarSection title="Thông Tin" iconId={137}>
                 <InfoRow label="Tổng người chơi" value={formatNumber(serverStats.totalUsers)} />
-                <InfoRow label="Đang online" value={formatNumber(serverStats.onlineUsers)} />
+                <InfoRow label="Đang online" value={formatNumber(serverStats.onlineUsers)} to="/stats/online" />
                 <InfoRow label="Giờ Server" value={new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} />
                 <SidebarLink to="/stats">Thống kê ngày</SidebarLink>
             </SidebarSection>

@@ -18,6 +18,8 @@ import EvolvePage from './pages/EvolvePage'
 import TradesPage from './pages/TradesPage'
 import ShopSellPage from './pages/ShopSellPage'
 import ItemShopPage from './pages/ItemShopPage'
+import DailyStatsPage from './pages/DailyStatsPage'
+import OnlineStatsPage from './pages/OnlineStatsPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -63,6 +65,8 @@ export default function App() {
                 <Route path="/shop/buy" element={<TradesPage />} />
                 <Route path="/shop/sell" element={<ShopSellPage />} />
                 <Route path="/shop/items" element={<ItemShopPage />} />
+                <Route path="/stats" element={<DailyStatsPage />} />
+                <Route path="/stats/online" element={<OnlineStatsPage />} />
                 <Route path="/trades" element={<TradesPage />} />
 
                 {/* Admin Routes */}

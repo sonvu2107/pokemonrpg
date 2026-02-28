@@ -27,6 +27,78 @@ const dailyActivitySchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        battles: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        levels: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        battleMoonPoints: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        platinumCoins: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        mines: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        shards: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        diamondCoins: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        trainerExp: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        mapStats: {
+            type: [
+                {
+                    mapSlug: {
+                        type: String,
+                        default: '',
+                        trim: true,
+                    },
+                    mapName: {
+                        type: String,
+                        default: '',
+                        trim: true,
+                    },
+                    searches: {
+                        type: Number,
+                        default: 0,
+                        min: 0,
+                    },
+                    mapExp: {
+                        type: Number,
+                        default: 0,
+                        min: 0,
+                    },
+                    moonPoints: {
+                        type: Number,
+                        default: 0,
+                        min: 0,
+                    },
+                }
+            ],
+            default: [],
+        },
     },
     { timestamps: true }
 )

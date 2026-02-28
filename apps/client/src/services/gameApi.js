@@ -175,6 +175,44 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/stats/daily - Get current user daily stats
+    async getDailyStats(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+
+        const res = await fetch(`${API_URL}/stats/daily${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to fetch daily stats')
+        }
+        return res.json()
+    },
+
+    // GET /api/stats/online - Get online trainers list
+    async getOnlineStats(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+
+        const res = await fetch(`${API_URL}/stats/online${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Failed to fetch online trainers')
+        }
+        return res.json()
+    },
+
     // GET /api/pokemon/:id
     async getPokemonDetail(id) {
         const res = await fetch(`${API_URL}/pokemon/${id}`, {

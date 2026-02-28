@@ -32,3 +32,6 @@ data/
 # Temporary files
 tmp/
 temp/
+
+# Scripts
+apps/server/scripts/

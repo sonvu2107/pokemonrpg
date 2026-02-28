@@ -361,7 +361,19 @@ const toDailyDateKey = (date = new Date()) => {
 }
 
 const trackDailyActivity = async (userId, increments = {}) => {
-    const searchableKeys = ['searches', 'mapExp', 'moonPoints']
+    const searchableKeys = [
+        'searches',
+        'mapExp',
+        'moonPoints',
+        'battles',
+        'levels',
+        'battleMoonPoints',
+        'platinumCoins',
+        'mines',
+        'shards',
+        'diamondCoins',
+        'trainerExp',
+    ]
     const $inc = {}
 
     searchableKeys.forEach((key) => {
@@ -372,7 +384,9 @@ const trackDailyActivity = async (userId, increments = {}) => {
     })
 
     if (Object.keys($inc).length === 0) {
-        return
+        if (!increments?.mapSlug && !increments?.mapName) {
+            return
+        }
     }
 
     const date = toDailyDateKey()
@@ -386,6 +400,67 @@ const trackDailyActivity = async (userId, increments = {}) => {
             },
         },
         { upsert: true }
+    )
+
+    const mapSlug = String(increments?.mapSlug || '').trim()
+    const mapName = String(increments?.mapName || '').trim()
+    const mapSearches = Number.isFinite(Number(increments?.searches)) && Number(increments.searches) > 0
+        ? Math.floor(Number(increments.searches))
+        : 0
+    const mapExp = Number.isFinite(Number(increments?.mapExp)) && Number(increments.mapExp) > 0
+        ? Math.floor(Number(increments.mapExp))
+        : 0
+    const mapMoonPoints = Number.isFinite(Number(increments?.mapMoonPoints)) && Number(increments.mapMoonPoints) > 0
+        ? Math.floor(Number(increments.mapMoonPoints))
+        : 0
+
+    if (!mapSlug && !mapName) {
+        return
+    }
+
+    const mapFilter = mapSlug || mapName
+    const mapInc = {}
+    if (mapSearches > 0) mapInc['mapStats.$.searches'] = mapSearches
+    if (mapExp > 0) mapInc['mapStats.$.mapExp'] = mapExp
+    if (mapMoonPoints > 0) mapInc['mapStats.$.moonPoints'] = mapMoonPoints
+
+    if (Object.keys(mapInc).length > 0) {
+        const updated = await DailyActivity.updateOne(
+            {
+                userId,
+                date,
+                $or: [
+                    { 'mapStats.mapSlug': mapFilter },
+                    { 'mapStats.mapName': mapFilter },
+                ],
+            },
+            {
+                $inc: mapInc,
+                $set: {
+                    ...(mapSlug ? { 'mapStats.$.mapSlug': mapSlug } : {}),
+                    ...(mapName ? { 'mapStats.$.mapName': mapName } : {}),
+                },
+            }
+        )
+
+        if (updated.modifiedCount > 0) {
+            return
+        }
+    }
+
+    await DailyActivity.updateOne(
+        { userId, date },
+        {
+            $push: {
+                mapStats: {
+                    mapSlug,
+                    mapName,
+                    searches: mapSearches,
+                    mapExp,
+                    moonPoints: mapMoonPoints,
+                },
+            },
+        }
     )
 }
 
@@ -581,6 +656,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         await trackDailyActivity(userId, {
             searches: 1,
             mapExp: EXP_PER_SEARCH,
+            mapSlug: map.slug,
+            mapName: map.name,
         })
 
         if (!isAdmin) {
@@ -1443,10 +1520,16 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             },
             { new: true, upsert: true }
         )
+        const trainerExpAwarded = Math.floor(expAwarded / 2)
         const moonPointsGained = Math.max(0, (playerState.moonPoints || 0) - moonPointsBefore)
-        if (moonPointsGained > 0) {
-            await trackDailyActivity(userId, { moonPoints: moonPointsGained })
-        }
+        await trackDailyActivity(userId, {
+            battles: 1,
+            levels: Math.max(0, levelsGained),
+            battleMoonPoints: moonPointsGained,
+            moonPoints: moonPointsGained,
+            platinumCoins: Math.max(0, coinsAwarded),
+            trainerExp: Math.max(0, trainerExpAwarded),
+        })
         emitPlayerState(userId.toString(), playerState)
 
         let prizePokemon = null
@@ -1506,7 +1589,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 },
                 rewards: {
                     coins: coinsAwarded,
-                    trainerExp: Math.floor(expAwarded / 2),
+                    trainerExp: trainerExpAwarded,
                     prizePokemon,
                 },
                 evolution: {
