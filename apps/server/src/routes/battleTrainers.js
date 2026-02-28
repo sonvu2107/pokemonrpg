@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, trainers })
     } catch (error) {
         console.error('GET /api/battle-trainers error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

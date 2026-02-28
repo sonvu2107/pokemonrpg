@@ -18,14 +18,14 @@ router.post('/register', async (req, res, next) => {
         if (!normalizedEmail || !password) {
             return res.status(400).json({
                 ok: false,
-                message: 'Email and password are required',
+                message: 'Email và mật khẩu là bắt buộc',
             })
         }
 
         if (password.length < 6) {
             return res.status(400).json({
                 ok: false,
-                message: 'Password must be at least 6 characters',
+                message: 'Mật khẩu phải có ít nhất 6 ký tự',
             })
         }
 
@@ -34,7 +34,7 @@ router.post('/register', async (req, res, next) => {
         if (existingUser) {
             return res.status(409).json({
                 ok: false,
-                message: 'User already exists',
+                message: 'Người dùng đã tồn tại',
             })
         }
 
@@ -85,7 +85,7 @@ router.post('/login', async (req, res, next) => {
         if (!normalizedEmail || !password) {
             return res.status(400).json({
                 ok: false,
-                message: 'Email and password are required',
+                message: 'Email và mật khẩu là bắt buộc',
             })
         }
 
@@ -94,7 +94,7 @@ router.post('/login', async (req, res, next) => {
         if (!user) {
             return res.status(401).json({
                 ok: false,
-                message: 'Invalid credentials',
+                message: 'Thông tin đăng nhập không hợp lệ',
             })
         }
 
@@ -103,7 +103,7 @@ router.post('/login', async (req, res, next) => {
         if (!isMatch) {
             return res.status(401).json({
                 ok: false,
-                message: 'Invalid credentials',
+                message: 'Thông tin đăng nhập không hợp lệ',
             })
         }
 
@@ -146,7 +146,7 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
         if (!user) {
             return res.status(404).json({
                 ok: false,
-                message: 'User not found',
+                message: 'Không tìm thấy người dùng',
             })
         }
 
@@ -156,7 +156,7 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
 
         res.json({
             ok: true,
-            message: 'Logout successful',
+            message: 'Đăng xuất thành công',
         })
     } catch (error) {
         next(error)
@@ -170,7 +170,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
         if (!user) {
             return res.status(404).json({
                 ok: false,
-                message: 'User not found',
+                message: 'Không tìm thấy người dùng',
             })
         }
 
@@ -209,7 +209,7 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
         if (!trainerId) {
             return res.status(400).json({
                 ok: false,
-                message: 'trainerId is required',
+                message: 'trainerId là bắt buộc',
             })
         }
 
@@ -222,7 +222,7 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
         if (!user) {
             return res.status(404).json({
                 ok: false,
-                message: 'User not found',
+                message: 'Không tìm thấy người dùng',
             })
         }
 
@@ -244,7 +244,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
         if (username && username.trim().length === 0) {
             return res.status(400).json({
                 ok: false,
-                message: 'Username cannot be empty',
+                message: 'Tên người dùng không được để trống',
             })
         }
 
@@ -253,7 +253,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
         if (!user) {
             return res.status(404).json({
                 ok: false,
-                message: 'User not found',
+                message: 'Không tìm thấy người dùng',
             })
         }
 
@@ -266,7 +266,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
 
         res.json({
             ok: true,
-            message: 'Profile updated successfully',
+            message: 'Cập nhật hồ sơ thành công',
             user: {
                 id: user._id,
                 email: user.email,

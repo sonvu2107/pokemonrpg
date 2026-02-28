@@ -16,7 +16,7 @@ import {
 const router = express.Router()
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const toSafeLookupLimit = (value, fallback = 25) => Math.min(100, Math.max(1, parseInt(value, 10) || fallback))
+const toSafeLookupLimit = (value, fallback = 200) => Math.min(1000, Math.max(1, parseInt(value, 10) || fallback))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/users error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -127,22 +127,38 @@ router.get('/lookup/pokemon', async (req, res) => {
             .select('name pokedexNumber imageUrl sprites defaultFormId forms')
             .lean()
 
-        const rows = pokemon.map((entry) => ({
-            _id: entry._id,
-            name: entry.name,
-            pokedexNumber: entry.pokedexNumber,
-            sprite: resolvePokemonSprite(entry),
-            defaultFormId: normalizeFormId(entry.defaultFormId || 'normal'),
-            forms: (Array.isArray(entry.forms) ? entry.forms : []).map((form) => ({
-                formId: normalizeFormId(form?.formId || 'normal'),
-                formName: String(form?.formName || '').trim() || normalizeFormId(form?.formId || 'normal'),
-            })),
-        }))
+        const rows = pokemon.map((entry) => {
+            const defaultFormId = normalizeFormId(entry.defaultFormId || 'normal')
+            const rawForms = Array.isArray(entry.forms) && entry.forms.length > 0
+                ? entry.forms
+                : [{ formId: defaultFormId, formName: defaultFormId }]
+
+            const normalizedForms = rawForms
+                .map((form) => ({
+                    formId: normalizeFormId(form?.formId || defaultFormId),
+                    formName: String(form?.formName || '').trim() || normalizeFormId(form?.formId || defaultFormId),
+                }))
+                .filter((form, index, arr) => arr.findIndex((entry) => entry.formId === form.formId) === index)
+                .sort((a, b) => {
+                    if (a.formId === defaultFormId) return -1
+                    if (b.formId === defaultFormId) return 1
+                    return a.formId.localeCompare(b.formId)
+                })
+
+            return {
+                _id: entry._id,
+                name: entry.name,
+                pokedexNumber: entry.pokedexNumber,
+                sprite: resolvePokemonSprite(entry),
+                defaultFormId,
+                forms: normalizedForms,
+            }
+        })
 
         res.json({ ok: true, pokemon: rows })
     } catch (error) {
         console.error('GET /api/admin/users/lookup/pokemon error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -166,7 +182,7 @@ router.get('/lookup/items', async (req, res) => {
         res.json({ ok: true, items })
     } catch (error) {
         console.error('GET /api/admin/users/lookup/items error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -183,10 +199,10 @@ router.post('/:id/grant-pokemon', async (req, res) => {
         } = req.body || {}
 
         if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid user id' })
+            return res.status(400).json({ ok: false, message: 'user id không hợp lệ' })
         }
         if (!mongoose.Types.ObjectId.isValid(String(pokemonId || ''))) {
-            return res.status(400).json({ ok: false, message: 'Invalid pokemon id' })
+            return res.status(400).json({ ok: false, message: 'pokemon id không hợp lệ' })
         }
 
         const [targetUser, pokemon] = await Promise.all([
@@ -197,10 +213,10 @@ router.post('/:id/grant-pokemon', async (req, res) => {
         ])
 
         if (!targetUser) {
-            return res.status(404).json({ ok: false, message: 'User not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const safeLevel = clamp(parseInt(level, 10) || 5, 1, 100)
@@ -246,7 +262,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
         })
     } catch (error) {
         console.error('POST /api/admin/users/:id/grant-pokemon error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -257,15 +273,15 @@ router.post('/:id/grant-item', async (req, res) => {
         const { itemId, quantity = 1 } = req.body || {}
 
         if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid user id' })
+            return res.status(400).json({ ok: false, message: 'user id không hợp lệ' })
         }
         if (!mongoose.Types.ObjectId.isValid(String(itemId || ''))) {
-            return res.status(400).json({ ok: false, message: 'Invalid item id' })
+            return res.status(400).json({ ok: false, message: 'item id không hợp lệ' })
         }
 
         const safeQuantity = clamp(parseInt(quantity, 10) || 0, 0, 99999)
         if (safeQuantity <= 0) {
-            return res.status(400).json({ ok: false, message: 'Quantity must be greater than 0' })
+            return res.status(400).json({ ok: false, message: 'Số lượng phải lớn hơn 0' })
         }
 
         const [targetUser, item] = await Promise.all([
@@ -274,10 +290,10 @@ router.post('/:id/grant-item', async (req, res) => {
         ])
 
         if (!targetUser) {
-            return res.status(404).json({ ok: false, message: 'User not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
         if (!item) {
-            return res.status(404).json({ ok: false, message: 'Item not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
         const inventoryEntry = await UserInventory.findOneAndUpdate(
@@ -301,7 +317,7 @@ router.post('/:id/grant-item', async (req, res) => {
         })
     } catch (error) {
         console.error('POST /api/admin/users/:id/grant-item error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -313,13 +329,13 @@ router.put('/:id/role', async (req, res) => {
 
         // Validation
         if (!['user', 'admin'].includes(role)) {
-            return res.status(400).json({ ok: false, message: 'Invalid role. Must be "user" or "admin"' })
+            return res.status(400).json({ ok: false, message: 'Vai trò không hợp lệ. Chỉ chấp nhận "user" hoặc "admin"' })
         }
 
         const user = await User.findById(id)
 
         if (!user) {
-            return res.status(404).json({ ok: false, message: 'User not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
         // Prevent removing the last admin
@@ -328,7 +344,7 @@ router.put('/:id/role', async (req, res) => {
             if (adminCount <= 1) {
                 return res.status(400).json({
                     ok: false,
-                    message: 'Cannot remove the last admin. Please assign another admin first.'
+                    message: 'Không thể gỡ admin cuối cùng. Vui lòng chỉ định admin khác trước.'
                 })
             }
         }
@@ -342,7 +358,7 @@ router.put('/:id/role', async (req, res) => {
         res.json({
             ok: true,
             user: buildUserResponse(user),
-            message: `User role updated to ${role}`
+            message: `Đã cập nhật vai trò người dùng thành ${role}`
         })
     } catch (error) {
         console.error('PUT /api/admin/users/:id/role error:', error)
@@ -360,19 +376,19 @@ router.put('/:id/permissions', async (req, res) => {
         if (normalizedPermissions === null) {
             return res.status(400).json({
                 ok: false,
-                message: 'Invalid permissions. Expected an array of permission keys.',
+                message: 'Quyền không hợp lệ. Cần truyền một mảng khóa quyền.',
             })
         }
 
         const user = await User.findById(id)
         if (!user) {
-            return res.status(404).json({ ok: false, message: 'User not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
         if (user.role !== 'admin') {
             return res.status(400).json({
                 ok: false,
-                message: 'Only admin users can have admin permissions',
+                message: 'Chỉ tài khoản admin mới có quyền quản trị',
             })
         }
 
@@ -394,7 +410,7 @@ router.put('/:id/permissions', async (req, res) => {
             if (!hasOtherUserManager) {
                 return res.status(400).json({
                     ok: false,
-                    message: 'Cannot remove "users" permission from the last admin who can manage users.',
+                    message: 'Không thể gỡ quyền "users" khỏi admin cuối cùng có thể quản lý người dùng.',
                 })
             }
         }
@@ -405,7 +421,7 @@ router.put('/:id/permissions', async (req, res) => {
         res.json({
             ok: true,
             user: buildUserResponse(user),
-            message: 'Admin permissions updated successfully',
+            message: 'Cập nhật quyền quản trị thành công',
         })
     } catch (error) {
         console.error('PUT /api/admin/users/:id/permissions error:', error)

@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/items error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -178,7 +178,7 @@ router.get('/purchase-history', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/items/purchase-history error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -188,13 +188,13 @@ router.get('/:id', async (req, res) => {
         const item = await Item.findById(req.params.id)
 
         if (!item) {
-            return res.status(404).json({ ok: false, message: 'Item not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
         res.json({ ok: true, item })
     } catch (error) {
         console.error('GET /api/admin/items/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -204,25 +204,25 @@ router.post('/', async (req, res) => {
         const { name, type, rarity, imageUrl, description, shopPrice, isShopEnabled, effectType, effectValue, effectValueMp } = req.body
 
         if (!name) {
-            return res.status(400).json({ ok: false, message: 'Missing required fields' })
+            return res.status(400).json({ ok: false, message: 'Thiếu trường bắt buộc' })
         }
 
         if (type && !ITEM_TYPES.includes(type)) {
-            return res.status(400).json({ ok: false, message: 'Invalid item type' })
+            return res.status(400).json({ ok: false, message: 'Loại vật phẩm không hợp lệ' })
         }
 
         if (rarity && !ITEM_RARITIES.includes(rarity)) {
-            return res.status(400).json({ ok: false, message: 'Invalid item rarity' })
+            return res.status(400).json({ ok: false, message: 'Độ hiếm vật phẩm không hợp lệ' })
         }
 
         if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
-            return res.status(400).json({ ok: false, message: 'Invalid shop price' })
+            return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
         const existing = await Item.findOne({ name })
 
         if (existing) {
-            return res.status(409).json({ ok: false, message: 'Item name already exists' })
+            return res.status(409).json({ ok: false, message: 'Tên vật phẩm đã tồn tại' })
         }
 
         const item = new Item({
@@ -255,25 +255,25 @@ router.put('/:id', async (req, res) => {
         const item = await Item.findById(req.params.id)
 
         if (!item) {
-            return res.status(404).json({ ok: false, message: 'Item not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
         if (type && !ITEM_TYPES.includes(type)) {
-            return res.status(400).json({ ok: false, message: 'Invalid item type' })
+            return res.status(400).json({ ok: false, message: 'Loại vật phẩm không hợp lệ' })
         }
 
         if (rarity && !ITEM_RARITIES.includes(rarity)) {
-            return res.status(400).json({ ok: false, message: 'Invalid item rarity' })
+            return res.status(400).json({ ok: false, message: 'Độ hiếm vật phẩm không hợp lệ' })
         }
 
         if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
-            return res.status(400).json({ ok: false, message: 'Invalid shop price' })
+            return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
         if (name && name !== item.name) {
             const conflict = await Item.findOne({ _id: { $ne: item._id }, name })
             if (conflict) {
-                return res.status(409).json({ ok: false, message: 'Item name already exists' })
+                return res.status(409).json({ ok: false, message: 'Tên vật phẩm đã tồn tại' })
             }
         }
 
@@ -303,7 +303,7 @@ router.delete('/:id', async (req, res) => {
         const item = await Item.findById(req.params.id)
 
         if (!item) {
-            return res.status(404).json({ ok: false, message: 'Item not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
         const ItemDropRate = (await import('../../models/ItemDropRate.js')).default
@@ -311,10 +311,10 @@ router.delete('/:id', async (req, res) => {
 
         await item.deleteOne()
 
-        res.json({ ok: true, message: 'Item deleted' })
+        res.json({ ok: true, message: 'Đã xóa vật phẩm' })
     } catch (error) {
         console.error('DELETE /api/admin/items/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

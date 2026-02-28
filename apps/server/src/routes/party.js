@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, party: slots })
     } catch (error) {
         console.error('Get Party Error:', error)
-        res.status(500).json({ ok: false, message: 'Server Error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -59,16 +59,16 @@ router.post('/swap', async (req, res) => {
         const userId = req.user.userId
 
         if (fromIndex === undefined || toIndex === undefined) {
-            return res.status(400).json({ ok: false, message: 'Indices required' })
+            return res.status(400).json({ ok: false, message: 'Cần cung cấp vị trí đổi' })
         }
         if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) {
-            return res.status(400).json({ ok: false, message: 'Indices must be integers' })
+            return res.status(400).json({ ok: false, message: 'Vị trí đổi phải là số nguyên' })
         }
         if (fromIndex < 0 || fromIndex > 5 || toIndex < 0 || toIndex > 5) {
-            return res.status(400).json({ ok: false, message: 'Indices must be in range 0-5' })
+            return res.status(400).json({ ok: false, message: 'Vị trí đổi phải trong khoảng 0-5' })
         }
         if (fromIndex === toIndex) {
-            return res.json({ ok: true, message: 'No change' })
+            return res.json({ ok: true, message: 'Không có thay đổi' })
         }
 
         // Find pokes at these indices
@@ -76,7 +76,7 @@ router.post('/swap', async (req, res) => {
         const p2 = await UserPokemon.findOne({ userId, location: 'party', partyIndex: toIndex })
 
         if (!p1) {
-            return res.status(400).json({ ok: false, message: 'No Pokemon in source slot' })
+            return res.status(400).json({ ok: false, message: 'Không có Pokemon ở ô nguồn' })
         }
 
         // Swap indices
@@ -88,11 +88,11 @@ router.post('/swap', async (req, res) => {
             await p2.save()
         }
 
-        res.json({ ok: true, message: 'Swapped' })
+        res.json({ ok: true, message: 'Đã đổi vị trí' })
 
     } catch (error) {
         console.error('Swap Party Error:', error)
-        res.status(500).json({ ok: false, message: 'Swap Failed' })
+        res.status(500).json({ ok: false, message: 'Đổi vị trí thất bại' })
     }
 })
 
@@ -104,16 +104,16 @@ router.post('/add', async (req, res) => {
         const userId = req.user.userId
 
         const pokemon = await UserPokemon.findOne({ _id: pokemonId, userId })
-        if (!pokemon) return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+        if (!pokemon) return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
 
         if (pokemon.location === 'party') {
-            return res.status(400).json({ ok: false, message: 'Already in party' })
+            return res.status(400).json({ ok: false, message: 'Pokemon đã ở trong đội hình' })
         }
 
         // Count current party size
         const party = await UserPokemon.find({ userId, location: 'party' })
         if (party.length >= 6) {
-            return res.status(400).json({ ok: false, message: 'Party is full' })
+            return res.status(400).json({ ok: false, message: 'Đội hình đã đầy' })
         }
 
         // Determine index
@@ -129,11 +129,11 @@ router.post('/add', async (req, res) => {
             }
         } else {
             if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 5) {
-                return res.status(400).json({ ok: false, message: 'slotIndex must be in range 0-5' })
+                return res.status(400).json({ ok: false, message: 'slotIndex phải trong khoảng 0-5' })
             }
             const occupied = party.some(p => p.partyIndex === targetIndex)
             if (occupied) {
-                return res.status(400).json({ ok: false, message: 'Target slot is occupied' })
+                return res.status(400).json({ ok: false, message: 'Ô đích đã có Pokemon' })
             }
         }
 
@@ -143,11 +143,11 @@ router.post('/add', async (req, res) => {
         pokemon.boxNumber = null
         await pokemon.save()
 
-        res.json({ ok: true, message: 'Added to party' })
+        res.json({ ok: true, message: 'Đã thêm vào đội hình' })
 
     } catch (error) {
         console.error('Add Party Error:', error)
-        res.status(500).json({ ok: false, message: 'Add Failed' })
+        res.status(500).json({ ok: false, message: 'Thêm vào đội hình thất bại' })
     }
 })
 
@@ -159,7 +159,7 @@ router.post('/remove', async (req, res) => {
         const userId = req.user.userId
 
         const pokemon = await UserPokemon.findOne({ _id: pokemonId, userId, location: 'party' })
-        if (!pokemon) return res.status(404).json({ ok: false, message: 'Pokemon not in party' })
+        if (!pokemon) return res.status(404).json({ ok: false, message: 'Pokemon không có trong đội hình' })
 
         // Move to box
         pokemon.location = 'box'
@@ -167,11 +167,11 @@ router.post('/remove', async (req, res) => {
         pokemon.boxNumber = 1 // Default box 1 for now
         await pokemon.save()
 
-        res.json({ ok: true, message: 'Removed from party' })
+        res.json({ ok: true, message: 'Đã đưa ra khỏi đội hình' })
 
     } catch (error) {
         console.error('Remove Party Error:', error)
-        res.status(500).json({ ok: false, message: 'Remove Failed' })
+        res.status(500).json({ ok: false, message: 'Xóa khỏi đội hình thất bại' })
     }
 })
 

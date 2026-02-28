@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
         const query = { isPublished: true }
         if (requestedType) {
             if (!allowedTypes.includes(requestedType)) {
-                return res.status(400).json({ ok: false, message: 'Invalid post type filter' })
+                return res.status(400).json({ ok: false, message: 'Bộ lọc loại bài viết không hợp lệ' })
             }
             query.type = requestedType
         }
@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, posts })
     } catch (error) {
         console.error('GET /api/news error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -43,7 +43,7 @@ router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(AD
         res.json({ ok: true, posts })
     } catch (error) {
         console.error('GET /api/news/admin/all error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -54,13 +54,13 @@ router.get('/:id', async (req, res) => {
             .populate('author', 'username')
 
         if (!post) {
-            return res.status(404).json({ ok: false, message: 'Post not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bài viết' })
         }
 
         res.json({ ok: true, post })
     } catch (error) {
         console.error('GET /api/news/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -70,7 +70,7 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
         const { title, content, type, isPublished } = req.body
 
         if (!title || !content) {
-            return res.status(400).json({ ok: false, message: 'Title and content are required' })
+            return res.status(400).json({ ok: false, message: 'Tiêu đề và nội dung là bắt buộc' })
         }
 
         const post = new Post({
@@ -99,7 +99,7 @@ router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PE
         const post = await Post.findById(req.params.id)
 
         if (!post) {
-            return res.status(404).json({ ok: false, message: 'Post not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bài viết' })
         }
 
         if (title) post.title = title
@@ -123,15 +123,15 @@ router.delete('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN
         const post = await Post.findById(req.params.id)
 
         if (!post) {
-            return res.status(404).json({ ok: false, message: 'Post not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bài viết' })
         }
 
         await post.deleteOne()
 
-        res.json({ ok: true, message: 'Post deleted' })
+        res.json({ ok: true, message: 'Đã xóa bài viết' })
     } catch (error) {
         console.error('DELETE /api/news/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

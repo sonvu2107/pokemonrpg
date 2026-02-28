@@ -10,11 +10,11 @@ router.post('/', async (req, res) => {
         const { mapId, itemId, weight } = req.body
 
         if (!mapId || !itemId || weight === undefined) {
-            return res.status(400).json({ ok: false, message: 'Missing required fields' })
+            return res.status(400).json({ ok: false, message: 'Thiếu trường bắt buộc' })
         }
 
         if (weight < 0 || weight > 100000) {
-            return res.status(400).json({ ok: false, message: 'Weight must be between 0 and 100000' })
+            return res.status(400).json({ ok: false, message: 'Trọng số phải trong khoảng 0 đến 100000' })
         }
 
         const itemDropRate = await ItemDropRate.findOneAndUpdate(
@@ -50,7 +50,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, itemDropRates })
     } catch (error) {
         console.error('GET /api/admin/item-drop-rates error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -60,16 +60,16 @@ router.delete('/:id', async (req, res) => {
         const itemDropRate = await ItemDropRate.findById(req.params.id)
 
         if (!itemDropRate) {
-            return res.status(404).json({ ok: false, message: 'Item drop rate not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tỉ lệ rơi vật phẩm' })
         }
 
         await itemDropRate.deleteOne()
         invalidateMapDropRateCache(itemDropRate.mapId)
 
-        res.json({ ok: true, message: 'Item drop rate deleted' })
+        res.json({ ok: true, message: 'Đã xóa tỉ lệ rơi vật phẩm' })
     } catch (error) {
         console.error('DELETE /api/admin/item-drop-rates/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

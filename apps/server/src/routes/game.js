@@ -670,13 +670,13 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         // 1. Validate Map
         const map = await MapModel.findOne({ slug: mapSlug })
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         const orderedMaps = await getOrderedMaps()
         const mapIndex = orderedMaps.findIndex((m) => m._id.toString() === map._id.toString())
         if (mapIndex === -1) {
-            return res.status(404).json({ ok: false, message: 'Map not found in progression order' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ trong thứ tự tiến trình' })
         }
 
         if (!isAdmin) {
@@ -694,7 +694,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
                 return res.status(403).json({
                     ok: false,
                     locked: true,
-                    message: 'Map is locked',
+                    message: 'Bản đồ chưa mở khóa',
                     unlock: unlockRequirement,
                 })
             }
@@ -821,7 +821,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             .lean()
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         // End any previous active encounters for this user
@@ -960,13 +960,13 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
         const map = await MapModel.findOne({ slug: req.params.slug })
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         const orderedMaps = await getOrderedMaps()
         const mapIndex = orderedMaps.findIndex((m) => m._id.toString() === map._id.toString())
         if (mapIndex === -1) {
-            return res.status(404).json({ ok: false, message: 'Map not found in progression order' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ trong thứ tự tiến trình' })
         }
 
         const progresses = []
@@ -987,7 +987,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             return res.status(403).json({
                 ok: false,
                 locked: true,
-                message: 'Map is locked',
+                message: 'Bản đồ chưa mở khóa',
                 unlock: unlockRequirement,
                 playerState: playerCurrencyState,
             })
@@ -1027,7 +1027,7 @@ router.post('/encounter/:id/attack', authMiddleware, async (req, res, next) => {
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
 
         if (!encounter) {
-            return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy cuộc chạm trán hoặc đã kết thúc' })
         }
 
         const damage = rollDamage(encounter.level)
@@ -1063,7 +1063,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             .lean()
 
         if (!encounter) {
-            return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy cuộc chạm trán hoặc đã kết thúc' })
         }
 
         const pokemon = await Pokemon.findById(encounter.pokemonId)
@@ -1071,7 +1071,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             .lean()
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const chance = calcCatchChance({
@@ -1090,7 +1090,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             )
 
             if (!resolvedEncounter) {
-                return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+                return res.status(409).json({ ok: false, message: 'Cuộc chạm trán đã được xử lý. Vui lòng tải lại.' })
             }
 
             const moves = buildMovesForLevel(pokemon, encounter.level)
@@ -1135,7 +1135,7 @@ router.post('/encounter/:id/run', authMiddleware, async (req, res, next) => {
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
 
         if (!encounter) {
-            return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy cuộc chạm trán hoặc đã kết thúc' })
         }
 
         encounter.isActive = false
@@ -1173,7 +1173,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             ? (party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null)
             : (party.find(Boolean) || null)
         if (!activePokemon) {
-            return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
+            return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
         }
 
         const knownMoves = Array.isArray(activePokemon.moves)
@@ -1303,7 +1303,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 .lean()
 
             if (!trainer) {
-                return res.status(404).json({ ok: false, message: 'Battle trainer not found' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
             }
 
             trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer)
@@ -1338,7 +1338,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             activeOpponentIndex = getAliveOpponentIndex(trainerSession.team, trainerSession.currentIndex)
             trainerSession.currentIndex = activeOpponentIndex === -1 ? trainerSession.team.length : activeOpponentIndex
             if (activeOpponentIndex === -1) {
-                return res.status(400).json({ ok: false, message: 'Trainer team has already been defeated. Resolve the battle now.' })
+                return res.status(400).json({ ok: false, message: 'Đội hình huấn luyện viên đã bị đánh bại. Hãy nhận kết quả trận đấu ngay.' })
             }
 
             activeTrainerOpponent = trainerSession.team[activeOpponentIndex]
@@ -1497,7 +1497,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         const normalizedTrainerId = String(trainerId || '').trim()
 
         if (!normalizedTrainerId) {
-            return res.status(400).json({ ok: false, message: 'trainerId is required for battle resolve' })
+            return res.status(400).json({ ok: false, message: 'trainerId là bắt buộc để nhận kết quả battle' })
         }
 
         let sourceTeam = []
@@ -1512,7 +1512,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 .populate('prizePokemonId', 'name imageUrl sprites')
                 .lean()
             if (!trainer) {
-                return res.status(404).json({ ok: false, message: 'Battle trainer not found' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
             }
 
             const activeSession = await BattleSession.findOne({
@@ -1523,10 +1523,10 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 .select('currentIndex team')
                 .lean()
             if (!activeSession || !Array.isArray(activeSession.team) || activeSession.team.length === 0) {
-                return res.status(400).json({ ok: false, message: 'Battle session not found. Please start the fight first.' })
+                return res.status(400).json({ ok: false, message: 'Không tìm thấy phiên battle. Vui lòng bắt đầu trận trước.' })
             }
             if (activeSession.currentIndex < activeSession.team.length) {
-                return res.status(400).json({ ok: false, message: 'Battle is not finished yet. Defeat all opponent Pokemon first.' })
+                return res.status(400).json({ ok: false, message: 'Trận battle chưa kết thúc. Hãy hạ toàn bộ Pokemon đối thủ trước.' })
             }
 
             const claimedSession = await BattleSession.findOneAndDelete({
@@ -1536,7 +1536,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 expiresAt: { $gt: new Date() },
             })
             if (!claimedSession) {
-                return res.status(409).json({ ok: false, message: 'Battle rewards already claimed. Please start a new battle.' })
+                return res.status(409).json({ ok: false, message: 'Phần thưởng battle đã được nhận. Vui lòng bắt đầu trận mới.' })
             }
             resolvedBattleSession = claimedSession
 
@@ -1550,7 +1550,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         }
 
         if (!Array.isArray(sourceTeam) || sourceTeam.length === 0) {
-            return res.status(400).json({ ok: false, message: 'Opponent team is required' })
+            return res.status(400).json({ ok: false, message: 'Cần có đội hình đối thủ' })
         }
 
         const totalLevel = sourceTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
@@ -1569,7 +1569,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         const activePokemon = party.find(p => p) || null
 
         if (!activePokemon) {
-            return res.status(400).json({ ok: false, message: 'No active pokemon in party' })
+            return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
         }
 
         const partyById = new Map(party.map((entry) => [String(entry._id), entry]))
@@ -1796,7 +1796,7 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
             .lean()
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const defaultFormId = pokemon.defaultFormId || 'normal'

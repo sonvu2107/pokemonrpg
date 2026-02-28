@@ -74,7 +74,7 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/inventory error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -86,30 +86,30 @@ router.post('/use', async (req, res) => {
         const userId = req.user.userId
 
         if (!itemId || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
-            return res.status(400).json({ ok: false, message: 'Invalid item or quantity' })
+            return res.status(400).json({ ok: false, message: 'Vật phẩm hoặc số lượng không hợp lệ' })
         }
 
         const Item = (await import('../models/Item.js')).default
         const item = await Item.findById(itemId).lean()
 
         if (!item) {
-            return res.status(404).json({ ok: false, message: 'Item not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
         if (item.type === 'pokeball') {
             if (qty !== 1) {
-                return res.status(400).json({ ok: false, message: 'Pokeball can only be used one at a time' })
+                return res.status(400).json({ ok: false, message: 'Pokeball chỉ được dùng từng quả một' })
             }
 
             if (!encounterId) {
-                return res.status(400).json({ ok: false, message: 'Encounter is required to use a Pokeball' })
+                return res.status(400).json({ ok: false, message: 'Cần trong trận chiến để dùng pokeball' })
             }
 
             const encounter = await Encounter.findOne({ _id: encounterId, userId, isActive: true })
                 .select('pokemonId level hp maxHp isShiny formId')
                 .lean()
             if (!encounter) {
-                return res.status(404).json({ ok: false, message: 'Encounter not found or already ended' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy trận chiến hoặc đã kết thúc. Vui lòng tải lại.' })
             }
 
             const consumedEntry = await UserInventory.findOneAndUpdate(
@@ -123,7 +123,7 @@ router.post('/use', async (req, res) => {
             )
 
             if (!consumedEntry) {
-                return res.status(400).json({ ok: false, message: 'Not enough items' })
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
             }
 
             if (consumedEntry.quantity <= 0) {
@@ -141,7 +141,7 @@ router.post('/use', async (req, res) => {
                     { $inc: { quantity: qty } },
                     { upsert: true }
                 )
-                return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
             }
 
             const baseChance = calcCatchChance({
@@ -166,7 +166,7 @@ router.post('/use', async (req, res) => {
                         { $inc: { quantity: qty } },
                         { upsert: true }
                     )
-                    return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+                    return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
                 }
 
                 const moves = buildMovesForLevel(pokemon, encounter.level)
@@ -198,7 +198,7 @@ router.post('/use', async (req, res) => {
                     { $inc: { quantity: qty } },
                     { upsert: true }
                 )
-                return res.status(409).json({ ok: false, message: 'Encounter already resolved. Please refresh.' })
+                return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
             }
 
             return res.json({
@@ -214,13 +214,13 @@ router.post('/use', async (req, res) => {
         const entry = await UserInventory.findOne({ userId, itemId })
 
         if (!entry || entry.quantity < qty) {
-            return res.status(400).json({ ok: false, message: 'Not enough items' })
+            return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
         }
 
         if (item.type === 'healing') {
             const playerState = await PlayerState.findOne({ userId })
             if (!playerState) {
-                return res.status(404).json({ ok: false, message: 'Player state not found' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy trạng thái người chơi' })
             }
 
             const { hpAmount, mpAmount } = getHealAmounts(item)
@@ -232,11 +232,11 @@ router.post('/use', async (req, res) => {
             const nextMp = Math.min(playerState.maxMp, beforeMp + totalMpHeal)
 
             if (nextHp === beforeHp && nextMp === beforeMp) {
-                return res.status(400).json({ ok: false, message: 'HP/MP is already full' })
+                return res.status(400).json({ ok: false, message: 'HP/MP đã đầy' })
             }
 
             if (hpAmount <= 0 && mpAmount <= 0) {
-                return res.status(400).json({ ok: false, message: 'Item has no healing effect' })
+                return res.status(400).json({ ok: false, message: 'Vật phẩm này không có hiệu ứng hồi phục' })
             }
 
             playerState.hp = nextHp
@@ -267,10 +267,10 @@ router.post('/use', async (req, res) => {
             })
         }
 
-        return res.status(400).json({ ok: false, message: 'Item cannot be used now' })
+        return res.status(400).json({ ok: false, message: 'Vật phẩm này không thể dùng lúc này' })
     } catch (error) {
         console.error('POST /api/inventory/use error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

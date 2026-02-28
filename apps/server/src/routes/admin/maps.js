@@ -31,14 +31,14 @@ const normalizeSpecialPokemonIds = (value) => {
 
 const validateSpecialPokemonIds = async (ids) => {
     if (ids.length > 5) {
-        return 'specialPokemonIds must be an array with max 5 items'
+        return 'specialPokemonIds phải là mảng tối đa 5 phần tử'
     }
 
     if (!ids.length) return null
 
     const count = await Pokemon.countDocuments({ _id: { $in: ids } })
     if (count !== ids.length) {
-        return 'specialPokemonIds contains invalid Pokemon id'
+        return 'specialPokemonIds chứa Pokemon id không hợp lệ'
     }
 
     return null
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, maps })
     } catch (error) {
         console.error('GET /api/admin/maps error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -69,7 +69,7 @@ router.get('/lookup/items', async (req, res) => {
         res.json({ ok: true, items })
     } catch (error) {
         console.error('GET /api/admin/maps/lookup/items error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -80,13 +80,13 @@ router.get('/:id', async (req, res) => {
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         res.json({ ok: true, map })
     } catch (error) {
         console.error('GET /api/admin/maps/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -94,7 +94,7 @@ router.get('/:id', async (req, res) => {
 router.post('/upload-special-image', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ ok: false, message: 'No image file provided' })
+            return res.status(400).json({ ok: false, message: 'Chưa có tệp ảnh được tải lên' })
         }
 
         const { imageUrl, publicId } = await uploadSpecialPokemonImageToCloudinary({
@@ -107,11 +107,11 @@ router.post('/upload-special-image', upload.single('image'), async (req, res) =>
             ok: true,
             imageUrl,
             publicId,
-            message: 'Image uploaded successfully'
+            message: 'Tải ảnh lên thành công'
         })
     } catch (error) {
         console.error('POST /api/admin/maps/upload-special-image error:', error)
-        res.status(500).json({ ok: false, message: error.message || 'Upload failed' })
+        res.status(500).json({ ok: false, message: error.message || 'Tải ảnh lên thất bại' })
     }
 })
 
@@ -119,7 +119,7 @@ router.post('/upload-special-image', upload.single('image'), async (req, res) =>
 router.post('/upload-map-image', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ ok: false, message: 'No image file provided' })
+            return res.status(400).json({ ok: false, message: 'Chưa có tệp ảnh được tải lên' })
         }
 
         const { imageUrl, publicId } = await uploadMapImageToCloudinary({
@@ -132,11 +132,11 @@ router.post('/upload-map-image', upload.single('image'), async (req, res) => {
             ok: true,
             imageUrl,
             publicId,
-            message: 'Map image uploaded successfully'
+            message: 'Tải ảnh bản đồ lên thành công'
         })
     } catch (error) {
         console.error('POST /api/admin/maps/upload-map-image error:', error)
-        res.status(500).json({ ok: false, message: error.message || 'Upload failed' })
+        res.status(500).json({ ok: false, message: error.message || 'Tải ảnh lên thất bại' })
     }
 })
 
@@ -160,20 +160,20 @@ router.post('/', async (req, res) => {
         } = req.body
 
         if (!name || !levelMin || !levelMax) {
-            return res.status(400).json({ ok: false, message: 'Missing required fields' })
+            return res.status(400).json({ ok: false, message: 'Thiếu trường bắt buộc' })
         }
 
         if (levelMax < levelMin) {
-            return res.status(400).json({ ok: false, message: 'levelMax must be >= levelMin' })
+            return res.status(400).json({ ok: false, message: 'levelMax phải >= levelMin' })
         }
 
         if (iconId && (iconId < 1 || iconId > 1000)) {
-            return res.status(400).json({ ok: false, message: 'iconId must be between 1 and 1000' })
+            return res.status(400).json({ ok: false, message: 'iconId phải trong khoảng 1 đến 1000' })
         }
 
         // Validate specialPokemonImages
         if (specialPokemonImages && (!Array.isArray(specialPokemonImages) || specialPokemonImages.length > 5)) {
-            return res.status(400).json({ ok: false, message: 'specialPokemonImages must be an array with max 5 items' })
+            return res.status(400).json({ ok: false, message: 'specialPokemonImages phải là mảng tối đa 5 phần tử' })
         }
 
         const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
@@ -184,22 +184,22 @@ router.post('/', async (req, res) => {
 
         // Validate requiredSearches
         if (requiredSearches !== undefined && (requiredSearches < 0 || requiredSearches > 10000)) {
-            return res.status(400).json({ ok: false, message: 'requiredSearches must be between 0 and 10000' })
+            return res.status(400).json({ ok: false, message: 'requiredSearches phải trong khoảng 0 đến 10000' })
         }
 
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
-            return res.status(400).json({ ok: false, message: 'encounterRate must be between 0 and 1' })
+            return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate itemDropRate
         if (itemDropRate !== undefined && (itemDropRate < 0 || itemDropRate > 1)) {
-            return res.status(400).json({ ok: false, message: 'itemDropRate must be between 0 and 1' })
+            return res.status(400).json({ ok: false, message: 'itemDropRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate orderIndex  
         if (orderIndex !== undefined && orderIndex < 0) {
-            return res.status(400).json({ ok: false, message: 'orderIndex must be >= 0' })
+            return res.status(400).json({ ok: false, message: 'orderIndex phải >= 0' })
         }
 
         const map = new Map({
@@ -227,7 +227,7 @@ router.post('/', async (req, res) => {
         console.error('POST /api/admin/maps error:', error)
 
         if (error.code === 11000) {
-            return res.status(409).json({ ok: false, message: 'Map slug already exists' })
+            return res.status(409).json({ ok: false, message: 'Slug bản đồ đã tồn tại' })
         }
 
         res.status(500).json({ ok: false, message: error.message })
@@ -256,20 +256,20 @@ router.put('/:id', async (req, res) => {
         const map = await Map.findById(req.params.id)
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         if (levelMax < levelMin) {
-            return res.status(400).json({ ok: false, message: 'levelMax must be >= levelMin' })
+            return res.status(400).json({ ok: false, message: 'levelMax phải >= levelMin' })
         }
 
         if (iconId && (iconId < 1 || iconId > 1000)) {
-            return res.status(400).json({ ok: false, message: 'iconId must be between 1 and 1000' })
+            return res.status(400).json({ ok: false, message: 'iconId phải trong khoảng 1 đến 1000' })
         }
 
         // Validate specialPokemonImages
         if (specialPokemonImages && (!Array.isArray(specialPokemonImages) || specialPokemonImages.length > 5)) {
-            return res.status(400).json({ ok: false, message: 'specialPokemonImages must be an array with max 5 items' })
+            return res.status(400).json({ ok: false, message: 'specialPokemonImages phải là mảng tối đa 5 phần tử' })
         }
 
         const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
@@ -283,22 +283,22 @@ router.put('/:id', async (req, res) => {
 
         // Validate requiredSearches
         if (requiredSearches !== undefined && (requiredSearches < 0 || requiredSearches > 10000)) {
-            return res.status(400).json({ ok: false, message: 'requiredSearches must be between 0 and 10000' })
+            return res.status(400).json({ ok: false, message: 'requiredSearches phải trong khoảng 0 đến 10000' })
         }
 
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
-            return res.status(400).json({ ok: false, message: 'encounterRate must be between 0 and 1' })
+            return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate itemDropRate
         if (itemDropRate !== undefined && (itemDropRate < 0 || itemDropRate > 1)) {
-            return res.status(400).json({ ok: false, message: 'itemDropRate must be between 0 and 1' })
+            return res.status(400).json({ ok: false, message: 'itemDropRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate orderIndex
         if (orderIndex !== undefined && orderIndex < 0) {
-            return res.status(400).json({ ok: false, message: 'orderIndex must be >= 0' })
+            return res.status(400).json({ ok: false, message: 'orderIndex phải >= 0' })
         }
 
         map.name = name
@@ -332,7 +332,7 @@ router.delete('/:id', async (req, res) => {
         const map = await Map.findById(req.params.id)
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         // Cascade delete handled by Map model middleware
@@ -340,10 +340,10 @@ router.delete('/:id', async (req, res) => {
         invalidateOrderedMapsCache()
         invalidateMapDropRateCache(map._id)
 
-        res.json({ ok: true, message: 'Map deleted' })
+        res.json({ ok: true, message: 'Đã xóa bản đồ' })
     } catch (error) {
         console.error('DELETE /api/admin/maps/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -353,7 +353,7 @@ router.get('/:mapId/drop-rates', async (req, res) => {
         const map = await Map.findById(req.params.mapId)
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         const DropRate = (await import('../../models/DropRate.js')).default
@@ -389,7 +389,7 @@ router.get('/:mapId/drop-rates', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/maps/:mapId/drop-rates error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -399,7 +399,7 @@ router.get('/:mapId/item-drop-rates', async (req, res) => {
         const map = await Map.findById(req.params.mapId)
 
         if (!map) {
-            return res.status(404).json({ ok: false, message: 'Map not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
         const ItemDropRate = (await import('../../models/ItemDropRate.js')).default
@@ -425,7 +425,7 @@ router.get('/:mapId/item-drop-rates', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/maps/:mapId/item-drop-rates error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

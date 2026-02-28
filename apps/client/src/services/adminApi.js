@@ -17,7 +17,7 @@ const throwApiError = async (res, fallbackMessage) => {
 
     const message = err?.message || fallbackMessage
     if (res.status === 401) {
-        clearAuthSession(message || 'Unauthorized')
+        clearAuthSession(message || 'Phiên đăng nhập không hợp lệ')
     }
     throw new Error(message)
 }
@@ -30,7 +30,7 @@ export const pokemonApi = {
         const res = await fetch(`${API_URL}/admin/pokemon?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch pokemon')
+        if (!res.ok) throw new Error('Không thể tải Pokemon')
         return res.json()
     },
 
@@ -39,7 +39,7 @@ export const pokemonApi = {
         const res = await fetch(`${API_URL}/admin/pokemon/${id}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch pokemon')
+        if (!res.ok) throw new Error('Không thể tải Pokemon')
         return res.json()
     },
 
@@ -55,7 +55,7 @@ export const pokemonApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to create pokemon')
+            throw new Error(err.message || 'Tạo Pokemon thất bại')
         }
         return res.json()
     },
@@ -72,7 +72,7 @@ export const pokemonApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update pokemon')
+            throw new Error(err.message || 'Cập nhật Pokemon thất bại')
         }
         return res.json()
     },
@@ -83,7 +83,7 @@ export const pokemonApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete pokemon')
+        if (!res.ok) throw new Error('Xóa Pokemon thất bại')
         return res.json()
     },
 }
@@ -94,7 +94,7 @@ export const mapApi = {
         const res = await fetch(`${API_URL}/admin/maps`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch maps')
+        if (!res.ok) throw new Error('Không thể tải bản đồ')
         return res.json()
     },
 
@@ -102,7 +102,7 @@ export const mapApi = {
         const res = await fetch(`${API_URL}/admin/maps/${id}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch map')
+        if (!res.ok) throw new Error('Không thể tải bản đồ')
         return res.json()
     },
 
@@ -117,7 +117,7 @@ export const mapApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to create map')
+            throw new Error(err.message || 'Tạo bản đồ thất bại')
         }
         return res.json()
     },
@@ -133,7 +133,7 @@ export const mapApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update map')
+            throw new Error(err.message || 'Cập nhật bản đồ thất bại')
         }
         return res.json()
     },
@@ -143,7 +143,7 @@ export const mapApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete map')
+        if (!res.ok) throw new Error('Xóa bản đồ thất bại')
         return res.json()
     },
 
@@ -152,7 +152,7 @@ export const mapApi = {
         const res = await fetch(`${API_URL}/admin/maps/${mapId}/drop-rates`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch drop rates')
+        if (!res.ok) throw new Error('Không thể tải tỉ lệ rơi')
         return res.json()
     },
 
@@ -160,7 +160,7 @@ export const mapApi = {
         const res = await fetch(`${API_URL}/admin/maps/${mapId}/item-drop-rates`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch item drop rates')
+        if (!res.ok) throw new Error('Không thể tải tỉ lệ rơi vật phẩm')
         return res.json()
     },
 
@@ -170,7 +170,7 @@ export const mapApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch items')
+            throw new Error(err.message || 'Không thể tải vật phẩm')
         }
         return res.json()
     },
@@ -189,7 +189,7 @@ export const mapApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Upload failed')
+            throw new Error(err.message || 'Tải lên thất bại')
         }
         return res.json()
     },
@@ -208,7 +208,7 @@ export const mapApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Map image upload failed')
+            throw new Error(err.message || 'Tải ảnh bản đồ thất bại')
         }
         return res.json()
     },
@@ -228,7 +228,7 @@ export const dropRateApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to save drop rate')
+            throw new Error(err.message || 'Lưu tỉ lệ rơi thất bại')
         }
         return res.json()
     },
@@ -239,7 +239,7 @@ export const dropRateApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete drop rate')
+        if (!res.ok) throw new Error('Xóa tỉ lệ rơi thất bại')
         return res.json()
     },
 
@@ -251,7 +251,7 @@ export const dropRateApi = {
         })
         const data = await res.json()
         if (!res.ok) {
-            throw new Error(data.message || 'Failed to delete all drop rates')
+            throw new Error(data.message || 'Xóa toàn bộ tỉ lệ rơi thất bại')
         }
         return data
     },
@@ -264,7 +264,7 @@ export const itemApi = {
         const res = await fetch(`${API_URL}/admin/items?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch items')
+        if (!res.ok) throw new Error('Không thể tải vật phẩm')
         return res.json()
     },
 
@@ -272,7 +272,7 @@ export const itemApi = {
         const res = await fetch(`${API_URL}/admin/items/${id}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch item')
+        if (!res.ok) throw new Error('Không thể tải vật phẩm')
         return res.json()
     },
 
@@ -287,7 +287,7 @@ export const itemApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to create item')
+            throw new Error(err.message || 'Tạo vật phẩm thất bại')
         }
         return res.json()
     },
@@ -303,7 +303,7 @@ export const itemApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update item')
+            throw new Error(err.message || 'Cập nhật vật phẩm thất bại')
         }
         return res.json()
     },
@@ -313,7 +313,7 @@ export const itemApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete item')
+        if (!res.ok) throw new Error('Xóa vật phẩm thất bại')
         return res.json()
     },
 
@@ -324,7 +324,7 @@ export const itemApi = {
         })
         if (!res.ok) {
             const err = await res.json().catch(() => ({}))
-            throw new Error(err.message || 'Failed to fetch purchase history')
+            throw new Error(err.message || 'Không thể tải lịch sử mua')
         }
         return res.json()
     },
@@ -336,7 +336,7 @@ export const battleTrainerApi = {
         const res = await fetch(`${API_URL}/admin/battle-trainers`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch battle trainers')
+        if (!res.ok) throw new Error('Không thể tải huấn luyện viên battle')
         return res.json()
     },
 
@@ -351,7 +351,7 @@ export const battleTrainerApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to create trainer')
+            throw new Error(err.message || 'Tạo huấn luyện viên thất bại')
         }
         return res.json()
     },
@@ -367,7 +367,7 @@ export const battleTrainerApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update trainer')
+            throw new Error(err.message || 'Cập nhật huấn luyện viên thất bại')
         }
         return res.json()
     },
@@ -377,7 +377,7 @@ export const battleTrainerApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete trainer')
+        if (!res.ok) throw new Error('Xóa huấn luyện viên thất bại')
         return res.json()
     },
 }
@@ -395,7 +395,7 @@ export const itemDropRateApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to save item drop rate')
+            throw new Error(err.message || 'Lưu tỉ lệ rơi vật phẩm thất bại')
         }
         return res.json()
     },
@@ -405,7 +405,7 @@ export const itemDropRateApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete item drop rate')
+        if (!res.ok) throw new Error('Xóa tỉ lệ rơi vật phẩm thất bại')
         return res.json()
     },
 }
@@ -418,7 +418,7 @@ export const userApi = {
         const res = await fetch(`${API_URL}/admin/users?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) await throwApiError(res, 'Failed to fetch users')
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách người dùng')
         return res.json()
     },
 
@@ -434,7 +434,7 @@ export const userApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update role')
+            throw new Error(err.message || 'Cập nhật vai trò thất bại')
         }
         return res.json()
     },
@@ -451,7 +451,7 @@ export const userApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update permissions')
+            throw new Error(err.message || 'Cập nhật quyền thất bại')
         }
         return res.json()
     },
@@ -462,7 +462,7 @@ export const userApi = {
         const res = await fetch(`${API_URL}/admin/users/lookup/pokemon?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) await throwApiError(res, 'Failed to lookup pokemon')
+        if (!res.ok) await throwApiError(res, 'Không thể tra cứu Pokemon')
         return res.json()
     },
 
@@ -472,7 +472,7 @@ export const userApi = {
         const res = await fetch(`${API_URL}/admin/users/lookup/items?${query}`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) await throwApiError(res, 'Failed to lookup items')
+        if (!res.ok) await throwApiError(res, 'Không thể tra cứu vật phẩm')
         return res.json()
     },
 
@@ -486,7 +486,7 @@ export const userApi = {
             },
             body: JSON.stringify(payload),
         })
-        if (!res.ok) await throwApiError(res, 'Failed to grant pokemon')
+        if (!res.ok) await throwApiError(res, 'Cấp Pokemon thất bại')
         return res.json()
     },
 
@@ -500,7 +500,7 @@ export const userApi = {
             },
             body: JSON.stringify(payload),
         })
-        if (!res.ok) await throwApiError(res, 'Failed to grant item')
+        if (!res.ok) await throwApiError(res, 'Cấp vật phẩm thất bại')
         return res.json()
     },
 }

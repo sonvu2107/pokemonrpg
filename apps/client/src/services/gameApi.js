@@ -17,7 +17,7 @@ const throwApiError = async (res, fallbackMessage) => {
 
     const message = err?.message || fallbackMessage
     if (res.status === 401) {
-        clearAuthSession(message || 'Unauthorized')
+        clearAuthSession(message || 'Phiên đăng nhập không hợp lệ')
     }
     throw new Error(message)
 }
@@ -29,7 +29,7 @@ export const gameApi = {
             method: 'POST',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to click')
+        if (!res.ok) throw new Error('Click thất bại')
         return res.json()
     },
 
@@ -48,7 +48,7 @@ export const gameApi = {
             if (res.status === 403 && data.locked) {
                 return data
             }
-            throw new Error(data.message || 'Failed to search map')
+            throw new Error(data.message || 'Tìm kiếm bản đồ thất bại')
         }
         return data
     },
@@ -63,7 +63,7 @@ export const gameApi = {
             if (res.status === 403 && data.locked) {
                 return data
             }
-            throw new Error(data.message || 'Failed to fetch map state')
+            throw new Error(data.message || 'Lấy trạng thái bản đồ thất bại')
         }
         return data
     },
@@ -74,7 +74,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch maps')
+            await throwApiError(res, 'Không thể tải danh sách bản đồ')
         }
         const data = await res.json()
         return data.maps || []
@@ -88,7 +88,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Attack failed')
+            throw new Error(err.message || 'Tấn công thất bại')
         }
         return res.json()
     },
@@ -101,7 +101,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Catch failed')
+            throw new Error(err.message || 'Bắt Pokemon thất bại')
         }
         return res.json()
     },
@@ -114,7 +114,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Run failed')
+            throw new Error(err.message || 'Bỏ chạy thất bại')
         }
         return res.json()
     },
@@ -126,7 +126,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch encounter')
+            throw new Error(err.message || 'Không thể tải cuộc chạm trán')
         }
         return res.json()
     },
@@ -143,7 +143,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to resolve battle')
+            throw new Error(err.message || 'Không thể nhận kết quả battle')
         }
         return res.json()
     },
@@ -160,7 +160,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Battle attack failed')
+            throw new Error(err.message || 'Tấn công trong battle thất bại')
         }
         return res.json()
     },
@@ -170,7 +170,7 @@ export const gameApi = {
         const res = await fetch(`${API_URL}/stats`)
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch server stats')
+            throw new Error(err.message || 'Không thể tải thống kê máy chủ')
         }
         return res.json()
     },
@@ -189,7 +189,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch daily stats')
+            await throwApiError(res, 'Không thể tải thống kê ngày')
         }
         return res.json()
     },
@@ -208,7 +208,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch online trainers')
+            await throwApiError(res, 'Không thể tải danh sách người chơi online')
         }
         return res.json()
     },
@@ -220,7 +220,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch pokemon detail')
+            throw new Error(err.message || 'Không thể tải chi tiết Pokemon')
         }
         const data = await res.json()
         return data.pokemon
@@ -234,7 +234,7 @@ export const gameApi = {
         })
         const data = await res.json()
         if (!res.ok) {
-            throw new Error(data.message || 'Failed to evolve pokemon')
+            throw new Error(data.message || 'Tiến hóa Pokemon thất bại')
         }
         return data
     },
@@ -245,7 +245,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch party')
+            await throwApiError(res, 'Không thể tải đội hình')
         }
         const data = await res.json()
         return data.party
@@ -257,7 +257,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch inventory')
+            await throwApiError(res, 'Không thể tải túi đồ')
         }
         return res.json()
     },
@@ -268,7 +268,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch profile')
+            await throwApiError(res, 'Không thể tải hồ sơ')
         }
         return res.json()
     },
@@ -285,7 +285,7 @@ export const gameApi = {
         })
         const data = await res.json()
         if (!res.ok) {
-            throw new Error(data.message || 'Failed to save trainer progress')
+            throw new Error(data.message || 'Không thể lưu tiến trình huấn luyện viên')
         }
         return data
     },
@@ -298,7 +298,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch box')
+            throw new Error(err.message || 'Không thể tải hộp Pokemon')
         }
         return res.json()
     },
@@ -309,7 +309,7 @@ export const gameApi = {
         const res = await fetch(`${API_URL}/pokemon?${searchParams.toString()}`)
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch pokemon list')
+            throw new Error(err.message || 'Không thể tải danh sách Pokemon')
         }
         return res.json()
     },
@@ -328,7 +328,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch pokedex')
+            throw new Error(err.message || 'Không thể tải Pokedex')
         }
         return res.json()
     },
@@ -338,7 +338,7 @@ export const gameApi = {
         const res = await fetch(`${API_URL}/battle-trainers`)
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch battle trainers')
+            throw new Error(err.message || 'Không thể tải danh sách huấn luyện viên battle')
         }
         return res.json()
     },
@@ -355,7 +355,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to use item')
+            throw new Error(err.message || 'Dùng vật phẩm thất bại')
         }
         return res.json()
     },
@@ -372,7 +372,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Swap failed')
+            throw new Error(err.message || 'Đổi vị trí thất bại')
         }
         return res.json()
     },
@@ -389,7 +389,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Add to party failed')
+            throw new Error(err.message || 'Thêm vào đội hình thất bại')
         }
         return res.json()
     },
@@ -406,7 +406,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Remove from party failed')
+            throw new Error(err.message || 'Xóa khỏi đội hình thất bại')
         }
         return res.json()
     },
@@ -425,7 +425,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch pokemon rankings')
+            throw new Error(err.message || 'Không thể tải bảng xếp hạng Pokemon')
         }
         return res.json()
     },
@@ -443,7 +443,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch shop listings')
+            await throwApiError(res, 'Không thể tải danh sách cửa hàng')
         }
         return res.json()
     },
@@ -455,7 +455,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to buy Pokemon')
+            await throwApiError(res, 'Mua Pokemon thất bại')
         }
         return res.json()
     },
@@ -473,7 +473,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch item shop')
+            await throwApiError(res, 'Không thể tải cửa hàng vật phẩm')
         }
         return res.json()
     },
@@ -489,7 +489,7 @@ export const gameApi = {
             body: JSON.stringify({ quantity }),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to purchase item')
+            await throwApiError(res, 'Mua vật phẩm thất bại')
         }
         return res.json()
     },
@@ -507,7 +507,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to fetch sell data')
+            await throwApiError(res, 'Không thể tải dữ liệu bán')
         }
         return res.json()
     },
@@ -523,7 +523,7 @@ export const gameApi = {
             body: JSON.stringify(payload),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to create listing')
+            await throwApiError(res, 'Tạo tin đăng thất bại')
         }
         return res.json()
     },
@@ -535,7 +535,7 @@ export const gameApi = {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
-            await throwApiError(res, 'Failed to cancel listing')
+            await throwApiError(res, 'Hủy tin đăng thất bại')
         }
         return res.json()
     },
@@ -547,7 +547,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch rankings')
+            throw new Error(err.message || 'Không thể tải bảng xếp hạng')
         }
         return res.json()
     },
@@ -574,7 +574,7 @@ export const gameApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to fetch daily rankings')
+            throw new Error(err.message || 'Không thể tải bảng xếp hạng ngày')
         }
         return res.json()
     },

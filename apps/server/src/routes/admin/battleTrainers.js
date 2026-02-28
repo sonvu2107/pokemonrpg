@@ -19,7 +19,7 @@ const validateTeam = async (team) => {
     if (!team.length) return null
     const ids = team.map((entry) => entry.pokemonId)
     const count = await Pokemon.countDocuments({ _id: { $in: ids } })
-    if (count !== ids.length) return 'Team contains invalid Pokemon id'
+    if (count !== ids.length) return 'Đội hình chứa Pokemon id không hợp lệ'
     return null
 }
 
@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, trainers })
     } catch (error) {
         console.error('GET /api/admin/battle-trainers error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -44,7 +44,7 @@ router.post('/', async (req, res) => {
         const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId, platinumCoinsReward, expReward } = req.body
 
         if (!name) {
-            return res.status(400).json({ ok: false, message: 'Name is required' })
+            return res.status(400).json({ ok: false, message: 'Tên là bắt buộc' })
         }
 
         const normalizedTeam = normalizeTeam(team)
@@ -81,7 +81,7 @@ router.put('/:id', async (req, res) => {
 
         const trainer = await BattleTrainer.findById(req.params.id)
         if (!trainer) {
-            return res.status(404).json({ ok: false, message: 'Trainer not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên' })
         }
 
         const normalizedTeam = normalizeTeam(team)
@@ -117,13 +117,13 @@ router.delete('/:id', async (req, res) => {
     try {
         const trainer = await BattleTrainer.findById(req.params.id)
         if (!trainer) {
-            return res.status(404).json({ ok: false, message: 'Trainer not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên' })
         }
         await trainer.deleteOne()
-        res.json({ ok: true, message: 'Trainer deleted' })
+        res.json({ ok: true, message: 'Đã xóa huấn luyện viên' })
     } catch (error) {
         console.error('DELETE /api/admin/battle-trainers/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

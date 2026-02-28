@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/pokemon error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -156,7 +156,7 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/pokemon/pokedex error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -173,12 +173,12 @@ router.get('/:id', async (req, res) => {
             .lean()
 
         if (!userPokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const basePokemon = userPokemon.pokemonId
         if (!basePokemon) {
-            return res.status(404).json({ ok: false, message: 'Base Pokemon data missing' })
+            return res.status(404).json({ ok: false, message: 'Thiếu dữ liệu gốc của Pokemon' })
         }
 
         // Calculate actual stats based on level, rarity, (and potentially IVs/EVs in future)
@@ -256,7 +256,7 @@ router.get('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Get Pokemon Detail Error:', error)
-        res.status(500).json({ ok: false, message: 'Server Error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -268,12 +268,12 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
             .populate('pokemonId')
 
         if (!userPokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const currentSpecies = userPokemon.pokemonId
         if (!currentSpecies) {
-            return res.status(404).json({ ok: false, message: 'Base Pokemon data missing' })
+            return res.status(404).json({ ok: false, message: 'Thiếu dữ liệu gốc của Pokemon' })
         }
 
         const evolutionRule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
@@ -320,7 +320,7 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         })
     } catch (error) {
         console.error('POST /api/pokemon/:id/evolve error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

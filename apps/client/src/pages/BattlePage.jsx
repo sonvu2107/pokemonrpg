@@ -166,6 +166,12 @@ const ActiveBattleView = ({
 
     const moves = playerMon?.moves || normalizeMoveList([])
     const selectedMove = moves[selectedMoveIndex] || moves[0] || normalizeMoveList([])[0]
+    const battleUsableInventory = (Array.isArray(inventory) ? inventory : [])
+        .filter((entry) => {
+            const itemType = String(entry?.item?.type || '').trim().toLowerCase()
+            if (!entry?.item?._id || Number(entry?.quantity) <= 0) return false
+            return itemType === 'healing'
+        })
 
     return (
         <div className="space-y-3 animate-fadeIn">
@@ -285,11 +291,13 @@ const ActiveBattleView = ({
 
                 {activeTab === 'item' && (
                     <div className="p-3 text-xs text-slate-600">
-                        {inventory.length === 0 ? (
-                            <div className="text-center text-slate-500">Không có vật phẩm.</div>
+                        {battleUsableInventory.length === 0 ? (
+                            <div className="text-center text-slate-500">
+                                Không có vật phẩm hồi phục có thể dùng trong trận này.
+                            </div>
                         ) : (
                             <div className="grid grid-cols-2 gap-2">
-                                {inventory.map((entry) => (
+                                {battleUsableInventory.map((entry) => (
                                     <button
                                         key={entry.item._id}
                                         onClick={() => onUseItem?.(entry)}
@@ -817,8 +825,14 @@ export function BattlePage() {
 
     const handleUseItem = async (entry) => {
         if (!entry?.item?._id) return
+        if (entry.item?.type !== 'healing') {
+            const message = 'Trong battle này chỉ dùng được vật phẩm hồi phục.'
+            setActionMessage(message)
+            appendBattleLog([message])
+            return
+        }
         try {
-            const res = await gameApi.useItem(entry.item._id, 1, encounter?._id || null)
+            const res = await gameApi.useItem(entry.item._id, 1, null)
             setActionMessage(res.message || 'Đã dùng vật phẩm.')
             appendBattleLog([res.message || 'Đã dùng vật phẩm.'])
             const inventoryData = await gameApi.getInventory()
@@ -983,6 +997,46 @@ export function BattlePage() {
                 prize: trainer.prizePokemonId?.name || 'Không có',
             }
         })
+    }
+
+    const startBattleWithOpponent = (candidateOpponent = null) => {
+        const fallbackSelection = getTrainerByOrder(masterPokemon)
+        const nextOpponent = candidateOpponent || opponent || buildOpponent(null, fallbackSelection.trainer, fallbackSelection.trainerOrder)
+
+        if (!nextOpponent?.team?.length) {
+            setActionMessage('Không có đội hình huấn luyện viên để chiến đấu.')
+            return
+        }
+
+        setBattleResults(null)
+        setBattleLog([])
+        setActionMessage('')
+        setSelectedMoveIndex(0)
+        setActiveTab('fight')
+        setBattleOpponent(nextOpponent)
+        const initialPartyState = buildBattlePartyState(party)
+        setBattlePartyHpState(initialPartyState)
+        const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
+        setBattlePlayerIndex(Math.max(0, initialIndex))
+        setView('battle')
+    }
+
+    const handleRematchTrainer = (entry) => {
+        const normalizedId = String(entry?.id || '').trim()
+        if (!normalizedId) return
+
+        const trainerOrder = masterPokemon.findIndex(
+            (trainer) => String(trainer?._id || '').trim() === normalizedId
+        )
+        if (trainerOrder === -1) {
+            setActionMessage('Không tìm thấy dữ liệu huấn luyện viên để đấu lại.')
+            return
+        }
+
+        const trainer = masterPokemon[trainerOrder]
+        const rematchOpponent = buildOpponent(null, trainer, trainerOrder)
+        setOpponent(rematchOpponent)
+        startBattleWithOpponent(rematchOpponent)
     }
 
     if (view === 'battle') {
@@ -1180,20 +1234,7 @@ export function BattlePage() {
 
                     {opponent?.team?.length ? (
                         <button
-                            onClick={() => {
-                                setBattleResults(null)
-                                setBattleLog([])
-                                setActionMessage('')
-                                setSelectedMoveIndex(0)
-                                setActiveTab('fight')
-                                const fallbackSelection = getTrainerByOrder(masterPokemon)
-                                setBattleOpponent(opponent || buildOpponent(null, fallbackSelection.trainer, fallbackSelection.trainerOrder))
-                                const initialPartyState = buildBattlePartyState(party)
-                                setBattlePartyHpState(initialPartyState)
-                                const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
-                                setBattlePlayerIndex(Math.max(0, initialIndex))
-                                setView('battle')
-                            }}
+                            onClick={() => startBattleWithOpponent()}
                             className="text-3xl font-extrabold text-blue-800 hover:text-blue-600 hover:scale-105 transition-transform drop-shadow-sm my-2"
                         >
                             Chiến đấu!
@@ -1257,16 +1298,18 @@ export function BattlePage() {
                             {completedEntries.map((entry) => (
                                 <div
                                     key={entry.id}
-                                    className="relative"
+                                    className="relative z-0 cursor-pointer transition-transform hover:z-40 hover:scale-105"
                                     onMouseEnter={() => setHoveredCompletedId(entry.id)}
                                     onMouseLeave={() => setHoveredCompletedId(null)}
+                                    onClick={() => handleRematchTrainer(entry)}
+                                    title={`Đấu lại với ${entry.name}`}
                                 >
                                     <img
                                         src={entry.image}
                                         className="w-20 h-20 object-contain pixelated"
                                     />
                                     {hoveredCompletedId === entry.id && (
-                                        <div className="absolute left-24 top-0 w-[320px] bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-20">
+                                        <div className="absolute left-1/2 bottom-full mb-3 w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-50">
                                             <div className="font-bold text-slate-700 mb-2">Thông tin</div>
                                             <div className="flex gap-2 items-start">
                                                 <img src={entry.image} className="w-12 h-12 object-contain pixelated" />
@@ -1300,7 +1343,7 @@ export function BattlePage() {
                     <div className="rounded border border-blue-400 bg-blue-100/50 shadow-sm overflow-hidden text-center p-2">
                         <SectionHeader title="Đã Hoàn Thành - Chi Tiết" />
                         <p className="text-xs text-blue-800 mt-2 p-2">
-                            Nhấn Z khi rê chuột lên ảnh để xem chi tiết đầy đủ.
+                            Nhấn vào ảnh huấn luyện viên để đấu lại. Rê chuột để xem chi tiết đầy đủ.
                         </p>
                     </div>
                 </>

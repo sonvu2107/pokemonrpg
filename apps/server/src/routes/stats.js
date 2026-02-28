@@ -71,7 +71,7 @@ router.get('/', async (req, res) => {
         console.error('GET /api/stats error:', error)
         res.status(500).json({
             ok: false,
-            message: 'Failed to fetch server statistics'
+            message: 'Không thể tải thống kê máy chủ'
         })
     }
 })
@@ -204,7 +204,7 @@ router.get('/daily', authMiddleware, async (req, res) => {
         console.error('GET /api/stats/daily error:', error)
         res.status(500).json({
             ok: false,
-            message: 'Failed to fetch daily stats'
+            message: 'Không thể tải thống kê ngày'
         })
     }
 })
@@ -249,7 +249,7 @@ router.get('/online', authMiddleware, async (req, res) => {
         console.error('GET /api/stats/online error:', error)
         res.status(500).json({
             ok: false,
-            message: 'Failed to fetch online trainers'
+            message: 'Không thể tải danh sách người chơi online'
         })
     }
 })

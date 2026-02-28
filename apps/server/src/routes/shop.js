@@ -69,7 +69,7 @@ router.get('/items', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/shop/items error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to fetch item shop data' })
+        res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu cửa hàng vật phẩm' })
     }
 })
 
@@ -81,7 +81,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
         const quantity = toSafeQuantity(req.body?.quantity)
 
         if (!mongoose.Types.ObjectId.isValid(itemId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid itemId' })
+            return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
         }
 
         const item = await Item.findOne({
@@ -162,7 +162,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
             return res.status(409).json({ ok: false, message: 'Xung đột dữ liệu kho đồ, vui lòng thử lại' })
         }
         console.error('POST /api/shop/items/:itemId/buy error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to purchase item' })
+        res.status(500).json({ ok: false, message: 'Mua vật phẩm thất bại' })
     }
 })
 
@@ -446,7 +446,7 @@ router.get('/sell', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/shop/sell error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to fetch sell shop data' })
+        res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu cửa hàng bán' })
     }
 })
 
@@ -458,7 +458,7 @@ router.post('/sell/list', async (req, res) => {
         const price = toSafePrice(req.body?.price)
 
         if (!mongoose.Types.ObjectId.isValid(userPokemonId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid userPokemonId' })
+            return res.status(400).json({ ok: false, message: 'userPokemonId không hợp lệ' })
         }
         if (!Number.isFinite(price) || price <= 0) {
             return res.status(400).json({ ok: false, message: 'Giá bán không hợp lệ' })
@@ -508,7 +508,7 @@ router.post('/sell/list', async (req, res) => {
             return res.status(409).json({ ok: false, message: 'Pokemon này đang được rao bán' })
         }
         console.error('POST /api/shop/sell/list error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to create listing' })
+        res.status(500).json({ ok: false, message: 'Tạo tin đăng thất bại' })
     }
 })
 
@@ -519,7 +519,7 @@ router.post('/sell/:listingId/cancel', async (req, res) => {
         const listingId = String(req.params.listingId || '').trim()
 
         if (!mongoose.Types.ObjectId.isValid(listingId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid listingId' })
+            return res.status(400).json({ ok: false, message: 'listingId không hợp lệ' })
         }
 
         const cancelled = await MarketListing.findOneAndUpdate(
@@ -543,7 +543,7 @@ router.post('/sell/:listingId/cancel', async (req, res) => {
         res.json({ ok: true, message: 'Đã hủy đăng bán Pokemon' })
     } catch (error) {
         console.error('POST /api/shop/sell/:listingId/cancel error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to cancel listing' })
+        res.status(500).json({ ok: false, message: 'Hủy tin đăng thất bại' })
     }
 })
 
@@ -703,7 +703,7 @@ router.get('/buy', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/shop/buy error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to fetch shop listings' })
+        res.status(500).json({ ok: false, message: 'Không thể tải danh sách cửa hàng' })
     }
 })
 
@@ -713,7 +713,7 @@ router.post('/buy/:listingId', async (req, res) => {
         const buyerId = req.user.userId
         const listingId = String(req.params.listingId || '').trim()
         if (!mongoose.Types.ObjectId.isValid(listingId)) {
-            return res.status(400).json({ ok: false, message: 'Invalid listingId' })
+            return res.status(400).json({ ok: false, message: 'listingId không hợp lệ' })
         }
 
         const preview = await MarketListing.findById(listingId)
@@ -721,16 +721,16 @@ router.post('/buy/:listingId', async (req, res) => {
             .lean()
 
         if (!preview) {
-            return res.status(404).json({ ok: false, message: 'Listing not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tin đăng' })
         }
         if (preview.status !== 'active') {
-            return res.status(409).json({ ok: false, message: 'Listing is no longer available' })
+            return res.status(409).json({ ok: false, message: 'Tin đăng không còn khả dụng' })
         }
         if (String(preview.sellerId) === String(buyerId)) {
-            return res.status(400).json({ ok: false, message: 'You cannot buy your own listing' })
+            return res.status(400).json({ ok: false, message: 'Bạn không thể mua tin đăng của chính mình' })
         }
         if (preview.reservedForUserId && String(preview.reservedForUserId) !== String(buyerId)) {
-            return res.status(403).json({ ok: false, message: 'This listing is reserved for another player' })
+            return res.status(403).json({ ok: false, message: 'Tin đăng này đã dành cho người chơi khác' })
         }
 
         const claimedListing = await MarketListing.findOneAndUpdate(
@@ -751,7 +751,7 @@ router.post('/buy/:listingId', async (req, res) => {
         )
 
         if (!claimedListing) {
-            return res.status(409).json({ ok: false, message: 'Listing was already purchased' })
+            return res.status(409).json({ ok: false, message: 'Tin đăng đã được mua' })
         }
 
         const buyerState = await PlayerState.findOneAndUpdate(
@@ -800,13 +800,13 @@ router.post('/buy/:listingId', async (req, res) => {
                 { _id: claimedListing._id, status: 'sold', buyerId },
                 { $set: { status: 'active', buyerId: null, soldAt: null } }
             )
-            return res.status(409).json({ ok: false, message: 'Failed to transfer Pokemon. Listing was restored.' })
+            return res.status(409).json({ ok: false, message: 'Chuyển Pokemon thất bại. Tin đăng đã được khôi phục.' })
         }
 
         res.json({ ok: true, message: 'Mua Pokemon thành công!' })
     } catch (error) {
         console.error('POST /api/shop/buy/:listingId error:', error)
-        res.status(500).json({ ok: false, message: 'Failed to complete purchase' })
+        res.status(500).json({ ok: false, message: 'Hoàn tất mua thất bại' })
     }
 })
 

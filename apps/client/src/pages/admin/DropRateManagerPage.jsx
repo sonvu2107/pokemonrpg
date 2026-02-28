@@ -152,6 +152,25 @@ export default function DropRateManagerPage() {
         dropRates.map((dr) => `${dr.pokemon?._id}:${String(dr.formId || '').trim().toLowerCase() || 'normal'}`)
     )
     const normalizeDropRateFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+    const getPokemonFormsForDisplay = (pokemon) => {
+        const defaultFormId = normalizeDropRateFormId(pokemon?.defaultFormId || 'normal')
+        const rawForms = Array.isArray(pokemon?.forms) && pokemon.forms.length > 0
+            ? pokemon.forms
+            : [{ formId: defaultFormId, formName: defaultFormId }]
+
+        return rawForms
+            .map((form) => ({
+                formId: normalizeDropRateFormId(form?.formId || defaultFormId),
+                formName: String(form?.formName || '').trim() || normalizeDropRateFormId(form?.formId || defaultFormId),
+            }))
+            .filter((form, index, arr) => arr.findIndex((entry) => entry.formId === form.formId) === index)
+            .sort((a, b) => {
+                if (a.formId === defaultFormId) return -1
+                if (b.formId === defaultFormId) return 1
+                return a.formId.localeCompare(b.formId)
+            })
+    }
+
     const groupedDropRates = () => {
         const groups = []
         const groupMap = new Map()
@@ -206,6 +225,26 @@ export default function DropRateManagerPage() {
         const query = searchTerm.trim().toLowerCase()
         if (!query) return true
         return name.includes(query) || String(p.pokedexNumber).includes(query)
+    })
+
+    const selectedPokemonFormOptions = Array.from(
+        selectedPokemonIds.reduce((acc, pokemonId) => {
+            const pokemon = allPokemon.find((entry) => entry._id === pokemonId)
+            if (!pokemon) return acc
+
+            getPokemonFormsForDisplay(pokemon).forEach((form) => {
+                if (!acc.has(form.formId)) {
+                    acc.set(form.formId, { ...form, count: 0 })
+                }
+                acc.get(form.formId).count += 1
+            })
+
+            return acc
+        }, new Map()).values()
+    ).sort((a, b) => {
+        if (a.formId === 'normal') return -1
+        if (b.formId === 'normal') return 1
+        return a.formId.localeCompare(b.formId)
     })
 
     return (
@@ -587,6 +626,7 @@ export default function DropRateManagerPage() {
                                             const isChecked = selectedPokemonIds.includes(p._id)
                                             const isExisting = existingDropRateKeys.has(`${p._id}:${normalizedFormId}`)
                                             const pokedexNumber = Number(p?.pokedexNumber) || 0
+                                            const forms = getPokemonFormsForDisplay(p)
                                             const fallbackSprite = Number(p?.pokedexNumber)
                                                 ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNumber}.png`
                                                 : DEFAULT_POKEMON_IMAGE
@@ -626,6 +666,21 @@ export default function DropRateManagerPage() {
                                                             <span className="font-mono text-xs text-slate-500 flex-shrink-0">#{String(pokedexNumber).padStart(3, '0')}</span>
                                                             <span className="font-bold text-slate-700 truncate">{p.name}</span>
                                                         </div>
+                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                            {forms.slice(0, 4).map((form) => (
+                                                                <span
+                                                                    key={`${p._id}-${form.formId}`}
+                                                                    className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                                                                >
+                                                                    {form.formName || form.formId}
+                                                                </span>
+                                                            ))}
+                                                            {forms.length > 4 && (
+                                                                <span className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                                                                    +{forms.length - 4} dạng
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     {isExisting && <span className="ml-auto text-[10px] sm:text-xs text-amber-700 font-bold flex-shrink-0">Đã có</span>}
                                                 </label>
@@ -646,6 +701,26 @@ export default function DropRateManagerPage() {
                                 />
                                 <div className="mt-1 text-xs text-slate-500">Ví dụ: normal, alola, galar, hisui</div>
                                 <div className="mt-1 text-xs text-slate-500">Áp dụng cho tất cả Pokemon đã chọn.</div>
+                                {selectedPokemonFormOptions.length > 0 && (
+                                    <div className="mt-2">
+                                        <div className="text-xs text-slate-600 mb-1">Dạng có trong Pokemon đã chọn:</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {selectedPokemonFormOptions.map((form) => (
+                                                <button
+                                                    key={`form-suggest-${form.formId}`}
+                                                    type="button"
+                                                    onClick={() => setFormId(form.formId)}
+                                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors ${normalizedFormId === form.formId
+                                                        ? 'bg-blue-600 text-white border-blue-600'
+                                                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-blue-50 hover:border-blue-300'}`}
+                                                >
+                                                    {form.formName || form.formId}
+                                                    {selectedPokemonIds.length > 1 && ` (${form.count})`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div>

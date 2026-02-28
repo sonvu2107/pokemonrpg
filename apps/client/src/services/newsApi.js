@@ -20,14 +20,14 @@ const newsApi = {
         }
 
         const res = await fetch(`${API_URL}/news?${searchParams.toString()}`)
-        if (!res.ok) throw new Error('Failed to fetch news')
+        if (!res.ok) throw new Error('Không thể tải tin tức')
         return res.json()
     },
 
     // Get single news post
     getNewsById: async (id) => {
         const res = await fetch(`${API_URL}/news/${id}`)
-        if (!res.ok) throw new Error('Failed to fetch news')
+        if (!res.ok) throw new Error('Không thể tải tin tức')
         return res.json()
     },
 
@@ -36,7 +36,7 @@ const newsApi = {
         const res = await fetch(`${API_URL}/news/admin/all`, {
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to fetch all news')
+        if (!res.ok) throw new Error('Không thể tải toàn bộ tin tức')
         return res.json()
     },
 
@@ -52,7 +52,7 @@ const newsApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to create news')
+            throw new Error(err.message || 'Tạo tin tức thất bại')
         }
         return res.json()
     },
@@ -69,7 +69,7 @@ const newsApi = {
         })
         if (!res.ok) {
             const err = await res.json()
-            throw new Error(err.message || 'Failed to update news')
+            throw new Error(err.message || 'Cập nhật tin tức thất bại')
         }
         return res.json()
     },
@@ -80,7 +80,7 @@ const newsApi = {
             method: 'DELETE',
             headers: getAuthHeader(),
         })
-        if (!res.ok) throw new Error('Failed to delete news')
+        if (!res.ok) throw new Error('Xóa tin tức thất bại')
         return res.json()
     },
 }

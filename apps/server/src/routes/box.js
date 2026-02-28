@@ -100,7 +100,7 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         console.error('Box Error:', error)
-        res.status(500).json({ message: 'Failed to fetch box' })
+        res.status(500).json({ message: 'Không thể tải hộp Pokemon' })
     }
 })
 

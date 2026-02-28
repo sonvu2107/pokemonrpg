@@ -12,16 +12,16 @@ router.post('/', async (req, res) => {
         const normalizedFormId = String(formId || '').trim() || 'normal'
 
         if (!mapId || !pokemonId || weight === undefined) {
-            return res.status(400).json({ ok: false, message: 'Missing required fields' })
+            return res.status(400).json({ ok: false, message: 'Thiếu trường bắt buộc' })
         }
 
         if (weight < 0 || weight > 100000) {
-            return res.status(400).json({ ok: false, message: 'Weight must be between 0 and 100000' })
+            return res.status(400).json({ ok: false, message: 'Trọng số phải trong khoảng 0 đến 100000' })
         }
 
         const pokemon = await Pokemon.findById(pokemonId).select('forms defaultFormId').lean()
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
@@ -34,7 +34,7 @@ router.post('/', async (req, res) => {
         if (!isValidFormId) {
             return res.status(400).json({
                 ok: false,
-                message: 'formId is not valid for this Pokemon',
+                message: 'formId không hợp lệ với Pokemon này',
             })
         }
 
@@ -74,7 +74,7 @@ router.get('/', async (req, res) => {
         res.json({ ok: true, dropRates })
     } catch (error) {
         console.error('GET /api/admin/drop-rates error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -84,7 +84,7 @@ router.delete('/map/:mapId', async (req, res) => {
         const { mapId } = req.params
 
         if (!mapId) {
-            return res.status(400).json({ ok: false, message: 'mapId is required' })
+            return res.status(400).json({ ok: false, message: 'mapId là bắt buộc' })
         }
 
         const result = await DropRate.deleteMany({ mapId })
@@ -92,12 +92,12 @@ router.delete('/map/:mapId', async (req, res) => {
 
         res.json({
             ok: true,
-            message: 'All drop rates deleted',
+            message: 'Đã xóa toàn bộ tỉ lệ rơi',
             deletedCount: result.deletedCount || 0,
         })
     } catch (error) {
         console.error('DELETE /api/admin/drop-rates/map/:mapId error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -107,16 +107,16 @@ router.delete('/:id', async (req, res) => {
         const dropRate = await DropRate.findById(req.params.id)
 
         if (!dropRate) {
-            return res.status(404).json({ ok: false, message: 'Drop rate not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tỉ lệ rơi' })
         }
 
         await dropRate.deleteOne()
         invalidateMapDropRateCache(dropRate.mapId)
 
-        res.json({ ok: true, message: 'Drop rate deleted' })
+        res.json({ ok: true, message: 'Đã xóa tỉ lệ rơi' })
     } catch (error) {
         console.error('DELETE /api/admin/drop-rates/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

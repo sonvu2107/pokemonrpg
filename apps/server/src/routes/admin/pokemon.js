@@ -105,7 +105,7 @@ router.get('/', async (req, res) => {
         })
     } catch (error) {
         console.error('GET /api/admin/pokemon error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -115,13 +115,13 @@ router.get('/:id', async (req, res) => {
         const pokemon = await Pokemon.findById(req.params.id)
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         res.json({ ok: true, pokemon })
     } catch (error) {
         console.error('GET /api/admin/pokemon/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -134,7 +134,7 @@ router.post('/', async (req, res) => {
 
         // Validation
         if (!pokedexNumber || !name || !resolvedBaseStats || !types || types.length < 1 || types.length > 2) {
-            return res.status(400).json({ ok: false, message: 'Invalid input' })
+            return res.status(400).json({ ok: false, message: 'Dữ liệu nhập không hợp lệ' })
         }
 
         // Check duplicates
@@ -146,8 +146,8 @@ router.post('/', async (req, res) => {
             return res.status(409).json({
                 ok: false,
                 message: existing.pokedexNumber === pokedexNumber
-                    ? 'Pokedex number already exists'
-                    : 'Pokemon name already exists'
+                    ? 'Số Pokedex đã tồn tại'
+                    : 'Tên Pokemon đã tồn tại'
             })
         }
 
@@ -189,7 +189,7 @@ router.put('/:id', async (req, res) => {
         const pokemon = await Pokemon.findById(req.params.id)
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         // Check if new name/pokedex conflicts with other Pokemon
@@ -201,7 +201,7 @@ router.put('/:id', async (req, res) => {
             })
 
             if (conflict) {
-                return res.status(409).json({ ok: false, message: 'Duplicate pokedex number or name' })
+                return res.status(409).json({ ok: false, message: 'Trùng số Pokedex hoặc tên Pokemon' })
             }
         }
 
@@ -248,7 +248,7 @@ router.delete('/:id', async (req, res) => {
         const pokemon = await Pokemon.findById(req.params.id)
 
         if (!pokemon) {
-            return res.status(404).json({ ok: false, message: 'Pokemon not found' })
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
         // Cascade delete DropRates
@@ -257,10 +257,10 @@ router.delete('/:id', async (req, res) => {
 
         await pokemon.deleteOne()
 
-        res.json({ ok: true, message: 'Pokemon deleted' })
+        res.json({ ok: true, message: 'Đã xóa Pokemon' })
     } catch (error) {
         console.error('DELETE /api/admin/pokemon/:id error:', error)
-        res.status(500).json({ ok: false, message: 'Server error' })
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 

@@ -132,7 +132,7 @@ export default function UserManagementPage() {
     const loadPokemonLookup = async (searchText = '') => {
         try {
             setPokemonLookupLoading(true)
-            const res = await userApi.lookupPokemon({ search: searchText, limit: 30 })
+            const res = await userApi.lookupPokemon({ search: searchText, limit: 500 })
             const rows = Array.isArray(res?.pokemon) ? res.pokemon : []
             setPokemonLookup(rows)
 
@@ -456,32 +456,53 @@ export default function UserManagementPage() {
                                         ) : pokemonLookup.length === 0 ? (
                                             <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy Pokemon</div>
                                         ) : (
-                                            pokemonLookup.map((entry) => (
-                                                <button
-                                                    type="button"
-                                                    key={entry._id}
-                                                    onClick={() => setPokemonForm((prev) => ({
-                                                        ...prev,
-                                                        pokemonId: entry._id,
-                                                        formId: entry.defaultFormId || entry.forms?.[0]?.formId || 'normal',
-                                                    }))}
-                                                    className={`w-full px-3 py-2 border-b border-slate-100 text-left flex items-center gap-3 hover:bg-blue-50 ${pokemonForm.pokemonId === entry._id ? 'bg-blue-50' : ''}`}
-                                                >
-                                                    <img
-                                                        src={entry.sprite || DEFAULT_POKEMON_IMAGE}
-                                                        alt={entry.name}
-                                                        className="w-10 h-10 object-contain pixelated"
-                                                        onError={(e) => {
-                                                            e.currentTarget.onerror = null
-                                                            e.currentTarget.src = DEFAULT_POKEMON_IMAGE
-                                                        }}
-                                                    />
-                                                    <div className="min-w-0">
-                                                        <div className="font-bold text-slate-800 truncate">{entry.name}</div>
-                                                        <div className="text-xs text-slate-500 font-mono">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</div>
-                                                    </div>
-                                                </button>
-                                            ))
+                                            pokemonLookup.map((entry) => {
+                                                const forms = Array.isArray(entry.forms) && entry.forms.length > 0
+                                                    ? entry.forms
+                                                    : [{ formId: entry.defaultFormId || 'normal', formName: entry.defaultFormId || 'normal' }]
+
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        key={entry._id}
+                                                        onClick={() => setPokemonForm((prev) => ({
+                                                            ...prev,
+                                                            pokemonId: entry._id,
+                                                            formId: entry.defaultFormId || entry.forms?.[0]?.formId || 'normal',
+                                                        }))}
+                                                        className={`w-full px-3 py-2 border-b border-slate-100 text-left flex items-center gap-3 hover:bg-blue-50 ${pokemonForm.pokemonId === entry._id ? 'bg-blue-50' : ''}`}
+                                                    >
+                                                        <img
+                                                            src={entry.sprite || DEFAULT_POKEMON_IMAGE}
+                                                            alt={entry.name}
+                                                            className="w-10 h-10 object-contain pixelated"
+                                                            onError={(e) => {
+                                                                e.currentTarget.onerror = null
+                                                                e.currentTarget.src = DEFAULT_POKEMON_IMAGE
+                                                            }}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <div className="font-bold text-slate-800 truncate">{entry.name}</div>
+                                                            <div className="text-xs text-slate-500 font-mono">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</div>
+                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                                {forms.slice(0, 4).map((form) => (
+                                                                    <span
+                                                                        key={`${entry._id}-${form.formId}`}
+                                                                        className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200"
+                                                                    >
+                                                                        {form.formName || form.formId}
+                                                                    </span>
+                                                                ))}
+                                                                {forms.length > 4 && (
+                                                                    <span className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                                                                        +{forms.length - 4} dạng
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                )
+                                            })
                                         )}
                                     </div>
 
@@ -494,7 +515,10 @@ export default function UserManagementPage() {
                                                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             >
                                                 {selectedPokemonForms.map((form) => (
-                                                    <option key={form.formId} value={form.formId}>{form.formName || form.formId}</option>
+                                                    <option key={form.formId} value={form.formId}>
+                                                        {form.formName || form.formId}
+                                                        {form.formName && form.formName !== form.formId ? ` (${form.formId})` : ''}
+                                                    </option>
                                                 ))}
                                             </select>
                                         </div>
