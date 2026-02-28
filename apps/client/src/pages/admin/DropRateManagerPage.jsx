@@ -4,6 +4,8 @@ import { useParams, Link } from 'react-router-dom'
 import { mapApi, dropRateApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 
+const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
 export default function DropRateManagerPage() {
     const { mapId } = useParams()
 
@@ -546,7 +548,7 @@ export default function DropRateManagerPage() {
             {/* Light Theme Modal */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-                    <div className="bg-white rounded-lg border border-slate-200 p-6 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+                    <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl lg:max-w-3xl shadow-2xl transform transition-all scale-100 max-h-[92vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                             <h3 className="text-lg font-bold text-slate-800">Thêm Pokemon</h3>
                             <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -577,17 +579,23 @@ export default function DropRateManagerPage() {
                                         Đã chọn: <span className="font-bold text-blue-700">{selectedPokemonIds.length}</span>
                                     </span>
                                 </div>
-                                <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-md">
+                                <div className="max-h-64 sm:max-h-72 overflow-y-auto border border-slate-200 rounded-md">
                                     {filteredPokemon.length === 0 ? (
                                         <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy</div>
                                     ) : (
                                         filteredPokemon.map((p) => {
                                             const isChecked = selectedPokemonIds.includes(p._id)
                                             const isExisting = existingDropRateKeys.has(`${p._id}:${normalizedFormId}`)
+                                            const pokedexNumber = Number(p?.pokedexNumber) || 0
+                                            const fallbackSprite = Number(p?.pokedexNumber)
+                                                ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNumber}.png`
+                                                : DEFAULT_POKEMON_IMAGE
+                                            const spriteUrl = p.imageUrl || p.sprites?.normal || p.sprites?.front_default || fallbackSprite
+
                                             return (
                                                 <label
                                                     key={p._id}
-                                                    className={`flex items-center gap-2 px-3 py-2 border-b border-slate-100 text-sm cursor-pointer hover:bg-blue-50 ${isExisting ? 'bg-amber-50/40' : ''}`}
+                                                    className={`flex items-center gap-2 sm:gap-3 px-3 py-2 border-b border-slate-100 text-sm cursor-pointer hover:bg-blue-50 ${isExisting ? 'bg-amber-50/40' : ''}`}
                                                 >
                                                     <input
                                                         type="checkbox"
@@ -599,10 +607,27 @@ export default function DropRateManagerPage() {
                                                                 setSelectedPokemonIds((prev) => prev.filter((id) => id !== p._id))
                                                             }
                                                         }}
+                                                        className="h-4 w-4 flex-shrink-0"
                                                     />
-                                                    <span className="font-mono text-xs text-slate-500">#{p.pokedexNumber.toString().padStart(3, '0')}</span>
-                                                    <span className="font-bold text-slate-700">{p.name}</span>
-                                                    {isExisting && <span className="ml-auto text-[10px] text-amber-700 font-bold">Đã có</span>}
+                                                    <div className="w-9 h-9 sm:w-10 sm:h-10 flex-shrink-0 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                        <img
+                                                            src={spriteUrl}
+                                                            alt={p.name}
+                                                            className="w-8 h-8 object-contain pixelated"
+                                                            loading="lazy"
+                                                            onError={(e) => {
+                                                                e.currentTarget.onerror = null
+                                                                e.currentTarget.src = DEFAULT_POKEMON_IMAGE
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <span className="font-mono text-xs text-slate-500 flex-shrink-0">#{String(pokedexNumber).padStart(3, '0')}</span>
+                                                            <span className="font-bold text-slate-700 truncate">{p.name}</span>
+                                                        </div>
+                                                    </div>
+                                                    {isExisting && <span className="ml-auto text-[10px] sm:text-xs text-amber-700 font-bold flex-shrink-0">Đã có</span>}
                                                 </label>
                                             )
                                         })
