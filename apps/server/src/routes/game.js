@@ -778,9 +778,98 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const dropRates = await getPokemonDropRatesCached(map._id)
+        const specialPokemonConfigsFromMap = Array.isArray(map.specialPokemonConfigs)
+            ? map.specialPokemonConfigs
+                .map((entry) => {
+                    const pokemonId = String(entry?.pokemonId || '').trim()
+                    const weight = Number(entry?.weight)
+                    return {
+                        pokemonId,
+                        weight: Number.isFinite(weight) && weight > 0 ? weight : 0,
+                    }
+                })
+                .filter((entry) => entry.pokemonId && entry.weight > 0)
+            : []
 
-        if (dropRates.length === 0) {
+        const specialPokemonConfigs = specialPokemonConfigsFromMap.length > 0
+            ? specialPokemonConfigsFromMap
+            : (Array.isArray(map.specialPokemonIds)
+                ? map.specialPokemonIds
+                    .map((id) => String(id || '').trim())
+                    .filter(Boolean)
+                    .map((pokemonId) => ({ pokemonId, weight: 1 }))
+                : [])
+
+        const specialPokemonEncounterRate = typeof map.specialPokemonEncounterRate === 'number'
+            ? clamp(map.specialPokemonEncounterRate, 0, 1)
+            : 0
+
+        let selectedPokemonId = null
+        let selectedFormId = null
+        let encounteredFromSpecialPool = false
+
+        if (specialPokemonConfigs.length > 0 && specialPokemonEncounterRate > 0 && Math.random() < specialPokemonEncounterRate) {
+            const specialTotalWeight = specialPokemonConfigs.reduce((sum, entry) => sum + entry.weight, 0)
+            let specialRandom = Math.random() * specialTotalWeight
+
+            for (const entry of specialPokemonConfigs) {
+                if (specialRandom < entry.weight) {
+                    selectedPokemonId = entry.pokemonId
+                    break
+                }
+                specialRandom -= entry.weight
+            }
+
+            if (!selectedPokemonId) {
+                selectedPokemonId = specialPokemonConfigs[specialPokemonConfigs.length - 1]?.pokemonId || null
+            }
+
+            encounteredFromSpecialPool = Boolean(selectedPokemonId)
+        }
+
+        if (!selectedPokemonId) {
+            const dropRates = await getPokemonDropRatesCached(map._id)
+
+            if (dropRates.length === 0) {
+                return res.json({
+                    ok: true,
+                    encountered: false,
+                    message: droppedItem ? `Bạn nhặt được ${droppedItem.name}!` : 'No pokemon in this area.',
+                    mapProgress: formatMapProgress(mapProgress),
+                    itemDrop: droppedItem,
+                    playerLevel: {
+                        level: playerState.level,
+                        experience: playerState.experience,
+                        expToNext: expToNext(playerState.level),
+                        leveledUp,
+                        levelsGained,
+                    },
+                })
+            }
+
+            // 3. Weighted Random Logic
+            const totalWeight = dropRates.reduce((sum, dr) => sum + dr.weight, 0)
+            let random = Math.random() * totalWeight
+            let selectedDrop = null
+
+            for (const dr of dropRates) {
+                if (random < dr.weight) {
+                    selectedDrop = dr
+                    break
+                }
+                random -= dr.weight
+            }
+
+            if (!selectedDrop) {
+                // Fallback usually shouldn't happen if logic is correct
+                selectedDrop = dropRates[dropRates.length - 1]
+            }
+
+            selectedPokemonId = selectedDrop?.pokemonId || null
+            selectedFormId = selectedDrop?.formId || null
+        }
+
+        if (!selectedPokemonId) {
             return res.json({
                 ok: true,
                 encountered: false,
@@ -797,26 +886,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             })
         }
 
-        // 3. Weighted Random Logic
-        const totalWeight = dropRates.reduce((sum, dr) => sum + dr.weight, 0)
-        let random = Math.random() * totalWeight
-        let selectedDrop = null
-
-        for (const dr of dropRates) {
-            if (random < dr.weight) {
-                selectedDrop = dr
-                break
-            }
-            random -= dr.weight
-        }
-
-        if (!selectedDrop) {
-            // Fallback usually shouldn't happen if logic is correct
-            selectedDrop = dropRates[dropRates.length - 1]
-        }
-
         // 4. Populate Pokemon Details for response
-        const pokemon = await Pokemon.findById(selectedDrop.pokemonId)
+        const pokemon = await Pokemon.findById(selectedPokemonId)
             .select('name pokedexNumber sprites imageUrl types rarity baseStats catchRate forms defaultFormId')
             .lean()
 
@@ -831,7 +902,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         )
 
         const defaultFormId = pokemon.defaultFormId || 'normal'
-        let formId = selectedDrop.formId || defaultFormId
+        let formId = selectedFormId || defaultFormId
         const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
         let resolvedForm = forms.find((form) => form.formId === formId) || null
         if (!resolvedForm && forms.length > 0) {
@@ -866,6 +937,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         res.json({
             ok: true,
             encountered: true,
+            fromSpecialPool: encounteredFromSpecialPool,
             encounterId: encounter._id,
             pokemon: {
                 ...pokemon,

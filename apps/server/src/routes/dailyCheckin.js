@@ -168,12 +168,13 @@ router.post('/claim', async (req, res) => {
         let claimResult = null
         let rewardedAmount = amount
 
-        if (rewardType === 'gold' || rewardType === 'moonPoints') {
+        if (rewardType === 'platinumCoins' || rewardType === 'gold' || rewardType === 'moonPoints') {
+            const walletField = rewardType === 'moonPoints' ? 'moonPoints' : 'gold'
             const playerState = await PlayerState.findOneAndUpdate(
                 { userId },
                 {
                     $setOnInsert: { userId },
-                    $inc: { [rewardType]: amount },
+                    $inc: { [walletField]: amount },
                 },
                 { new: true, upsert: true }
             )
@@ -181,7 +182,7 @@ router.post('/claim', async (req, res) => {
             emitPlayerState(String(userId), playerState)
 
             claimResult = {
-                rewardType,
+                rewardType: walletField === 'gold' ? 'platinumCoins' : rewardType,
                 amount,
                 wallet: {
                     gold: Number(playerState?.gold || 0),

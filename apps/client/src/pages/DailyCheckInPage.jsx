@@ -5,11 +5,11 @@ const toDayLabel = (day) => `Ngày ${day}`
 
 const formatRewardText = (reward) => {
     const amount = Number(reward?.amount || 0)
-    if (reward?.rewardType === 'gold') {
-        return `${amount.toLocaleString('vi-VN')} Xu Vàng`
+    if (reward?.rewardType === 'platinumCoins' || reward?.rewardType === 'gold') {
+        return `${amount.toLocaleString('vi-VN')} Xu Bạch Kim`
     }
     if (reward?.rewardType === 'moonPoints') {
-        return `${amount.toLocaleString('vi-VN')} Điểm Nguyệt`
+        return `${amount.toLocaleString('vi-VN')} Điểm Nguyệt Các`
     }
     if (reward?.rewardType === 'pokemon') {
         const pokemonName = reward?.pokemon?.name || 'Pokemon'
@@ -202,7 +202,7 @@ export default function DailyCheckInPage() {
                                     <img src={pokemonImage} alt={reward?.pokemon?.name || 'Pokemon'} className="w-10 h-10 object-contain pixelated shrink-0" />
                                 ) : (
                                     <div className="w-10 h-10 shrink-0 rounded-full bg-white border border-slate-200 flex items-center justify-center text-lg font-bold shadow-sm">
-                                        {reward.rewardType === 'gold' ? 'G' : 'M'}
+                                        {reward.rewardType === 'moonPoints' ? 'M' : 'P'}
                                     </div>
                                 )}
                                 <div className="text-[11px] sm:text-xs font-semibold leading-tight break-words w-full">

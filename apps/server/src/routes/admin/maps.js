@@ -26,19 +26,66 @@ const resolveFormForDrop = (pokemon, formId) => {
 
 const normalizeSpecialPokemonIds = (value) => {
     if (!Array.isArray(value)) return []
-    return [...new Set(value.map((id) => String(id || '').trim()).filter(Boolean))]
+    return [...new Set(
+        value
+            .map((entry) => {
+                if (!entry) return ''
+                if (typeof entry === 'string') return entry
+                return entry._id || entry.pokemonId?._id || entry.pokemonId || ''
+            })
+            .map((id) => String(id || '').trim())
+            .filter(Boolean)
+    )]
 }
 
-const validateSpecialPokemonIds = async (ids) => {
-    if (ids.length > 5) {
-        return 'specialPokemonIds phải là mảng tối đa 5 phần tử'
+const toSafeWeight = (value) => {
+    const parsed = Number.parseFloat(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return null
+    return parsed
+}
+
+const normalizeSpecialPokemonConfigs = (value) => {
+    if (!Array.isArray(value)) return []
+
+    const normalized = []
+    const seen = new Set()
+
+    for (const entry of value) {
+        const pokemonIdRaw = typeof entry === 'string'
+            ? entry
+            : (entry?.pokemonId?._id || entry?.pokemonId)
+        const pokemonId = String(pokemonIdRaw || '').trim()
+
+        if (!pokemonId || seen.has(pokemonId)) continue
+
+        const weightRaw = typeof entry === 'object' && entry !== null ? entry.weight : 1
+        const weight = toSafeWeight(weightRaw) || 1
+
+        normalized.push({ pokemonId, weight })
+        seen.add(pokemonId)
+
+        if (normalized.length >= 5) break
     }
 
-    if (!ids.length) return null
+    return normalized
+}
 
-    const count = await Pokemon.countDocuments({ _id: { $in: ids } })
-    if (count !== ids.length) {
-        return 'specialPokemonIds chứa Pokemon id không hợp lệ'
+const validateSpecialPokemonConfigs = async (configs) => {
+    if (configs.length > 5) {
+        return 'specialPokemonConfigs phải là mảng tối đa 5 phần tử'
+    }
+
+    if (!configs.length) return null
+
+    const hasInvalidWeight = configs.some((entry) => !Number.isFinite(entry?.weight) || Number(entry.weight) <= 0)
+    if (hasInvalidWeight) {
+        return 'specialPokemonConfigs.weight phải lớn hơn 0'
+    }
+
+    const pokemonIds = [...new Set(configs.map((entry) => String(entry?.pokemonId || '').trim()).filter(Boolean))]
+    const count = await Pokemon.countDocuments({ _id: { $in: pokemonIds } })
+    if (count !== pokemonIds.length) {
+        return 'specialPokemonConfigs chứa Pokemon id không hợp lệ'
     }
 
     return null
@@ -49,6 +96,7 @@ router.get('/', async (req, res) => {
     try {
         const maps = await Map.find()
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites')
             .sort({ createdAt: 1 })
             .lean()
         res.json({ ok: true, maps })
@@ -78,6 +126,7 @@ router.get('/:id', async (req, res) => {
     try {
         const map = await Map.findById(req.params.id)
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites')
 
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
@@ -153,6 +202,8 @@ router.post('/', async (req, res) => {
             iconId,
             specialPokemonImages,
             specialPokemonIds,
+            specialPokemonConfigs,
+            specialPokemonEncounterRate,
             requiredSearches,
             encounterRate,
             itemDropRate,
@@ -177,9 +228,20 @@ router.post('/', async (req, res) => {
         }
 
         const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
-        const specialPokemonValidationError = await validateSpecialPokemonIds(normalizedSpecialPokemonIds)
-        if (specialPokemonValidationError) {
-            return res.status(400).json({ ok: false, message: specialPokemonValidationError })
+        const hasSpecialPokemonConfigs = specialPokemonConfigs !== undefined
+        const normalizedSpecialPokemonConfigs = hasSpecialPokemonConfigs
+            ? normalizeSpecialPokemonConfigs(specialPokemonConfigs)
+            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+
+        const specialPokemonConfigValidationError = await validateSpecialPokemonConfigs(normalizedSpecialPokemonConfigs)
+        if (specialPokemonConfigValidationError) {
+            return res.status(400).json({ ok: false, message: specialPokemonConfigValidationError })
+        }
+
+        const normalizedSpecialPokemonIdsFromConfigs = normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId)
+
+        if (specialPokemonEncounterRate !== undefined && (specialPokemonEncounterRate < 0 || specialPokemonEncounterRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'specialPokemonEncounterRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate requiredSearches
@@ -211,7 +273,9 @@ router.post('/', async (req, res) => {
             isLegendary: isLegendary || false,
             iconId: iconId || undefined,
             specialPokemonImages: specialPokemonImages || [],
-            specialPokemonIds: normalizedSpecialPokemonIds,
+            specialPokemonIds: normalizedSpecialPokemonIdsFromConfigs,
+            specialPokemonConfigs: normalizedSpecialPokemonConfigs,
+            specialPokemonEncounterRate: specialPokemonEncounterRate !== undefined ? specialPokemonEncounterRate : 0,
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
@@ -247,6 +311,8 @@ router.put('/:id', async (req, res) => {
             iconId,
             specialPokemonImages,
             specialPokemonIds,
+            specialPokemonConfigs,
+            specialPokemonEncounterRate,
             requiredSearches,
             encounterRate,
             itemDropRate,
@@ -273,12 +339,21 @@ router.put('/:id', async (req, res) => {
         }
 
         const normalizedSpecialPokemonIds = normalizeSpecialPokemonIds(specialPokemonIds)
-        const shouldUpdateSpecialPokemonIds = specialPokemonIds !== undefined
-        if (shouldUpdateSpecialPokemonIds) {
-            const specialPokemonValidationError = await validateSpecialPokemonIds(normalizedSpecialPokemonIds)
-            if (specialPokemonValidationError) {
-                return res.status(400).json({ ok: false, message: specialPokemonValidationError })
+        const hasSpecialPokemonConfigs = specialPokemonConfigs !== undefined
+        const shouldUpdateSpecialPokemonPool = hasSpecialPokemonConfigs || specialPokemonIds !== undefined
+        const normalizedSpecialPokemonConfigs = hasSpecialPokemonConfigs
+            ? normalizeSpecialPokemonConfigs(specialPokemonConfigs)
+            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+
+        if (shouldUpdateSpecialPokemonPool) {
+            const specialPokemonConfigValidationError = await validateSpecialPokemonConfigs(normalizedSpecialPokemonConfigs)
+            if (specialPokemonConfigValidationError) {
+                return res.status(400).json({ ok: false, message: specialPokemonConfigValidationError })
             }
+        }
+
+        if (specialPokemonEncounterRate !== undefined && (specialPokemonEncounterRate < 0 || specialPokemonEncounterRate > 1)) {
+            return res.status(400).json({ ok: false, message: 'specialPokemonEncounterRate phải trong khoảng 0 đến 1' })
         }
 
         // Validate requiredSearches
@@ -309,7 +384,13 @@ router.put('/:id', async (req, res) => {
         map.isLegendary = isLegendary !== undefined ? isLegendary : map.isLegendary
         map.iconId = iconId !== undefined ? iconId : map.iconId
         map.specialPokemonImages = specialPokemonImages !== undefined ? specialPokemonImages : map.specialPokemonImages
-        map.specialPokemonIds = shouldUpdateSpecialPokemonIds ? normalizedSpecialPokemonIds : map.specialPokemonIds
+        map.specialPokemonIds = shouldUpdateSpecialPokemonPool
+            ? normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId)
+            : map.specialPokemonIds
+        map.specialPokemonConfigs = shouldUpdateSpecialPokemonPool
+            ? normalizedSpecialPokemonConfigs
+            : map.specialPokemonConfigs
+        map.specialPokemonEncounterRate = specialPokemonEncounterRate !== undefined ? specialPokemonEncounterRate : map.specialPokemonEncounterRate
         map.requiredSearches = requiredSearches !== undefined ? requiredSearches : map.requiredSearches
         map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
         map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate

@@ -1,6 +1,22 @@
 import mongoose from 'mongoose'
 import slugify from 'slugify'
 
+const specialPokemonConfigSchema = new mongoose.Schema(
+    {
+        pokemonId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Pokemon',
+            required: true,
+        },
+        weight: {
+            type: Number,
+            default: 1,
+            min: 0.0001,
+        },
+    },
+    { _id: false }
+)
+
 const mapSchema = new mongoose.Schema(
     {
         name: {
@@ -72,6 +88,22 @@ const mapSchema = new mongoose.Schema(
                 message: 'Map can have 0-5 special Pokemon references only',
             },
         },
+        specialPokemonConfigs: {
+            type: [specialPokemonConfigSchema],
+            default: [],
+            validate: {
+                validator: function (arr) {
+                    return arr.length >= 0 && arr.length <= 5
+                },
+                message: 'Map can have 0-5 special Pokemon configs only',
+            },
+        },
+        specialPokemonEncounterRate: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 1,
+        },
         requiredSearches: {
             type: Number,
             default: 0,
@@ -105,6 +137,32 @@ mapSchema.pre('validate', function (next) {
     if (this.isNew || this.isModified('name')) {
         this.slug = slugify(this.name, { lower: true, strict: true })
     }
+
+    const normalizeObjectId = (value) => String(value || '').trim()
+
+    if (Array.isArray(this.specialPokemonConfigs) && this.specialPokemonConfigs.length > 0) {
+        const seen = new Set()
+        this.specialPokemonConfigs = this.specialPokemonConfigs
+            .map((entry) => {
+                const pokemonId = normalizeObjectId(entry?.pokemonId)
+                const weight = Number(entry?.weight)
+                if (!pokemonId || seen.has(pokemonId)) return null
+                seen.add(pokemonId)
+                return {
+                    pokemonId,
+                    weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+                }
+            })
+            .filter(Boolean)
+            .slice(0, 5)
+
+        this.specialPokemonIds = this.specialPokemonConfigs.map((entry) => entry.pokemonId)
+    } else if (Array.isArray(this.specialPokemonIds) && this.specialPokemonIds.length > 0) {
+        const normalizedIds = [...new Set(this.specialPokemonIds.map((entry) => normalizeObjectId(entry)).filter(Boolean))].slice(0, 5)
+        this.specialPokemonIds = normalizedIds
+        this.specialPokemonConfigs = normalizedIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+    }
+
     next()
 })
 

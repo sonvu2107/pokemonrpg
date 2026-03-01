@@ -6,7 +6,7 @@ const buildDefaultRewardByDay = (day) => {
     if (day === DAILY_REWARD_CYCLE_DAYS) {
         return {
             day,
-            rewardType: 'gold',
+            rewardType: 'platinumCoins',
             amount: 12000,
             title: 'Thưởng mốc 30 ngày',
         }
@@ -17,7 +17,7 @@ const buildDefaultRewardByDay = (day) => {
             day,
             rewardType: 'moonPoints',
             amount: 40 + day * 3,
-            title: `Điểm Nguyệt ngày ${day}`,
+            title: `Điểm Nguyệt Các ngày ${day}`,
         }
     }
 
@@ -32,7 +32,7 @@ const buildDefaultRewardByDay = (day) => {
 
     return {
         day,
-        rewardType: 'gold',
+        rewardType: 'platinumCoins',
         amount: 800 + day * 140,
         title: `Điểm danh ngày ${day}`,
     }
@@ -144,7 +144,8 @@ export const ensureDailyRewardsSeeded = async () => {
 }
 
 export const serializeDailyReward = (entry) => {
-    const rewardType = String(entry?.rewardType || 'gold')
+    const rawRewardType = String(entry?.rewardType || 'platinumCoins')
+    const rewardType = rawRewardType === 'gold' ? 'platinumCoins' : rawRewardType
     const amount = Math.max(1, Number.parseInt(entry?.amount, 10) || 1)
     const item = entry?.itemId
         ? {

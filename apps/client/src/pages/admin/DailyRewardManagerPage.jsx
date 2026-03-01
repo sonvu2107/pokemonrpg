@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { dailyRewardApi } from '../../services/adminApi'
 
 const REWARD_TYPE_OPTIONS = [
-    { value: 'gold', label: 'Xu Vàng' },
-    { value: 'moonPoints', label: 'Điểm Nguyệt' },
+    { value: 'platinumCoins', label: 'Xu Bạch Kim' },
+    { value: 'moonPoints', label: 'Điểm Nguyệt Các' },
     { value: 'item', label: 'Vật phẩm' },
     { value: 'pokemon', label: 'Pokemon' },
 ]
@@ -33,9 +33,12 @@ const normalizeRewards = (rows, cycleDays) => {
     return Array.from({ length: safeCycleDays }, (_, index) => {
         const day = index + 1
         const reward = byDay.get(day)
+        const rewardType = reward?.rewardType === 'gold'
+            ? 'platinumCoins'
+            : (reward?.rewardType || 'platinumCoins')
         return {
             day,
-            rewardType: reward?.rewardType || 'gold',
+            rewardType,
             amount: Number(reward?.amount || 1),
             itemId: reward?.item?._id || '',
             item: reward?.item || null,
@@ -51,11 +54,11 @@ const normalizeRewards = (rows, cycleDays) => {
 
 const formatPreview = (reward, itemMap, pokemonMap) => {
     const amount = Number(reward?.amount || 0)
-    if (reward.rewardType === 'gold') {
-        return `${amount.toLocaleString('vi-VN')} Xu Vàng`
+    if (reward.rewardType === 'platinumCoins') {
+        return `${amount.toLocaleString('vi-VN')} Xu Bạch Kim`
     }
     if (reward.rewardType === 'moonPoints') {
-        return `${amount.toLocaleString('vi-VN')} Điểm Nguyệt`
+        return `${amount.toLocaleString('vi-VN')} Điểm Nguyệt Các`
     }
     if (reward.rewardType === 'pokemon') {
         const pokemon = pokemonMap.get(reward.pokemonId)

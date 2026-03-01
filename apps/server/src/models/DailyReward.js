@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 const DAILY_REWARD_MAX_DAY = 30
 
 export const DAILY_REWARD_TYPES = Object.freeze([
-    'gold',
+    'platinumCoins',
     'moonPoints',
     'item',
     'pokemon',
@@ -22,7 +22,7 @@ const dailyRewardSchema = new mongoose.Schema(
             type: String,
             enum: DAILY_REWARD_TYPES,
             required: true,
-            default: 'gold',
+            default: 'platinumCoins',
         },
         amount: {
             type: Number,

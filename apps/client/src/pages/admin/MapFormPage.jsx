@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { mapApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
@@ -20,7 +20,8 @@ export default function MapFormPage() {
         levelMax: 10,
         isLegendary: false,
         iconId: '',
-        specialPokemonIds: [],
+        specialPokemonConfigs: [],
+        specialPokemonEncounterRate: 0,
         requiredSearches: 0,
         encounterRate: 1,
         itemDropRate: 0,
@@ -31,15 +32,34 @@ export default function MapFormPage() {
     const [loadingPokemon, setLoadingPokemon] = useState(false)
     const [selectedPokemonIdToAdd, setSelectedPokemonIdToAdd] = useState('')
 
-    const normalizeSpecialPokemonIds = (value) => {
-        if (!Array.isArray(value)) return []
-        return value
+    const normalizeSpecialPokemonConfigs = (value, fallbackIds = []) => {
+        const fromConfigs = Array.isArray(value)
+            ? value
+                .map((entry) => {
+                    if (!entry) return null
+                    const pokemonId = typeof entry === 'string'
+                        ? entry
+                        : (entry.pokemonId?._id || entry.pokemonId)
+                    const weightRaw = typeof entry === 'object' && entry !== null ? entry.weight : 1
+                    const weight = Number.isFinite(Number(weightRaw)) && Number(weightRaw) > 0
+                        ? Number(weightRaw)
+                        : 1
+                    return pokemonId ? { pokemonId: String(pokemonId), weight } : null
+                })
+                .filter(Boolean)
+            : []
+
+        if (fromConfigs.length > 0) return fromConfigs
+
+        if (!Array.isArray(fallbackIds)) return []
+        return fallbackIds
             .map((item) => {
                 if (!item) return ''
                 if (typeof item === 'string') return item
                 return item._id || ''
             })
             .filter(Boolean)
+            .map((pokemonId) => ({ pokemonId, weight: 1 }))
     }
 
     useEffect(() => {
@@ -70,7 +90,8 @@ export default function MapFormPage() {
                 description: data.map.description || '',
                 mapImageUrl: data.map.mapImageUrl || '',
                 iconId: data.map.iconId || '',
-                specialPokemonIds: normalizeSpecialPokemonIds(data.map.specialPokemonIds),
+                specialPokemonConfigs: normalizeSpecialPokemonConfigs(data.map.specialPokemonConfigs, data.map.specialPokemonIds),
+                specialPokemonEncounterRate: data.map.specialPokemonEncounterRate ?? 0,
                 isLegendary: data.map.isLegendary || false,
                 requiredSearches: data.map.requiredSearches || 0,
                 encounterRate: data.map.encounterRate ?? 1,
@@ -90,6 +111,13 @@ export default function MapFormPage() {
 
         if (formData.levelMax < formData.levelMin) {
             setError('Cấp độ tối đa phải >= Cấp độ tối thiểu')
+            return
+        }
+
+        const hasInvalidSpecialWeight = (formData.specialPokemonConfigs || [])
+            .some((entry) => !(Number(entry?.weight) > 0))
+        if (hasInvalidSpecialWeight) {
+            setError('Tỷ lệ từng Pokemon đặc biệt phải lớn hơn 0')
             return
         }
 
@@ -113,19 +141,19 @@ export default function MapFormPage() {
     const handleAddSpecialPokemon = () => {
         if (!selectedPokemonIdToAdd) return
 
-        if (formData.specialPokemonIds.length >= 5) {
+        if (formData.specialPokemonConfigs.length >= 5) {
             setError('Chỉ có thể chọn tối đa 5 Pokemon đặc biệt')
             return
         }
 
-        if (formData.specialPokemonIds.includes(selectedPokemonIdToAdd)) {
+        if (formData.specialPokemonConfigs.some((entry) => entry.pokemonId === selectedPokemonIdToAdd)) {
             setSelectedPokemonIdToAdd('')
             return
         }
 
         setFormData((prev) => ({
             ...prev,
-            specialPokemonIds: [...prev.specialPokemonIds, selectedPokemonIdToAdd],
+            specialPokemonConfigs: [...prev.specialPokemonConfigs, { pokemonId: selectedPokemonIdToAdd, weight: 1 }],
         }))
         setSelectedPokemonIdToAdd('')
         setError('')
@@ -134,15 +162,38 @@ export default function MapFormPage() {
     const handleRemoveSpecialPokemon = (pokemonIdToRemove) => {
         setFormData((prev) => ({
             ...prev,
-            specialPokemonIds: prev.specialPokemonIds.filter((pokemonId) => pokemonId !== pokemonIdToRemove),
+            specialPokemonConfigs: prev.specialPokemonConfigs.filter((entry) => entry.pokemonId !== pokemonIdToRemove),
         }))
     }
 
-    const selectedSpecialPokemon = formData.specialPokemonIds
-        .map((id) => allPokemon.find((pokemon) => pokemon._id === id))
+    const handleUpdateSpecialPokemonWeight = (pokemonId, nextWeightRaw) => {
+        const parsed = Number.parseFloat(nextWeightRaw)
+        const nextWeight = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+        setFormData((prev) => ({
+            ...prev,
+            specialPokemonConfigs: prev.specialPokemonConfigs.map((entry) => (
+                entry.pokemonId === pokemonId
+                    ? { ...entry, weight: nextWeight }
+                    : entry
+            )),
+        }))
+    }
+
+    const totalSpecialWeight = formData.specialPokemonConfigs
+        .reduce((sum, entry) => sum + (Number(entry.weight) > 0 ? Number(entry.weight) : 0), 0)
+
+    const selectedSpecialPokemon = formData.specialPokemonConfigs
+        .map((entry) => {
+            const pokemon = allPokemon.find((item) => item._id === entry.pokemonId)
+            if (!pokemon) return null
+            return {
+                ...pokemon,
+                weight: Number(entry.weight) > 0 ? Number(entry.weight) : 0,
+            }
+        })
         .filter(Boolean)
 
-    const selectablePokemon = allPokemon.filter((pokemon) => !formData.specialPokemonIds.includes(pokemon._id))
+    const selectablePokemon = allPokemon.filter((pokemon) => !formData.specialPokemonConfigs.some((entry) => entry.pokemonId === pokemon._id))
 
     if (loading && isEdit) return <div className="text-blue-800 font-medium text-center py-8">Đang tải dữ liệu...</div>
 
@@ -354,19 +405,38 @@ export default function MapFormPage() {
                             <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-6">
                                 <div>
                                     <h3 className="text-sm font-bold text-blue-900 uppercase">Pokemon Đặc Biệt</h3>
-                                    <p className="text-xs text-blue-700 mt-1">Chọn Pokemon từ kho Pokemon admin. Tối đa 5 Pokemon.</p>
+                                    <p className="text-xs text-blue-700 mt-1">Chọn Pokemon từ kho admin và chỉnh trọng số từng con. Tối đa 5 Pokemon.</p>
                                 </div>
                                 <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">
-                                    {formData.specialPokemonIds.length} / 5
+                                    {formData.specialPokemonConfigs.length} / 5
                                 </span>
                             </div>
 
                             <div className="space-y-4">
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2">Tỷ Lệ Gặp Pokemon Đặc Biệt (0-1)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={formData.specialPokemonEncounterRate}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            specialPokemonEncounterRate: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)),
+                                        })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Ví dụ: 0.2 = 20% số lần gặp Pokemon sẽ lấy từ danh sách đặc biệt.
+                                    </p>
+                                </div>
+
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <select
                                         value={selectedPokemonIdToAdd}
                                         onChange={(e) => setSelectedPokemonIdToAdd(e.target.value)}
-                                        disabled={loadingPokemon || formData.specialPokemonIds.length >= 5 || selectablePokemon.length === 0}
+                                        disabled={loadingPokemon || formData.specialPokemonConfigs.length >= 5 || selectablePokemon.length === 0}
                                         className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="">
@@ -381,7 +451,7 @@ export default function MapFormPage() {
                                     <button
                                         type="button"
                                         onClick={handleAddSpecialPokemon}
-                                        disabled={!selectedPokemonIdToAdd || formData.specialPokemonIds.length >= 5}
+                                        disabled={!selectedPokemonIdToAdd || formData.specialPokemonConfigs.length >= 5}
                                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         Thêm
@@ -392,13 +462,28 @@ export default function MapFormPage() {
                                     {selectedSpecialPokemon.length > 0 ? (
                                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                                             {selectedSpecialPokemon.map((pokemon) => (
-                                                <div key={pokemon._id} className="relative group aspect-square bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center p-2 overflow-hidden hover:border-blue-400 transition-colors">
+                                                <div key={pokemon._id} className="relative group bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center p-2 overflow-hidden hover:border-blue-400 transition-colors min-h-[150px]">
                                                     <img
                                                         src={pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`}
                                                         alt={pokemon.name}
                                                         className="w-16 h-16 object-contain pixelated"
                                                     />
                                                     <p className="text-[11px] font-semibold text-slate-700 text-center mt-1 line-clamp-2">{pokemon.name}</p>
+                                                    <div className="w-full mt-1 space-y-1">
+                                                        <input
+                                                            type="number"
+                                                            min="0.01"
+                                                            step="0.01"
+                                                            value={pokemon.weight}
+                                                            title="Trọng số xuất hiện"
+                                                            placeholder="Trọng số"
+                                                            onChange={(e) => handleUpdateSpecialPokemonWeight(pokemon._id, e.target.value)}
+                                                            className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] text-center font-semibold"
+                                                        />
+                                                        <div className="text-[10px] text-center text-violet-700 font-bold">
+                                                            {totalSpecialWeight > 0 ? ((pokemon.weight / totalSpecialWeight) * 100).toFixed(1) : '0.0'}%
+                                                        </div>
+                                                    </div>
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemoveSpecialPokemon(pokemon._id)}

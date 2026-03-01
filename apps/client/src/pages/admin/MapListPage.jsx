@@ -89,6 +89,11 @@ export default function MapListPage() {
                                                     <span className="text-slate-600 font-medium text-xs bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 whitespace-nowrap">
                                                         Lv {map.levelMin}-{map.levelMax}
                                                     </span>
+                                                    {(Array.isArray(map.specialPokemonConfigs) ? map.specialPokemonConfigs.length > 0 : (Array.isArray(map.specialPokemonIds) && map.specialPokemonIds.length > 0)) && (
+                                                        <span className="text-[10px] text-violet-700 font-bold bg-violet-50 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                            SP {Math.round((Number(map.specialPokemonEncounterRate || 0)) * 100)}%
+                                                        </span>
+                                                    )}
                                                     {map.requiredSearches > 0 && (
                                                         <span className="text-[10px] text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">
                                                             🔒 {map.requiredSearches}
