@@ -5,6 +5,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
     ITEMS: 'items',
     NEWS: 'news',
     BATTLE: 'battle',
+    REWARDS: 'rewards',
 })
 
 export const ALL_ADMIN_PERMISSIONS = Object.freeze(Object.values(ADMIN_PERMISSIONS))
@@ -16,6 +17,7 @@ export const ADMIN_PERMISSION_OPTIONS = Object.freeze([
     { key: ADMIN_PERMISSIONS.ITEMS, label: 'Item' },
     { key: ADMIN_PERMISSIONS.NEWS, label: 'News' },
     { key: ADMIN_PERMISSIONS.BATTLE, label: 'Battle' },
+    { key: ADMIN_PERMISSIONS.REWARDS, label: 'Daily Reward' },
 ])
 
 export const getEffectiveAdminPermissions = (userLike) => {

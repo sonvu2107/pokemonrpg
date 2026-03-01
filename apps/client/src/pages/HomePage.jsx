@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import newsApi from '../services/newsApi'
 
 export default function HomePage() {
@@ -75,6 +76,16 @@ export default function HomePage() {
                         </div>
                         <div className="p-4 text-slate-700">
                             <p className="whitespace-pre-wrap">{post.content}</p>
+                            {post.mapId?.slug && (
+                                <div className="mt-3">
+                                    <Link
+                                        to={`/map/${post.mapId.slug}`}
+                                        className="inline-flex items-center text-xs font-bold text-blue-700 hover:text-blue-800"
+                                    >
+                                        Đi đến bản đồ: {post.mapId.name}
+                                    </Link>
+                                </div>
+                            )}
                             {post.author && (
                                 <p className="mt-4 text-xs text-slate-500">
                                     Đăng bởi: <span className="font-medium">{post.author.username}</span>

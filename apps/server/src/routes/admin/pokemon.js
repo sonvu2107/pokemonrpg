@@ -70,7 +70,18 @@ router.get('/', async (req, res) => {
 
         // Search by name (case-insensitive using nameLower)
         if (search) {
-            query.nameLower = { $regex: escapeRegExp(String(search).toLowerCase()), $options: 'i' }
+            const normalizedSearch = String(search).trim()
+            const escapedSearch = escapeRegExp(normalizedSearch.toLowerCase())
+            const numericSearch = Number.parseInt(normalizedSearch, 10)
+
+            if (Number.isFinite(numericSearch)) {
+                query.$or = [
+                    { pokedexNumber: numericSearch },
+                    { nameLower: { $regex: escapedSearch, $options: 'i' } },
+                ]
+            } else {
+                query.nameLower = { $regex: escapedSearch, $options: 'i' }
+            }
         }
 
         // Filter by type

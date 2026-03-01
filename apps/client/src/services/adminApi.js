@@ -410,6 +410,32 @@ export const itemDropRateApi = {
     },
 }
 
+// Daily reward endpoints
+export const dailyRewardApi = {
+    // GET /api/admin/daily-rewards
+    async list() {
+        const res = await fetch(`${API_URL}/admin/daily-rewards`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải cấu hình quà hằng ngày')
+        return res.json()
+    },
+
+    // PUT /api/admin/daily-rewards/:day
+    async update(day, payload) {
+        const res = await fetch(`${API_URL}/admin/daily-rewards/${day}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể cập nhật quà hằng ngày')
+        return res.json()
+    },
+}
+
 // User endpoints
 export const userApi = {
     // GET /api/admin/users?search=&page=&limit=

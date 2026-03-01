@@ -16,6 +16,11 @@ const postSchema = new mongoose.Schema(
             ref: 'User',
             required: true,
         },
+        mapId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Map',
+            default: null,
+        },
         type: {
             type: String,
             enum: ['news', 'event', 'maintenance', 'update'],

@@ -20,6 +20,7 @@ import ShopSellPage from './pages/ShopSellPage'
 import ItemShopPage from './pages/ItemShopPage'
 import DailyStatsPage from './pages/DailyStatsPage'
 import OnlineStatsPage from './pages/OnlineStatsPage'
+import DailyCheckInPage from './pages/DailyCheckInPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -34,6 +35,7 @@ import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
 import BattleTrainerPage from './pages/admin/BattleTrainerPage'
+import DailyRewardManagerPage from './pages/admin/DailyRewardManagerPage'
 import AdminRouteGuard from './components/AdminRouteGuard'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
@@ -67,6 +69,7 @@ export default function App() {
                 <Route path="/shop/items" element={<ItemShopPage />} />
                 <Route path="/stats" element={<DailyStatsPage />} />
                 <Route path="/stats/online" element={<OnlineStatsPage />} />
+                <Route path="/daily" element={<DailyCheckInPage />} />
                 <Route path="/trades" element={<TradesPage />} />
 
                 {/* Admin Routes */}
@@ -86,6 +89,7 @@ export default function App() {
                 <Route path="/admin/items/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
                 <Route path="/admin/items/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
                 <Route path="/admin/battle" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BATTLE}><BattleTrainerPage /></AdminRouteGuard>} />
+                <Route path="/admin/daily-rewards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><DailyRewardManagerPage /></AdminRouteGuard>} />
             </Route>
         </Routes>
     )

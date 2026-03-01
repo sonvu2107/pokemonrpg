@@ -183,8 +183,8 @@ router.post('/', async (req, res) => {
         }
 
         // Validate requiredSearches
-        if (requiredSearches !== undefined && (requiredSearches < 0 || requiredSearches > 10000)) {
-            return res.status(400).json({ ok: false, message: 'requiredSearches phải trong khoảng 0 đến 10000' })
+        if (requiredSearches !== undefined && requiredSearches < 0) {
+            return res.status(400).json({ ok: false, message: 'requiredSearches phải >= 0' })
         }
 
         // Validate encounterRate
@@ -282,8 +282,8 @@ router.put('/:id', async (req, res) => {
         }
 
         // Validate requiredSearches
-        if (requiredSearches !== undefined && (requiredSearches < 0 || requiredSearches > 10000)) {
-            return res.status(400).json({ ok: false, message: 'requiredSearches phải trong khoảng 0 đến 10000' })
+        if (requiredSearches !== undefined && requiredSearches < 0) {
+            return res.status(400).json({ ok: false, message: 'requiredSearches phải >= 0' })
         }
 
         // Validate encounterRate

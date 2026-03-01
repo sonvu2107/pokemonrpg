@@ -1,5 +1,6 @@
 import express from 'express'
 import Post from '../models/Post.js'
+import Map from '../models/Map.js'
 import { authMiddleware, requireAdmin, requireAdminPermission } from '../middleware/auth.js'
 import { ADMIN_PERMISSIONS } from '../constants/adminPermissions.js'
 
@@ -21,6 +22,7 @@ router.get('/', async (req, res) => {
 
         const posts = await Post.find(query)
             .populate('author', 'username')
+            .populate('mapId', 'name slug')
             .sort({ createdAt: -1 })
             .limit(limit)
             .lean()
@@ -37,6 +39,7 @@ router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(AD
     try {
         const posts = await Post.find()
             .populate('author', 'username')
+            .populate('mapId', 'name slug')
             .sort({ createdAt: -1 })
             .lean()
 
@@ -52,6 +55,7 @@ router.get('/:id', async (req, res) => {
     try {
         const post = await Post.findOne({ _id: req.params.id, isPublished: true })
             .populate('author', 'username')
+            .populate('mapId', 'name slug')
 
         if (!post) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bài viết' })
@@ -67,10 +71,18 @@ router.get('/:id', async (req, res) => {
 // POST /api/news - Create post (admin only)
 router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
-        const { title, content, type, isPublished } = req.body
+        const { title, content, type, isPublished, mapId } = req.body
+        const normalizedMapId = typeof mapId === 'string' ? mapId.trim() : ''
 
         if (!title || !content) {
             return res.status(400).json({ ok: false, message: 'Tiêu đề và nội dung là bắt buộc' })
+        }
+
+        if (normalizedMapId) {
+            const mapExists = await Map.exists({ _id: normalizedMapId })
+            if (!mapExists) {
+                return res.status(400).json({ ok: false, message: 'Bản đồ được liên kết không tồn tại' })
+            }
         }
 
         const post = new Post({
@@ -79,10 +91,14 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
             author: req.user.userId,
             type: type || 'news',
             isPublished: isPublished !== undefined ? isPublished : true,
+            mapId: normalizedMapId || null,
         })
 
         await post.save()
-        await post.populate('author', 'username')
+        await post.populate([
+            { path: 'author', select: 'username' },
+            { path: 'mapId', select: 'name slug' },
+        ])
 
         res.status(201).json({ ok: true, post })
     } catch (error) {
@@ -94,7 +110,7 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
 // PUT /api/news/:id - Update post (admin only)
 router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
-        const { title, content, type, isPublished } = req.body
+        const { title, content, type, isPublished, mapId } = req.body
 
         const post = await Post.findById(req.params.id)
 
@@ -106,9 +122,24 @@ router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PE
         if (content) post.content = content
         if (type) post.type = type
         if (isPublished !== undefined) post.isPublished = isPublished
+        if (mapId !== undefined) {
+            const normalizedMapId = typeof mapId === 'string' ? mapId.trim() : ''
+            if (!normalizedMapId) {
+                post.mapId = null
+            } else {
+                const mapExists = await Map.exists({ _id: normalizedMapId })
+                if (!mapExists) {
+                    return res.status(400).json({ ok: false, message: 'Bản đồ được liên kết không tồn tại' })
+                }
+                post.mapId = normalizedMapId
+            }
+        }
 
         await post.save()
-        await post.populate('author', 'username')
+        await post.populate([
+            { path: 'author', select: 'username' },
+            { path: 'mapId', select: 'name slug' },
+        ])
 
         res.json({ ok: true, post })
     } catch (error) {

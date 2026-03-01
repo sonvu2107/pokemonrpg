@@ -194,6 +194,29 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/daily-checkin - Get daily check-in status
+    async getDailyCheckInStatus() {
+        const res = await fetch(`${API_URL}/daily-checkin`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải thông tin điểm danh')
+        }
+        return res.json()
+    },
+
+    // POST /api/daily-checkin/claim - Claim daily reward
+    async claimDailyCheckIn() {
+        const res = await fetch(`${API_URL}/daily-checkin/claim`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Điểm danh thất bại')
+        }
+        return res.json()
+    },
+
     // GET /api/stats/online - Get online trainers list
     async getOnlineStats(params = {}) {
         const searchParams = new URLSearchParams()

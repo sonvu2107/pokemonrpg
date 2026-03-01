@@ -5,6 +5,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
     ITEMS: 'items',
     NEWS: 'news',
     BATTLE: 'battle',
+    REWARDS: 'rewards',
 })
 
 export const ALL_ADMIN_PERMISSIONS = Object.freeze(Object.values(ADMIN_PERMISSIONS))

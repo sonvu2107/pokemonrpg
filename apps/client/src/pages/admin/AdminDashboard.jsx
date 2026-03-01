@@ -9,6 +9,7 @@ const ICONS = {
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
     battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
+    rewards: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/lucky-egg.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
 }
 
@@ -52,7 +53,7 @@ export default function AdminDashboard() {
     const groups = [
         {
             title: 'Dữ Liệu Game',
-            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.BATTLE],
+            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.BATTLE, ADMIN_PERMISSIONS.REWARDS],
             cards: [
                 {
                     permission: ADMIN_PERMISSIONS.POKEMON,
@@ -85,6 +86,14 @@ export default function AdminDashboard() {
                     to: '/admin/battle',
                     icon: ICONS.battle,
                     color: 'violet',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.REWARDS,
+                    title: 'Điểm Danh Hằng Ngày',
+                    description: 'Thiết lập quà đăng nhập theo từng ngày',
+                    to: '/admin/daily-rewards',
+                    icon: ICONS.rewards,
+                    color: 'cyan',
                 },
             ]
         },

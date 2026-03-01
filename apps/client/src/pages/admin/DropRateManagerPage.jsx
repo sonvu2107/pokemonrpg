@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import React from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { mapApi, dropRateApi } from '../../services/adminApi'
-import { gameApi } from '../../services/gameApi'
+import { mapApi, dropRateApi, pokemonApi } from '../../services/adminApi'
 
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+const POKEMON_MODAL_PAGE_SIZE = 40
+const DROP_RATE_TABLE_PAGE_SIZE = 20
 
 export default function DropRateManagerPage() {
     const { mapId } = useParams()
@@ -19,35 +20,70 @@ export default function DropRateManagerPage() {
     const [showAddModal, setShowAddModal] = useState(false)
     const [allPokemon, setAllPokemon] = useState([])
     const [selectedPokemonIds, setSelectedPokemonIds] = useState([])
+    const [selectedPokemonMap, setSelectedPokemonMap] = useState({})
     const [bulkWeight, setBulkWeight] = useState(10)
     const [formId, setFormId] = useState('normal')
     const [searchTerm, setSearchTerm] = useState('')
     const [bulkLoading, setBulkLoading] = useState(false)
+    const [pokemonPage, setPokemonPage] = useState(1)
+    const [pokemonTotalPages, setPokemonTotalPages] = useState(1)
+    const [pokemonTotal, setPokemonTotal] = useState(0)
+    const [pokemonLoading, setPokemonLoading] = useState(false)
+    const [pokemonLoadError, setPokemonLoadError] = useState('')
+    const [dropRatePage, setDropRatePage] = useState(1)
 
     // Edit State
     const [editingId, setEditingId] = useState(null)
     const [editWeight, setEditWeight] = useState(0)
 
     useEffect(() => {
+        setDropRatePage(1)
         loadData()
     }, [mapId])
+
+    useEffect(() => {
+        if (!showAddModal) return
+        loadPokemonOptions()
+    }, [showAddModal, pokemonPage, searchTerm])
 
     const loadData = async () => {
         try {
             setLoading(true)
-            const [mapData, pokemonData] = await Promise.all([
-                mapApi.getDropRates(mapId),
-                gameApi.getPokemonList({ limit: 1000 })
-            ])
+            const mapData = await mapApi.getDropRates(mapId)
 
             setMap(mapData.map)
             setDropRates(mapData.dropRates)
             setTotalWeight(mapData.totalWeight)
-            setAllPokemon(pokemonData.pokemon)
         } catch (err) {
             setError(err.message)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadPokemonOptions = async () => {
+        try {
+            setPokemonLoading(true)
+            setPokemonLoadError('')
+
+            const normalizedSearch = String(searchTerm || '').trim()
+            const res = await pokemonApi.list({
+                page: pokemonPage,
+                limit: POKEMON_MODAL_PAGE_SIZE,
+                ...(normalizedSearch ? { search: normalizedSearch } : {}),
+            })
+
+            const rows = Array.isArray(res?.pokemon) ? res.pokemon : []
+            setAllPokemon(rows)
+            setPokemonTotalPages(Math.max(1, Number(res?.pagination?.pages) || 1))
+            setPokemonTotal(Math.max(0, Number(res?.pagination?.total) || 0))
+        } catch (err) {
+            setAllPokemon([])
+            setPokemonTotalPages(1)
+            setPokemonTotal(0)
+            setPokemonLoadError(err.message || 'Không thể tải danh sách Pokemon')
+        } finally {
+            setPokemonLoading(false)
         }
     }
 
@@ -70,9 +106,11 @@ export default function DropRateManagerPage() {
 
             setShowAddModal(false)
             setSelectedPokemonIds([])
+            setSelectedPokemonMap({})
             setBulkWeight(10)
             setFormId('normal')
             setSearchTerm('')
+            setPokemonPage(1)
             loadData()
         } catch (err) {
             alert('Thêm thất bại: ' + err.message)
@@ -220,17 +258,28 @@ export default function DropRateManagerPage() {
             return { pokemon, entries }
         })
     }
-    const filteredPokemon = allPokemon.filter((p) => {
-        const name = String(p.name || '').toLowerCase()
-        const query = searchTerm.trim().toLowerCase()
-        if (!query) return true
-        return name.includes(query) || String(p.pokedexNumber).includes(query)
-    })
+    const pageStart = pokemonTotal > 0 ? ((pokemonPage - 1) * POKEMON_MODAL_PAGE_SIZE) + 1 : 0
+    const pageEnd = pokemonTotal > 0 ? Math.min(pokemonTotal, pokemonPage * POKEMON_MODAL_PAGE_SIZE) : 0
+
+    const groupedDropRateRows = groupedDropRates()
+    const groupedDropRateTotal = groupedDropRateRows.length
+    const dropRateTotalPages = Math.max(1, Math.ceil(groupedDropRateTotal / DROP_RATE_TABLE_PAGE_SIZE))
+    const safeDropRatePage = Math.min(dropRatePage, dropRateTotalPages)
+    const paginatedGroupedDropRates = groupedDropRateRows.slice(
+        (safeDropRatePage - 1) * DROP_RATE_TABLE_PAGE_SIZE,
+        safeDropRatePage * DROP_RATE_TABLE_PAGE_SIZE
+    )
+    const dropRatePageStart = groupedDropRateTotal > 0
+        ? ((safeDropRatePage - 1) * DROP_RATE_TABLE_PAGE_SIZE) + 1
+        : 0
+    const dropRatePageEnd = groupedDropRateTotal > 0
+        ? Math.min(groupedDropRateTotal, safeDropRatePage * DROP_RATE_TABLE_PAGE_SIZE)
+        : 0
 
     const selectedPokemonFormOptions = Array.from(
-        selectedPokemonIds.reduce((acc, pokemonId) => {
-            const pokemon = allPokemon.find((entry) => entry._id === pokemonId)
-            if (!pokemon) return acc
+            selectedPokemonIds.reduce((acc, pokemonId) => {
+                const pokemon = selectedPokemonMap[pokemonId] || allPokemon.find((entry) => entry._id === pokemonId)
+                if (!pokemon) return acc
 
             getPokemonFormsForDisplay(pokemon).forEach((form) => {
                 if (!acc.has(form.formId)) {
@@ -298,7 +347,12 @@ export default function DropRateManagerPage() {
                             Xóa Tất Cả
                         </button>
                         <button
-                            onClick={() => setShowAddModal(true)}
+                            onClick={() => {
+                                setShowAddModal(true)
+                                setSearchTerm('')
+                                setPokemonPage(1)
+                                setPokemonLoadError('')
+                            }}
                             className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -320,6 +374,7 @@ export default function DropRateManagerPage() {
                         <p className="text-xs mt-1">Nhấn nút "Thêm Pokemon" để bắt đầu cấu hình</p>
                     </div>
                 ) : (
+                    <>
                     <div className="w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200">
                         <table className="w-full min-w-[800px] lg:min-w-[1100px] text-sm">
                             <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200">
@@ -332,7 +387,7 @@ export default function DropRateManagerPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {groupedDropRates().map((group) => {
+                                {paginatedGroupedDropRates.map((group) => {
                                     const entries = group.entries
                                     const defaultFormId = normalizeDropRateFormId(group.pokemon?.defaultFormId || 'normal')
                                     let baseIndex = entries.findIndex((entry) => normalizeDropRateFormId(entry.formId) === defaultFormId)
@@ -581,6 +636,33 @@ export default function DropRateManagerPage() {
                             </tbody>
                         </table>
                     </div>
+                    <div className="mt-3 flex items-center justify-between px-1 text-xs text-slate-500">
+                        <span>
+                            Hiển thị {dropRatePageStart}-{dropRatePageEnd} / {groupedDropRateTotal} Pokemon
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setDropRatePage(Math.max(1, safeDropRatePage - 1))}
+                                disabled={safeDropRatePage <= 1}
+                                className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Trước
+                            </button>
+                            <span className="font-semibold text-slate-600">
+                                Trang {safeDropRatePage}/{dropRateTotalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setDropRatePage(Math.min(dropRateTotalPages, safeDropRatePage + 1))}
+                                disabled={safeDropRatePage >= dropRateTotalPages}
+                                className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                Sau
+                            </button>
+                        </div>
+                    </div>
+                    </>
                 )}
             </div>
 
@@ -603,7 +685,10 @@ export default function DropRateManagerPage() {
                                 <input
                                     type="text"
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onChange={(e) => {
+                                        setSearchTerm(e.target.value)
+                                        setPokemonPage(1)
+                                    }}
                                     placeholder="Nhập tên hoặc số Pokedex #"
                                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                                 />
@@ -619,10 +704,14 @@ export default function DropRateManagerPage() {
                                     </span>
                                 </div>
                                 <div className="max-h-64 sm:max-h-72 overflow-y-auto border border-slate-200 rounded-md">
-                                    {filteredPokemon.length === 0 ? (
+                                    {pokemonLoading ? (
+                                        <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải danh sách Pokemon...</div>
+                                    ) : pokemonLoadError ? (
+                                        <div className="px-3 py-4 text-sm text-red-600 text-center">{pokemonLoadError}</div>
+                                    ) : allPokemon.length === 0 ? (
                                         <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy</div>
                                     ) : (
-                                        filteredPokemon.map((p) => {
+                                        allPokemon.map((p) => {
                                             const isChecked = selectedPokemonIds.includes(p._id)
                                             const isExisting = existingDropRateKeys.has(`${p._id}:${normalizedFormId}`)
                                             const pokedexNumber = Number(p?.pokedexNumber) || 0
@@ -642,9 +731,20 @@ export default function DropRateManagerPage() {
                                                         checked={isChecked}
                                                         onChange={(e) => {
                                                             if (e.target.checked) {
-                                                                setSelectedPokemonIds((prev) => [...prev, p._id])
+                                                                setSelectedPokemonIds((prev) => (
+                                                                    prev.includes(p._id) ? prev : [...prev, p._id]
+                                                                ))
+                                                                setSelectedPokemonMap((prev) => ({
+                                                                    ...prev,
+                                                                    [p._id]: p,
+                                                                }))
                                                             } else {
                                                                 setSelectedPokemonIds((prev) => prev.filter((id) => id !== p._id))
+                                                                setSelectedPokemonMap((prev) => {
+                                                                    const next = { ...prev }
+                                                                    delete next[p._id]
+                                                                    return next
+                                                                })
                                                             }
                                                         }}
                                                         className="h-4 w-4 flex-shrink-0"
@@ -687,6 +787,32 @@ export default function DropRateManagerPage() {
                                             )
                                         })
                                     )}
+                                </div>
+                                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                                    <span>
+                                        Hiển thị {pageStart}-{pageEnd} / {pokemonTotal}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPokemonPage((prev) => Math.max(1, prev - 1))}
+                                            disabled={pokemonPage <= 1 || pokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Trước
+                                        </button>
+                                        <span className="font-semibold text-slate-600">
+                                            Trang {pokemonPage}/{pokemonTotalPages}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPokemonPage((prev) => Math.min(pokemonTotalPages, prev + 1))}
+                                            disabled={pokemonPage >= pokemonTotalPages || pokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Sau
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

@@ -46,6 +46,11 @@ export default function LeftColumn() {
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
 
+    const resolvePostTarget = (post) => {
+        if (post?.mapId?.slug) return `/map/${post.mapId.slug}`
+        return '/'
+    }
+
     const sortByDisplayOrder = (maps) => {
         return maps
             .map((map, index) => ({ ...map, __originalIndex: index }))
@@ -118,7 +123,7 @@ export default function LeftColumn() {
                     <div className="text-xs text-white/70 px-2 py-1">Chưa có sự kiện mới.</div>
                 ) : (
                     eventPosts.map((post) => (
-                        <SidebarLink key={post._id} to="/" isSpecial>
+                        <SidebarLink key={post._id} to={resolvePostTarget(post)} isSpecial>
                             {post.title}
                         </SidebarLink>
                     ))
@@ -133,7 +138,7 @@ export default function LeftColumn() {
                     <div className="text-xs text-white/70 px-2 py-1">Chưa có cập nhật mới.</div>
                 ) : (
                     updatePosts.map((post) => (
-                        <SidebarLink key={post._id} to="/" isSpecial>
+                        <SidebarLink key={post._id} to={resolvePostTarget(post)} isSpecial>
                             {post.title}
                         </SidebarLink>
                     ))
