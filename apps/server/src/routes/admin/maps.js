@@ -96,7 +96,7 @@ const validateSpecialPokemonConfigs = async (configs) => {
         return 'specialPokemonConfigs chứa Pokemon id không hợp lệ'
     }
 
-    const pokemonById = new Map(pokemonRows.map((entry) => [String(entry._id), entry]))
+    const pokemonById = new globalThis.Map(pokemonRows.map((entry) => [String(entry._id), entry]))
     for (const config of configs) {
         const pokemonId = String(config?.pokemonId || '').trim()
         const formId = normalizeFormId(config?.formId)
