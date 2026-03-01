@@ -77,6 +77,23 @@ export const pokemonApi = {
         return res.json()
     },
 
+    // PUT /api/admin/pokemon/evolutions/bulk
+    async bulkUpdateEvolutions(updates = []) {
+        const res = await fetch(`${API_URL}/admin/pokemon/evolutions/bulk`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ updates }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Cập nhật tiến hóa hàng loạt thất bại')
+        }
+        return res.json()
+    },
+
     // DELETE /api/admin/pokemon/:id
     async delete(id) {
         const res = await fetch(`${API_URL}/admin/pokemon/${id}`, {

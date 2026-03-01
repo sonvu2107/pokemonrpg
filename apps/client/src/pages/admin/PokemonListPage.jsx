@@ -29,6 +29,7 @@ export default function PokemonListPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [evolutionEdits, setEvolutionEdits] = useState({})
+    const [dirtyEvolutionKeys, setDirtyEvolutionKeys] = useState(() => new Set())
     const [savingId, setSavingId] = useState('')
     const [expandedIds, setExpandedIds] = useState(() => new Set())
 
@@ -84,8 +85,8 @@ export default function PokemonListPage() {
             const data = await pokemonApi.list({ search, type: typeFilter, page, limit: 20 })
             setPokemon(data.pokemon)
             setPagination(data.pagination)
-            setEvolutionEdits((prev) => {
-                const next = { ...prev }
+            setEvolutionEdits(() => {
+                const next = {}
                 data.pokemon.forEach((p) => {
                     // Main Pokemon evolution
                     const evolvesTo = typeof p.evolution?.evolvesTo === 'string'
@@ -107,6 +108,7 @@ export default function PokemonListPage() {
                 })
                 return next
             })
+            setDirtyEvolutionKeys(new Set())
         } catch (err) {
             setError(err.message)
         } finally {
@@ -128,6 +130,23 @@ export default function PokemonListPage() {
             ...prev,
             [id]: { ...prev[id], ...patch },
         }))
+        setDirtyEvolutionKeys((prev) => {
+            const next = new Set(prev)
+            next.add(id)
+            return next
+        })
+    }
+
+    const parseEvolutionEditKey = (key) => {
+        const separatorIndex = key.indexOf('_')
+        if (separatorIndex === -1) {
+            return { pokemonId: key, formId: null }
+        }
+
+        return {
+            pokemonId: key.slice(0, separatorIndex),
+            formId: key.slice(separatorIndex + 1) || null,
+        }
     }
 
     const handleSaveEvolution = async (p, formId = null) => {
@@ -170,10 +189,60 @@ export default function PokemonListPage() {
                 }
             }
 
-            await pokemonApi.update(p._id, payload)
-            await loadPokemon()
+            const result = await pokemonApi.update(p._id, payload)
+            const updatedPokemon = result?.pokemon
+
+            if (updatedPokemon?._id) {
+                setPokemon((prev) => prev.map((entry) => (
+                    entry._id === updatedPokemon._id ? updatedPokemon : entry
+                )))
+            }
+
+            setDirtyEvolutionKeys((prev) => {
+                const next = new Set(prev)
+                next.delete(key)
+                return next
+            })
         } catch (err) {
             setError(`Lưu tiến hóa thất bại: ${err.message}`)
+        } finally {
+            setSavingId('')
+        }
+    }
+
+    const handleSaveAllEvolution = async () => {
+        const keys = [...dirtyEvolutionKeys]
+        if (keys.length === 0) return
+
+        const updates = keys.map((key) => {
+            const { pokemonId, formId } = parseEvolutionEditKey(key)
+            const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '' }
+            const evolvesToValue = edit.evolvesTo || null
+            const minLevelValue = evolvesToValue ? (parseInt(edit.minLevel, 10) || null) : null
+
+            return {
+                pokemonId,
+                formId: formId || undefined,
+                evolvesTo: evolvesToValue,
+                minLevel: minLevelValue,
+            }
+        })
+
+        try {
+            setSavingId('__bulk__')
+            setError('')
+
+            const result = await pokemonApi.bulkUpdateEvolutions(updates)
+            const updatedPokemon = Array.isArray(result?.pokemon) ? result.pokemon : []
+            const updatedById = new Map(updatedPokemon.map((entry) => [entry._id, entry]))
+
+            if (updatedById.size > 0) {
+                setPokemon((prev) => prev.map((entry) => updatedById.get(entry._id) || entry))
+            }
+
+            setDirtyEvolutionKeys(new Set())
+        } catch (err) {
+            setError(`Lưu nhanh tiến hóa thất bại: ${err.message}`)
         } finally {
             setSavingId('')
         }
@@ -283,7 +352,7 @@ export default function PokemonListPage() {
                             <button
                                 type="button"
                                 onClick={() => handleSaveEvolution(p)}
-                                disabled={savingId === p._id}
+                                disabled={savingId === p._id || savingId === '__bulk__'}
                                 title="Lưu tiến hóa"
                                 className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center"
                             >
@@ -436,6 +505,16 @@ export default function PokemonListPage() {
                             <option key={type} value={type}>{type.charAt(0).toUpperCase() + type.slice(1)}</option>
                         ))}
                     </select>
+                    <button
+                        type="button"
+                        onClick={handleSaveAllEvolution}
+                        disabled={savingId === '__bulk__' || dirtyEvolutionKeys.size === 0}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-sm font-bold shadow-sm transition-colors"
+                    >
+                        {savingId === '__bulk__'
+                            ? 'Đang lưu...'
+                            : `Lưu nhanh (${dirtyEvolutionKeys.size})`}
+                    </button>
                 </div>
 
                 {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}
@@ -554,7 +633,7 @@ export default function PokemonListPage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleSaveEvolution(p)}
-                                                                disabled={savingId === p._id}
+                                                                disabled={savingId === p._id || savingId === '__bulk__'}
                                                                 title="Lưu tiến hóa"
                                                                 className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center transition-colors"
                                                             >
@@ -608,49 +687,89 @@ export default function PokemonListPage() {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                                {isExpanded && extraForms.map((form) => (
-                                                    <tr key={`${p._id}-${form.formId}`} className="bg-slate-50/60">
-                                                        <td className="px-3 py-3 text-slate-400 font-mono text-xs border-t border-slate-100/50">
-                                                            <div className="flex justify-end pr-2">↳</div>
-                                                        </td>
-                                                        <td className="px-3 py-3 text-center border-t border-slate-100/50">
-                                                            {(form.imageUrl || p.imageUrl) ? (
-                                                                <img
-                                                                    src={form.imageUrl || p.imageUrl}
-                                                                    alt={`${p.name} ${form.formName || form.formId}`.trim()}
-                                                                    className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
-                                                                />
-                                                            ) : (
-                                                                <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
-                                                                    ?
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-3 py-3 text-slate-600 font-medium text-sm truncate max-w-[200px] border-t border-slate-100/50">
-                                                            {p.name} <span className="text-xs text-slate-400 italic">({form.formName || form.formId})</span>
-                                                        </td>
-                                                        <td className="px-3 py-3 border-t border-slate-100/50">
-                                                            <div className="flex gap-1 flex-wrap max-w-[120px] opacity-60">
-                                                                {p.types.map(type => (
-                                                                    <span
-                                                                        key={type}
-                                                                        className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                {isExpanded && extraForms.map((form) => {
+                                                    const formEditKey = `${p._id}_${form.formId}`
+
+                                                    return (
+                                                        <tr key={`${p._id}-${form.formId}`} className="bg-slate-50/60">
+                                                            <td className="px-3 py-3 text-slate-400 font-mono text-xs border-t border-slate-100/50">
+                                                                <div className="flex justify-end pr-2">↳</div>
+                                                            </td>
+                                                            <td className="px-3 py-3 text-center border-t border-slate-100/50">
+                                                                {(form.imageUrl || p.imageUrl) ? (
+                                                                    <img
+                                                                        src={form.imageUrl || p.imageUrl}
+                                                                        alt={`${p.name} ${form.formName || form.formId}`.trim()}
+                                                                        className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
+                                                                        ?
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-3 py-3 text-slate-600 font-medium text-sm truncate max-w-[200px] border-t border-slate-100/50">
+                                                                {p.name} <span className="text-xs text-slate-400 italic">({form.formName || form.formId})</span>
+                                                            </td>
+                                                            <td className="px-3 py-3 border-t border-slate-100/50">
+                                                                <div className="flex items-center gap-2">
+                                                                    <select
+                                                                        value={evolutionEdits[formEditKey]?.evolvesTo || ''}
+                                                                        onChange={(e) => updateEvolutionEdit(formEditKey, { evolvesTo: e.target.value })}
+                                                                        className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
                                                                     >
-                                                                        {type.slice(0, 3)}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-3 py-3 border-t border-slate-100/50">
-                                                            <span
-                                                                className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200"
-                                                            >
-                                                                {form.formName || form.formId}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-3 py-3 text-right whitespace-nowrap border-t border-slate-100/50"></td>
-                                                    </tr>
-                                                ))}
+                                                                        <option value="">--</option>
+                                                                        {allPokemon.map((target) => (
+                                                                            <option key={target._id} value={target._id} disabled={target._id === p._id}>
+                                                                                #{target.pokedexNumber} {target.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        placeholder="Lv"
+                                                                        value={evolutionEdits[formEditKey]?.minLevel ?? ''}
+                                                                        onChange={(e) => updateEvolutionEdit(formEditKey, { minLevel: e.target.value })}
+                                                                        className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                                                                        disabled={!evolutionEdits[formEditKey]?.evolvesTo}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSaveEvolution(p, form.formId)}
+                                                                        disabled={savingId === formEditKey || savingId === '__bulk__'}
+                                                                        title="Lưu tiến hóa dạng"
+                                                                        className="p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded shadow-sm flex items-center justify-center transition-colors"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-3 border-t border-slate-100/50">
+                                                                <div className="flex gap-1 flex-wrap max-w-[120px] opacity-60">
+                                                                    {p.types.map(type => (
+                                                                        <span
+                                                                            key={type}
+                                                                            className={`px-1.5 py-0.5 rounded-[3px] text-[10px] text-white font-bold uppercase tracking-wide shadow-sm ${TYPE_COLORS[type] || 'bg-gray-600'}`}
+                                                                        >
+                                                                            {type.slice(0, 3)}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-3 border-t border-slate-100/50">
+                                                                <span
+                                                                    className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200"
+                                                                >
+                                                                    {form.formName || form.formId}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-3 py-3 text-right whitespace-nowrap border-t border-slate-100/50"></td>
+                                                        </tr>
+                                                    )
+                                                })}
                                             </React.Fragment>
                                         )
                                     })}

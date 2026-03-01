@@ -1,4 +1,5 @@
 import express from 'express'
+import mongoose from 'mongoose'
 import Pokemon from '../../models/Pokemon.js'
 
 const router = express.Router()
@@ -61,6 +62,16 @@ const normalizeForms = (forms) => {
         .filter(f => f.formId)
 }
 
+const normalizeEvolutionTargetId = (value) => {
+    if (!value) return null
+    if (typeof value === 'object') {
+        const nested = value?._id || null
+        return nested ? String(nested).trim() : null
+    }
+    const normalized = String(value).trim()
+    return normalized || null
+}
+
 // GET /api/admin/pokemon - List all Pokemon with search, filter, pagination
 router.get('/', async (req, res) => {
     try {
@@ -117,6 +128,123 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('GET /api/admin/pokemon error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// PUT /api/admin/pokemon/evolutions/bulk - Bulk update evolution rules
+router.put('/evolutions/bulk', async (req, res) => {
+    try {
+        const rawUpdates = Array.isArray(req.body?.updates) ? req.body.updates : []
+        if (rawUpdates.length === 0) {
+            return res.status(400).json({ ok: false, message: 'Thiếu danh sách cập nhật tiến hóa' })
+        }
+
+        if (rawUpdates.length > 500) {
+            return res.status(400).json({ ok: false, message: 'Số lượng cập nhật quá lớn (tối đa 500)' })
+        }
+
+        const normalizedUpdates = []
+
+        for (const [index, entry] of rawUpdates.entries()) {
+            const pokemonId = String(entry?.pokemonId || '').trim()
+            if (!mongoose.Types.ObjectId.isValid(pokemonId)) {
+                return res.status(400).json({ ok: false, message: `pokemonId không hợp lệ ở vị trí ${index + 1}` })
+            }
+
+            const formIdRaw = String(entry?.formId || '').trim()
+            const formId = formIdRaw || null
+
+            const evolvesTo = normalizeEvolutionTargetId(entry?.evolvesTo)
+            if (evolvesTo && !mongoose.Types.ObjectId.isValid(evolvesTo)) {
+                return res.status(400).json({ ok: false, message: `evolvesTo không hợp lệ ở vị trí ${index + 1}` })
+            }
+
+            if (evolvesTo && evolvesTo === pokemonId) {
+                return res.status(400).json({ ok: false, message: `Pokemon không thể tiến hóa thành chính nó (vị trí ${index + 1})` })
+            }
+
+            const parsedMinLevel = Number.parseInt(entry?.minLevel, 10)
+            const minLevel = evolvesTo
+                ? (Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null)
+                : null
+
+            normalizedUpdates.push({ pokemonId, formId, evolvesTo, minLevel })
+        }
+
+        const dedupedByKey = new Map()
+        normalizedUpdates.forEach((entry) => {
+            const key = `${entry.pokemonId}::${entry.formId || '__species__'}`
+            dedupedByKey.set(key, entry)
+        })
+        const updates = [...dedupedByKey.values()]
+
+        const pokemonIds = [...new Set(updates.map((entry) => entry.pokemonId))]
+        const pokemonDocs = await Pokemon.find({ _id: { $in: pokemonIds } })
+        const pokemonById = new Map(pokemonDocs.map((entry) => [String(entry._id), entry]))
+
+        for (const pokemonId of pokemonIds) {
+            if (!pokemonById.has(pokemonId)) {
+                return res.status(404).json({ ok: false, message: `Không tìm thấy Pokemon: ${pokemonId}` })
+            }
+        }
+
+        const targetIds = [...new Set(updates.map((entry) => entry.evolvesTo).filter(Boolean))]
+        if (targetIds.length > 0) {
+            const targetCount = await Pokemon.countDocuments({ _id: { $in: targetIds } })
+            if (targetCount !== targetIds.length) {
+                return res.status(400).json({ ok: false, message: 'Có Pokemon tiến hóa đích không tồn tại' })
+            }
+        }
+
+        const touchedIds = new Set()
+
+        for (const entry of updates) {
+            const doc = pokemonById.get(entry.pokemonId)
+            if (!doc) continue
+
+            if (entry.formId) {
+                const forms = Array.isArray(doc.forms) ? doc.forms : []
+                const targetForm = forms.find((f) => String(f?.formId || '').trim() === entry.formId) || null
+                if (!targetForm) {
+                    return res.status(400).json({ ok: false, message: `Không tìm thấy formId "${entry.formId}" của Pokemon ${doc.name}` })
+                }
+
+                targetForm.evolution = entry.evolvesTo
+                    ? {
+                        evolvesTo: entry.evolvesTo,
+                        minLevel: entry.minLevel,
+                    }
+                    : null
+            } else {
+                doc.evolution = {
+                    evolvesTo: entry.evolvesTo || null,
+                    minLevel: entry.evolvesTo ? entry.minLevel : null,
+                }
+            }
+
+            touchedIds.add(String(doc._id))
+        }
+
+        const saveTasks = [...touchedIds]
+            .map((id) => pokemonById.get(id))
+            .filter(Boolean)
+            .map((doc) => doc.save())
+
+        await Promise.all(saveTasks)
+
+        const updatedPokemon = await Pokemon.find({ _id: { $in: [...touchedIds] } })
+            .select('name pokedexNumber evolution forms defaultFormId')
+            .populate('evolution.evolvesTo', 'name pokedexNumber')
+            .lean()
+
+        res.json({
+            ok: true,
+            updatedCount: updates.length,
+            pokemon: updatedPokemon,
+        })
+    } catch (error) {
+        console.error('PUT /api/admin/pokemon/evolutions/bulk error:', error)
+        res.status(500).json({ ok: false, message: error.message || 'Lỗi máy chủ' })
     }
 })
 
