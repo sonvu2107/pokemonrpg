@@ -8,6 +8,11 @@ const specialPokemonConfigSchema = new mongoose.Schema(
             ref: 'Pokemon',
             required: true,
         },
+        formId: {
+            type: String,
+            default: 'normal',
+            trim: true,
+        },
         weight: {
             type: Number,
             default: 1,
@@ -109,6 +114,11 @@ const mapSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        requiredPlayerLevel: {
+            type: Number,
+            default: 1,
+            min: 1,
+        },
         encounterRate: {
             type: Number,
             default: 1,
@@ -139,28 +149,32 @@ mapSchema.pre('validate', function (next) {
     }
 
     const normalizeObjectId = (value) => String(value || '').trim()
+    const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 
     if (Array.isArray(this.specialPokemonConfigs) && this.specialPokemonConfigs.length > 0) {
         const seen = new Set()
         this.specialPokemonConfigs = this.specialPokemonConfigs
             .map((entry) => {
                 const pokemonId = normalizeObjectId(entry?.pokemonId)
+                const formId = normalizeFormId(entry?.formId)
                 const weight = Number(entry?.weight)
-                if (!pokemonId || seen.has(pokemonId)) return null
-                seen.add(pokemonId)
+                const key = `${pokemonId}:${formId}`
+                if (!pokemonId || seen.has(key)) return null
+                seen.add(key)
                 return {
                     pokemonId,
+                    formId,
                     weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
                 }
             })
             .filter(Boolean)
             .slice(0, 5)
 
-        this.specialPokemonIds = this.specialPokemonConfigs.map((entry) => entry.pokemonId)
+        this.specialPokemonIds = [...new Set(this.specialPokemonConfigs.map((entry) => entry.pokemonId))]
     } else if (Array.isArray(this.specialPokemonIds) && this.specialPokemonIds.length > 0) {
         const normalizedIds = [...new Set(this.specialPokemonIds.map((entry) => normalizeObjectId(entry)).filter(Boolean))].slice(0, 5)
         this.specialPokemonIds = normalizedIds
-        this.specialPokemonConfigs = normalizedIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+        this.specialPokemonConfigs = normalizedIds.map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
     }
 
     next()

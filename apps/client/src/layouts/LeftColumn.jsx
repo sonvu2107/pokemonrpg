@@ -184,10 +184,21 @@ export default function LeftColumn() {
                             const isLocked = !map.isUnlocked
                             const requiredSearches = map.unlockRequirement?.requiredSearches || 0
                             const remainingSearches = map.unlockRequirement?.remainingSearches || 0
+                            const requiredPlayerLevel = Math.max(1, Number(map.unlockRequirement?.requiredPlayerLevel) || 1)
+                            const currentPlayerLevel = Math.max(1, Number(map.unlockRequirement?.currentPlayerLevel) || 1)
+                            const remainingPlayerLevels = map.unlockRequirement?.remainingPlayerLevels || 0
                             const sourceMapName = map.unlockRequirement?.sourceMap?.name
-                            const tooltip = isLocked
-                                ? `Cần thêm ${remainingSearches} lượt tìm kiếm tại ${sourceMapName || 'map trước'}`
-                                : ''
+                            const tooltip = (() => {
+                                if (!isLocked) return ''
+                                const parts = []
+                                if (remainingPlayerLevels > 0) {
+                                    parts.push(`Cần Lv ${requiredPlayerLevel} (hiện tại Lv ${currentPlayerLevel})`)
+                                }
+                                if (requiredSearches > 0 && remainingSearches > 0) {
+                                    parts.push(`Cần thêm ${remainingSearches} lượt tìm kiếm tại ${sourceMapName || 'map trước'}`)
+                                }
+                                return parts.join(' | ')
+                            })()
 
                             if (isLocked) {
                                 return (

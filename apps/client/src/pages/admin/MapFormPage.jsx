@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { mapApi } from '../../services/adminApi'
-import { gameApi } from '../../services/gameApi'
+import { mapApi, pokemonApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 
 const MIN_SPECIAL_WEIGHT = 0.0001
+const SPECIAL_POKEMON_MODAL_PAGE_SIZE = 40
+const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 
 export default function MapFormPage() {
     const { id } = useParams()
@@ -25,14 +26,21 @@ export default function MapFormPage() {
         specialPokemonConfigs: [],
         specialPokemonEncounterRate: 0,
         requiredSearches: 0,
+        requiredPlayerLevel: 1,
         encounterRate: 1,
         itemDropRate: 0,
         orderIndex: 0,
     })
 
-    const [allPokemon, setAllPokemon] = useState([])
+    const [pokemonLookup, setPokemonLookup] = useState({})
+    const [specialPokemonOptions, setSpecialPokemonOptions] = useState([])
     const [loadingPokemon, setLoadingPokemon] = useState(false)
-    const [selectedPokemonIdToAdd, setSelectedPokemonIdToAdd] = useState('')
+    const [specialPokemonLoadError, setSpecialPokemonLoadError] = useState('')
+    const [showSpecialPokemonModal, setShowSpecialPokemonModal] = useState(false)
+    const [specialPokemonSearchTerm, setSpecialPokemonSearchTerm] = useState('')
+    const [specialPokemonPage, setSpecialPokemonPage] = useState(1)
+    const [specialPokemonTotalPages, setSpecialPokemonTotalPages] = useState(1)
+    const [specialPokemonTotal, setSpecialPokemonTotal] = useState(0)
 
     const normalizeSpecialPokemonConfigs = (value, fallbackIds = []) => {
         const fromConfigs = Array.isArray(value)
@@ -42,11 +50,14 @@ export default function MapFormPage() {
                     const pokemonId = typeof entry === 'string'
                         ? entry
                         : (entry.pokemonId?._id || entry.pokemonId)
+                    const formId = typeof entry === 'object' && entry !== null
+                        ? normalizeFormId(entry.formId)
+                        : 'normal'
                     const weightRaw = typeof entry === 'object' && entry !== null ? entry.weight : 1
                     const weight = Number.isFinite(Number(weightRaw)) && Number(weightRaw) > 0
                         ? Number(weightRaw)
                         : 1
-                    return pokemonId ? { pokemonId: String(pokemonId), weight } : null
+                    return pokemonId ? { pokemonId: String(pokemonId), formId, weight } : null
                 })
                 .filter(Boolean)
             : []
@@ -61,23 +72,52 @@ export default function MapFormPage() {
                 return item._id || ''
             })
             .filter(Boolean)
-            .map((pokemonId) => ({ pokemonId, weight: 1 }))
+            .map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
     }
 
     useEffect(() => {
-        loadPokemonOptions()
         if (isEdit) {
             loadMap()
         }
     }, [id])
 
+    useEffect(() => {
+        if (!showSpecialPokemonModal) return
+        loadPokemonOptions()
+    }, [showSpecialPokemonModal, specialPokemonPage, specialPokemonSearchTerm])
+
+    const mergePokemonLookup = (rows = []) => {
+        setPokemonLookup((prev) => {
+            const next = { ...prev }
+            rows.forEach((entry) => {
+                if (entry?._id) next[entry._id] = entry
+            })
+            return next
+        })
+    }
+
     const loadPokemonOptions = async () => {
         try {
             setLoadingPokemon(true)
-            const data = await gameApi.getPokemonList({ page: 1, limit: 5000 })
-            setAllPokemon(data.pokemon || [])
+            setSpecialPokemonLoadError('')
+
+            const normalizedSearch = String(specialPokemonSearchTerm || '').trim()
+            const data = await pokemonApi.list({
+                page: specialPokemonPage,
+                limit: SPECIAL_POKEMON_MODAL_PAGE_SIZE,
+                ...(normalizedSearch ? { search: normalizedSearch } : {}),
+            })
+
+            const rows = Array.isArray(data?.pokemon) ? data.pokemon : []
+            setSpecialPokemonOptions(rows)
+            setSpecialPokemonTotalPages(Math.max(1, Number(data?.pagination?.pages) || 1))
+            setSpecialPokemonTotal(Math.max(0, Number(data?.pagination?.total) || 0))
+            mergePokemonLookup(rows)
         } catch (err) {
-            setError(err.message)
+            setSpecialPokemonOptions([])
+            setSpecialPokemonTotalPages(1)
+            setSpecialPokemonTotal(0)
+            setSpecialPokemonLoadError(err.message || 'Không thể tải danh sách Pokemon')
         } finally {
             setLoadingPokemon(false)
         }
@@ -96,10 +136,28 @@ export default function MapFormPage() {
                 specialPokemonEncounterRate: data.map.specialPokemonEncounterRate ?? 0,
                 isLegendary: data.map.isLegendary || false,
                 requiredSearches: data.map.requiredSearches || 0,
+                requiredPlayerLevel: Math.max(1, Number(data.map.requiredPlayerLevel) || 1),
                 encounterRate: data.map.encounterRate ?? 1,
                 itemDropRate: data.map.itemDropRate ?? 0,
                 orderIndex: data.map.orderIndex || 0,
             })
+
+            const mapPokemonRows = []
+            if (Array.isArray(data.map?.specialPokemonConfigs)) {
+                data.map.specialPokemonConfigs.forEach((entry) => {
+                    if (entry?.pokemonId && typeof entry.pokemonId === 'object' && entry.pokemonId._id) {
+                        mapPokemonRows.push(entry.pokemonId)
+                    }
+                })
+            }
+            if (Array.isArray(data.map?.specialPokemonIds)) {
+                data.map.specialPokemonIds.forEach((entry) => {
+                    if (entry && typeof entry === 'object' && entry._id) {
+                        mapPokemonRows.push(entry)
+                    }
+                })
+            }
+            mergePokemonLookup(mapPokemonRows)
         } catch (err) {
             setError(err.message)
         } finally {
@@ -113,6 +171,11 @@ export default function MapFormPage() {
 
         if (formData.levelMax < formData.levelMin) {
             setError('Cấp độ tối đa phải >= Cấp độ tối thiểu')
+            return
+        }
+
+        if (Number(formData.requiredPlayerLevel) < 1) {
+            setError('Lv yêu cầu vào map phải >= 1')
             return
         }
 
@@ -140,41 +203,59 @@ export default function MapFormPage() {
         }
     }
 
-    const handleAddSpecialPokemon = () => {
-        if (!selectedPokemonIdToAdd) return
+    const handleOpenSpecialPokemonModal = () => {
+        if (formData.specialPokemonConfigs.length >= 5) {
+            setError('Chỉ có thể chọn tối đa 5 Pokemon đặc biệt')
+            return
+        }
+        setSpecialPokemonSearchTerm('')
+        setSpecialPokemonPage(1)
+        setSpecialPokemonLoadError('')
+        setShowSpecialPokemonModal(true)
+    }
+
+    const handleAddSpecialPokemon = (pokemonId, formId) => {
+        const normalizedPokemonId = String(pokemonId || '').trim()
+        const normalizedFormId = normalizeFormId(formId)
+        const uniqueKey = `${normalizedPokemonId}:${normalizedFormId}`
+        if (!normalizedPokemonId) return
 
         if (formData.specialPokemonConfigs.length >= 5) {
             setError('Chỉ có thể chọn tối đa 5 Pokemon đặc biệt')
             return
         }
 
-        if (formData.specialPokemonConfigs.some((entry) => entry.pokemonId === selectedPokemonIdToAdd)) {
-            setSelectedPokemonIdToAdd('')
+        if (formData.specialPokemonConfigs.some((entry) => `${entry.pokemonId}:${normalizeFormId(entry.formId)}` === uniqueKey)) {
             return
         }
 
         setFormData((prev) => ({
             ...prev,
-            specialPokemonConfigs: [...prev.specialPokemonConfigs, { pokemonId: selectedPokemonIdToAdd, weight: 1 }],
+            specialPokemonConfigs: [...prev.specialPokemonConfigs, { pokemonId: normalizedPokemonId, formId: normalizedFormId, weight: 1 }],
         }))
-        setSelectedPokemonIdToAdd('')
+        setShowSpecialPokemonModal(false)
         setError('')
     }
 
-    const handleRemoveSpecialPokemon = (pokemonIdToRemove) => {
+    const handleRemoveSpecialPokemon = (pokemonIdToRemove, formIdToRemove) => {
+        const removeFormId = normalizeFormId(formIdToRemove)
         setFormData((prev) => ({
             ...prev,
-            specialPokemonConfigs: prev.specialPokemonConfigs.filter((entry) => entry.pokemonId !== pokemonIdToRemove),
+            specialPokemonConfigs: prev.specialPokemonConfigs.filter((entry) => !(
+                entry.pokemonId === pokemonIdToRemove
+                && normalizeFormId(entry.formId) === removeFormId
+            )),
         }))
     }
 
-    const handleUpdateSpecialPokemonWeight = (pokemonId, nextWeightRaw) => {
+    const handleUpdateSpecialPokemonWeight = (pokemonId, formId, nextWeightRaw) => {
+        const normalizedForm = normalizeFormId(formId)
         const parsed = Number.parseFloat(nextWeightRaw)
         const nextWeight = Number.isFinite(parsed) && parsed >= MIN_SPECIAL_WEIGHT ? parsed : 0
         setFormData((prev) => ({
             ...prev,
             specialPokemonConfigs: prev.specialPokemonConfigs.map((entry) => (
-                entry.pokemonId === pokemonId
+                entry.pokemonId === pokemonId && normalizeFormId(entry.formId) === normalizedForm
                     ? { ...entry, weight: nextWeight }
                     : entry
             )),
@@ -186,16 +267,86 @@ export default function MapFormPage() {
 
     const selectedSpecialPokemon = formData.specialPokemonConfigs
         .map((entry) => {
-            const pokemon = allPokemon.find((item) => item._id === entry.pokemonId)
-            if (!pokemon) return null
+            const pokemon = pokemonLookup[entry.pokemonId] || null
+            if (!pokemon) {
+                return {
+                    _id: entry.pokemonId,
+                    name: `Pokemon (${entry.pokemonId})`,
+                    pokedexNumber: 0,
+                    formId: normalizeFormId(entry.formId),
+                    formName: normalizeFormId(entry.formId),
+                    formImageUrl: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
+                    key: `${entry.pokemonId}:${normalizeFormId(entry.formId)}`,
+                    weight: Number(entry.weight) > 0 ? Number(entry.weight) : 0,
+                    isMissing: true,
+                }
+            }
+
+            const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+            const defaultFormId = normalizeFormId(pokemon.defaultFormId)
+            const resolvedFormId = normalizeFormId(entry.formId || defaultFormId)
+            const resolvedForm = forms.find((form) => normalizeFormId(form?.formId) === resolvedFormId) || null
+            const imageUrl = resolvedForm?.imageUrl
+                || resolvedForm?.sprites?.normal
+                || resolvedForm?.sprites?.icon
+                || pokemon.imageUrl
+                || pokemon.sprites?.normal
+                || pokemon.sprites?.icon
+                || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`
             return {
                 ...pokemon,
+                formId: resolvedFormId,
+                formName: resolvedForm?.formName || resolvedFormId,
+                formImageUrl: imageUrl,
+                key: `${pokemon._id}:${resolvedFormId}`,
                 weight: Number(entry.weight) > 0 ? Number(entry.weight) : 0,
+                isMissing: false,
             }
         })
         .filter(Boolean)
 
-    const selectablePokemon = allPokemon.filter((pokemon) => !formData.specialPokemonConfigs.some((entry) => entry.pokemonId === pokemon._id))
+    const selectedSpecialPokemonKeys = new Set(
+        formData.specialPokemonConfigs.map((entry) => `${entry.pokemonId}:${normalizeFormId(entry.formId)}`)
+    )
+
+    const selectableSpecialPokemonRows = specialPokemonOptions.flatMap((pokemon) => {
+        const defaultFormId = normalizeFormId(pokemon.defaultFormId)
+        const forms = Array.isArray(pokemon.forms) && pokemon.forms.length > 0
+            ? pokemon.forms
+            : [{ formId: defaultFormId, formName: defaultFormId }]
+
+        return forms
+            .map((form) => {
+                const formId = normalizeFormId(form?.formId || defaultFormId)
+                const key = `${pokemon._id}:${formId}`
+                const imageUrl = form?.imageUrl
+                    || form?.sprites?.normal
+                    || form?.sprites?.icon
+                    || pokemon.imageUrl
+                    || pokemon.sprites?.normal
+                    || pokemon.sprites?.icon
+                    || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`
+
+                return {
+                    key,
+                    pokemonId: pokemon._id,
+                    formId,
+                    pokedexNumber: pokemon.pokedexNumber,
+                    pokemonName: pokemon.name,
+                    formName: String(form?.formName || '').trim() || formId,
+                    imageUrl,
+                    isDefault: formId === defaultFormId,
+                }
+            })
+            .filter((row) => !selectedSpecialPokemonKeys.has(`${row.pokemonId}:${row.formId}`))
+    })
+
+    const specialPokemonPageStart = specialPokemonTotal > 0
+        ? ((specialPokemonPage - 1) * SPECIAL_POKEMON_MODAL_PAGE_SIZE) + 1
+        : 0
+    const specialPokemonPageEnd = specialPokemonTotal > 0
+        ? Math.min(specialPokemonTotal, specialPokemonPage * SPECIAL_POKEMON_MODAL_PAGE_SIZE)
+        : 0
 
     if (loading && isEdit) return <div className="text-blue-800 font-medium text-center py-8">Đang tải dữ liệu...</div>
 
@@ -299,7 +450,7 @@ export default function MapFormPage() {
                             </div>
 
                             {/* Map Progression Settings */}
-                            <div className="grid grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
                                         <span>Số Lượt Tìm Kiếm Yêu Cầu</span>
@@ -326,6 +477,19 @@ export default function MapFormPage() {
                                         className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Số nhỏ hơn → hiện trước</p>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>Lv Yêu Cầu Vào Map</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={formData.requiredPlayerLevel}
+                                        onChange={(e) => setFormData({ ...formData, requiredPlayerLevel: Math.max(1, parseInt(e.target.value) || 1) })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Người chơi phải đạt cấp này để vào map.</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-6 mt-4">
@@ -435,28 +599,13 @@ export default function MapFormPage() {
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-3">
-                                    <select
-                                        value={selectedPokemonIdToAdd}
-                                        onChange={(e) => setSelectedPokemonIdToAdd(e.target.value)}
-                                        disabled={loadingPokemon || formData.specialPokemonConfigs.length >= 5 || selectablePokemon.length === 0}
-                                        className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="">
-                                            {loadingPokemon ? 'Đang tải Pokemon...' : 'Chọn Pokemon để thêm'}
-                                        </option>
-                                        {selectablePokemon.map((pokemon) => (
-                                            <option key={pokemon._id} value={pokemon._id}>
-                                                #{pokemon.pokedexNumber} - {pokemon.name}
-                                            </option>
-                                        ))}
-                                    </select>
                                     <button
                                         type="button"
-                                        onClick={handleAddSpecialPokemon}
-                                        disabled={!selectedPokemonIdToAdd || formData.specialPokemonConfigs.length >= 5}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={handleOpenSpecialPokemonModal}
+                                        disabled={formData.specialPokemonConfigs.length >= 5}
+                                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Thêm
+                                        + Thêm Pokemon đặc biệt (chọn theo dạng)
                                     </button>
                                 </div>
 
@@ -464,13 +613,16 @@ export default function MapFormPage() {
                                     {selectedSpecialPokemon.length > 0 ? (
                                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                                             {selectedSpecialPokemon.map((pokemon) => (
-                                                <div key={pokemon._id} className="relative group bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center p-2 overflow-hidden hover:border-blue-400 transition-colors min-h-[150px]">
+                                                <div key={pokemon.key} className="relative group bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center p-2 overflow-hidden hover:border-blue-400 transition-colors min-h-[150px]">
                                                     <img
-                                                        src={pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`}
+                                                        src={pokemon.formImageUrl}
                                                         alt={pokemon.name}
                                                         className="w-16 h-16 object-contain pixelated"
                                                     />
                                                     <p className="text-[11px] font-semibold text-slate-700 text-center mt-1 line-clamp-2">{pokemon.name}</p>
+                                                    <span className="mt-1 px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200">
+                                                        {pokemon.formName}
+                                                    </span>
                                                     <div className="w-full mt-1 space-y-1">
                                                         <input
                                                             type="number"
@@ -479,7 +631,7 @@ export default function MapFormPage() {
                                                             value={pokemon.weight}
                                                             title={`Trọng số xuất hiện (>= ${MIN_SPECIAL_WEIGHT})`}
                                                             placeholder="Trọng số"
-                                                            onChange={(e) => handleUpdateSpecialPokemonWeight(pokemon._id, e.target.value)}
+                                                            onChange={(e) => handleUpdateSpecialPokemonWeight(pokemon._id, pokemon.formId, e.target.value)}
                                                             className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] text-center font-semibold"
                                                         />
                                                         <div className="text-[10px] text-center text-violet-700 font-bold">
@@ -488,7 +640,7 @@ export default function MapFormPage() {
                                                     </div>
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleRemoveSpecialPokemon(pokemon._id)}
+                                                        onClick={() => handleRemoveSpecialPokemon(pokemon._id, pokemon.formId)}
                                                         className="absolute top-0 right-0 w-6 h-6 bg-red-500 text-white flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-all font-bold text-xs"
                                                         title="Xóa"
                                                     >
@@ -524,6 +676,114 @@ export default function MapFormPage() {
                     </form>
                 </div>
             </div>
+
+            {showSpecialPokemonModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+                    onClick={() => setShowSpecialPokemonModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-lg font-bold text-slate-800">Thêm Pokemon đặc biệt</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowSpecialPokemonModal(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokemon</label>
+                                <input
+                                    type="text"
+                                    value={specialPokemonSearchTerm}
+                                    onChange={(e) => {
+                                        setSpecialPokemonSearchTerm(e.target.value)
+                                        setSpecialPokemonPage(1)
+                                    }}
+                                    placeholder="Nhập tên hoặc số Pokedex #"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                                />
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                {loadingPokemon ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải danh sách Pokemon...</div>
+                                ) : specialPokemonLoadError ? (
+                                    <div className="px-3 py-4 text-sm text-red-600 text-center">{specialPokemonLoadError}</div>
+                                ) : selectableSpecialPokemonRows.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không còn Pokemon/dạng phù hợp để thêm</div>
+                                ) : (
+                                    selectableSpecialPokemonRows.map((entry) => (
+                                        <button
+                                            key={entry.key}
+                                            type="button"
+                                            onClick={() => handleAddSpecialPokemon(entry.pokemonId, entry.formId)}
+                                            className="w-full px-3 py-2 text-left flex items-center gap-3 transition-colors hover:bg-slate-50"
+                                        >
+                                            <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                <img
+                                                    src={entry.imageUrl}
+                                                    alt={entry.pokemonName}
+                                                    className="w-8 h-8 object-contain pixelated"
+                                                />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="font-mono text-xs text-slate-500 flex-shrink-0">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</span>
+                                                    <span className="font-semibold text-slate-700 truncate">{entry.pokemonName}</span>
+                                                </div>
+                                                <div className="mt-1">
+                                                    <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide border ${entry.isDefault
+                                                        ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                                        : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                                        {entry.formName}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>
+                                    Trang này có {selectableSpecialPokemonRows.length} dạng từ {specialPokemonPageStart}-{specialPokemonPageEnd} / {specialPokemonTotal} Pokemon
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSpecialPokemonPage((prev) => Math.max(1, prev - 1))}
+                                        disabled={specialPokemonPage <= 1 || loadingPokemon}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Trước
+                                    </button>
+                                    <span className="font-semibold text-slate-600">
+                                        Trang {specialPokemonPage}/{specialPokemonTotalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSpecialPokemonPage((prev) => Math.min(specialPokemonTotalPages, prev + 1))}
+                                        disabled={specialPokemonPage >= specialPokemonTotalPages || loadingPokemon}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

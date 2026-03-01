@@ -3,15 +3,43 @@ import Map from '../models/Map.js'
 
 const router = express.Router()
 
-const toSpecialPokemonDisplay = (pokemon) => {
+const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+
+const toSpecialPokemonDisplay = (pokemon, formId = null) => {
     if (!pokemon) return null
-    const imageUrl = pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || ''
+    const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+    const defaultFormId = normalizeFormId(pokemon.defaultFormId)
+    const resolvedFormId = normalizeFormId(formId || defaultFormId)
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === resolvedFormId) || null
+    const imageUrl = resolvedForm?.imageUrl
+        || resolvedForm?.sprites?.normal
+        || resolvedForm?.sprites?.icon
+        || pokemon.imageUrl
+        || pokemon.sprites?.normal
+        || pokemon.sprites?.icon
+        || ''
+
     return {
         id: pokemon._id,
         name: pokemon.name,
         pokedexNumber: pokemon.pokedexNumber,
+        formId: resolvedFormId,
+        formName: resolvedForm?.formName || resolvedFormId,
         imageUrl,
     }
+}
+
+const resolveSpecialPokemonsForMap = (map) => {
+    const configs = Array.isArray(map?.specialPokemonConfigs) ? map.specialPokemonConfigs : []
+    if (configs.length > 0) {
+        return configs
+            .map((entry) => toSpecialPokemonDisplay(entry?.pokemonId, entry?.formId))
+            .filter(Boolean)
+    }
+
+    return (Array.isArray(map?.specialPokemonIds) ? map.specialPokemonIds : [])
+        .map((entry) => toSpecialPokemonDisplay(entry, 'normal'))
+        .filter(Boolean)
 }
 
 const resolveFormForDrop = (pokemon, formId) => {
@@ -33,14 +61,15 @@ const resolveFormForDrop = (pokemon, formId) => {
 router.get('/legendary', async (req, res) => {
     try {
         const legendaryMaps = await Map.find({ isLegendary: true })
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
-            .select('name slug iconId specialPokemonImages specialPokemonIds mapImageUrl')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .select('name slug iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
             .sort({ createdAt: 1 })
             .lean()
 
         const maps = legendaryMaps.map((map) => ({
             ...map,
-            specialPokemons: (map.specialPokemonIds || []).map(toSpecialPokemonDisplay).filter(Boolean),
+            specialPokemons: resolveSpecialPokemonsForMap(map),
         }))
 
         res.json({ ok: true, maps })
@@ -54,14 +83,15 @@ router.get('/legendary', async (req, res) => {
 router.get('/', async (req, res) => {
     try {
         const maps = await Map.find({})
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
-            .select('name slug levelMin levelMax isLegendary iconId specialPokemonImages specialPokemonIds mapImageUrl')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .select('name slug levelMin levelMax isLegendary iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
             .sort({ levelMin: 1 })
             .lean()
 
         const resolvedMaps = maps.map((map) => ({
             ...map,
-            specialPokemons: (map.specialPokemonIds || []).map(toSpecialPokemonDisplay).filter(Boolean),
+            specialPokemons: resolveSpecialPokemonsForMap(map),
         }))
         res.json({ ok: true, maps: resolvedMaps })
     } catch (error) {
@@ -75,7 +105,8 @@ router.get('/:slug', async (req, res) => {
     try {
         const { slug } = req.params
         const map = await Map.findOne({ slug })
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .lean()
 
         if (!map) {
@@ -91,7 +122,7 @@ router.get('/:slug', async (req, res) => {
 
         const resolvedMap = {
             ...map,
-            specialPokemons: (map.specialPokemonIds || []).map(toSpecialPokemonDisplay).filter(Boolean),
+            specialPokemons: resolveSpecialPokemonsForMap(map),
         }
 
         const resolvedDropRates = dropRates.map((dr) => {

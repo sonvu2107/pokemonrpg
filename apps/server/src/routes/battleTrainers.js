@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
         const trainers = await BattleTrainer.find({ isActive: true })
             .sort({ orderIndex: 1, createdAt: 1 })
             .populate('team.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId baseStats rarity')
-            .populate('prizePokemonId', 'name pokedexNumber imageUrl sprites')
+            .populate('prizePokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .lean()
 
         res.json({ ok: true, trainers })

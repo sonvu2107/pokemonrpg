@@ -4,6 +4,8 @@ import Pokemon from '../../models/Pokemon.js'
 
 const router = express.Router()
 
+const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+
 const normalizeTeam = (team) => {
     if (!Array.isArray(team)) return []
     return team
@@ -23,13 +25,57 @@ const validateTeam = async (team) => {
     return null
 }
 
+const resolvePrizePokemonSelection = async (pokemonId, formId) => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) {
+        return {
+            prizePokemonId: null,
+            prizePokemonFormId: 'normal',
+            error: null,
+        }
+    }
+
+    const prizePokemon = await Pokemon.findById(normalizedPokemonId)
+        .select('_id forms defaultFormId')
+        .lean()
+
+    if (!prizePokemon) {
+        return {
+            prizePokemonId: null,
+            prizePokemonFormId: 'normal',
+            error: 'Pokemon phần thưởng không hợp lệ',
+        }
+    }
+
+    const forms = Array.isArray(prizePokemon.forms) ? prizePokemon.forms : []
+    const defaultFormId = normalizeFormId(prizePokemon.defaultFormId)
+    const requestedFormId = normalizeFormId(formId)
+
+    let resolvedFormId = requestedFormId
+    if (forms.length > 0) {
+        const hasRequestedForm = forms.some((entry) => normalizeFormId(entry?.formId) === requestedFormId)
+        if (!hasRequestedForm) {
+            const fallbackFormId = normalizeFormId(forms[0]?.formId)
+            resolvedFormId = defaultFormId || fallbackFormId || 'normal'
+        }
+    } else {
+        resolvedFormId = defaultFormId || requestedFormId || 'normal'
+    }
+
+    return {
+        prizePokemonId: prizePokemon._id,
+        prizePokemonFormId: resolvedFormId,
+        error: null,
+    }
+}
+
 // GET /api/admin/battle-trainers
 router.get('/', async (req, res) => {
     try {
         const trainers = await BattleTrainer.find()
             .sort({ orderIndex: 1, createdAt: 1 })
             .populate('team.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .populate('prizePokemonId', 'name pokedexNumber imageUrl sprites')
+            .populate('prizePokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .lean()
         res.json({ ok: true, trainers })
     } catch (error) {
@@ -41,7 +87,18 @@ router.get('/', async (req, res) => {
 // POST /api/admin/battle-trainers
 router.post('/', async (req, res) => {
     try {
-        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId, platinumCoinsReward, expReward } = req.body
+        const {
+            name,
+            imageUrl,
+            quote,
+            isActive,
+            orderIndex,
+            team,
+            prizePokemonId,
+            prizePokemonFormId,
+            platinumCoinsReward,
+            expReward,
+        } = req.body
 
         if (!name) {
             return res.status(400).json({ ok: false, message: 'Tên là bắt buộc' })
@@ -53,6 +110,11 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: teamError })
         }
 
+        const resolvedPrizeSelection = await resolvePrizePokemonSelection(prizePokemonId, prizePokemonFormId)
+        if (resolvedPrizeSelection.error) {
+            return res.status(400).json({ ok: false, message: resolvedPrizeSelection.error })
+        }
+
         const trainer = new BattleTrainer({
             name,
             imageUrl: imageUrl || '',
@@ -60,7 +122,8 @@ router.post('/', async (req, res) => {
             isActive: isActive !== undefined ? isActive : true,
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
             team: normalizedTeam,
-            prizePokemonId: prizePokemonId || null,
+            prizePokemonId: resolvedPrizeSelection.prizePokemonId,
+            prizePokemonFormId: resolvedPrizeSelection.prizePokemonFormId,
             platinumCoinsReward: platinumCoinsReward !== undefined ? platinumCoinsReward : 0,
             expReward: expReward !== undefined ? expReward : 0,
         })
@@ -77,7 +140,18 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/battle-trainers/:id
 router.put('/:id', async (req, res) => {
     try {
-        const { name, imageUrl, quote, isActive, orderIndex, team, prizePokemonId, platinumCoinsReward, expReward } = req.body
+        const {
+            name,
+            imageUrl,
+            quote,
+            isActive,
+            orderIndex,
+            team,
+            prizePokemonId,
+            prizePokemonFormId,
+            platinumCoinsReward,
+            expReward,
+        } = req.body
 
         const trainer = await BattleTrainer.findById(req.params.id)
         if (!trainer) {
@@ -99,7 +173,18 @@ router.put('/:id', async (req, res) => {
         if (isActive !== undefined) trainer.isActive = isActive
         if (orderIndex !== undefined) trainer.orderIndex = orderIndex
         if (shouldUpdateTeam) trainer.team = normalizedTeam
-        if (prizePokemonId !== undefined) trainer.prizePokemonId = prizePokemonId || null
+
+        if (prizePokemonId !== undefined || prizePokemonFormId !== undefined) {
+            const nextPrizePokemonId = prizePokemonId !== undefined ? prizePokemonId : trainer.prizePokemonId
+            const nextPrizePokemonFormId = prizePokemonFormId !== undefined ? prizePokemonFormId : trainer.prizePokemonFormId
+            const resolvedPrizeSelection = await resolvePrizePokemonSelection(nextPrizePokemonId, nextPrizePokemonFormId)
+            if (resolvedPrizeSelection.error) {
+                return res.status(400).json({ ok: false, message: resolvedPrizeSelection.error })
+            }
+            trainer.prizePokemonId = resolvedPrizeSelection.prizePokemonId
+            trainer.prizePokemonFormId = resolvedPrizeSelection.prizePokemonFormId
+        }
+
         if (platinumCoinsReward !== undefined) trainer.platinumCoinsReward = platinumCoinsReward
         if (expReward !== undefined) trainer.expReward = expReward
 

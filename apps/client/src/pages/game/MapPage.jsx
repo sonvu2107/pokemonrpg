@@ -24,6 +24,7 @@ export default function MapPage() {
     const [playerState, setPlayerState] = useState({
         gold: 0,
         moonPoints: 0,
+        level: 1,
     })
     const [mapStats, setMapStats] = useState({
         level: 1,
@@ -42,10 +43,18 @@ export default function MapPage() {
         0,
         (isLocked ? unlockInfo?.currentSearches : mapStats.totalSearches) ?? 0
     )
-    const unlockRemaining = Math.max(0, requiredSearches - currentSearches)
     const unlockPercent = requiredSearches > 0
         ? Math.min(100, Math.round((currentSearches / requiredSearches) * 100))
         : 100
+    const requiredPlayerLevel = Math.max(
+        1,
+        (isLocked ? unlockInfo?.requiredPlayerLevel : map?.requiredPlayerLevel) ?? 1
+    )
+    const currentPlayerLevel = Math.max(
+        1,
+        (isLocked ? unlockInfo?.currentPlayerLevel : playerState?.level) ?? 1
+    )
+    const unlockRemainingLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
 
     useEffect(() => {
         loadMapData()
@@ -71,6 +80,7 @@ export default function MapPage() {
                 setPlayerState({
                     gold: stateData.playerState.gold || 0,
                     moonPoints: stateData.playerState.moonPoints || 0,
+                    level: Math.max(1, Number(stateData.playerState.level) || 1),
                 })
             }
             if (stateData?.unlock) {
@@ -249,7 +259,15 @@ export default function MapPage() {
                             </div>
                         </div>
                         <div className="mt-2 text-slate-800 text-sm">
-                            Bạn cần tìm kiếm <span className="font-bold">{unlockInfo?.requiredSearches || 0}</span> lần tại <Link to={unlockInfo?.sourceMap?.slug ? `/map/${unlockInfo.sourceMap.slug}` : '#'} className="font-bold text-blue-700 hover:underline">{unlockInfo?.sourceMap?.name || 'bản đồ trước'}</Link>.
+                            <div>
+                                Yêu cầu cấp: <span className="font-bold">Lv {requiredPlayerLevel}</span> (hiện tại Lv {currentPlayerLevel})
+                                {unlockRemainingLevels > 0 ? <span className="ml-1 text-red-600 font-bold">- thiếu {unlockRemainingLevels} cấp</span> : null}
+                            </div>
+                            {requiredSearches > 0 && (
+                                <div className="mt-1">
+                                    Yêu cầu tìm kiếm: <span className="font-bold">{requiredSearches}</span> lần tại <Link to={unlockInfo?.sourceMap?.slug ? `/map/${unlockInfo.sourceMap.slug}` : '#'} className="font-bold text-blue-700 hover:underline">{unlockInfo?.sourceMap?.name || 'bản đồ trước'}</Link>.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -320,7 +338,10 @@ export default function MapPage() {
                                                 className="w-24 h-24 sm:w-32 sm:h-32 object-contain pixelated hover:scale-110 transition-transform drop-shadow-sm"
                                             />
                                             {pokemon.name && (
-                                                <p className="text-xs font-bold text-blue-800 mt-1">{pokemon.name}</p>
+                                                <p className="text-xs font-bold text-blue-800 mt-1 text-center">
+                                                    {pokemon.name}
+                                                    {pokemon.formName && pokemon.formName !== 'normal' ? ` (${pokemon.formName})` : ''}
+                                                </p>
                                             )}
                                         </div>
                                     ))

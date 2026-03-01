@@ -526,12 +526,22 @@ const buildProgressIndex = (progresses) => {
     return byId
 }
 
-const buildUnlockRequirement = (maps, index, progressById) => {
+const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
+    const currentMap = maps[index] || null
+    const currentPlayerLevel = Math.max(1, Number(playerLevel) || 1)
+    const requiredPlayerLevel = Math.max(1, Number(currentMap?.requiredPlayerLevel) || 1)
+    const remainingPlayerLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
+
     if (index <= 0) {
         return {
             requiredSearches: 0,
             currentSearches: 0,
             remainingSearches: 0,
+            requiredPlayerLevel,
+            currentPlayerLevel,
+            remainingPlayerLevels,
+            isSearchRequirementMet: true,
+            isLevelRequirementMet: remainingPlayerLevels === 0,
             sourceMap: null,
         }
     }
@@ -546,6 +556,11 @@ const buildUnlockRequirement = (maps, index, progressById) => {
         requiredSearches,
         currentSearches,
         remainingSearches,
+        requiredPlayerLevel,
+        currentPlayerLevel,
+        remainingPlayerLevels,
+        isSearchRequirementMet: remainingSearches === 0,
+        isLevelRequirementMet: remainingPlayerLevels === 0,
         sourceMap: {
             id: sourceMap._id,
             name: sourceMap.name,
@@ -673,6 +688,11 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
 
+        const playerLevelState = await PlayerState.findOne({ userId })
+            .select('level')
+            .lean()
+        const currentPlayerLevel = Math.max(1, Number(playerLevelState?.level) || 1)
+
         const orderedMaps = await getOrderedMaps()
         const mapIndex = orderedMaps.findIndex((m) => m._id.toString() === map._id.toString())
         if (mapIndex === -1) {
@@ -688,8 +708,8 @@ router.post('/search', authMiddleware, async (req, res, next) => {
                     .lean()
                 progressById = buildProgressIndex(sourceProgress ? [sourceProgress] : [])
             }
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById)
-            const isUnlocked = mapIndex === 0 || unlockRequirement.remainingSearches === 0
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel)
+            const isUnlocked = unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0
             if (!isUnlocked) {
                 return res.status(403).json({
                     ok: false,
@@ -782,9 +802,11 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             ? map.specialPokemonConfigs
                 .map((entry) => {
                     const pokemonId = String(entry?.pokemonId || '').trim()
+                    const formId = String(entry?.formId || '').trim().toLowerCase() || 'normal'
                     const weight = Number(entry?.weight)
                     return {
                         pokemonId,
+                        formId,
                         weight: Number.isFinite(weight) && weight > 0 ? weight : 0,
                     }
                 })
@@ -797,7 +819,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
                 ? map.specialPokemonIds
                     .map((id) => String(id || '').trim())
                     .filter(Boolean)
-                    .map((pokemonId) => ({ pokemonId, weight: 1 }))
+                    .map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
                 : [])
 
         const specialPokemonEncounterRate = typeof map.specialPokemonEncounterRate === 'number'
@@ -815,6 +837,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             for (const entry of specialPokemonConfigs) {
                 if (specialRandom < entry.weight) {
                     selectedPokemonId = entry.pokemonId
+                    selectedFormId = entry.formId || 'normal'
                     break
                 }
                 specialRandom -= entry.weight
@@ -822,6 +845,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
 
             if (!selectedPokemonId) {
                 selectedPokemonId = specialPokemonConfigs[specialPokemonConfigs.length - 1]?.pokemonId || null
+                selectedFormId = specialPokemonConfigs[specialPokemonConfigs.length - 1]?.formId || 'normal'
             }
 
             encounteredFromSpecialPool = Boolean(selectedPokemonId)
@@ -973,14 +997,18 @@ router.get('/maps', authMiddleware, async (req, res, next) => {
         const isAdmin = req.user?.role === 'admin'
         const orderedMaps = await getOrderedMaps()
         const mapIds = orderedMaps.map((map) => map._id)
+        const playerLevelState = await PlayerState.findOne({ userId })
+            .select('level')
+            .lean()
+        const currentPlayerLevel = Math.max(1, Number(playerLevelState?.level) || 1)
         const progresses = await MapProgress.find({ userId, mapId: { $in: mapIds } })
             .select('mapId totalSearches isUnlocked')
             .lean()
         const progressById = buildProgressIndex(progresses)
 
         const mapsWithUnlockState = orderedMaps.map((map, index) => {
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById)
-            const isUnlocked = isAdmin || index === 0 || unlockRequirement.remainingSearches === 0
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById, currentPlayerLevel)
+            const isUnlocked = isAdmin || (unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0)
             return { map, unlockRequirement, isUnlocked }
         })
 
@@ -1023,11 +1051,13 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
         const playerState = await PlayerState.findOne({ userId })
-            .select('gold moonPoints')
+            .select('gold moonPoints level')
             .lean()
+        const currentPlayerLevel = Math.max(1, Number(playerState?.level) || 1)
         const playerCurrencyState = {
             gold: playerState?.gold || 0,
             moonPoints: playerState?.moonPoints || 0,
+            level: currentPlayerLevel,
         }
         const map = await MapModel.findOne({ slug: req.params.slug })
 
@@ -1052,8 +1082,8 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             }
         }
         const progressById = buildProgressIndex(progresses)
-        const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById)
-        const isUnlocked = isAdmin || mapIndex === 0 || unlockRequirement.remainingSearches === 0
+        const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel)
+        const isUnlocked = isAdmin || (unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0)
 
         if (!isUnlocked) {
             return res.status(403).json({
@@ -1078,11 +1108,15 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             playerState: {
                 gold: currentPlayerState.gold || 0,
                 moonPoints: currentPlayerState.moonPoints || 0,
+                level: Math.max(1, Number(currentPlayerState.level) || 1),
             },
             unlock: {
                 requiredSearches: Math.max(0, map.requiredSearches || 0),
                 currentSearches: progress.totalSearches,
                 remainingSearches: Math.max(0, (map.requiredSearches || 0) - progress.totalSearches),
+                requiredPlayerLevel: unlockRequirement.requiredPlayerLevel,
+                currentPlayerLevel,
+                remainingPlayerLevels: Math.max(0, unlockRequirement.requiredPlayerLevel - currentPlayerLevel),
                 sourceMap: unlockRequirement.sourceMap,
             },
             isUnlocked: true,
@@ -1576,12 +1610,13 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let trainerRewardCoins = 0
         let trainerExpReward = 0
         let trainerPrizePokemonId = null
+        let trainerPrizePokemonFormId = 'normal'
         let trainerRewardMarker = ''
         let resolvedBattleSession = null
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
-                .populate('prizePokemonId', 'name imageUrl sprites')
+                .populate('prizePokemonId', 'name imageUrl sprites forms defaultFormId')
                 .lean()
             if (!trainer) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
@@ -1618,6 +1653,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             trainerRewardCoins = Math.max(0, Number(trainer.platinumCoinsReward) || 0)
             trainerExpReward = Math.max(0, Number(trainer.expReward) || 0)
             trainerPrizePokemonId = trainer.prizePokemonId?._id || null
+            trainerPrizePokemonFormId = String(trainer.prizePokemonFormId || 'normal').trim().toLowerCase() || 'normal'
             trainerRewardMarker = `battle_trainer_reward:${trainer._id}`
         }
 
@@ -1787,10 +1823,19 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let prizePokemon = null
         if (trainerPrizePokemonId && trainerRewardMarker) {
             const prizeData = await Pokemon.findById(trainerPrizePokemonId)
-                .select('name imageUrl sprites levelUpMoves')
+                .select('name imageUrl sprites levelUpMoves forms defaultFormId')
                 .lean()
 
             if (prizeData) {
+                const { form: resolvedPrizeForm, formId: resolvedPrizeFormId } = resolveTrainerBattleForm(prizeData, trainerPrizePokemonFormId)
+                const prizeImageUrl = resolvedPrizeForm?.imageUrl
+                    || resolvedPrizeForm?.sprites?.normal
+                    || resolvedPrizeForm?.sprites?.icon
+                    || prizeData.imageUrl
+                    || prizeData.sprites?.normal
+                    || prizeData.sprites?.front_default
+                    || ''
+
                 const alreadyClaimedPrize = await UserPokemon.exists({
                     userId,
                     pokemonId: trainerPrizePokemonId,
@@ -1806,7 +1851,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                         level: prizeLevel,
                         experience: 0,
                         moves,
-                        formId: 'normal',
+                        formId: resolvedPrizeFormId,
                         isShiny: false,
                         location: 'box',
                         originalTrainer: trainerRewardMarker,
@@ -1816,7 +1861,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 prizePokemon = {
                     id: trainerPrizePokemonId,
                     name: prizeData.name,
-                    imageUrl: prizeData.imageUrl || prizeData.sprites?.normal || prizeData.sprites?.front_default || '',
+                    formId: resolvedPrizeFormId,
+                    formName: resolvedPrizeForm?.formName || resolvedPrizeFormId,
+                    imageUrl: prizeImageUrl,
                     claimed: !alreadyClaimedPrize,
                     alreadyClaimed: Boolean(alreadyClaimedPrize),
                 }

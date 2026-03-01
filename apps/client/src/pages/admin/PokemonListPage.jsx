@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
+import { parseEvolutionImportCsv } from '../../utils/evolutionImport'
 
 const TYPE_COLORS = {
     normal: 'bg-gray-500',
@@ -32,10 +33,14 @@ export default function PokemonListPage() {
     const [dirtyEvolutionKeys, setDirtyEvolutionKeys] = useState(() => new Set())
     const [savingId, setSavingId] = useState('')
     const [expandedIds, setExpandedIds] = useState(() => new Set())
+    const [evolutionImportText, setEvolutionImportText] = useState('')
+    const [evolutionImporting, setEvolutionImporting] = useState(false)
+    const [evolutionImportReport, setEvolutionImportReport] = useState(null)
 
     // Scroll Sync
     const tableContainerRef = useRef(null)
     const topScrollRef = useRef(null)
+    const evolutionImportFileRef = useRef(null)
 
     // Filters
     const [search, setSearch] = useState('')
@@ -118,8 +123,29 @@ export default function PokemonListPage() {
 
     const loadAllPokemon = async () => {
         try {
-            const data = await pokemonApi.list({ limit: 1000 })
-            setAllPokemon(data.pokemon || [])
+            const limit = 100
+            let pageCursor = 1
+            let totalPages = 1
+            const collected = []
+
+            do {
+                const data = await pokemonApi.list({ page: pageCursor, limit })
+                if (Array.isArray(data?.pokemon) && data.pokemon.length > 0) {
+                    collected.push(...data.pokemon)
+                }
+
+                const parsedPages = Number.parseInt(data?.pagination?.pages, 10)
+                totalPages = Number.isFinite(parsedPages) && parsedPages > 0 ? parsedPages : 1
+                pageCursor += 1
+            } while (pageCursor <= totalPages)
+
+            const uniqueById = new Map()
+            collected.forEach((entry) => {
+                if (!entry?._id || uniqueById.has(entry._id)) return
+                uniqueById.set(entry._id, entry)
+            })
+
+            setAllPokemon([...uniqueById.values()])
         } catch (err) {
             setError(err.message)
         }
@@ -245,6 +271,73 @@ export default function PokemonListPage() {
             setError(`Lưu nhanh tiến hóa thất bại: ${err.message}`)
         } finally {
             setSavingId('')
+        }
+    }
+
+    const handleEvolutionImportFileChange = async (event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+
+        try {
+            const text = await file.text()
+            setEvolutionImportText(text)
+            setError('')
+        } catch (err) {
+            setError(`Doc file import that bai: ${err.message}`)
+        }
+    }
+
+    const handleApplyEvolutionImport = async () => {
+        if (!evolutionImportText.trim()) {
+            setError('Vui long dan du lieu CSV/TXT truoc khi import.')
+            return
+        }
+
+        if (!Array.isArray(allPokemon) || allPokemon.length === 0) {
+            setError('Danh sach Pokemon chua tai xong. Vui long thu lai.')
+            return
+        }
+
+        const parsed = parseEvolutionImportCsv(evolutionImportText, allPokemon)
+        setEvolutionImportReport(parsed.report)
+
+        if (parsed.updates.length === 0) {
+            setError('Khong tao duoc quy tac tien hoa nao tu du lieu import.')
+            return
+        }
+
+        if (parsed.updates.length > 500) {
+            setError(`So cap nhat qua lon (${parsed.updates.length}). Toi da 500 quy tac moi lan.`)
+            return
+        }
+
+        try {
+            setEvolutionImporting(true)
+            setError('')
+
+            const result = await pokemonApi.bulkUpdateEvolutions(parsed.updates)
+            const updatedPokemon = Array.isArray(result?.pokemon) ? result.pokemon : []
+            const updatedById = new Map(updatedPokemon.map((entry) => [entry._id, entry]))
+
+            if (updatedById.size > 0) {
+                setPokemon((prev) => prev.map((entry) => updatedById.get(entry._id) || entry))
+                setAllPokemon((prev) => prev.map((entry) => updatedById.get(entry._id) || entry))
+            }
+
+            setDirtyEvolutionKeys(new Set())
+            await loadPokemon()
+            setEvolutionImportReport((prev) => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    savedCount: result?.updatedCount || parsed.updates.length,
+                }
+            })
+        } catch (err) {
+            setError(`Import tien hoa that bai: ${err.message}`)
+        } finally {
+            setEvolutionImporting(false)
         }
     }
 
@@ -508,13 +601,80 @@ export default function PokemonListPage() {
                     <button
                         type="button"
                         onClick={handleSaveAllEvolution}
-                        disabled={savingId === '__bulk__' || dirtyEvolutionKeys.size === 0}
+                        disabled={savingId === '__bulk__' || dirtyEvolutionKeys.size === 0 || evolutionImporting}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-sm font-bold shadow-sm transition-colors"
                     >
                         {savingId === '__bulk__'
                             ? 'Đang lưu...'
                             : `Lưu nhanh (${dirtyEvolutionKeys.size})`}
                     </button>
+                </div>
+
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-sm font-bold text-amber-900">Import tien hoa CSV/TXT (1→2 = Lv20, 2→3 = Lv50)</p>
+                        <div className="flex gap-2">
+                            <input
+                                ref={evolutionImportFileRef}
+                                type="file"
+                                accept=".csv,.txt"
+                                onChange={handleEvolutionImportFileChange}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => evolutionImportFileRef.current?.click()}
+                                disabled={evolutionImporting}
+                                className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed rounded text-xs font-bold text-amber-900"
+                            >
+                                Tai file CSV/TXT
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleApplyEvolutionImport}
+                                disabled={evolutionImporting || !evolutionImportText.trim()}
+                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
+                            >
+                                {evolutionImporting ? 'Dang import...' : 'Import tien hoa'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <textarea
+                        rows={5}
+                        value={evolutionImportText}
+                        onChange={(e) => setEvolutionImportText(e.target.value)}
+                        placeholder={'001 Bulbasaur → 002 Ivysaur → 003 Venusaur\n019 Rattata → 020 Raticate\n083 Farfetch\'d'}
+                        className="w-full px-3 py-2 bg-white border border-amber-200 rounded text-xs text-slate-700 font-mono focus:outline-none focus:border-amber-500"
+                    />
+                    <p className="mt-2 text-[11px] text-amber-800">
+                        Ho tro: moi dong bat dau bang so Pokedex, co the dung mui ten "→" hoac "-&gt;". Neu co nhanh (VD Eevee), he thong se lay nhanh dau tien.
+                    </p>
+
+                    {evolutionImportReport && (
+                        <div className="mt-2 text-xs text-amber-900 bg-white/70 border border-amber-200 rounded p-2">
+                            <div className="font-semibold">
+                                Da doc {evolutionImportReport.processedLines} dong hop le • Tao {evolutionImportReport.transitionCount} cap tien hoa • Xoa {evolutionImportReport.clearedCount} cap tien hoa
+                                {Number.isFinite(evolutionImportReport.savedCount) ? ` • Da luu ${evolutionImportReport.savedCount} cap nhat` : ''}
+                            </div>
+                            {evolutionImportReport.branchLineCount > 0 && (
+                                <div className="mt-1">Co {evolutionImportReport.branchLineCount} dong co nhieu nhanh, he thong da lay nhanh dau tien.</div>
+                            )}
+                            {Array.isArray(evolutionImportReport.warnings) && evolutionImportReport.warnings.length > 0 && (
+                                <div className="mt-1">
+                                    <div className="font-semibold">Canh bao:</div>
+                                    <ul className="list-disc list-inside">
+                                        {evolutionImportReport.warnings.map((warning, index) => (
+                                            <li key={`${warning}-${index}`}>{warning}</li>
+                                        ))}
+                                        {evolutionImportReport.hiddenWarningCount > 0 && (
+                                            <li>... va {evolutionImportReport.hiddenWarningCount} canh bao khac</li>
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}

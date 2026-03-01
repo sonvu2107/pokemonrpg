@@ -53,6 +53,11 @@ const battleTrainerSchema = new mongoose.Schema(
             ref: 'Pokemon',
             default: null,
         },
+        prizePokemonFormId: {
+            type: String,
+            default: 'normal',
+            trim: true,
+        },
         platinumCoinsReward: {
             type: Number,
             default: 0,

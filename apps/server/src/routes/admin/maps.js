@@ -9,6 +9,8 @@ import { invalidateMapDropRateCache } from '../../utils/dropRateCache.js'
 
 const router = express.Router()
 
+const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+
 const resolveFormForDrop = (pokemon, formId) => {
     if (!pokemon) return { formId: 'normal', form: null }
     const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
@@ -55,14 +57,17 @@ const normalizeSpecialPokemonConfigs = (value) => {
             ? entry
             : (entry?.pokemonId?._id || entry?.pokemonId)
         const pokemonId = String(pokemonIdRaw || '').trim()
+        const formIdRaw = typeof entry === 'object' && entry !== null ? entry.formId : 'normal'
+        const formId = normalizeFormId(formIdRaw)
+        const uniqueKey = `${pokemonId}:${formId}`
 
-        if (!pokemonId || seen.has(pokemonId)) continue
+        if (!pokemonId || seen.has(uniqueKey)) continue
 
         const weightRaw = typeof entry === 'object' && entry !== null ? entry.weight : 1
         const weight = toSafeWeight(weightRaw) || 1
 
-        normalized.push({ pokemonId, weight })
-        seen.add(pokemonId)
+        normalized.push({ pokemonId, formId, weight })
+        seen.add(uniqueKey)
 
         if (normalized.length >= 5) break
     }
@@ -83,9 +88,32 @@ const validateSpecialPokemonConfigs = async (configs) => {
     }
 
     const pokemonIds = [...new Set(configs.map((entry) => String(entry?.pokemonId || '').trim()).filter(Boolean))]
-    const count = await Pokemon.countDocuments({ _id: { $in: pokemonIds } })
-    if (count !== pokemonIds.length) {
+    const pokemonRows = await Pokemon.find({ _id: { $in: pokemonIds } })
+        .select('_id forms defaultFormId')
+        .lean()
+
+    if (pokemonRows.length !== pokemonIds.length) {
         return 'specialPokemonConfigs chứa Pokemon id không hợp lệ'
+    }
+
+    const pokemonById = new Map(pokemonRows.map((entry) => [String(entry._id), entry]))
+    for (const config of configs) {
+        const pokemonId = String(config?.pokemonId || '').trim()
+        const formId = normalizeFormId(config?.formId)
+        const pokemon = pokemonById.get(pokemonId)
+        if (!pokemon) {
+            return 'specialPokemonConfigs chứa Pokemon id không hợp lệ'
+        }
+
+        const defaultFormId = normalizeFormId(pokemon.defaultFormId)
+        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+        if (forms.length > 0) {
+            const validFormIds = new Set(forms.map((entry) => normalizeFormId(entry?.formId)).filter(Boolean))
+            validFormIds.add(defaultFormId)
+            if (!validFormIds.has(formId)) {
+                return `specialPokemonConfigs chứa formId không hợp lệ cho Pokemon ${pokemonId}`
+            }
+        }
     }
 
     return null
@@ -95,8 +123,8 @@ const validateSpecialPokemonConfigs = async (configs) => {
 router.get('/', async (req, res) => {
     try {
         const maps = await Map.find()
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
-            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .sort({ createdAt: 1 })
             .lean()
         res.json({ ok: true, maps })
@@ -125,8 +153,8 @@ router.get('/lookup/items', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const map = await Map.findById(req.params.id)
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites')
-            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
 
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
@@ -205,6 +233,7 @@ router.post('/', async (req, res) => {
             specialPokemonConfigs,
             specialPokemonEncounterRate,
             requiredSearches,
+            requiredPlayerLevel,
             encounterRate,
             itemDropRate,
             orderIndex,
@@ -231,14 +260,14 @@ router.post('/', async (req, res) => {
         const hasSpecialPokemonConfigs = specialPokemonConfigs !== undefined
         const normalizedSpecialPokemonConfigs = hasSpecialPokemonConfigs
             ? normalizeSpecialPokemonConfigs(specialPokemonConfigs)
-            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
 
         const specialPokemonConfigValidationError = await validateSpecialPokemonConfigs(normalizedSpecialPokemonConfigs)
         if (specialPokemonConfigValidationError) {
             return res.status(400).json({ ok: false, message: specialPokemonConfigValidationError })
         }
 
-        const normalizedSpecialPokemonIdsFromConfigs = normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId)
+        const normalizedSpecialPokemonIdsFromConfigs = [...new Set(normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId))]
 
         if (specialPokemonEncounterRate !== undefined && (specialPokemonEncounterRate < 0 || specialPokemonEncounterRate > 1)) {
             return res.status(400).json({ ok: false, message: 'specialPokemonEncounterRate phải trong khoảng 0 đến 1' })
@@ -247,6 +276,10 @@ router.post('/', async (req, res) => {
         // Validate requiredSearches
         if (requiredSearches !== undefined && requiredSearches < 0) {
             return res.status(400).json({ ok: false, message: 'requiredSearches phải >= 0' })
+        }
+
+        if (requiredPlayerLevel !== undefined && Number(requiredPlayerLevel) < 1) {
+            return res.status(400).json({ ok: false, message: 'requiredPlayerLevel phải >= 1' })
         }
 
         // Validate encounterRate
@@ -277,6 +310,7 @@ router.post('/', async (req, res) => {
             specialPokemonConfigs: normalizedSpecialPokemonConfigs,
             specialPokemonEncounterRate: specialPokemonEncounterRate !== undefined ? specialPokemonEncounterRate : 0,
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
+            requiredPlayerLevel: requiredPlayerLevel !== undefined ? Math.max(1, Number(requiredPlayerLevel) || 1) : 1,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
@@ -314,6 +348,7 @@ router.put('/:id', async (req, res) => {
             specialPokemonConfigs,
             specialPokemonEncounterRate,
             requiredSearches,
+            requiredPlayerLevel,
             encounterRate,
             itemDropRate,
             orderIndex,
@@ -343,7 +378,7 @@ router.put('/:id', async (req, res) => {
         const shouldUpdateSpecialPokemonPool = hasSpecialPokemonConfigs || specialPokemonIds !== undefined
         const normalizedSpecialPokemonConfigs = hasSpecialPokemonConfigs
             ? normalizeSpecialPokemonConfigs(specialPokemonConfigs)
-            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, weight: 1 }))
+            : normalizedSpecialPokemonIds.map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
 
         if (shouldUpdateSpecialPokemonPool) {
             const specialPokemonConfigValidationError = await validateSpecialPokemonConfigs(normalizedSpecialPokemonConfigs)
@@ -359,6 +394,10 @@ router.put('/:id', async (req, res) => {
         // Validate requiredSearches
         if (requiredSearches !== undefined && requiredSearches < 0) {
             return res.status(400).json({ ok: false, message: 'requiredSearches phải >= 0' })
+        }
+
+        if (requiredPlayerLevel !== undefined && Number(requiredPlayerLevel) < 1) {
+            return res.status(400).json({ ok: false, message: 'requiredPlayerLevel phải >= 1' })
         }
 
         // Validate encounterRate
@@ -385,13 +424,16 @@ router.put('/:id', async (req, res) => {
         map.iconId = iconId !== undefined ? iconId : map.iconId
         map.specialPokemonImages = specialPokemonImages !== undefined ? specialPokemonImages : map.specialPokemonImages
         map.specialPokemonIds = shouldUpdateSpecialPokemonPool
-            ? normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId)
+            ? [...new Set(normalizedSpecialPokemonConfigs.map((entry) => entry.pokemonId))]
             : map.specialPokemonIds
         map.specialPokemonConfigs = shouldUpdateSpecialPokemonPool
             ? normalizedSpecialPokemonConfigs
             : map.specialPokemonConfigs
         map.specialPokemonEncounterRate = specialPokemonEncounterRate !== undefined ? specialPokemonEncounterRate : map.specialPokemonEncounterRate
         map.requiredSearches = requiredSearches !== undefined ? requiredSearches : map.requiredSearches
+        map.requiredPlayerLevel = requiredPlayerLevel !== undefined
+            ? Math.max(1, Number(requiredPlayerLevel) || 1)
+            : map.requiredPlayerLevel
         map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
         map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate
         map.orderIndex = orderIndex !== undefined ? orderIndex : map.orderIndex

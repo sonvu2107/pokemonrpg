@@ -99,6 +99,9 @@ export default function MapListPage() {
                                                             🔒 {map.requiredSearches}
                                                         </span>
                                                     )}
+                                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded whitespace-nowrap border border-blue-100">
+                                                        Vào: Lv {Math.max(1, Number(map.requiredPlayerLevel) || 1)}
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="px-3 py-2 text-right">
