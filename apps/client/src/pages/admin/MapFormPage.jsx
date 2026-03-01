@@ -4,6 +4,8 @@ import { mapApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
 
+const MIN_SPECIAL_WEIGHT = 0.0001
+
 export default function MapFormPage() {
     const { id } = useParams()
     const navigate = useNavigate()
@@ -115,9 +117,9 @@ export default function MapFormPage() {
         }
 
         const hasInvalidSpecialWeight = (formData.specialPokemonConfigs || [])
-            .some((entry) => !(Number(entry?.weight) > 0))
+            .some((entry) => Number(entry?.weight) < MIN_SPECIAL_WEIGHT)
         if (hasInvalidSpecialWeight) {
-            setError('Tỷ lệ từng Pokemon đặc biệt phải lớn hơn 0')
+            setError(`Tỷ lệ từng Pokemon đặc biệt phải >= ${MIN_SPECIAL_WEIGHT}`)
             return
         }
 
@@ -168,7 +170,7 @@ export default function MapFormPage() {
 
     const handleUpdateSpecialPokemonWeight = (pokemonId, nextWeightRaw) => {
         const parsed = Number.parseFloat(nextWeightRaw)
-        const nextWeight = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+        const nextWeight = Number.isFinite(parsed) && parsed >= MIN_SPECIAL_WEIGHT ? parsed : 0
         setFormData((prev) => ({
             ...prev,
             specialPokemonConfigs: prev.specialPokemonConfigs.map((entry) => (
@@ -419,7 +421,7 @@ export default function MapFormPage() {
                                         type="number"
                                         min="0"
                                         max="1"
-                                        step="0.01"
+                                        step="0.001"
                                         value={formData.specialPokemonEncounterRate}
                                         onChange={(e) => setFormData({
                                             ...formData,
@@ -472,10 +474,10 @@ export default function MapFormPage() {
                                                     <div className="w-full mt-1 space-y-1">
                                                         <input
                                                             type="number"
-                                                            min="0.01"
-                                                            step="0.01"
+                                                            min={MIN_SPECIAL_WEIGHT}
+                                                            step="0.0001"
                                                             value={pokemon.weight}
-                                                            title="Trọng số xuất hiện"
+                                                            title={`Trọng số xuất hiện (>= ${MIN_SPECIAL_WEIGHT})`}
                                                             placeholder="Trọng số"
                                                             onChange={(e) => handleUpdateSpecialPokemonWeight(pokemon._id, e.target.value)}
                                                             className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] text-center font-semibold"
