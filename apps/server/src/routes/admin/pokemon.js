@@ -23,6 +23,14 @@ const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g
 
 const toSafePageLimit = (value, fallback) => Math.min(100, Math.max(1, parseInt(value, 10) || fallback))
 
+const VALID_TYPES = new Set([
+    'normal', 'fire', 'water', 'grass', 'electric', 'ice',
+    'fighting', 'poison', 'ground', 'flying', 'psychic',
+    'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+])
+
+const VALID_RARITIES = new Set(['sss', 'ss', 's', 'a', 'b', 'c', 'd'])
+
 const normalizeBaseStats = (stats) => {
     if (!stats || typeof stats !== 'object') return stats
     const normalized = { ...stats }
@@ -70,6 +78,64 @@ const normalizeEvolutionTargetId = (value) => {
     }
     const normalized = String(value).trim()
     return normalized || null
+}
+
+const buildBulkImportEntry = (entry, index) => {
+    const pokedexNumber = Number.parseInt(entry?.pokedexNumber, 10)
+    if (!Number.isFinite(pokedexNumber) || pokedexNumber < 1 || pokedexNumber > 9999) {
+        return { error: `ID khong hop le o vi tri ${index + 1}` }
+    }
+
+    const name = String(entry?.name || '').trim()
+    if (!name) {
+        return { error: `Name trong o vi tri ${index + 1}` }
+    }
+
+    const baseStats = normalizeBaseStats(entry?.baseStats || {})
+    const hp = Number.parseInt(baseStats?.hp, 10)
+    const atk = Number.parseInt(baseStats?.atk, 10)
+    const def = Number.parseInt(baseStats?.def, 10)
+    const spatk = Number.parseInt(baseStats?.spatk, 10)
+    const spldef = Number.parseInt(baseStats?.spldef, 10)
+    const spd = Number.parseInt(baseStats?.spd, 10)
+
+    const stats = { hp, atk, def, spatk, spldef, spd }
+    const invalidStat = Object.entries(stats).find(([, value]) => !Number.isFinite(value) || value < 1 || value > 255)
+    if (invalidStat) {
+        return { error: `Chi so ${invalidStat[0]} khong hop le o vi tri ${index + 1}` }
+    }
+
+    const rawTypes = Array.isArray(entry?.types) ? entry.types : []
+    const normalizedTypes = [...new Set(rawTypes
+        .map(t => String(t || '').trim().toLowerCase())
+        .filter(Boolean)
+    )]
+
+    if (normalizedTypes.length < 1 || normalizedTypes.length > 2) {
+        return { error: `Type phai co 1-2 he o vi tri ${index + 1}` }
+    }
+
+    const invalidType = normalizedTypes.find(type => !VALID_TYPES.has(type))
+    if (invalidType) {
+        return { error: `Type khong hop le (${invalidType}) o vi tri ${index + 1}` }
+    }
+
+    const rarity = normalizeRarity(entry?.rarity)
+    const safeRarity = VALID_RARITIES.has(rarity) ? rarity : 'd'
+
+    return {
+        value: {
+            pokedexNumber,
+            name,
+            baseStats: stats,
+            types: normalizedTypes,
+            rarity: safeRarity,
+            initialMoves: [],
+            levelUpMoves: [],
+            defaultFormId: 'normal',
+            forms: [],
+        },
+    }
 }
 
 // GET /api/admin/pokemon - List all Pokemon with search, filter, pagination
@@ -245,6 +311,116 @@ router.put('/evolutions/bulk', async (req, res) => {
     } catch (error) {
         console.error('PUT /api/admin/pokemon/evolutions/bulk error:', error)
         res.status(500).json({ ok: false, message: error.message || 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/pokemon/import/csv - Bulk create Pokemon from parsed CSV rows
+router.post('/import/csv', async (req, res) => {
+    try {
+        const rawEntries = Array.isArray(req.body?.pokemon) ? req.body.pokemon : []
+        if (rawEntries.length === 0) {
+            return res.status(400).json({ ok: false, message: 'Thieu danh sach Pokemon import' })
+        }
+
+        if (rawEntries.length > 500) {
+            return res.status(400).json({ ok: false, message: 'So luong import qua lon (toi da 500 dong)' })
+        }
+
+        const normalizedEntries = []
+        const precheckErrors = []
+
+        rawEntries.forEach((entry, index) => {
+            const built = buildBulkImportEntry(entry, index)
+            if (built.error) {
+                precheckErrors.push(built.error)
+                return
+            }
+            normalizedEntries.push(built.value)
+        })
+
+        const dexSetInPayload = new Set()
+        const nameSetInPayload = new Set()
+        const dedupedEntries = []
+        const skipped = []
+
+        normalizedEntries.forEach((entry) => {
+            const nameLower = String(entry.name || '').trim().toLowerCase()
+            if (dexSetInPayload.has(entry.pokedexNumber) || nameSetInPayload.has(nameLower)) {
+                skipped.push({
+                    pokedexNumber: entry.pokedexNumber,
+                    name: entry.name,
+                    reason: 'Trung du lieu trong file import',
+                })
+                return
+            }
+
+            dexSetInPayload.add(entry.pokedexNumber)
+            nameSetInPayload.add(nameLower)
+            dedupedEntries.push(entry)
+        })
+
+        const dexNumbers = dedupedEntries.map(entry => entry.pokedexNumber)
+        const namesLower = dedupedEntries.map(entry => String(entry.name || '').trim().toLowerCase())
+
+        const existingDocs = await Pokemon.find({
+            $or: [
+                { pokedexNumber: { $in: dexNumbers } },
+                { nameLower: { $in: namesLower } },
+            ],
+        })
+            .select('pokedexNumber name nameLower')
+            .lean()
+
+        const existingDexSet = new Set(existingDocs.map(doc => Number.parseInt(doc.pokedexNumber, 10)).filter(Number.isFinite))
+        const existingNameSet = new Set(existingDocs.map(doc => String(doc.nameLower || '').trim()).filter(Boolean))
+
+        const created = []
+        const saveErrors = []
+
+        for (const entry of dedupedEntries) {
+            const nameLower = String(entry.name || '').trim().toLowerCase()
+
+            if (existingDexSet.has(entry.pokedexNumber) || existingNameSet.has(nameLower)) {
+                skipped.push({
+                    pokedexNumber: entry.pokedexNumber,
+                    name: entry.name,
+                    reason: 'Da ton tai trong he thong',
+                })
+                continue
+            }
+
+            try {
+                const createdDoc = await Pokemon.create(entry)
+                created.push({
+                    _id: createdDoc._id,
+                    pokedexNumber: createdDoc.pokedexNumber,
+                    name: createdDoc.name,
+                })
+                existingDexSet.add(entry.pokedexNumber)
+                existingNameSet.add(nameLower)
+            } catch (error) {
+                saveErrors.push(`Khong the tao #${entry.pokedexNumber} ${entry.name}: ${error.message}`)
+            }
+        }
+
+        const errors = [...precheckErrors, ...saveErrors]
+
+        res.json({
+            ok: true,
+            requestedCount: rawEntries.length,
+            acceptedCount: dedupedEntries.length,
+            createdCount: created.length,
+            skippedCount: skipped.length,
+            errorCount: errors.length,
+            created,
+            skipped: skipped.slice(0, 100),
+            hiddenSkippedCount: Math.max(0, skipped.length - 100),
+            errors: errors.slice(0, 100),
+            hiddenErrorCount: Math.max(0, errors.length - 100),
+        })
+    } catch (error) {
+        console.error('POST /api/admin/pokemon/import/csv error:', error)
+        res.status(500).json({ ok: false, message: error.message || 'Loi may chu' })
     }
 })
 

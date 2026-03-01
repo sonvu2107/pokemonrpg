@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import { parseEvolutionImportCsv } from '../../utils/evolutionImport'
+import { parsePokemonCsvImport } from '../../utils/pokemonCsvImport'
 
 const TYPE_COLORS = {
     normal: 'bg-gray-500',
@@ -36,11 +37,15 @@ export default function PokemonListPage() {
     const [evolutionImportText, setEvolutionImportText] = useState('')
     const [evolutionImporting, setEvolutionImporting] = useState(false)
     const [evolutionImportReport, setEvolutionImportReport] = useState(null)
+    const [pokemonCsvImportText, setPokemonCsvImportText] = useState('')
+    const [pokemonCsvImporting, setPokemonCsvImporting] = useState(false)
+    const [pokemonCsvImportReport, setPokemonCsvImportReport] = useState(null)
 
     // Scroll Sync
     const tableContainerRef = useRef(null)
     const topScrollRef = useRef(null)
     const evolutionImportFileRef = useRef(null)
+    const pokemonCsvImportFileRef = useRef(null)
 
     // Filters
     const [search, setSearch] = useState('')
@@ -161,6 +166,73 @@ export default function PokemonListPage() {
             next.add(id)
             return next
         })
+    }
+
+    const handlePokemonCsvFileChange = async (event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+
+        try {
+            const text = await file.text()
+            setPokemonCsvImportText(text)
+            setError('')
+        } catch (err) {
+            setError(`Doc file CSV Pokemon that bai: ${err.message}`)
+        }
+    }
+
+    const handleApplyPokemonCsvImport = async () => {
+        if (!pokemonCsvImportText.trim()) {
+            setError('Vui long dan du lieu CSV Pokemon truoc khi import.')
+            return
+        }
+
+        const parsed = parsePokemonCsvImport(pokemonCsvImportText, allPokemon)
+        setPokemonCsvImportReport(parsed.report)
+
+        if (!Array.isArray(parsed.pokemon) || parsed.pokemon.length === 0) {
+            setError('Khong co Pokemon hop le de import.')
+            return
+        }
+
+        if (parsed.pokemon.length > 500) {
+            setError(`So Pokemon hop le qua lon (${parsed.pokemon.length}). Toi da 500 moi lan import.`)
+            return
+        }
+
+        try {
+            setPokemonCsvImporting(true)
+            setError('')
+
+            const result = await pokemonApi.importPokemonCsv(parsed.pokemon)
+
+            setPokemonCsvImportReport((prev) => {
+                const base = prev || parsed.report
+                return {
+                    ...base,
+                    requestedCount: result?.requestedCount || parsed.pokemon.length,
+                    createdCount: result?.createdCount || 0,
+                    skippedCount: result?.skippedCount || 0,
+                    errorCount: result?.errorCount || 0,
+                    serverErrors: Array.isArray(result?.errors) ? result.errors : [],
+                    hiddenServerErrorCount: result?.hiddenErrorCount || 0,
+                }
+            })
+
+            await loadAllPokemon()
+            await loadPokemon()
+
+            const createdCount = Number.parseInt(result?.createdCount, 10) || 0
+            const errorCount = Number.parseInt(result?.errorCount, 10) || 0
+            if (createdCount === 0 && errorCount > 0) {
+                setError(`Import hoan tat nhung khong tao duoc Pokemon nao (${errorCount} loi).`)
+            }
+        } catch (err) {
+            setError(`Import Pokemon CSV that bai: ${err.message}`)
+        } finally {
+            setPokemonCsvImporting(false)
+        }
     }
 
     const parseEvolutionEditKey = (key) => {
@@ -601,13 +673,91 @@ export default function PokemonListPage() {
                     <button
                         type="button"
                         onClick={handleSaveAllEvolution}
-                        disabled={savingId === '__bulk__' || dirtyEvolutionKeys.size === 0 || evolutionImporting}
+                        disabled={savingId === '__bulk__' || dirtyEvolutionKeys.size === 0 || evolutionImporting || pokemonCsvImporting}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-sm font-bold shadow-sm transition-colors"
                     >
                         {savingId === '__bulk__'
                             ? 'Đang lưu...'
                             : `Lưu nhanh (${dirtyEvolutionKeys.size})`}
                     </button>
+                </div>
+
+                <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-sm font-bold text-emerald-900">Import them Pokemon CSV/TXT</p>
+                        <div className="flex gap-2">
+                            <input
+                                ref={pokemonCsvImportFileRef}
+                                type="file"
+                                accept=".csv,.txt"
+                                onChange={handlePokemonCsvFileChange}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => pokemonCsvImportFileRef.current?.click()}
+                                disabled={pokemonCsvImporting || evolutionImporting}
+                                className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed rounded text-xs font-bold text-emerald-900"
+                            >
+                                Tai file CSV/TXT
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleApplyPokemonCsvImport}
+                                disabled={pokemonCsvImporting || evolutionImporting || !pokemonCsvImportText.trim()}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
+                            >
+                                {pokemonCsvImporting ? 'Dang import...' : 'Import Pokemon'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <textarea
+                        rows={5}
+                        value={pokemonCsvImportText}
+                        onChange={(e) => setPokemonCsvImportText(e.target.value)}
+                        placeholder={'ID,Name,Type1,Type2,tier,Total,HP,Attack,Defense,Sp. Atk,Sp. Def,Speed,Generation\n1,Bulbasaur,Grass,Poison,D,318,45,49,49,65,65,45,1'}
+                        className="w-full px-3 py-2 bg-white border border-emerald-200 rounded text-xs text-slate-700 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                    <p className="mt-2 text-[11px] text-emerald-800">
+                        Ho tro cot: ID, Name, Type1, Type2, tier, HP, Attack, Defense, Sp. Atk, Sp. Def, Speed. Bo qua cot Total va Generation.
+                    </p>
+
+                    {pokemonCsvImportReport && (
+                        <div className="mt-2 text-xs text-emerald-900 bg-white/70 border border-emerald-200 rounded p-2">
+                            <div className="font-semibold">
+                                Doc {pokemonCsvImportReport.totalRows} dong • Hop le {pokemonCsvImportReport.parsedRows} • Bo qua {pokemonCsvImportReport.skippedRows}
+                                {Number.isFinite(pokemonCsvImportReport.createdCount) ? ` • Da tao ${pokemonCsvImportReport.createdCount}` : ''}
+                                {Number.isFinite(pokemonCsvImportReport.errorCount) ? ` • Loi ${pokemonCsvImportReport.errorCount}` : ''}
+                            </div>
+                            {Array.isArray(pokemonCsvImportReport.warnings) && pokemonCsvImportReport.warnings.length > 0 && (
+                                <div className="mt-1">
+                                    <div className="font-semibold">Canh bao parser:</div>
+                                    <ul className="list-disc list-inside">
+                                        {pokemonCsvImportReport.warnings.map((warning, index) => (
+                                            <li key={`${warning}-${index}`}>{warning}</li>
+                                        ))}
+                                        {pokemonCsvImportReport.hiddenWarningCount > 0 && (
+                                            <li>... va {pokemonCsvImportReport.hiddenWarningCount} canh bao khac</li>
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
+                            {Array.isArray(pokemonCsvImportReport.serverErrors) && pokemonCsvImportReport.serverErrors.length > 0 && (
+                                <div className="mt-1">
+                                    <div className="font-semibold">Loi khi luu:</div>
+                                    <ul className="list-disc list-inside">
+                                        {pokemonCsvImportReport.serverErrors.map((message, index) => (
+                                            <li key={`${message}-${index}`}>{message}</li>
+                                        ))}
+                                        {pokemonCsvImportReport.hiddenServerErrorCount > 0 && (
+                                            <li>... va {pokemonCsvImportReport.hiddenServerErrorCount} loi khac</li>
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="mb-4 bg-amber-50 border border-amber-200 rounded p-3">
@@ -624,7 +774,7 @@ export default function PokemonListPage() {
                             <button
                                 type="button"
                                 onClick={() => evolutionImportFileRef.current?.click()}
-                                disabled={evolutionImporting}
+                                disabled={evolutionImporting || pokemonCsvImporting}
                                 className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed rounded text-xs font-bold text-amber-900"
                             >
                                 Tai file CSV/TXT
@@ -632,7 +782,7 @@ export default function PokemonListPage() {
                             <button
                                 type="button"
                                 onClick={handleApplyEvolutionImport}
-                                disabled={evolutionImporting || !evolutionImportText.trim()}
+                                disabled={evolutionImporting || pokemonCsvImporting || !evolutionImportText.trim()}
                                 className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
                             >
                                 {evolutionImporting ? 'Dang import...' : 'Import tien hoa'}

@@ -94,6 +94,23 @@ export const pokemonApi = {
         return res.json()
     },
 
+    // POST /api/admin/pokemon/import/csv
+    async importPokemonCsv(pokemon = []) {
+        const res = await fetch(`${API_URL}/admin/pokemon/import/csv`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ pokemon }),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Import Pokemon CSV that bai')
+        }
+        return res.json()
+    },
+
     // DELETE /api/admin/pokemon/:id
     async delete(id) {
         const res = await fetch(`${API_URL}/admin/pokemon/${id}`, {
