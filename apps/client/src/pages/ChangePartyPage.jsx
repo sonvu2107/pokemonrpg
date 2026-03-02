@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
@@ -65,9 +66,12 @@ export default function ChangePartyPage() {
 
             <div className="text-center mb-6">
                 <h1 className="text-3xl font-bold text-center text-blue-900 drop-shadow-sm">Thay Đổi Đội Hình</h1>
-                <p className="text-slate-600 text-xs font-bold mt-2">
-                    Để dọn dẹp đội hình, hãy sử dụng tính năng "Restore Party" (chưa có).
-                </p>
+                <FeatureUnavailableNotice
+                    compact
+                    className="mt-2"
+                    title="Restore Party chưa cập nhật"
+                    message="Tính năng dọn dẹp nhanh đội hình sẽ được bổ sung ở bản cập nhật tới."
+                />
             </div>
 
             <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">

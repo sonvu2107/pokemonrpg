@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
         {title}
     </div>
 )
+
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
 const InfoRow = ({ label, value, valueClass = '' }) => (
     <div className="flex border-b border-blue-200 last:border-0 text-xs">
@@ -48,6 +53,7 @@ export default function PokemonInfoPage() {
     const [pokemon, setPokemon] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [featureNotice, setFeatureNotice] = useState('')
 
     useEffect(() => {
         loadPokemon()
@@ -56,6 +62,8 @@ export default function PokemonInfoPage() {
     const loadPokemon = async () => {
         try {
             setLoading(true)
+            setError(null)
+            setFeatureNotice('')
             const data = await gameApi.getPokemonDetail(id)
             setPokemon(data)
         } catch (err) {
@@ -85,10 +93,22 @@ export default function PokemonInfoPage() {
     }
 
     const base = pokemon.pokemonId
+    const forms = Array.isArray(base?.forms) ? base.forms : []
+    const resolvedFormId = normalizeFormId(pokemon.formId || base?.defaultFormId || 'normal')
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === resolvedFormId) || null
+    const resolvedFormName = String(resolvedForm?.formName || resolvedForm?.formId || resolvedFormId).trim()
+    const formNormalSprite = resolvedForm?.imageUrl || resolvedForm?.sprites?.normal || resolvedForm?.sprites?.icon || base?.imageUrl || base?.sprites?.normal || base?.sprites?.icon || ''
+    const formShinySprite = resolvedForm?.sprites?.shiny || base?.sprites?.shiny || formNormalSprite
     const stats = pokemon.stats
-    const sprite = pokemon.isShiny ? (base.sprites?.shiny || base.imageUrl) : (base.imageUrl || base.sprites?.normal)
+    const sprite = pokemon.isShiny ? formShinySprite : formNormalSprite
     const previousPokemon = pokemon.evolution?.previousPokemon || null
     const previousSprite = previousPokemon?.sprites?.normal || ''
+    const ownerAvatar = String(pokemon.userId?.avatar || '').trim() || DEFAULT_AVATAR
+    const serverStats = pokemon.serverStats || {}
+    const hasServerStats = Object.prototype.hasOwnProperty.call(serverStats, 'speciesTotal')
+    const speciesTotal = Number(serverStats.speciesTotal) || 0
+    const speciesRank = Number(serverStats.speciesRank)
+    const totalPokemonInServer = Number(serverStats.totalPokemon) || 0
 
     // Format rarity
     const rarityColor = {
@@ -145,6 +165,11 @@ export default function PokemonInfoPage() {
                         <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2">
                             {pokemon.nickname || base.name}
                             {pokemon.isShiny && <span className="text-amber-500 text-sm">★</span>}
+                            {resolvedFormId !== 'normal' && (
+                                <span className="text-[11px] uppercase bg-sky-100 text-sky-700 px-2 py-0.5 rounded border border-sky-200">
+                                    {resolvedFormName}
+                                </span>
+                            )}
                         </h2>
 
                         <div className="text-xs font-bold mt-1 flex gap-2">
@@ -163,8 +188,15 @@ export default function PokemonInfoPage() {
                             Chủ Sở Hữu
                         </div>
                         <div className="p-2 text-center text-sm font-bold text-slate-700 flex flex-col items-center">
-                            {/* Avatar placeholder */}
-                            <div className="w-8 h-8 rounded bg-slate-200 mb-1"></div>
+                            <img
+                                src={ownerAvatar}
+                                alt={pokemon.userId?.username || 'Unknown'}
+                                className="w-10 h-10 rounded-full border border-blue-200 object-cover bg-slate-100 mb-1"
+                                onError={(e) => {
+                                    e.currentTarget.onerror = null
+                                    e.currentTarget.src = DEFAULT_AVATAR
+                                }}
+                            />
                             <span className="text-blue-600">{pokemon.userId?.username || 'Unknown'}</span>
                             <span className="text-[10px] text-slate-400">ID: {pokemon.userId?._id?.slice(-8).toUpperCase()}</span>
                         </div>
@@ -258,15 +290,48 @@ export default function PokemonInfoPage() {
                     Số Lượng Trong Server
                 </div>
                 <div className="p-2 text-xs font-bold text-blue-900">
-                    <span className="text-slate-500">Tổng:</span> ? <span className="text-slate-400">[Xếp hạng]</span>
+                    {hasServerStats ? (
+                        <>
+                            <span className="text-slate-500">Loài này:</span> {speciesTotal.toLocaleString('vi-VN')}
+                            {' '}
+                            <span className="text-slate-400">[Hạng: {Number.isFinite(speciesRank) && speciesRank > 0 ? `#${speciesRank}` : 'Chưa có'}]</span>
+                            {' '}
+                            <span className="text-slate-500">| Tổng Pokémon:</span> {totalPokemonInServer.toLocaleString('vi-VN')}
+                        </>
+                    ) : (
+                        <FeatureUnavailableNotice
+                            compact
+                            title="Số lượng trong server chưa cập nhật"
+                            message="Dữ liệu thống kê máy chủ chưa sẵn sàng ở phiên bản này."
+                        />
+                    )}
                 </div>
             </div>
 
             <div className="mt-4 text-center text-xs font-bold text-blue-800 space-x-4">
-                <Link to="/rankings" className="hover:underline hover:text-red-500">Rankings</Link>
-                <Link to="/species-rankings" className="hover:underline hover:text-red-500">Species Rankings</Link>
-                <Link to="/history" className="hover:underline hover:text-red-500">Pokemon History</Link>
+                <Link to="/rankings/pokemon" className="hover:underline hover:text-red-500">Bảng Xếp Hạng Pokémon</Link>
+                <button
+                    type="button"
+                    onClick={() => setFeatureNotice('Tính năng Xếp Hạng Theo Loài chưa được cập nhật.')}
+                    className="hover:underline hover:text-red-500"
+                >
+                    Xếp Hạng Theo Loài
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setFeatureNotice('Tính năng Lịch Sử Pokémon chưa được cập nhật.')}
+                    className="hover:underline hover:text-red-500"
+                >
+                    Lịch Sử Pokémon
+                </button>
             </div>
+
+            {featureNotice && (
+                <FeatureUnavailableNotice
+                    className="mt-2"
+                    message={featureNotice}
+                />
+            )}
 
         </div>
     )

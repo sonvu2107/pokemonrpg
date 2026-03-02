@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
@@ -16,6 +17,7 @@ export default function PokemonRankingsPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
+    const [featureNotice, setFeatureNotice] = useState('')
 
     useEffect(() => {
         loadRankings(currentPage)
@@ -24,6 +26,7 @@ export default function PokemonRankingsPage() {
     const loadRankings = async (page) => {
         try {
             setLoading(true)
+            setFeatureNotice('')
             const data = await gameApi.getPokemonRankings({ page, limit: 35 })
             setRankings(data.rankings || [])
             setPagination(data.pagination)
@@ -147,6 +150,14 @@ export default function PokemonRankingsPage() {
                 </div>
             </div>
 
+            {featureNotice && (
+                <FeatureUnavailableNotice
+                    compact
+                    className="mb-4"
+                    message={featureNotice}
+                />
+            )}
+
             {/* Main Rankings Table */}
             <div className="border-2 border-slate-800 bg-white shadow-lg">
                 <SectionHeader title="Bảng Xếp Hạng Pokémon Chung" />
@@ -217,7 +228,7 @@ export default function PokemonRankingsPage() {
                                         <div className="flex gap-2">
                                             <button
                                                 className="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold py-1 px-3 border border-slate-400 rounded shadow-sm disabled:opacity-50"
-                                                onClick={() => alert('Tính năng khiêu chiến sắp ra mắt!')}
+                                                onClick={() => setFeatureNotice('Tính năng khiêu chiến chưa được cập nhật.')}
                                             >
                                                 Khiêu Chiến
                                             </button>

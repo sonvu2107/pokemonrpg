@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
+import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 
 export default function MapPage() {
     const { slug } = useParams()
@@ -12,6 +13,7 @@ export default function MapPage() {
     const [error, setError] = useState('')
     const [unlockInfo, setUnlockInfo] = useState(null)
     const [isLocked, setIsLocked] = useState(false)
+    const [featureNotice, setFeatureNotice] = useState('')
 
     // Game State
     const [searching, setSearching] = useState(false)
@@ -61,6 +63,7 @@ export default function MapPage() {
         setLastResult(null)
         setEncounter(null)
         setActionMessage('')
+        setFeatureNotice('')
     }, [slug])
 
     const loadMapData = async () => {
@@ -306,10 +309,27 @@ export default function MapPage() {
                         Thông Tin Khu Vực
                     </div>
                     <div className="bg-sky-50 text-center py-2 text-blue-800 font-bold text-xs">
-                        [ <Link to="/event" className="hover:underline">Sự Kiện</Link> ]
-                        [ <Link to="/shop" className="hover:underline">Cửa Hàng</Link> ]
+                        [
+                        {' '}
+                        <button
+                            type="button"
+                            className="hover:underline"
+                            onClick={() => setFeatureNotice('Tính năng Sự Kiện trên bản đồ chưa được cập nhật.')}
+                        >
+                            Sự Kiện
+                        </button>
+                        {' '}
+                        ]
+                        {' '}
+                        [ <Link to="/shop/buy" className="hover:underline">Cửa Hàng</Link> ]
                     </div>
                 </div>
+
+                {featureNotice && (
+                    <div className="p-2 border-b border-blue-300 bg-white">
+                        <FeatureUnavailableNotice compact message={featureNotice} />
+                    </div>
+                )}
 
                 {/* Sub-Header: Map Info / Battle Skipped */}
                 <div className="text-center py-2 bg-blue-50 text-blue-900 font-bold text-xs border-b border-blue-300">

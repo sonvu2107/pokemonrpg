@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { gameApi } from '../services/gameApi'
+import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
@@ -315,11 +316,23 @@ const ActiveBattleView = ({
                 )}
 
                 {activeTab === 'focus' && (
-                    <div className="p-3 text-center text-xs text-slate-500">Sắp ra mắt.</div>
+                    <div className="p-3">
+                        <FeatureUnavailableNotice
+                            compact
+                            title="Tập trung chưa cập nhật"
+                            message="Tính năng Tập Trung trong battle đang được phát triển."
+                        />
+                    </div>
                 )}
 
                 {activeTab === 'party' && (
-                    <div className="p-3 text-center text-xs text-slate-500">Sắp ra mắt.</div>
+                    <div className="p-3">
+                        <FeatureUnavailableNotice
+                            compact
+                            title="Đổi đội hình chưa cập nhật"
+                            message="Đổi đội hình ngay trong battle chưa khả dụng ở phiên bản này."
+                        />
+                    </div>
                 )}
 
                 {activeTab === 'run' && (
@@ -1439,7 +1452,10 @@ export function ExplorePage() {
         <div className="space-y-3">
             <div className="text-lg font-semibold text-slate-100">Khám phá</div>
             <div className="rounded border border-slate-700 bg-slate-950/40 p-3 text-slate-300">
-                Canvas khám phá sẽ mount vào đây (Phase 2).
+                <FeatureUnavailableNotice
+                    title="Khám phá chưa cập nhật"
+                    message="Bản đồ khám phá thời gian thực đang được hoàn thiện cho Phase 2."
+                />
             </div>
         </div>
     )

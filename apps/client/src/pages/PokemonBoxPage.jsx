@@ -11,6 +11,25 @@ const SectionHeader = ({ title }) => (
     </div>
 )
 
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const resolvePokemonDisplay = (entry) => {
+    const species = entry?.pokemonId || {}
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const requestedFormId = normalizeFormId(entry?.formId || species?.defaultFormId || 'normal')
+    const resolvedForm = forms.find((candidate) => normalizeFormId(candidate?.formId) === requestedFormId) || null
+    const baseNormal = species?.imageUrl || species?.sprites?.normal || species?.sprites?.icon || ''
+    const formNormal = resolvedForm?.imageUrl || resolvedForm?.sprites?.normal || resolvedForm?.sprites?.icon || baseNormal
+    const shinySprite = resolvedForm?.sprites?.shiny || species?.sprites?.shiny || formNormal
+
+    return {
+        species,
+        formId: requestedFormId,
+        formName: String(resolvedForm?.formName || resolvedForm?.formId || requestedFormId).trim(),
+        sprite: entry?.isShiny ? shinySprite : formNormal,
+    }
+}
+
 export default function PokemonBoxPage() {
     const [pokemon, setPokemon] = useState([])
     const [loading, setLoading] = useState(true)
@@ -233,8 +252,7 @@ export default function PokemonBoxPage() {
 
                     {/* Headers */}
                     <div className="flex text-xs font-bold text-blue-800 border-b border-blue-300 bg-white">
-                        <div className="flex-1 p-1 text-center border-r border-blue-300">Thông Tin Pokemon</div>
-                        <div className="w-1/4 p-1 text-center">Vị Trí Mới</div>
+                        <div className="flex-1 p-1 text-center">Thông Tin Pokemon</div>
                     </div>
 
                     {/* Content */}
@@ -248,15 +266,14 @@ export default function PokemonBoxPage() {
                         ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                                 {pokemon.map((p) => {
-                                    // Fallback if population failed or legacy data
-                                    const species = p.pokemonId || {}
-                                    const sprite = p.isShiny
-                                        ? (species.sprites?.shiny || species.imageUrl)
-                                        : (species.imageUrl || species.sprites?.normal)
+                                    const display = resolvePokemonDisplay(p)
+                                    const species = display.species
+                                    const sprite = display.sprite
                                     const name = p.nickname || species.name || 'Unknown'
                                     const rarity = species.rarity || 'd'
                                     const style = getRarityStyle(rarity)
                                     const isEvolvable = canEvolve(p)
+                                    const showFormLabel = Boolean(display.formName) && display.formId !== 'normal'
 
                                     return (
                                         <div key={p._id} className={`group relative flex flex-col items-center p-2 rounded cursor-pointer transition-all hover:scale-105 ${style.border} ${style.bg} ${style.shadow} ${style.frameClass}`}>
@@ -297,25 +314,28 @@ export default function PokemonBoxPage() {
                                                     {p.isShiny && (
                                                         <span className="text-[8px] text-amber-500 font-bold bg-white/80 px-1 rounded border border-amber-200" title="Shiny">SHINY</span>
                                                     )}
+                                                    {showFormLabel && (
+                                                        <span className="text-[8px] text-sky-700 font-bold bg-white/80 px-1 rounded border border-sky-200" title={`Form: ${display.formName}`}>
+                                                            {display.formName}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </Link>
 
-                                            {/* Add to Party Button (Visible on Hover) */}
+                                            {/* Add to Party Button */}
                                             {p.location !== 'party' && (
                                                 <button
                                                     onClick={async (e) => {
                                                         e.stopPropagation()
-                                                        e.preventDefault()
                                                         try {
                                                             await gameApi.addToParty(p._id)
                                                             alert('Đã thêm vào đội hình!')
-                                                            // Optional: reload box or update UI locally
                                                             loadBox()
                                                         } catch (err) {
                                                             alert(err.message)
                                                         }
                                                     }}
-                                                    className="absolute inset-0 bg-black/40 flex items-center justify-center text-white font-bold text-xs uppercase opacity-0 group-hover:opacity-100 z-30 transition-opacity backdrop-blur-[1px] rounded"
+                                                    className="mt-2 px-2 py-1 text-[10px] font-bold uppercase rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:border-blue-400 transition-colors"
                                                 >
                                                     + Vào Đội
                                                 </button>
@@ -330,16 +350,6 @@ export default function PokemonBoxPage() {
                                 })}
                             </div>
                         )}
-                    </div>
-
-                    {/* Footer Pagination (Copy of top) */}
-                    <div className="border-t border-blue-300 bg-slate-50 p-2 text-center font-bold text-blue-800 text-xs uppercase bg-blue-100/50">
-                        Trang
-                    </div>
-                    <div className="p-2 text-center flex justify-center gap-1 bg-white">
-                        <span className="w-8 h-8 flex items-center justify-center text-xs font-bold rounded bg-slate-100 text-slate-600">
-                            1
-                        </span>
                     </div>
                 </div>
             </div>

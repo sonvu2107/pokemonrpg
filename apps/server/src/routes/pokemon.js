@@ -169,7 +169,7 @@ router.get('/:id', async (req, res) => {
 
         const userPokemon = await UserPokemon.findById(id)
             .populate('pokemonId')
-            .populate('userId', 'username _id') // Populating owner info
+            .populate('userId', 'username _id avatar') // Populating owner info
             .lean()
 
         if (!userPokemon) {
@@ -242,11 +242,42 @@ router.get('/:id', async (req, res) => {
             }
         }
 
+        const speciesTotalInServer = await UserPokemon.countDocuments({ pokemonId: basePokemon._id })
+        const [totalPokemonInServer, trackedSpeciesInServer, higherRankedSpecies] = await Promise.all([
+            UserPokemon.countDocuments({}),
+            UserPokemon.distinct('pokemonId').then((ids) => ids.length),
+            UserPokemon.aggregate([
+                {
+                    $group: {
+                        _id: '$pokemonId',
+                        count: { $sum: 1 },
+                    },
+                },
+                {
+                    $match: {
+                        count: { $gt: speciesTotalInServer },
+                    },
+                },
+                { $count: 'total' },
+            ]).allowDiskUse(true),
+        ])
+
+        const speciesRank = speciesTotalInServer > 0
+            ? (Number(higherRankedSpecies?.[0]?.total) || 0) + 1
+            : null
+
         responseData.evolution = {
             canEvolve: Boolean(targetPokemon) && level >= minLevel,
             evolutionLevel: hasValidRule ? minLevel : null,
             targetPokemon,
             previousPokemon,
+        }
+
+        responseData.serverStats = {
+            speciesTotal: speciesTotalInServer,
+            speciesRank,
+            totalPokemon: totalPokemonInServer,
+            trackedSpecies: trackedSpeciesInServer,
         }
 
         res.json({
