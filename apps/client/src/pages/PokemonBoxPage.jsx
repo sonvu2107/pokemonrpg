@@ -87,12 +87,22 @@ export default function PokemonBoxPage() {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
     const getEvolutionRule = (species = {}, currentFormId = 'normal') => {
-        const normalizedFormId = String(currentFormId || '').trim()
+        const baseEvolution = species?.evolution || {}
+        const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
+        if (baseEvolution?.evolvesTo && Number.isFinite(baseMinLevel) && baseMinLevel > 0) {
+            const rawEvolvesTo = baseEvolution.evolvesTo
+            return {
+                evolvesTo: typeof rawEvolvesTo === 'string'
+                    ? rawEvolvesTo
+                    : String(rawEvolvesTo?._id || rawEvolvesTo).trim(),
+                minLevel: baseMinLevel,
+            }
+        }
+
+        const normalizedFormId = String(currentFormId || '').trim().toLowerCase()
         const forms = Array.isArray(species?.forms) ? species.forms : []
-        const matchedForm = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
-        const evolution = matchedForm?.evolution?.evolvesTo
-            ? matchedForm.evolution
-            : (species?.evolution || {})
+        const matchedForm = forms.find((entry) => String(entry?.formId || '').trim().toLowerCase() === normalizedFormId) || null
+        const evolution = matchedForm?.evolution || {}
 
         const rawEvolvesTo = evolution?.evolvesTo
         const evolvesTo = rawEvolvesTo

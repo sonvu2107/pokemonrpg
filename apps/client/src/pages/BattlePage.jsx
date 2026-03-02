@@ -788,7 +788,9 @@ export function BattlePage() {
                     rewards: {
                         coins: 0,
                         trainerExp: 0,
+                        moonPoints: 0,
                         prizePokemon: null,
+                        prizeItem: null,
                     },
                     evolution: {
                         evolved: false,
@@ -856,7 +858,9 @@ export function BattlePage() {
                     rewards: {
                         coins: 0,
                         trainerExp: 0,
+                        moonPoints: 0,
                         prizePokemon: null,
+                        prizeItem: null,
                     },
                     evolution: {
                         evolved: false,
@@ -993,8 +997,11 @@ export function BattlePage() {
             trainerImage: trainer?.imageUrl || '/assets/08_trainer_female.png',
             trainerQuote: trainer?.quote || 'Good luck!',
             trainerPrize: trainer?.prizePokemonId?.name || 'Không có',
+            trainerPrizeItem: trainer?.prizeItemId?.name || 'Không có',
+            trainerPrizeItemQuantity: Math.max(1, Number(trainer?.prizeItemQuantity) || 1),
             trainerCoinsReward: Math.max(0, Number(trainer?.platinumCoinsReward) || 0),
             trainerExpReward: Math.max(0, Number(trainer?.expReward) || 0),
+            trainerMoonPointsReward: Math.max(0, Number(trainer?.moonPointsReward) || 0),
             currentIndex: 0,
             level: currentEncounter?.level || 1,
             hp: currentEncounter?.hp || 1,
@@ -1192,6 +1199,12 @@ export function BattlePage() {
                                         )}
                                         <div className="mt-3 text-sm font-bold text-slate-700">+{battleResults.rewards.coins} Xu</div>
                                         <div className="text-xs text-slate-500">+{battleResults.rewards.trainerExp} EXP Huấn luyện viên</div>
+                                        <div className="text-xs text-slate-500">+{battleResults.rewards.moonPoints || 0} Điểm Nguyệt Các</div>
+                                        {battleResults.rewards?.prizeItem?.name && (
+                                            <div className="text-xs text-blue-600 mt-1">
+                                                + Vật phẩm: {battleResults.rewards.prizeItem.name} x{battleResults.rewards.prizeItem.quantity || 1}
+                                            </div>
+                                        )}
                                         {battleResults.rewards?.prizePokemon?.claimed && (
                                             <div className="text-xs text-emerald-600 mt-1">
                                                 + Phần thưởng: {battleResults.rewards.prizePokemon.name}
@@ -1318,6 +1331,7 @@ export function BattlePage() {
                         {opponent?.team?.length ? (
                             <div className="mt-1 space-y-0.5 text-sm font-bold text-slate-700">
                                 <div>Pokémon: {opponent?.trainerPrize || 'Không có'}</div>
+                                <div>Item: {opponent?.trainerPrizeItem && opponent?.trainerPrizeItem !== 'Không có' ? `${opponent.trainerPrizeItem} x${opponent?.trainerPrizeItemQuantity || 1}` : 'Không có'}</div>
                                 <div>
                                     Xu Bạch Kim: {opponent?.trainerCoinsReward > 0
                                         ? `+${opponent.trainerCoinsReward}`
@@ -1326,6 +1340,11 @@ export function BattlePage() {
                                 <div>
                                     EXP huấn luyện viên: {opponent?.trainerExpReward > 0
                                         ? `+${opponent.trainerExpReward}`
+                                        : 'Theo cấp đội hình'}
+                                </div>
+                                <div>
+                                    Điểm Nguyệt Các: {opponent?.trainerMoonPointsReward > 0
+                                        ? `+${opponent.trainerMoonPointsReward}`
                                         : 'Theo cấp đội hình'}
                                 </div>
                             </div>

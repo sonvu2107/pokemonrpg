@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { battleTrainerApi, pokemonApi } from '../../services/adminApi'
+import { battleTrainerApi, itemApi, pokemonApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
 
@@ -13,8 +13,11 @@ const emptyTrainer = {
     team: [],
     prizePokemonId: '',
     prizePokemonFormId: 'normal',
+    prizeItemId: '',
+    prizeItemQuantity: 1,
     platinumCoinsReward: 0,
     expReward: 0,
+    moonPointsReward: 0,
 }
 
 const PRIZE_POKEMON_MODAL_PAGE_SIZE = 40
@@ -22,6 +25,7 @@ const PRIZE_POKEMON_MODAL_PAGE_SIZE = 40
 export default function BattleTrainerPage() {
     const [trainers, setTrainers] = useState([])
     const [pokemon, setPokemon] = useState([])
+    const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [form, setForm] = useState({ ...emptyTrainer })
@@ -35,6 +39,10 @@ export default function BattleTrainerPage() {
     const [prizePokemonTotal, setPrizePokemonTotal] = useState(0)
     const [prizePokemonLoading, setPrizePokemonLoading] = useState(false)
     const [prizePokemonLoadError, setPrizePokemonLoadError] = useState('')
+    const [autoLevelStart, setAutoLevelStart] = useState(1)
+    const [autoLevelMax, setAutoLevelMax] = useState(100)
+    const [autoLevelStep, setAutoLevelStep] = useState(10)
+    const [autoGenerating, setAutoGenerating] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -48,12 +56,14 @@ export default function BattleTrainerPage() {
     const loadData = async () => {
         try {
             setLoading(true)
-            const [trainerData, pokemonData] = await Promise.all([
+            const [trainerData, pokemonData, itemData] = await Promise.all([
                 battleTrainerApi.list(),
                 gameApi.getPokemonList({ page: 1, limit: 5000 }),
+                itemApi.list({ page: 1, limit: 5000 }),
             ])
             setTrainers(trainerData.trainers || [])
             setPokemon(pokemonData.pokemon || [])
+            setItems(itemData.items || [])
         } catch (err) {
             setError(err.message)
         } finally {
@@ -149,6 +159,11 @@ export default function BattleTrainerPage() {
                 prizePokemonFormId: form.prizePokemonId
                     ? (String(form.prizePokemonFormId || '').trim().toLowerCase() || 'normal')
                     : null,
+                prizeItemId: form.prizeItemId || null,
+                prizeItemQuantity: form.prizeItemId
+                    ? Math.max(1, Number.parseInt(form.prizeItemQuantity, 10) || 1)
+                    : 1,
+                moonPointsReward: Math.max(0, Number.parseInt(form.moonPointsReward, 10) || 0),
             }
             if (editingId) {
                 await battleTrainerApi.update(editingId, payload)
@@ -177,8 +192,11 @@ export default function BattleTrainerPage() {
             })),
             prizePokemonId: trainer.prizePokemonId?._id || trainer.prizePokemonId || '',
             prizePokemonFormId: String(trainer.prizePokemonFormId || trainer.prizePokemonId?.defaultFormId || 'normal').trim().toLowerCase() || 'normal',
+            prizeItemId: trainer.prizeItemId?._id || trainer.prizeItemId || '',
+            prizeItemQuantity: Math.max(1, Number(trainer.prizeItemQuantity) || 1),
             platinumCoinsReward: trainer.platinumCoinsReward || 0,
             expReward: trainer.expReward || 0,
+            moonPointsReward: trainer.moonPointsReward || 0,
         })
     }
 
@@ -186,6 +204,24 @@ export default function BattleTrainerPage() {
         if (!confirm('Xóa trainer này?')) return
         await battleTrainerApi.delete(id)
         loadData()
+    }
+
+    const handleAutoGenerateByMilestone = async () => {
+        try {
+            setError('')
+            setAutoGenerating(true)
+            await battleTrainerApi.autoGenerate({
+                startLevel: autoLevelStart,
+                maxLevel: autoLevelMax,
+                step: autoLevelStep,
+                teamSize: 3,
+            })
+            await loadData()
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setAutoGenerating(false)
+        }
     }
 
     const handleOpenPrizePokemonModal = () => {
@@ -251,6 +287,7 @@ export default function BattleTrainerPage() {
     const selectedPrizePokemon = pokemon.find((entry) => entry._id === form.prizePokemonId)
         || prizePokemonLookup[form.prizePokemonId]
         || null
+    const selectedPrizeItem = items.find((entry) => entry._id === form.prizeItemId) || null
     const selectedPrizePokemonForms = selectedPrizePokemon ? getPokemonFormsForDisplay(selectedPrizePokemon) : []
     const normalizedPrizePokemonFormId = normalizePokemonFormId(form.prizePokemonFormId)
     const selectedPrizePokemonForm = selectedPrizePokemonForms.find((entry) => entry.formId === normalizedPrizePokemonFormId)
@@ -280,6 +317,55 @@ export default function BattleTrainerPage() {
             </div>
             <div className="p-4">
                 {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}
+
+                <div className="mb-4 border border-emerald-200 rounded p-3 bg-emerald-50/60">
+                    <div className="flex flex-col md:flex-row md:items-end gap-3">
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Mốc bắt đầu</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={autoLevelStart}
+                                onChange={(e) => setAutoLevelStart(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
+                                className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Mốc tối đa</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={autoLevelMax}
+                                onChange={(e) => setAutoLevelMax(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
+                                className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Bước cấp</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={autoLevelStep}
+                                onChange={(e) => setAutoLevelStep(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
+                                className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleAutoGenerateByMilestone}
+                            disabled={autoGenerating}
+                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded text-sm"
+                        >
+                            {autoGenerating ? 'Đang tạo...' : 'Auto tạo HLV mỗi 10 cấp'}
+                        </button>
+                    </div>
+                    <p className="mt-2 text-[11px] text-emerald-800">
+                        Auto tạo theo mốc cấp với công thức thưởng mặc định: Lv x 10 cho Xu, EXP và Điểm Nguyệt Các.
+                    </p>
+                </div>
                 <form onSubmit={handleSubmit} className="space-y-4 border border-slate-200 rounded p-4 bg-slate-50">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -315,7 +401,7 @@ export default function BattleTrainerPage() {
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                         />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Thứ tự</label>
                             <input
@@ -338,7 +424,7 @@ export default function BattleTrainerPage() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Phần thưởng</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Pokémon thưởng</label>
                             <div className="space-y-2">
                                 <button
                                     type="button"
@@ -381,6 +467,41 @@ export default function BattleTrainerPage() {
                             </div>
                         </div>
                         <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Vật phẩm thưởng</label>
+                            <select
+                                value={form.prizeItemId}
+                                onChange={(e) => {
+                                    const nextItemId = e.target.value
+                                    setForm((prev) => ({
+                                        ...prev,
+                                        prizeItemId: nextItemId,
+                                        prizeItemQuantity: nextItemId ? Math.max(1, Number.parseInt(prev.prizeItemQuantity, 10) || 1) : 1,
+                                    }))
+                                }}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                            >
+                                <option value="">Không có vật phẩm thưởng</option>
+                                {items.map((entry) => (
+                                    <option key={entry._id} value={entry._id}>{entry.name}</option>
+                                ))}
+                            </select>
+                            {form.prizeItemId && (
+                                <div className="mt-2 flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={form.prizeItemQuantity}
+                                        onChange={(e) => setForm({ ...form, prizeItemQuantity: Math.max(1, Number.parseInt(e.target.value, 10) || 1) })}
+                                        className="w-24 px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                    />
+                                    <span className="text-xs text-slate-500">Số lượng</span>
+                                </div>
+                            )}
+                            {selectedPrizeItem && (
+                                <div className="mt-2 text-xs text-slate-600">Đã chọn: {selectedPrizeItem.name}</div>
+                            )}
+                        </div>
+                        <div>
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🪙 Xu Bạch Kim</label>
                             <input
                                 type="number"
@@ -392,12 +513,23 @@ export default function BattleTrainerPage() {
                             />
                         </div>
                         <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">⭐ Exp Nhận Được</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">⭐ EXP Huấn Luyện Viên</label>
                             <input
                                 type="number"
                                 min="0"
                                 value={form.expReward}
                                 onChange={(e) => setForm({ ...form, expReward: parseInt(e.target.value) || 0 })}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                placeholder="0 = dùng công thức mặc định"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🌑 Điểm Nguyệt Các</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={form.moonPointsReward}
+                                onChange={(e) => setForm({ ...form, moonPointsReward: parseInt(e.target.value) || 0 })}
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                 placeholder="0 = dùng công thức mặc định"
                             />
@@ -484,16 +616,38 @@ export default function BattleTrainerPage() {
                     ) : (
                         <div className="space-y-3">
                             {trainers.map((trainer) => (
-                                <div key={trainer._id} className="border border-slate-200 rounded p-3 flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
+                                <div key={trainer._id} className="border border-slate-200 rounded p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                    <div className="flex items-start gap-3">
                                         {trainer.imageUrl ? (
-                                            <img src={trainer.imageUrl} className="w-10 h-10 object-contain pixelated" />
+                                            <img src={trainer.imageUrl} className="w-12 h-12 object-contain pixelated" />
                                         ) : (
-                                            <div className="w-10 h-10 bg-slate-100 border border-slate-200 rounded" />
+                                            <div className="w-12 h-12 bg-slate-100 border border-slate-200 rounded" />
                                         )}
                                         <div>
-                                            <div className="font-bold text-slate-800">{trainer.name}</div>
-                                            <div className="text-xs text-slate-500">{trainer.team?.length || 0} Pokémon</div>
+                                            <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                                                <span>{trainer.name}</span>
+                                                {trainer.autoGenerated && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                        AUTO {trainer.milestoneLevel ? `Lv ${trainer.milestoneLevel}` : ''}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-slate-500">{trainer.team?.length || 0} Pokémon • Order: {trainer.orderIndex ?? 0}</div>
+                                            <div className="mt-1.5 text-[11px] text-slate-700 space-y-0.5">
+                                                <div>
+                                                    Pokémon thưởng: {trainer.prizePokemonId?.name
+                                                        ? `${trainer.prizePokemonId.name}${trainer.prizePokemonFormId && trainer.prizePokemonFormId !== 'normal' ? ` (${trainer.prizePokemonFormId})` : ''}`
+                                                        : 'Không có'}
+                                                </div>
+                                                <div>
+                                                    Item thưởng: {trainer.prizeItemId?.name
+                                                        ? `${trainer.prizeItemId.name} x${Math.max(1, Number(trainer.prizeItemQuantity) || 1)}`
+                                                        : 'Không có'}
+                                                </div>
+                                                <div>
+                                                    Thưởng: +{Math.max(0, Number(trainer.platinumCoinsReward) || 0)} Xu • +{Math.max(0, Number(trainer.expReward) || 0)} EXP • +{Math.max(0, Number(trainer.moonPointsReward) || 0)} Nguyệt Các
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
@@ -501,7 +655,7 @@ export default function BattleTrainerPage() {
                                             onClick={() => handleEdit(trainer)}
                                             className="px-2 py-1 text-xs font-bold bg-green-600 text-white rounded"
                                         >
-                                            Sửa
+                                            Sửa / Setup
                                         </button>
                                         <button
                                             onClick={() => handleDelete(trainer._id)}

@@ -414,6 +414,22 @@ export const battleTrainerApi = {
         if (!res.ok) throw new Error('Xóa huấn luyện viên thất bại')
         return res.json()
     },
+
+    async autoGenerate(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/battle-trainers/auto-generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Auto tạo huấn luyện viên thất bại')
+        }
+        return res.json()
+    },
 }
 
 // Item DropRate endpoints

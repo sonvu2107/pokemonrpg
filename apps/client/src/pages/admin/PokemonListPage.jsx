@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import { parseEvolutionImportCsv } from '../../utils/evolutionImport'
 import { parsePokemonCsvImport } from '../../utils/pokemonCsvImport'
+import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
 const TYPE_COLORS = {
     normal: 'bg-gray-500',
@@ -40,6 +41,7 @@ export default function PokemonListPage() {
     const [pokemonCsvImportText, setPokemonCsvImportText] = useState('')
     const [pokemonCsvImporting, setPokemonCsvImporting] = useState(false)
     const [pokemonCsvImportReport, setPokemonCsvImportReport] = useState(null)
+    const [uploadingImageKey, setUploadingImageKey] = useState('')
 
     // Scroll Sync
     const tableContainerRef = useRef(null)
@@ -422,6 +424,85 @@ export default function PokemonListPage() {
         } catch (err) {
             alert('Xóa thất bại: ' + err.message)
         }
+    }
+
+    const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+    const replacePokemonInLocalState = (updatedPokemon) => {
+        if (!updatedPokemon?._id) return
+        setPokemon((prev) => prev.map((entry) => (entry._id === updatedPokemon._id ? updatedPokemon : entry)))
+        setAllPokemon((prev) => prev.map((entry) => (entry._id === updatedPokemon._id ? updatedPokemon : entry)))
+    }
+
+    const buildFormUpdatePayload = (pokemonEntry, targetFormId, nextImageUrl) => {
+        const normalizedTargetFormId = normalizeFormId(targetFormId)
+        const forms = Array.isArray(pokemonEntry?.forms) ? pokemonEntry.forms : []
+        if (forms.length === 0) {
+            throw new Error('Pokemon này chưa có danh sách form để cập nhật ảnh nhanh.')
+        }
+
+        let found = false
+        const nextForms = forms.map((entry) => {
+            if (normalizeFormId(entry?.formId) !== normalizedTargetFormId) return entry
+            found = true
+            return {
+                ...entry,
+                imageUrl: nextImageUrl,
+            }
+        })
+
+        if (!found) {
+            throw new Error(`Không tìm thấy form "${normalizedTargetFormId}" để cập nhật ảnh.`)
+        }
+
+        return { forms: nextForms }
+    }
+
+    const handleInlineImageUpload = async (file, pokemonEntry, formId = null) => {
+        const validationError = validateImageFile(file)
+        if (validationError) {
+            setError(validationError)
+            return
+        }
+
+        const key = `${pokemonEntry?._id || 'unknown'}:${formId || 'base'}`
+
+        try {
+            setError('')
+            setUploadingImageKey(key)
+
+            const uploadedUrl = await uploadToCloudinary(file)
+            const normalizedFormId = formId ? normalizeFormId(formId) : null
+            const payload = normalizedFormId
+                ? buildFormUpdatePayload(pokemonEntry, normalizedFormId, uploadedUrl)
+                : (() => {
+                    const forms = Array.isArray(pokemonEntry?.forms) ? pokemonEntry.forms : []
+                    if (forms.length === 0) {
+                        return { imageUrl: uploadedUrl }
+                    }
+
+                    const defaultFormId = normalizeFormId(pokemonEntry?.defaultFormId || forms[0]?.formId || 'normal')
+                    const formPayload = buildFormUpdatePayload(pokemonEntry, defaultFormId, uploadedUrl)
+                    return {
+                        ...formPayload,
+                        imageUrl: uploadedUrl,
+                    }
+                })()
+
+            const result = await pokemonApi.update(pokemonEntry._id, payload)
+            replacePokemonInLocalState(result?.pokemon)
+        } catch (err) {
+            setError(`Cập nhật ảnh thất bại: ${err.message}`)
+        } finally {
+            setUploadingImageKey('')
+        }
+    }
+
+    const handleInlineImageInputChange = async (event, pokemonEntry, formId = null) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+        await handleInlineImageUpload(file, pokemonEntry, formId)
     }
 
     const toggleExpanded = (id) => {
@@ -876,17 +957,35 @@ export default function PokemonListPage() {
                                                 <tr className="hover:bg-blue-50/30 transition-colors border-b border-slate-100 last:border-0">
                                                     <td className="px-3 py-3 text-slate-500 font-mono text-xs">#{p.pokedexNumber.toString().padStart(3, '0')}</td>
                                                     <td className="px-3 py-3 text-center">
-                                                        {(defaultForm?.imageUrl || p.imageUrl) ? (
-                                                            <img
-                                                                src={defaultForm?.imageUrl || p.imageUrl}
-                                                                alt={p.name}
-                                                                className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto"
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            {(defaultForm?.imageUrl || p.imageUrl) ? (
+                                                                <img
+                                                                    src={defaultForm?.imageUrl || p.imageUrl}
+                                                                    alt={p.name}
+                                                                    className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
+                                                                    ?
+                                                                </div>
+                                                            )}
+                                                            <input
+                                                                id={`quick-upload-${p._id}-base`}
+                                                                type="file"
+                                                                accept="image/*"
+                                                                className="hidden"
+                                                                disabled={Boolean(uploadingImageKey)}
+                                                                onChange={(e) => handleInlineImageInputChange(e, p)}
                                                             />
-                                                        ) : (
-                                                            <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
-                                                                ?
-                                                            </div>
-                                                        )}
+                                                            <label
+                                                                htmlFor={`quick-upload-${p._id}-base`}
+                                                                className={`px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors ${uploadingImageKey === `${p._id}:base`
+                                                                    ? 'bg-blue-100 border-blue-200 text-blue-700 cursor-wait'
+                                                                    : 'bg-white border-blue-200 text-blue-700 hover:bg-blue-50 cursor-pointer'}`}
+                                                            >
+                                                                {uploadingImageKey === `${p._id}:base` ? 'Đang up...' : 'Up ảnh'}
+                                                            </label>
+                                                        </div>
                                                     </td>
                                                     <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[150px]" title={p.name}>
                                                         <div className="flex items-center gap-1.5">
@@ -1006,17 +1105,35 @@ export default function PokemonListPage() {
                                                                 <div className="flex justify-end pr-2">↳</div>
                                                             </td>
                                                             <td className="px-3 py-3 text-center border-t border-slate-100/50">
-                                                                {(form.imageUrl || p.imageUrl) ? (
-                                                                    <img
-                                                                        src={form.imageUrl || p.imageUrl}
-                                                                        alt={`${p.name} ${form.formName || form.formId}`.trim()}
-                                                                        className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
+                                                                <div className="flex flex-col items-center gap-1">
+                                                                    {(form.imageUrl || p.imageUrl) ? (
+                                                                        <img
+                                                                            src={form.imageUrl || p.imageUrl}
+                                                                            alt={`${p.name} ${form.formName || form.formId}`.trim()}
+                                                                            className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
+                                                                            ?
+                                                                        </div>
+                                                                    )}
+                                                                    <input
+                                                                        id={`quick-upload-${p._id}-${normalizeFormId(form.formId).replace(/[^a-z0-9_-]/gi, '_')}`}
+                                                                        type="file"
+                                                                        accept="image/*"
+                                                                        className="hidden"
+                                                                        disabled={Boolean(uploadingImageKey)}
+                                                                        onChange={(e) => handleInlineImageInputChange(e, p, form.formId)}
                                                                     />
-                                                                ) : (
-                                                                    <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-slate-400 text-xs mx-auto">
-                                                                        ?
-                                                                    </div>
-                                                                )}
+                                                                    <label
+                                                                        htmlFor={`quick-upload-${p._id}-${normalizeFormId(form.formId).replace(/[^a-z0-9_-]/gi, '_')}`}
+                                                                        className={`px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors ${uploadingImageKey === `${p._id}:${normalizeFormId(form.formId)}`
+                                                                            ? 'bg-blue-100 border-blue-200 text-blue-700 cursor-wait'
+                                                                            : 'bg-white border-blue-200 text-blue-700 hover:bg-blue-50 cursor-pointer'}`}
+                                                                    >
+                                                                        {uploadingImageKey === `${p._id}:${normalizeFormId(form.formId)}` ? 'Đang up...' : 'Up ảnh'}
+                                                                    </label>
+                                                                </div>
                                                             </td>
                                                             <td className="px-3 py-3 text-slate-600 font-medium text-sm truncate max-w-[200px] border-t border-slate-100/50">
                                                                 {p.name} <span className="text-xs text-slate-400 italic">({form.formName || form.formId})</span>

@@ -23,12 +23,28 @@ const buildMovesForLevel = (pokemon, level) => {
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
-    const normalizedFormId = String(currentFormId || '').trim()
+    const baseEvolution = species?.evolution || null
+    const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
+    if (baseEvolution?.evolvesTo && Number.isFinite(baseMinLevel) && baseMinLevel >= 1) {
+        return {
+            evolvesTo: baseEvolution.evolvesTo,
+            minLevel: baseMinLevel,
+        }
+    }
+
+    const normalizedFormId = String(currentFormId || '').trim().toLowerCase()
     const forms = Array.isArray(species?.forms) ? species.forms : []
-    const matchedForm = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
+    const matchedForm = forms.find((entry) => String(entry?.formId || '').trim().toLowerCase() === normalizedFormId) || null
     const formEvolution = matchedForm?.evolution || null
-    if (formEvolution?.evolvesTo) return formEvolution
-    return species?.evolution || null
+    const formMinLevel = Number.parseInt(formEvolution?.minLevel, 10)
+    if (formEvolution?.evolvesTo && Number.isFinite(formMinLevel) && formMinLevel >= 1) {
+        return {
+            evolvesTo: formEvolution.evolvesTo,
+            minLevel: formMinLevel,
+        }
+    }
+
+    return null
 }
 
 const resolvePokemonSprite = (pokemonLike) => {
@@ -200,7 +216,7 @@ router.get('/:id', async (req, res) => {
         }
 
         const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)
-        const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
+        const minLevel = Number.isFinite(evolutionRule?.minLevel) ? evolutionRule.minLevel : null
         const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1
         let targetPokemon = null
         let previousPokemon = null
@@ -223,10 +239,7 @@ router.get('/:id', async (req, res) => {
         }
 
         const previousSpecies = await Pokemon.findOne({
-            $or: [
-                { 'evolution.evolvesTo': basePokemon._id },
-                { 'forms.evolution.evolvesTo': basePokemon._id },
-            ],
+            'evolution.evolvesTo': basePokemon._id,
         })
             .select('name pokedexNumber imageUrl sprites forms defaultFormId')
             .lean()
@@ -308,13 +321,12 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         }
 
         const evolutionRule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
-        const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
-        if (!evolutionRule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1) {
+        if (!evolutionRule?.evolvesTo || !Number.isFinite(evolutionRule.minLevel) || evolutionRule.minLevel < 1) {
             return res.status(400).json({ ok: false, message: 'Pokemon này không có tiến hóa theo cấp độ' })
         }
 
-        if (userPokemon.level < minLevel) {
-            return res.status(400).json({ ok: false, message: `Cần đạt cấp ${minLevel} để tiến hóa` })
+        if (userPokemon.level < evolutionRule.minLevel) {
+            return res.status(400).json({ ok: false, message: `Cần đạt cấp ${evolutionRule.minLevel} để tiến hóa` })
         }
 
         const targetSpecies = await Pokemon.findById(evolutionRule.evolvesTo)
@@ -326,11 +338,11 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         }
 
         const targetForms = Array.isArray(targetSpecies.forms) ? targetSpecies.forms : []
-        const currentFormId = String(userPokemon.formId || '').trim()
-        const canKeepForm = currentFormId && targetForms.some((entry) => String(entry?.formId || '').trim() === currentFormId)
+        const currentFormId = String(userPokemon.formId || '').trim().toLowerCase()
+        const canKeepForm = currentFormId && targetForms.some((entry) => String(entry?.formId || '').trim().toLowerCase() === currentFormId)
         const nextFormId = canKeepForm
             ? currentFormId
-            : (String(targetSpecies.defaultFormId || '').trim() || 'normal')
+            : (String(targetSpecies.defaultFormId || '').trim().toLowerCase() || 'normal')
 
         const fromName = currentSpecies.name
         userPokemon.pokemonId = targetSpecies._id

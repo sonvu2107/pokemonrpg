@@ -76,12 +76,28 @@ const buildMovesForLevel = (pokemon, level) => {
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
-    const normalizedFormId = String(currentFormId || '').trim()
+    const baseEvolution = species?.evolution || null
+    const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
+    if (baseEvolution?.evolvesTo && Number.isFinite(baseMinLevel) && baseMinLevel >= 1) {
+        return {
+            evolvesTo: baseEvolution.evolvesTo,
+            minLevel: baseMinLevel,
+        }
+    }
+
+    const normalizedFormId = String(currentFormId || '').trim().toLowerCase()
     const forms = Array.isArray(species?.forms) ? species.forms : []
-    const form = forms.find((entry) => String(entry?.formId || '').trim() === normalizedFormId) || null
+    const form = forms.find((entry) => String(entry?.formId || '').trim().toLowerCase() === normalizedFormId) || null
     const formEvolution = form?.evolution || null
-    if (formEvolution?.evolvesTo) return formEvolution
-    return species?.evolution || null
+    const formMinLevel = Number.parseInt(formEvolution?.minLevel, 10)
+    if (formEvolution?.evolvesTo && Number.isFinite(formMinLevel) && formMinLevel >= 1) {
+        return {
+            evolvesTo: formEvolution.evolvesTo,
+            minLevel: formMinLevel,
+        }
+    }
+
+    return null
 }
 
 const applyLevelEvolution = async (userPokemon) => {
@@ -97,8 +113,7 @@ const applyLevelEvolution = async (userPokemon) => {
         if (!currentSpecies) break
 
         const rule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
-        const minLevel = Number.parseInt(rule?.minLevel, 10)
-        if (!rule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1 || userPokemon.level < minLevel) {
+        if (!rule?.evolvesTo || !Number.isFinite(rule.minLevel) || rule.minLevel < 1 || userPokemon.level < rule.minLevel) {
             break
         }
 
@@ -112,11 +127,11 @@ const applyLevelEvolution = async (userPokemon) => {
         }
 
         const nextForms = Array.isArray(nextSpecies.forms) ? nextSpecies.forms : []
-        const currentFormId = String(userPokemon.formId || '').trim()
-        const canKeepForm = currentFormId && nextForms.some((form) => String(form?.formId || '').trim() === currentFormId)
+        const currentFormId = String(userPokemon.formId || '').trim().toLowerCase()
+        const canKeepForm = currentFormId && nextForms.some((form) => String(form?.formId || '').trim().toLowerCase() === currentFormId)
         const nextFormId = canKeepForm
             ? currentFormId
-            : (String(nextSpecies.defaultFormId || '').trim() || 'normal')
+            : (String(nextSpecies.defaultFormId || '').trim().toLowerCase() || 'normal')
 
         userPokemon.pokemonId = nextSpecies._id
         userPokemon.formId = nextFormId
@@ -1353,8 +1368,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
         const attackerSpecies = activePokemon?.pokemonId || {}
-        const { form: attackerForm } = resolveTrainerBattleForm(attackerSpecies, activePokemon.formId)
-        const attackerBaseStats = attackerForm?.stats || attackerSpecies.baseStats || {}
+        const attackerBaseStats = attackerSpecies.baseStats || {}
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
         const attackerAtk = Math.max(
             1,
@@ -1609,14 +1623,18 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let sourceTeam = []
         let trainerRewardCoins = 0
         let trainerExpReward = 0
+        let trainerMoonPointsReward = 0
         let trainerPrizePokemonId = null
         let trainerPrizePokemonFormId = 'normal'
+        let trainerPrizeItem = null
+        let trainerPrizeItemQuantity = 0
         let trainerRewardMarker = ''
         let resolvedBattleSession = null
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
                 .populate('prizePokemonId', 'name imageUrl sprites forms defaultFormId')
+                .populate('prizeItemId', 'name imageUrl type rarity')
                 .lean()
             if (!trainer) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
@@ -1652,8 +1670,11 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             }
             trainerRewardCoins = Math.max(0, Number(trainer.platinumCoinsReward) || 0)
             trainerExpReward = Math.max(0, Number(trainer.expReward) || 0)
+            trainerMoonPointsReward = Math.max(0, Number(trainer.moonPointsReward) || 0)
             trainerPrizePokemonId = trainer.prizePokemonId?._id || null
             trainerPrizePokemonFormId = String(trainer.prizePokemonFormId || 'normal').trim().toLowerCase() || 'normal'
+            trainerPrizeItem = trainer.prizeItemId || null
+            trainerPrizeItemQuantity = Math.max(1, Number(trainer.prizeItemQuantity) || 1)
             trainerRewardMarker = `battle_trainer_reward:${trainer._id}`
         }
 
@@ -1662,12 +1683,17 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         }
 
         const totalLevel = sourceTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
+        const averageLevel = Math.max(1, Math.round(totalLevel / Math.max(1, sourceTeam.length)))
+        const defaultScaledReward = Math.max(10, averageLevel * 10)
         const coinsAwarded = trainerRewardCoins > 0
             ? Math.floor(trainerRewardCoins)
-            : Math.max(1, Math.floor(totalLevel * 5))
+            : defaultScaledReward
         const expAwarded = trainerExpReward > 0
             ? Math.floor(trainerExpReward)
-            : Math.max(1, Math.floor(totalLevel * 20))
+            : defaultScaledReward
+        const moonPointsAwarded = trainerMoonPointsReward > 0
+            ? Math.floor(trainerMoonPointsReward)
+            : defaultScaledReward
         const happinessAwarded = 13
 
         const party = await UserPokemon.find({ userId, location: 'party' })
@@ -1791,36 +1817,32 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 finalExp: 0,
             }
 
-        const previousPlayerState = await PlayerState.findOne({ userId })
-            .select('moonPoints')
-            .lean()
-        const moonPointsBefore = previousPlayerState?.moonPoints || 0
-
         const playerState = await PlayerState.findOneAndUpdate(
             { userId },
             {
                 $setOnInsert: { userId },
                 $inc: {
                     gold: coinsAwarded,
-                    experience: Math.floor(expAwarded / 2),
+                    experience: expAwarded,
+                    moonPoints: moonPointsAwarded,
                     wins: 1,
                 },
             },
             { new: true, upsert: true }
         )
-        const trainerExpAwarded = Math.floor(expAwarded / 2)
-        const moonPointsGained = Math.max(0, (playerState.moonPoints || 0) - moonPointsBefore)
+        const trainerExpAwarded = expAwarded
         await trackDailyActivity(userId, {
             battles: 1,
             levels: Math.max(0, totalLevelsGained),
-            battleMoonPoints: moonPointsGained,
-            moonPoints: moonPointsGained,
+            battleMoonPoints: moonPointsAwarded,
+            moonPoints: moonPointsAwarded,
             platinumCoins: Math.max(0, coinsAwarded),
             trainerExp: Math.max(0, trainerExpAwarded),
         })
         emitPlayerState(userId.toString(), playerState)
 
         let prizePokemon = null
+        let prizeItem = null
         if (trainerPrizePokemonId && trainerRewardMarker) {
             const prizeData = await Pokemon.findById(trainerPrizePokemonId)
                 .select('name imageUrl sprites levelUpMoves forms defaultFormId')
@@ -1870,6 +1892,25 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             }
         }
 
+        if (trainerPrizeItem?._id && trainerPrizeItemQuantity > 0) {
+            const inventoryEntry = await UserInventory.findOneAndUpdate(
+                { userId, itemId: trainerPrizeItem._id },
+                {
+                    $setOnInsert: { userId, itemId: trainerPrizeItem._id },
+                    $inc: { quantity: trainerPrizeItemQuantity },
+                },
+                { new: true, upsert: true }
+            )
+
+            prizeItem = {
+                id: trainerPrizeItem._id,
+                name: trainerPrizeItem.name,
+                imageUrl: trainerPrizeItem.imageUrl || '',
+                quantity: trainerPrizeItemQuantity,
+                totalQuantity: Number(inventoryEntry?.quantity || trainerPrizeItemQuantity),
+            }
+        }
+
         res.json({
             ok: true,
             results: {
@@ -1887,7 +1928,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 rewards: {
                     coins: coinsAwarded,
                     trainerExp: trainerExpAwarded,
+                    moonPoints: moonPointsAwarded,
                     prizePokemon,
+                    prizeItem,
                 },
                 evolution: {
                     evolved: allEvolutions.length > 0,

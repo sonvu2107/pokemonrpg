@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
             .sort({ orderIndex: 1, createdAt: 1 })
             .populate('team.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId baseStats rarity')
             .populate('prizePokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('prizeItemId', 'name imageUrl type rarity')
             .lean()
 
         res.json({ ok: true, trainers })
