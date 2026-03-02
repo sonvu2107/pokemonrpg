@@ -3,6 +3,7 @@ import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
+import GlobalChatPopup from "../components/GlobalChatPopup"
 
 export default function AppShell() {
     const { user, logout } = useAuth()
@@ -175,7 +176,8 @@ export default function AppShell() {
                 </div>
             )}
 
-            {/* Mobile Chat Drawer (Left) */}
+            {/* Global Chat Popup */}
+            <GlobalChatPopup />
 
         </div>
     )

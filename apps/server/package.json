@@ -7,7 +7,9 @@
         "dev": "nodemon src/index.js",
         "start": "node src/index.js",
         "lint": "eslint src --ext js",
-        "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js"
+        "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js",
+        "chat:setup": "node src/scripts/setupChatDatabase.js",
+        "chat:seed": "node src/scripts/seedChatMessages.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",

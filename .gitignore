@@ -35,3 +35,8 @@ temp/
 
 # Scripts
 apps/server/scripts/
+# Documentation & Examples
+*.md
+example/
+examples/
+*.example

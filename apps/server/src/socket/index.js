@@ -1,5 +1,6 @@
 import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
+import { attachChatHandlers } from './chatHandlers.js'
 
 let io = null
 
@@ -21,24 +22,35 @@ export const initSocket = (server) => {
     io.use((socket, next) => {
         try {
             const token = socket.handshake.auth.token
+            console.log('Socket auth attempt:', { 
+                hasToken: !!token, 
+                tokenPreview: token ? token.substring(0, 20) + '...' : 'none' 
+            })
+            
             if (!token) {
+                console.error('Socket auth failed: No token provided')
                 return next(new Error('Authentication error: No token provided'))
             }
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET)
             socket.userId = decoded.userId
+            console.log('Socket auth success:', decoded.userId)
             next()
         } catch (error) {
+            console.error('Socket auth error:', error.message)
             next(new Error('Authentication error: Invalid token'))
         }
     })
 
-    // Connection handler
+    // Single connection handler for both chat and player state
     io.on('connection', (socket) => {
         console.log(`Socket connected: ${socket.id}, userId: ${socket.userId}`)
 
-        // Join room based on userId
+        // Join room based on userId for player state updates
         socket.join(socket.userId.toString())
+        
+        // Attach chat event handlers (pass io for broadcasting)
+        attachChatHandlers(socket, io)
 
         socket.on('disconnect', () => {
             console.log(`Socket disconnected: ${socket.id}`)
