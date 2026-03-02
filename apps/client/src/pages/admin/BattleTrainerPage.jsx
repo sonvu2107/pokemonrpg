@@ -42,6 +42,7 @@ export default function BattleTrainerPage() {
     const [autoLevelStart, setAutoLevelStart] = useState(1)
     const [autoLevelMax, setAutoLevelMax] = useState(100)
     const [autoLevelStep, setAutoLevelStep] = useState(10)
+    const [autoTrainerImageUrl, setAutoTrainerImageUrl] = useState('')
     const [autoGenerating, setAutoGenerating] = useState(false)
 
     useEffect(() => {
@@ -215,6 +216,7 @@ export default function BattleTrainerPage() {
                 maxLevel: autoLevelMax,
                 step: autoLevelStep,
                 teamSize: 3,
+                imageUrl: autoTrainerImageUrl,
             })
             await loadData()
         } catch (err) {
@@ -325,7 +327,6 @@ export default function BattleTrainerPage() {
                             <input
                                 type="number"
                                 min="1"
-                                max="100"
                                 value={autoLevelStart}
                                 onChange={(e) => setAutoLevelStart(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
                                 className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
@@ -336,7 +337,6 @@ export default function BattleTrainerPage() {
                             <input
                                 type="number"
                                 min="1"
-                                max="100"
                                 value={autoLevelMax}
                                 onChange={(e) => setAutoLevelMax(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
                                 className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
@@ -347,7 +347,6 @@ export default function BattleTrainerPage() {
                             <input
                                 type="number"
                                 min="1"
-                                max="100"
                                 value={autoLevelStep}
                                 onChange={(e) => setAutoLevelStep(Math.max(1, Number.parseInt(e.target.value, 10) || 1))}
                                 className="w-24 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
@@ -362,8 +361,27 @@ export default function BattleTrainerPage() {
                             {autoGenerating ? 'Đang tạo...' : 'Auto tạo HLV mỗi 10 cấp'}
                         </button>
                     </div>
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <ImageUpload
+                                currentImage={autoTrainerImageUrl}
+                                onUploadSuccess={(url) => setAutoTrainerImageUrl(Array.isArray(url) ? (url[0] || '') : (url || ''))}
+                                label="Ảnh dùng cho trainer auto"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">URL ảnh trainer auto</label>
+                            <input
+                                type="text"
+                                value={autoTrainerImageUrl}
+                                onChange={(e) => setAutoTrainerImageUrl(e.target.value)}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                placeholder="Để trống nếu không muốn đổi ảnh trainer auto"
+                            />
+                        </div>
+                    </div>
                     <p className="mt-2 text-[11px] text-emerald-800">
-                        Auto tạo theo mốc cấp với công thức thưởng mặc định: Lv x 10 cho Xu, EXP và Điểm Nguyệt Các.
+                        Auto tạo theo mốc cấp với công thức thưởng mặc định: Lv x 10 cho Xu, EXP và Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó.
                     </p>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4 border border-slate-200 rounded p-4 bg-slate-50">
