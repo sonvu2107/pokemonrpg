@@ -43,6 +43,7 @@ export default function BattleTrainerPage() {
     const [autoLevelMax, setAutoLevelMax] = useState(100)
     const [autoLevelStep, setAutoLevelStep] = useState(10)
     const [autoTrainerImageUrl, setAutoTrainerImageUrl] = useState('')
+    const [autoTrainerImageUrls, setAutoTrainerImageUrls] = useState([])
     const [autoGenerating, setAutoGenerating] = useState(false)
 
     useEffect(() => {
@@ -217,6 +218,7 @@ export default function BattleTrainerPage() {
                 step: autoLevelStep,
                 teamSize: 3,
                 imageUrl: autoTrainerImageUrl,
+                imageUrls: autoTrainerImageUrls,
             })
             await loadData()
         } catch (err) {
@@ -365,16 +367,32 @@ export default function BattleTrainerPage() {
                         <div>
                             <ImageUpload
                                 currentImage={autoTrainerImageUrl}
-                                onUploadSuccess={(url) => setAutoTrainerImageUrl(Array.isArray(url) ? (url[0] || '') : (url || ''))}
-                                label="Ảnh dùng cho trainer auto"
+                                onUploadSuccess={(url) => {
+                                    const nextUrls = Array.isArray(url)
+                                        ? url.filter(Boolean)
+                                        : [url].filter(Boolean)
+                                    setAutoTrainerImageUrls(nextUrls)
+                                    setAutoTrainerImageUrl(nextUrls[0] || '')
+                                }}
+                                multiple
+                                label="Ảnh dùng cho trainer auto (chọn nhiều ảnh)"
                             />
+                            {autoTrainerImageUrls.length > 0 && (
+                                <div className="mt-2 text-[11px] text-emerald-800 font-medium">
+                                    Đã chọn {autoTrainerImageUrls.length} ảnh, auto tạo sẽ gán lần lượt theo mốc cấp.
+                                </div>
+                            )}
                         </div>
                         <div>
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">URL ảnh trainer auto</label>
                             <input
                                 type="text"
                                 value={autoTrainerImageUrl}
-                                onChange={(e) => setAutoTrainerImageUrl(e.target.value)}
+                                onChange={(e) => {
+                                    const nextUrl = e.target.value
+                                    setAutoTrainerImageUrl(nextUrl)
+                                    setAutoTrainerImageUrls(nextUrl ? [nextUrl] : [])
+                                }}
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                 placeholder="Để trống nếu không muốn đổi ảnh trainer auto"
                             />

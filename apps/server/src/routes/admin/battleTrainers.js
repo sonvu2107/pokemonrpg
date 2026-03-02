@@ -305,6 +305,13 @@ router.post('/auto-generate', async (req, res) => {
         const step = parsePositiveInt(req.body?.step, 10)
         const teamSize = clampNumber(req.body?.teamSize, 1, 6)
         const autoImageUrl = String(req.body?.imageUrl || '').trim()
+        const requestedImageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : []
+        const autoImagePool = requestedImageUrls
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+        if (autoImagePool.length === 0 && autoImageUrl) {
+            autoImagePool.push(autoImageUrl)
+        }
 
         const pokemonPool = await Pokemon.find({})
             .select('_id name pokedexNumber defaultFormId forms')
@@ -344,8 +351,8 @@ router.post('/auto-generate', async (req, res) => {
                     milestoneLevel: level,
                 }
 
-                if (autoImageUrl) {
-                    trainerPatch.imageUrl = autoImageUrl
+                if (autoImagePool.length > 0) {
+                    trainerPatch.imageUrl = autoImagePool[index % autoImagePool.length]
                 }
 
                 const trainerDoc = await BattleTrainer.findOneAndUpdate(
