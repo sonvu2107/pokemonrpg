@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
+import { uploadManyToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
 const TYPES = [
     'normal', 'fire', 'water', 'grass', 'electric', 'ice',
@@ -54,6 +55,32 @@ const normalizeRarity = (rarity) => {
 const normalizeFormId = (formId) => String(formId || '').trim()
 const normalizeFormName = (formName) => String(formName || '').trim()
 
+const inferFormVariantFromFileName = (fileName = '') => {
+    const stem = String(fileName || '')
+        .replace(/\.[^.]+$/, '')
+        .trim()
+        .toLowerCase()
+    if (!stem) return { formId: '', formName: '' }
+
+    const tokens = stem.split(/[^a-z0-9]+/).filter(Boolean)
+    const matchedVariant = FORM_VARIANTS.find((variant) => {
+        const id = String(variant.id || '').toLowerCase()
+        return id && (tokens.includes(id) || stem === id)
+    })
+
+    if (!matchedVariant) {
+        return {
+            formId: '',
+            formName: stem.replace(/[_-]+/g, ' '),
+        }
+    }
+
+    return {
+        formId: matchedVariant.id,
+        formName: matchedVariant.name,
+    }
+}
+
 const resolveDefaultFormId = (formList = [], preferredDefault = 'normal') => {
     const ids = formList.map(f => normalizeFormId(f?.formId)).filter(Boolean)
     if (ids.includes('normal')) return 'normal'
@@ -72,6 +99,9 @@ export default function PokemonFormPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [allPokemon, setAllPokemon] = useState([])
+    const [bulkFormUploading, setBulkFormUploading] = useState(false)
+    const [bulkFormUploadProgress, setBulkFormUploadProgress] = useState(0)
+    const [bulkFormUploadCount, setBulkFormUploadCount] = useState(0)
 
     const [defaultFormId, setDefaultFormId] = useState('normal')
     const [forms, setForms] = useState([
@@ -276,6 +306,87 @@ export default function PokemonFormPage() {
         setForms(prev => [...prev, { formId: '', formName: '', imageUrl: '', sprites: {}, stats: {} }])
     }
 
+    const applyBulkFormUploadResults = (items = []) => {
+        if (!Array.isArray(items) || items.length === 0) return
+
+        setForms((prev) => {
+            const next = [...prev]
+
+            items.forEach(({ fileName, url }) => {
+                if (!url) return
+
+                const inferred = inferFormVariantFromFileName(fileName)
+                const normalizedFormId = normalizeFormId(inferred.formId).toLowerCase()
+                const fallbackFormName = normalizeFormName(inferred.formName)
+
+                if (normalizedFormId) {
+                    const existingIndex = next.findIndex((entry) => normalizeFormId(entry?.formId).toLowerCase() === normalizedFormId)
+                    if (existingIndex !== -1) {
+                        const existingEntry = next[existingIndex]
+                        next[existingIndex] = {
+                            ...existingEntry,
+                            imageUrl: url,
+                            formId: normalizedFormId,
+                            formName: normalizeFormName(existingEntry?.formName) || fallbackFormName || normalizedFormId,
+                        }
+                        return
+                    }
+                }
+
+                next.push({
+                    formId: normalizedFormId,
+                    formName: fallbackFormName || (normalizedFormId ? (FORM_VARIANT_NAME_BY_ID[normalizedFormId] || normalizedFormId) : ''),
+                    imageUrl: url,
+                    sprites: {},
+                    stats: {},
+                })
+            })
+
+            setDefaultFormId((prevDefault) => resolveDefaultFormId(next, prevDefault))
+            return next
+        })
+    }
+
+    const handleBulkFormImagesSelected = async (event) => {
+        const files = Array.from(event.target.files || [])
+        event.target.value = ''
+        if (files.length === 0) return
+
+        for (const file of files) {
+            const validationError = validateImageFile(file)
+            if (validationError) {
+                setError(`Ảnh "${file.name}" không hợp lệ: ${validationError}`)
+                return
+            }
+        }
+
+        try {
+            setError('')
+            setBulkFormUploading(true)
+            setBulkFormUploadProgress(0)
+            setBulkFormUploadCount(files.length)
+
+            const urls = await uploadManyToCloudinary(files, {
+                onProgress: (percentage) => {
+                    setBulkFormUploadProgress(percentage)
+                },
+            })
+
+            applyBulkFormUploadResults(
+                urls.map((url, index) => ({
+                    fileName: files[index]?.name || '',
+                    url,
+                }))
+            )
+        } catch (err) {
+            setError(err.message || 'Upload ảnh form hàng loạt thất bại')
+        } finally {
+            setBulkFormUploading(false)
+            setBulkFormUploadProgress(0)
+            setBulkFormUploadCount(0)
+        }
+    }
+
     const updateForm = (index, patch) => {
         setForms(prev => {
             const prevId = normalizeFormId(prev[index]?.formId).toLowerCase()
@@ -379,6 +490,40 @@ export default function PokemonFormPage() {
                     {/* --- Forms --- */}
                     <div>
                         <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">2. Các Dạng</h3>
+                        <div className="mb-4 rounded border border-cyan-200 bg-cyan-50/60 p-3">
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Upload nhanh nhiều ảnh form</label>
+                            <p className="text-[11px] text-cyan-800 mb-2">
+                                Chọn nhiều ảnh một lần, hệ thống sẽ tự tạo/cập nhật từng bảng form để bạn chọn đúng dạng.
+                            </p>
+                            <input
+                                id="bulk-form-image-upload"
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={handleBulkFormImagesSelected}
+                                className="hidden"
+                                disabled={bulkFormUploading}
+                            />
+                            <label
+                                htmlFor="bulk-form-image-upload"
+                                className={`inline-flex items-center justify-center px-3 py-2 rounded border text-xs font-bold transition-colors ${bulkFormUploading
+                                    ? 'bg-cyan-100 border-cyan-200 text-cyan-700 cursor-wait'
+                                    : 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-100 cursor-pointer'}`}
+                            >
+                                {bulkFormUploading ? `Đang up ${bulkFormUploadCount} ảnh...` : 'Chọn nhiều ảnh form'}
+                            </label>
+                            {bulkFormUploading && (
+                                <div className="mt-2">
+                                    <div className="w-full bg-cyan-100 rounded-full h-1.5">
+                                        <div
+                                            className="bg-cyan-500 h-1.5 rounded-full transition-all"
+                                            style={{ width: `${bulkFormUploadProgress}%` }}
+                                        />
+                                    </div>
+                                    <div className="text-[10px] text-cyan-700 mt-1">{bulkFormUploadProgress}%</div>
+                                </div>
+                            )}
+                        </div>
                         <div className="mb-4">
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Dạng Mặc Định</label>
                             <select
@@ -455,12 +600,12 @@ export default function PokemonFormPage() {
                                     </div>
 
                                     <ImageUpload
+                                        key={`${form.formId || 'form'}-${form.imageUrl || 'empty'}-${index}`}
                                         currentImage={form.imageUrl}
                                         onUploadSuccess={(urls) => {
                                             const nextUrl = Array.isArray(urls) ? (urls[0] || '') : (urls || '')
                                             updateForm(index, { imageUrl: nextUrl })
                                         }}
-                                        multiple
                                         label="Hình ảnh dạng"
                                     />
                                 </div>
