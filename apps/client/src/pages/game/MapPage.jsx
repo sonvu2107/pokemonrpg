@@ -154,6 +154,10 @@ export default function MapPage() {
             if (res.mapProgress) {
                 setMapStats(res.mapProgress)
             }
+
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('game:map-progress-updated'))
+            }
         } catch (err) {
             setLastResult({ encountered: false, message: 'Lỗi: ' + err.message })
         } finally {

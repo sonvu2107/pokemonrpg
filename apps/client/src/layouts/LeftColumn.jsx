@@ -66,28 +66,49 @@ export default function LeftColumn() {
     }
 
     useEffect(() => {
+        let isCancelled = false
+
         const loadLegendaryMaps = async () => {
             if (!user) {
-                setLegendaryMaps([])
-                setLoadingMaps(false)
+                if (!isCancelled) {
+                    setLegendaryMaps([])
+                    setLoadingMaps(false)
+                }
                 return
             }
 
             try {
-                setLoadingMaps(true)
+                if (!isCancelled) {
+                    setLoadingMaps(true)
+                }
                 const maps = await gameApi.getMaps()
                 const legendaryOnly = maps.filter((map) => map.isLegendary)
-                setLegendaryMaps(sortByDisplayOrder(legendaryOnly))
+                if (!isCancelled) {
+                    setLegendaryMaps(sortByDisplayOrder(legendaryOnly))
+                }
             } catch (err) {
                 const message = String(err?.message || '')
                 if (!/unauthorized|token expired|invalid token/i.test(message)) {
                     console.error('Không thể tải bản đồ huyền thoại:', err)
                 }
             } finally {
-                setLoadingMaps(false)
+                if (!isCancelled) {
+                    setLoadingMaps(false)
+                }
             }
         }
+
+        const handleMapProgressUpdated = () => {
+            loadLegendaryMaps()
+        }
+
         loadLegendaryMaps()
+        window.addEventListener('game:map-progress-updated', handleMapProgressUpdated)
+
+        return () => {
+            isCancelled = true
+            window.removeEventListener('game:map-progress-updated', handleMapProgressUpdated)
+        }
     }, [user])
 
     useEffect(() => {
