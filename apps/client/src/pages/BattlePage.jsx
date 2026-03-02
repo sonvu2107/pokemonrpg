@@ -1248,7 +1248,9 @@ export function BattlePage() {
                                         )}
                                         {battleResults.rewards?.prizePokemon?.alreadyClaimed && (
                                             <div className="text-xs text-slate-500 mt-1">
-                                                Phần thưởng đã nhận: {battleResults.rewards.prizePokemon.name}
+                                                {battleResults.rewards.prizePokemon.blockedReason === 'trainer_completed'
+                                                    ? `Đã hoàn thành trainer này trước đó, không nhận lại Pokémon thưởng (${battleResults.rewards.prizePokemon.name}).`
+                                                    : `Phần thưởng đã nhận: ${battleResults.rewards.prizePokemon.name}`}
                                             </div>
                                         )}
                                         {battleResults.evolution?.evolved && Array.isArray(battleResults.evolution.chain) && battleResults.evolution.chain.length > 0 && (

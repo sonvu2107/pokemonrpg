@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import PlayerState from '../models/PlayerState.js'
 import { emitPlayerState } from '../socket/index.js'
 import Encounter from '../models/Encounter.js'
+import User from '../models/User.js'
 import UserPokemon from '../models/UserPokemon.js'
 import UserInventory from '../models/UserInventory.js'
 import MapProgress from '../models/MapProgress.js'
@@ -1629,6 +1630,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let trainerPrizeItem = null
         let trainerPrizeItemQuantity = 0
         let trainerRewardMarker = ''
+        let trainerAlreadyCompleted = false
         let resolvedBattleSession = null
 
         if (normalizedTrainerId) {
@@ -1676,6 +1678,10 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             trainerPrizeItem = trainer.prizeItemId || null
             trainerPrizeItemQuantity = Math.max(1, Number(trainer.prizeItemQuantity) || 1)
             trainerRewardMarker = `battle_trainer_reward:${trainer._id}`
+            trainerAlreadyCompleted = Boolean(await User.exists({
+                _id: userId,
+                completedBattleTrainers: String(trainer._id),
+            }))
         }
 
         if (!Array.isArray(sourceTeam) || sourceTeam.length === 0) {
@@ -1860,11 +1866,12 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
 
                 const alreadyClaimedPrize = await UserPokemon.exists({
                     userId,
-                    pokemonId: trainerPrizePokemonId,
                     originalTrainer: trainerRewardMarker,
                 })
+                const blockedByCompletion = trainerAlreadyCompleted
+                const isPokemonRewardLocked = Boolean(alreadyClaimedPrize || blockedByCompletion)
 
-                if (!alreadyClaimedPrize) {
+                if (!isPokemonRewardLocked) {
                     const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
                     const moves = buildMovesForLevel(prizeData, prizeLevel)
                     await UserPokemon.create({
@@ -1886,8 +1893,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                     formId: resolvedPrizeFormId,
                     formName: resolvedPrizeForm?.formName || resolvedPrizeFormId,
                     imageUrl: prizeImageUrl,
-                    claimed: !alreadyClaimedPrize,
-                    alreadyClaimed: Boolean(alreadyClaimedPrize),
+                    claimed: !isPokemonRewardLocked,
+                    alreadyClaimed: isPokemonRewardLocked,
+                    blockedReason: blockedByCompletion ? 'trainer_completed' : (alreadyClaimedPrize ? 'already_claimed' : ''),
                 }
             }
         }
