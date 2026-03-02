@@ -467,11 +467,45 @@ export function BattlePage() {
         return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
     }
 
-    const getTrainerByOrder = (trainers = []) => {
+    const setStoredTrainerOrder = (value) => {
+        const parsed = Number.parseInt(String(value || '0'), 10)
+        const normalized = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+        window.localStorage.setItem(TRAINER_ORDER_STORAGE_KEY, String(normalized))
+        return normalized
+    }
+
+    const getTrainerOrderFromProgress = (trainers = [], completedTrainerIds = new Set()) => {
+        if (!Array.isArray(trainers) || trainers.length === 0) return 0
+
+        const normalizedCompleted = completedTrainerIds instanceof Set
+            ? completedTrainerIds
+            : new Set(
+                (Array.isArray(completedTrainerIds) ? completedTrainerIds : [])
+                    .map((id) => String(id || '').trim())
+                    .filter(Boolean)
+            )
+
+        const firstUncompletedIndex = trainers.findIndex((trainer) => {
+            const trainerId = String(trainer?._id || '').trim()
+            if (!trainerId) return true
+            return !normalizedCompleted.has(trainerId)
+        })
+
+        if (firstUncompletedIndex !== -1) {
+            return firstUncompletedIndex
+        }
+
+        return getStoredTrainerOrder() % trainers.length
+    }
+
+    const getTrainerByOrder = (trainers = [], preferredOrder = null) => {
         if (!Array.isArray(trainers) || trainers.length === 0) {
             return { trainer: null, trainerOrder: 0 }
         }
-        const trainerOrder = getStoredTrainerOrder() % trainers.length
+        const computedOrder = Number.isFinite(preferredOrder)
+            ? Math.max(0, Math.floor(preferredOrder))
+            : getStoredTrainerOrder()
+        const trainerOrder = computedOrder % trainers.length
         return {
             trainer: trainers[trainerOrder],
             trainerOrder,
@@ -539,7 +573,9 @@ export function BattlePage() {
             setCompletedEntries(completedFromServer)
             setCompletedCarouselIndex(0)
 
-            const { trainer, trainerOrder } = getTrainerByOrder(trainerList)
+            const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
+            setStoredTrainerOrder(syncedTrainerOrder)
+            const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
             const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
             setOpponent(builtOpponent)
             setBattleOpponent(builtOpponent)

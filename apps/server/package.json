@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "nodemon src/index.js",
         "start": "node src/index.js",
-        "lint": "eslint src --ext js"
+        "lint": "eslint src --ext js",
+        "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",
