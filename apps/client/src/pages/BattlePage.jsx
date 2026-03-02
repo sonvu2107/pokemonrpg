@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { gameApi } from '../services/gameApi'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
+const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
+const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 
 // Helper for the blue gradient header
 const SectionHeader = ({ title }) => (
@@ -386,6 +388,8 @@ export function BattlePage() {
     const [battleResults, setBattleResults] = useState(null)
     const [masterPokemon, setMasterPokemon] = useState([])
     const [completedEntries, setCompletedEntries] = useState([])
+    const [completedCarouselIndex, setCompletedCarouselIndex] = useState(0)
+    const [completedEntriesPerView, setCompletedEntriesPerView] = useState(DESKTOP_COMPLETED_ENTRIES_PER_VIEW)
     const [hoveredCompletedId, setHoveredCompletedId] = useState(null)
     const [activeTab, setActiveTab] = useState('fight')
     const [inventory, setInventory] = useState([])
@@ -394,6 +398,15 @@ export function BattlePage() {
     const [isAttacking, setIsAttacking] = useState(false)
     const [battlePlayerIndex, setBattlePlayerIndex] = useState(0)
     const [battlePartyHpState, setBattlePartyHpState] = useState([])
+
+    const completedSlides = []
+    for (let index = 0; index < completedEntries.length; index += completedEntriesPerView) {
+        completedSlides.push(completedEntries.slice(index, index + completedEntriesPerView))
+    }
+    if (completedSlides.length === 0) {
+        completedSlides.push([])
+    }
+    const completedSlideCount = completedSlides.length
 
     const markTrainerCompleted = async (trainerId) => {
         const normalizedId = String(trainerId || '').trim()
@@ -464,6 +477,24 @@ export function BattlePage() {
         loadData()
     }, [])
 
+    useEffect(() => {
+        const updateEntriesPerView = () => {
+            const nextValue = window.innerWidth < 640
+                ? MOBILE_COMPLETED_ENTRIES_PER_VIEW
+                : DESKTOP_COMPLETED_ENTRIES_PER_VIEW
+            setCompletedEntriesPerView((prev) => (prev === nextValue ? prev : nextValue))
+        }
+
+        updateEntriesPerView()
+        window.addEventListener('resize', updateEntriesPerView)
+        return () => window.removeEventListener('resize', updateEntriesPerView)
+    }, [])
+
+    useEffect(() => {
+        const lastSlide = Math.max(0, completedSlideCount - 1)
+        setCompletedCarouselIndex((prev) => Math.min(prev, lastSlide))
+    }, [completedSlideCount])
+
     const loadData = async () => {
         try {
             const [allMaps, partyData, encounterData, profileData, trainerData, inventoryData] = await Promise.all([
@@ -493,6 +524,7 @@ export function BattlePage() {
             const completedFromServer = buildCompletedEntries(trainerList)
                 .filter((entry) => completedTrainerIds.has(String(entry.id)))
             setCompletedEntries(completedFromServer)
+            setCompletedCarouselIndex(0)
 
             const { trainer, trainerOrder } = getTrainerByOrder(trainerList)
             const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
@@ -766,6 +798,7 @@ export function BattlePage() {
                         try {
                             const completedTrainerIds = await markTrainerCompleted(entry.id)
                             if (completedTrainerIds) {
+                                setCompletedCarouselIndex(0)
                                 setCompletedEntries((prev) => {
                                     if (prev.some((item) => String(item.id) === String(entry.id))) return prev
                                     return [entry, ...prev]
@@ -1294,49 +1327,97 @@ export function BattlePage() {
                 <>
                     <div className="rounded border border-blue-400 bg-white shadow-sm overflow-visible">
                         <SectionHeader title="Đã Hoàn Thành" />
-                        <div className="p-6 flex justify-center gap-6 bg-white relative">
-                            {completedEntries.map((entry) => (
-                                <div
-                                    key={entry.id}
-                                    className="relative z-0 cursor-pointer transition-transform hover:z-40 hover:scale-105"
-                                    onMouseEnter={() => setHoveredCompletedId(entry.id)}
-                                    onMouseLeave={() => setHoveredCompletedId(null)}
-                                    onClick={() => handleRematchTrainer(entry)}
-                                    title={`Đấu lại với ${entry.name}`}
+                        <div className="p-4 sm:p-6 bg-white relative">
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHoveredCompletedId(null)
+                                        setCompletedCarouselIndex((prev) => Math.max(0, prev - 1))
+                                    }}
+                                    disabled={completedCarouselIndex === 0}
+                                    className="w-9 h-9 shrink-0 border border-blue-200 rounded bg-white text-blue-700 font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Trang trước"
                                 >
-                                    <img
-                                        src={entry.image}
-                                        className="w-20 h-20 object-contain pixelated"
-                                    />
-                                    {hoveredCompletedId === entry.id && (
-                                        <div className="absolute left-1/2 bottom-full mb-3 w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-50">
-                                            <div className="font-bold text-slate-700 mb-2">Thông tin</div>
-                                            <div className="flex gap-2 items-start">
-                                                <img src={entry.image} className="w-12 h-12 object-contain pixelated" />
-                                                <div>
-                                                    <div className="font-bold">Huấn luyện viên {entry.name}:</div>
-                                                    <div className="italic text-slate-600">"{entry.quote}"</div>
-                                                </div>
-                                            </div>
-                                            <div className="mt-3 font-bold">Đội hình Pokémon</div>
-                                            <div className="flex gap-4 mt-2">
-                                                {entry.team.map((poke) => (
-                                                    <div key={poke.id} className="flex flex-col items-center">
-                                                        {poke.sprite ? (
-                                                            <img src={poke.sprite} className="w-8 h-8 pixelated" />
-                                                        ) : (
-                                                            <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
+                                    {'<'}
+                                </button>
+
+                                <div className="w-full max-w-[760px] overflow-hidden">
+                                    <div
+                                        className="flex transition-transform duration-500 ease-out"
+                                        style={{ transform: `translateX(-${completedCarouselIndex * 100}%)` }}
+                                    >
+                                        {completedSlides.map((slideEntries, slideIndex) => (
+                                            <div
+                                                key={`completed-slide-${slideIndex}`}
+                                                className="w-full shrink-0 flex flex-wrap justify-center gap-4 sm:gap-6 relative min-h-20"
+                                            >
+                                                {slideEntries.map((entry) => (
+                                                    <div
+                                                        key={entry.id}
+                                                        className="relative z-0 shrink-0 cursor-pointer transition-transform hover:z-40 hover:scale-105"
+                                                        onMouseEnter={() => setHoveredCompletedId(entry.id)}
+                                                        onMouseLeave={() => setHoveredCompletedId(null)}
+                                                        onClick={() => handleRematchTrainer(entry)}
+                                                        title={`Đấu lại với ${entry.name}`}
+                                                    >
+                                                        <img
+                                                            src={entry.image}
+                                                            className="w-20 h-20 object-contain pixelated"
+                                                        />
+                                                        {hoveredCompletedId === entry.id && (
+                                                            <div className="absolute left-1/2 bottom-full mb-3 w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-50">
+                                                                <div className="font-bold text-slate-700 mb-2">Thông tin</div>
+                                                                <div className="flex gap-2 items-start">
+                                                                    <img src={entry.image} className="w-12 h-12 object-contain pixelated" />
+                                                                    <div>
+                                                                        <div className="font-bold">Huấn luyện viên {entry.name}:</div>
+                                                                        <div className="italic text-slate-600">"{entry.quote}"</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-3 font-bold">Đội hình Pokémon</div>
+                                                                <div className="flex gap-4 mt-2">
+                                                                    {entry.team.map((poke) => (
+                                                                        <div key={poke.id} className="flex flex-col items-center">
+                                                                            {poke.sprite ? (
+                                                                                <img src={poke.sprite} className="w-8 h-8 pixelated" />
+                                                                            ) : (
+                                                                                <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
+                                                                            )}
+                                                                            <div className="text-[10px] font-bold">L. {poke.level}</div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                                <div className="mt-3 font-bold">Phần thưởng Pokémon</div>
+                                                                <div>{entry.prize}</div>
+                                                            </div>
                                                         )}
-                                                        <div className="text-[10px] font-bold">L. {poke.level}</div>
                                                     </div>
                                                 ))}
                                             </div>
-                                            <div className="mt-3 font-bold">Phần thưởng Pokémon</div>
-                                            <div>{entry.prize}</div>
-                                        </div>
-                                    )}
+                                        ))}
+                                    </div>
                                 </div>
-                            ))}
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHoveredCompletedId(null)
+                                        setCompletedCarouselIndex((prev) => Math.min(completedSlideCount - 1, prev + 1))
+                                    }}
+                                    disabled={completedCarouselIndex >= completedSlideCount - 1}
+                                    className="w-9 h-9 shrink-0 border border-blue-200 rounded bg-white text-blue-700 font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title="Trang sau"
+                                >
+                                    {'>'}
+                                </button>
+                            </div>
+
+                            {completedEntries.length > completedEntriesPerView && (
+                                <div className="mt-3 text-center text-xs font-bold text-slate-500">
+                                    Trang {completedCarouselIndex + 1}/{completedSlideCount}
+                                </div>
+                            )}
                         </div>
                     </div>
 
