@@ -7,14 +7,12 @@ import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUt
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
-// Helper component for section headers with the blue gradient style
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
         {title}
     </div>
 )
 
-// Helper for Info Table Rows
 const InfoRow = ({ label, value, note, isOdd }) => (
     <div className={`flex border-b border-blue-200 text-sm ${isOdd ? 'bg-blue-50/50' : 'bg-white'}`}>
         <div className="w-1/3 p-2 bg-blue-100/50 font-semibold text-blue-900 border-r border-blue-200 flex items-center justify-end pr-4">
@@ -59,7 +57,6 @@ export default function ProfilePage() {
             setProfile(profileData)
             setParty(partyData)
 
-            // Update AuthContext with fresh data
             if (profileData.user) {
                 const token = localStorage.getItem('token')
                 login(profileData.user, token)
@@ -141,7 +138,6 @@ export default function ProfilePage() {
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
-            {/* Top Header Area */}
             <div className="text-center mb-6">
                 <h1 className="text-4xl font-bold text-slate-800 mb-2 drop-shadow-sm tracking-tight">{username}</h1>
                 <div className="flex justify-center gap-6 text-sm font-bold text-slate-500">
@@ -154,7 +150,6 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Navigation Tabs Bar */}
             <div className="rounded-t-lg overflow-hidden border border-blue-500 shadow-lg bg-slate-800">
                 <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
                     Menu Hồ Sơ
@@ -174,19 +169,13 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="bg-white p-2 sm:p-4 space-y-6">
-
-                    {/* PROFILE CARD */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title={`Hồ sơ của ${username}`} />
-
                         <div className="bg-blue-50/50 p-4 text-center">
-                            {/* Sub-header: Trainer Avatar */}
                             <div className="max-w-2xl mx-auto">
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-4 shadow-sm">
                                     Ảnh Đại Diện
                                 </div>
-
-                                {/* Avatar Display */}
                                 <div className="mx-auto w-32 h-32 mb-6 flex items-center justify-center">
                                     <img
                                         src={avatarSrc}
@@ -199,7 +188,6 @@ export default function ProfilePage() {
                                     />
                                 </div>
 
-                                {/* Sub-header: Account Actions */}
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                                     Hành Động
                                 </div>
