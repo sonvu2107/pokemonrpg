@@ -84,6 +84,38 @@ const buildMovesForLevel = (pokemon, level) => {
     return learned.slice(-4)
 }
 
+const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
+    const explicitMoves = (Array.isArray(moves) ? moves : [])
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+
+    if (explicitMoves.length >= 4) {
+        return explicitMoves.slice(0, 4)
+    }
+
+    const merged = [...explicitMoves]
+    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
+    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
+
+    for (const fallbackMove of fallbackMoves) {
+        const key = normalizeMoveName(fallbackMove)
+        if (!key || knownSet.has(key)) continue
+        merged.push(fallbackMove)
+        knownSet.add(key)
+        if (merged.length >= 4) break
+    }
+
+    return merged.slice(0, 4)
+}
+
+const areMoveListsEqual = (left = [], right = []) => {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+    for (let index = 0; index < left.length; index += 1) {
+        if (String(left[index] || '') !== String(right[index] || '')) return false
+    }
+    return true
+}
+
 const resolveEvolutionRule = (species, currentFormId) => {
     const baseEvolution = species?.evolution || null
     const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
@@ -371,17 +403,19 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
         const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
-            .select('moves pokemonId')
-            .populate('pokemonId', 'types rarity')
+            .select('moves pokemonId level')
+            .populate('pokemonId', 'types rarity levelUpMoves')
             .lean()
 
         if (!userPokemon) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
         }
 
-        const knownMoves = Array.isArray(userPokemon.moves)
-            ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
-            : []
+        const knownMoves = mergeKnownMovesWithFallback(
+            userPokemon.moves,
+            userPokemon.pokemonId,
+            Number(userPokemon.level) || 1
+        )
         const knownMoveSet = new Set(knownMoves.map((entry) => normalizeMoveName(entry)))
 
         const inventoryEntries = await UserMoveInventory.find({
@@ -477,7 +511,7 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
 
         const [userPokemon, move] = await Promise.all([
             UserPokemon.findOne({ _id: req.params.id, userId })
-                .populate('pokemonId', 'types rarity'),
+                .populate('pokemonId', 'types rarity levelUpMoves'),
             Move.findOne({ _id: moveId, isActive: true })
                 .select('name type category power accuracy pp priority learnScope allowedTypes allowedPokemonIds allowedRarities')
                 .lean(),
@@ -507,9 +541,19 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Bạn không có kỹ năng này trong kho' })
         }
 
-        const currentMoves = Array.isArray(userPokemon.moves)
+        const storedMoves = Array.isArray(userPokemon.moves)
             ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
             : []
+        const currentMoves = mergeKnownMovesWithFallback(
+            storedMoves,
+            userPokemon.pokemonId,
+            Number(userPokemon.level) || 1
+        )
+
+        if (!areMoveListsEqual(storedMoves, currentMoves)) {
+            userPokemon.moves = currentMoves
+            await userPokemon.save()
+        }
 
         const moveName = String(move.name || '').trim()
         const moveKey = normalizeMoveName(moveName)

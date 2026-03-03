@@ -30,7 +30,7 @@ export default function OnlineStatsPage() {
                 gold: Number(data?.playerState?.gold || 0),
                 moonPoints: Number(data?.playerState?.moonPoints || 0),
             })
-        } catch {
+        } catch (_err) {
             setWallet({ gold: 0, moonPoints: 0 })
         }
     }

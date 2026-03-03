@@ -181,7 +181,7 @@ export default function MoveListPage() {
                 uniqueById.set(entry._id, entry)
             })
             setAllMoves([...uniqueById.values()])
-        } catch {
+        } catch (_err) {
             setAllMoves([])
         }
     }
@@ -504,41 +504,60 @@ export default function MoveListPage() {
                             </div>
                         </div>
 
-                        {pagination.pages > 1 && (
-                            <div className="flex justify-between items-center mt-4 text-slate-600 text-xs font-medium">
-                                <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
-                                    Tổng <span className="font-bold">{pagination.total}</span> bản ghi • Trang <span className="font-bold text-blue-700">{page}</span>/{pagination.pages}
-                                </div>
-                                <div className="flex gap-1">
-                                    <button
-                                        disabled={page === 1}
-                                        onClick={() => setPage(page - 1)}
-                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
-                                    >
-                                        &laquo;
-                                    </button>
-                                    {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((pageNum) => (
+                        {pagination.pages > 1 && (() => {
+                            const totalPages = pagination.pages
+                            const SIBLING = 2
+                            const pages = []
+                            const addPage = (n) => { if (n >= 1 && n <= totalPages && !pages.includes(n)) pages.push(n) }
+                            addPage(1)
+                            for (let i = page - SIBLING; i <= page + SIBLING; i++) addPage(i)
+                            addPage(totalPages)
+                            pages.sort((a, b) => a - b)
+                            const items = []
+                            for (let i = 0; i < pages.length; i++) {
+                                if (i > 0 && pages[i] - pages[i - 1] > 1) items.push('...' + i)
+                                items.push(pages[i])
+                            }
+                            return (
+                                <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-3 text-slate-600 text-xs font-medium">
+                                    <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
+                                        Tổng <span className="font-bold">{pagination.total}</span> bản ghi • Trang <span className="font-bold text-blue-700">{page}</span>/{totalPages}
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-1">
                                         <button
-                                            key={pageNum}
-                                            onClick={() => setPage(pageNum)}
-                                            className={`min-w-[32px] px-2 py-1 border rounded text-xs font-bold transition-colors shadow-sm ${page === pageNum
-                                                ? 'bg-blue-600 border-blue-600 text-white'
-                                                : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-                                                }`}
+                                            disabled={page === 1}
+                                            onClick={() => setPage(page - 1)}
+                                            className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
                                         >
-                                            {pageNum}
+                                            &laquo;
                                         </button>
-                                    ))}
-                                    <button
-                                        disabled={page >= pagination.pages}
-                                        onClick={() => setPage(page + 1)}
-                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
-                                    >
-                                        &raquo;
-                                    </button>
+                                        {items.map((item) =>
+                                            typeof item === 'string' ? (
+                                                <span key={item} className="px-1 py-1 text-slate-400 select-none">…</span>
+                                            ) : (
+                                                <button
+                                                    key={item}
+                                                    onClick={() => setPage(item)}
+                                                    className={`min-w-[32px] px-2 py-1 border rounded text-xs font-bold transition-colors shadow-sm ${page === item
+                                                        ? 'bg-blue-600 border-blue-600 text-white'
+                                                        : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+                                                        }`}
+                                                >
+                                                    {item}
+                                                </button>
+                                            )
+                                        )}
+                                        <button
+                                            disabled={page >= totalPages}
+                                            onClick={() => setPage(page + 1)}
+                                            className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
+                                        >
+                                            &raquo;
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        })()}
                     </>
                 )}
 
@@ -608,39 +627,58 @@ export default function MoveListPage() {
                         </table>
                     </div>
 
-                    {historyPagination.pages > 1 && (
-                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 justify-between items-center p-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
-                            <span className="text-center sm:text-left">Tổng {historyPagination.total} giao dịch • Trang {historyPage}/{historyPagination.pages}</span>
-                            <div className="flex flex-wrap justify-center gap-1">
-                                <button
-                                    disabled={historyPage <= 1}
-                                    onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
-                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
-                                >
-                                    &laquo;
-                                </button>
-                                {Array.from({ length: historyPagination.pages }, (_, i) => i + 1).slice(0, 10).map((pageNum) => (
+                    {historyPagination.pages > 1 && (() => {
+                        const totalPages = historyPagination.pages
+                        const SIBLING = 2
+                        const pages = []
+                        const addPage = (n) => { if (n >= 1 && n <= totalPages && !pages.includes(n)) pages.push(n) }
+                        addPage(1)
+                        for (let i = historyPage - SIBLING; i <= historyPage + SIBLING; i++) addPage(i)
+                        addPage(totalPages)
+                        pages.sort((a, b) => a - b)
+                        const items = []
+                        for (let i = 0; i < pages.length; i++) {
+                            if (i > 0 && pages[i] - pages[i - 1] > 1) items.push('...' + i)
+                            items.push(pages[i])
+                        }
+                        return (
+                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 justify-between items-center p-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+                                <span className="text-center sm:text-left">Tổng {historyPagination.total} giao dịch • Trang {historyPage}/{totalPages}</span>
+                                <div className="flex flex-wrap justify-center gap-1">
                                     <button
-                                        key={pageNum}
-                                        onClick={() => setHistoryPage(pageNum)}
-                                        className={`min-w-[32px] px-2 py-1 border rounded font-bold text-center ${historyPage === pageNum
-                                            ? 'bg-blue-600 border-blue-600 text-white'
-                                            : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
-                                            }`}
+                                        disabled={historyPage <= 1}
+                                        onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
+                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
                                     >
-                                        {pageNum}
+                                        &laquo;
                                     </button>
-                                ))}
-                                <button
-                                    disabled={historyPage >= historyPagination.pages}
-                                    onClick={() => setHistoryPage((prev) => Math.min(historyPagination.pages, prev + 1))}
-                                    className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
-                                >
-                                    &raquo;
-                                </button>
+                                    {items.map((item) =>
+                                        typeof item === 'string' ? (
+                                            <span key={item} className="px-1 py-1 text-slate-400 select-none">…</span>
+                                        ) : (
+                                            <button
+                                                key={item}
+                                                onClick={() => setHistoryPage(item)}
+                                                className={`min-w-[32px] px-2 py-1 border rounded font-bold text-center ${historyPage === item
+                                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                                    : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
+                                                    }`}
+                                            >
+                                                {item}
+                                            </button>
+                                        )
+                                    )}
+                                    <button
+                                        disabled={historyPage >= totalPages}
+                                        onClick={() => setHistoryPage((prev) => Math.min(totalPages, prev + 1))}
+                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold min-w-[32px] text-center"
+                                    >
+                                        &raquo;
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )
+                    })()}
                 </div>
             </div>
 

@@ -42,7 +42,7 @@ export default function PokedexPage() {
                 gold: data?.playerState?.gold || 0,
                 moonPoints: data?.playerState?.moonPoints || 0,
             })
-        } catch {
+        } catch (_err) {
             setCurrency({ gold: 0, moonPoints: 0 })
         }
     }

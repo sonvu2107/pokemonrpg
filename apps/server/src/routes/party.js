@@ -7,6 +7,42 @@ const router = express.Router()
 
 router.use(authMiddleware)
 
+const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
+
+const buildMovesForLevel = (pokemon, level) => {
+    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
+    const learned = pool
+        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
+        .sort((a, b) => a.level - b.level)
+        .map((entry) => entry.moveName || '')
+        .filter(Boolean)
+    return learned.slice(-4)
+}
+
+const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
+    const explicitMoves = (Array.isArray(moves) ? moves : [])
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+
+    if (explicitMoves.length >= 4) {
+        return explicitMoves.slice(0, 4)
+    }
+
+    const merged = [...explicitMoves]
+    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
+    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
+
+    for (const fallbackMove of fallbackMoves) {
+        const key = normalizeMoveName(fallbackMove)
+        if (!key || knownSet.has(key)) continue
+        merged.push(fallbackMove)
+        knownSet.add(key)
+        if (merged.length >= 4) break
+    }
+
+    return merged.slice(0, 4)
+}
+
 // GET /api/party
 // Return list of 6 slots found in party
 router.get('/', async (req, res) => {
@@ -29,6 +65,7 @@ router.get('/', async (req, res) => {
                 // Return a plain object with stats injected
                 const po = p.toObject()
                 po.stats = stats
+                po.moves = mergeKnownMovesWithFallback(po.moves, base, p.level)
 
                 slots[p.partyIndex] = po
             } else {
@@ -39,6 +76,7 @@ router.get('/', async (req, res) => {
                     const stats = calcStatsForLevel(base.baseStats, p.level, base.rarity)
                     const po = p.toObject()
                     po.stats = stats
+                    po.moves = mergeKnownMovesWithFallback(po.moves, base, p.level)
                     slots[firstEmpty] = po
                 }
             }

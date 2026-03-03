@@ -57,6 +57,44 @@ const inferMoveMp = (name = '') => {
     return 6
 }
 
+const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
+
+const buildMovesForLevel = (pokemon, level) => {
+    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
+    const learned = pool
+        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
+        .sort((a, b) => a.level - b.level)
+        .map((entry) => String(entry?.moveName || '').trim())
+        .filter(Boolean)
+    return learned.slice(-4)
+}
+
+const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
+    const explicit = (Array.isArray(moves) ? moves : [])
+        .map((entry) => {
+            if (typeof entry === 'string') return entry
+            return String(entry?.name || entry?.moveName || '').trim()
+        })
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+
+    if (explicit.length >= 4) return explicit.slice(0, 4)
+
+    const merged = [...explicit]
+    const knownSet = new Set(explicit.map((entry) => normalizeMoveNameKey(entry)))
+    const fallback = buildMovesForLevel(pokemon, level)
+
+    for (const moveName of fallback) {
+        const key = normalizeMoveNameKey(moveName)
+        if (!key || knownSet.has(key)) continue
+        merged.push(moveName)
+        knownSet.add(key)
+        if (merged.length >= 4) break
+    }
+
+    return merged.slice(0, 4)
+}
+
 const normalizeMoveList = (moves = []) => {
     const list = Array.isArray(moves) ? moves : []
     const mapped = list
@@ -92,6 +130,7 @@ const ProgressBar = ({ current, max, colorClass, label }) => {
         <div className="w-full">
             <div className="flex justify-between text-[10px] font-bold px-1 mb-0.5">
                 <span>{label}: {Math.round(percent)}%</span>
+                <span>{Math.max(0, Math.floor(current))}/{Math.max(1, Math.floor(safeMax))}</span>
             </div>
             <div className="h-2 w-full bg-slate-200 rounded-full border border-slate-300 overflow-hidden">
                 <div
@@ -143,7 +182,13 @@ const ActiveBattleView = ({
         exp: activePokemon.experience,
         maxExp: activePokemon.level * 100,
         sprite: activePokemon.pokemonId?.sprites?.back_default || activePokemon.pokemonId?.imageUrl || activePokemon.pokemonId?.sprites?.normal || activePokemon.pokemonId?.sprites?.front_default,
-        moves: normalizeMoveList(activePokemon.moves || []),
+        moves: normalizeMoveList(
+            mergeBattleMoveNames(
+                activePokemon.moves || [],
+                activePokemon.pokemonId,
+                Number(activePokemon.level) || 1
+            )
+        ),
     } : null
 
     const activeOpponent = opponent?.team?.[opponent.currentIndex || 0] || null
@@ -665,6 +710,9 @@ export function BattlePage() {
                 ? Math.max(0, battle.currentHp)
                 : Math.max(0, (target.currentHp ?? target.maxHp) - damage)
             const moveName = battle?.move?.name || selectedMove?.name || 'Attack'
+            const moveHit = battle?.move?.hit !== false
+            const moveFallbackReason = String(battle?.move?.fallbackReason || '').trim()
+            const moveFallbackFrom = String(battle?.move?.fallbackFrom || '').trim()
             const counterAttack = battle?.counterAttack || null
 
             if (battle?.player && Number.isFinite(battle.player.mp)) {
@@ -744,7 +792,14 @@ export function BattlePage() {
 
             setBattleOpponent(nextBattleState)
 
-            const logLines = [`${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`]
+            const logLines = [
+                moveHit
+                    ? `${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`
+                    : `${activeName} của bạn dùng ${moveName} nhưng trượt.`,
+            ]
+            if (moveFallbackReason === 'INSUFFICIENT_MP') {
+                logLines.unshift(`Không đủ MP cho ${moveFallbackFrom || 'chiêu đã chọn'}, hệ thống tự chuyển sang Struggle.`)
+            }
             let nextPartyState = resolvedPartyState
             if (battle?.player && Number.isFinite(battle.player.currentHp)) {
                 const authoritativeMaxHp = Math.max(1, Number(battle.player.maxHp) || activeMaxHp)
@@ -1133,7 +1188,7 @@ export function BattlePage() {
             <div className="space-y-6 animate-fadeIn max-w-4xl mx-auto font-sans">
                 <div className="text-center space-y-2">
                     <div className="text-slate-600 font-bold text-sm">
-                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
+                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các <span className="mx-2">•</span> ⚡ {Math.max(0, Number(playerState?.mp || 0)).toLocaleString('vi-VN')}/{Math.max(1, Number(playerState?.maxMp || 0)).toLocaleString('vi-VN')} MP
                     </div>
                 </div>
 

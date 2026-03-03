@@ -11,7 +11,7 @@ const throwApiError = async (res, fallbackMessage) => {
     let err = null
     try {
         err = await res.json()
-    } catch {
+    } catch (_err) {
         err = null
     }
 

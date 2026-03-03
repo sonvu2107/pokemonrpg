@@ -49,14 +49,119 @@ const inferMoveType = (name = '') => {
     return 'normal'
 }
 
-const calcBattleDamage = ({ attackerLevel, movePower, attackStat, defenseStat }) => {
+const TYPE_EFFECTIVENESS_CHART = {
+    normal: { rock: 0.5, ghost: 0, steel: 0.5 },
+    fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
+    water: { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
+    electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
+    grass: { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
+    ice: { fire: 0.5, water: 0.5, grass: 2, ground: 2, flying: 2, dragon: 2, steel: 0.5, ice: 0.5 },
+    fighting: { normal: 2, ice: 2, rock: 2, dark: 2, steel: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, ghost: 0, fairy: 0.5 },
+    poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0, fairy: 2 },
+    ground: { fire: 2, electric: 2, grass: 0.5, poison: 2, flying: 0, bug: 0.5, rock: 2, steel: 2 },
+    flying: { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
+    psychic: { fighting: 2, poison: 2, psychic: 0.5, steel: 0.5, dark: 0 },
+    bug: { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5, fairy: 0.5 },
+    rock: { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
+    ghost: { normal: 0, psychic: 2, ghost: 2, dark: 0.5 },
+    dragon: { dragon: 2, steel: 0.5, fairy: 0 },
+    dark: { fighting: 0.5, psychic: 2, ghost: 2, dark: 0.5, fairy: 0.5 },
+    steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, fairy: 2, steel: 0.5 },
+    fairy: { fire: 0.5, fighting: 2, poison: 0.5, dragon: 2, dark: 2, steel: 0.5 },
+}
+
+const normalizeTypeToken = (value = '') => String(value || '').trim().toLowerCase()
+
+const normalizePokemonTypes = (types = []) => {
+    const entries = Array.isArray(types) ? types : []
+    return [...new Set(entries.map((entry) => normalizeTypeToken(entry)).filter(Boolean))]
+}
+
+const resolveMoveCategory = (moveDoc, fallbackMove, resolvedPower) => {
+    const category = normalizeTypeToken(moveDoc?.category || fallbackMove?.category)
+    if (category === 'physical' || category === 'special' || category === 'status') {
+        return category
+    }
+    return resolvedPower > 0 ? 'physical' : 'status'
+}
+
+const resolveMoveAccuracy = (moveDoc, fallbackMove) => {
+    let accuracy = Number(moveDoc?.accuracy)
+    if (!Number.isFinite(accuracy) || accuracy <= 0) {
+        accuracy = Number(fallbackMove?.accuracy)
+    }
+    if (!Number.isFinite(accuracy) || accuracy <= 0) {
+        return 100
+    }
+    return clamp(Math.floor(accuracy), 1, 100)
+}
+
+const resolveMovePriority = (moveDoc, fallbackMove) => {
+    let priority = Number(moveDoc?.priority)
+    if (!Number.isFinite(priority)) {
+        priority = Number(fallbackMove?.priority)
+    }
+    if (!Number.isFinite(priority)) {
+        return 0
+    }
+    return clamp(Math.floor(priority), -7, 7)
+}
+
+const resolveMoveCriticalChance = (moveDoc, fallbackMove) => {
+    const fromEffects = Number(moveDoc?.effects?.criticalChance ?? fallbackMove?.effects?.criticalChance)
+    if (Number.isFinite(fromEffects)) {
+        if (fromEffects > 1) {
+            return Math.min(1, Math.max(0, fromEffects / 100))
+        }
+        return Math.min(1, Math.max(0, fromEffects))
+    }
+
+    const description = String(moveDoc?.description || fallbackMove?.description || '').toLowerCase()
+    if (description.includes('always results in a critical hit') || description.includes('always critical')) {
+        return 1
+    }
+    if (description.includes('high critical hit ratio')) {
+        return 0.125
+    }
+    return 0.0625
+}
+
+const resolveTypeEffectiveness = (moveType, defenderTypes = []) => {
+    const normalizedMoveType = normalizeTypeToken(moveType)
+    const chart = TYPE_EFFECTIVENESS_CHART[normalizedMoveType] || {}
+    const uniqueDefenderTypes = normalizePokemonTypes(defenderTypes)
+
+    if (uniqueDefenderTypes.length === 0) {
+        return { multiplier: 1, breakdown: [] }
+    }
+
+    let multiplier = 1
+    const breakdown = uniqueDefenderTypes.map((type) => {
+        const perType = Number.isFinite(chart[type]) ? chart[type] : 1
+        multiplier *= perType
+        return { type, multiplier: perType }
+    })
+
+    return { multiplier, breakdown }
+}
+
+const resolveEffectivenessText = (multiplier) => {
+    if (multiplier === 0) return 'Không có tác dụng.'
+    if (multiplier >= 2) return 'Rất hiệu quả!'
+    if (multiplier > 1) return 'Hiệu quả.'
+    if (multiplier < 1) return 'Không hiệu quả lắm.'
+    return ''
+}
+
+const calcBattleDamage = ({ attackerLevel, movePower, attackStat, defenseStat, modifier = 1 }) => {
+    if (!Number.isFinite(modifier) || modifier <= 0) return 0
     const level = Math.max(1, Number(attackerLevel) || 1)
     const power = Math.max(1, Number(movePower) || 1)
     const atk = Math.max(1, Number(attackStat) || 1)
     const def = Math.max(1, Number(defenseStat) || 1)
     const base = (((2 * level) / 5 + 2) * power * (atk / def)) / 50 + 2
     const randomFactor = 0.85 + Math.random() * 0.15
-    return Math.max(1, Math.floor(base * randomFactor))
+    return Math.max(1, Math.floor(base * modifier * randomFactor))
 }
 
 const calcCatchChance = ({ catchRate, hp, maxHp }) => {
@@ -74,6 +179,30 @@ const buildMovesForLevel = (pokemon, level) => {
         .map(m => m.moveName || '')
         .filter(Boolean)
     return learned.slice(-4)
+}
+
+const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
+    const explicitMoves = (Array.isArray(moves) ? moves : [])
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+
+    if (explicitMoves.length >= 4) {
+        return explicitMoves.slice(0, 4)
+    }
+
+    const merged = [...explicitMoves]
+    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
+    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
+
+    for (const fallbackMove of fallbackMoves) {
+        const key = normalizeMoveName(fallbackMove)
+        if (!key || knownSet.has(key)) continue
+        merged.push(fallbackMove)
+        knownSet.add(key)
+        if (merged.length >= 4) break
+    }
+
+    return merged.slice(0, 4)
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
@@ -159,6 +288,10 @@ const getSpecialDefenseStat = (stats = {}) => (
     Number(stats?.spdef) || Number(stats?.spldef) || 0
 )
 
+const getSpecialAttackStat = (stats = {}) => (
+    Number(stats?.spatk) || 0
+)
+
 const resolveTrainerBattleForm = (pokemon, formId) => {
     const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
     const defaultFormId = String(pokemon?.defaultFormId || 'normal').trim() || 'normal'
@@ -182,12 +315,14 @@ const buildTrainerBattleTeam = (trainer) => {
             const baseStats = form?.stats || pokemon.baseStats || {}
             const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
             const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
+            const types = normalizePokemonTypes(pokemon.types)
             return {
                 slot: index,
                 pokemonId: pokemon._id,
                 name: pokemon.name || 'Pokemon',
                 level,
                 formId,
+                types,
                 baseStats: scaledStats,
                 currentHp: maxHp,
                 maxHp,
@@ -542,13 +677,48 @@ const buildProgressIndex = (progresses) => {
     return byId
 }
 
+const resolveSourceMapForUnlock = (maps, index) => {
+    if (index <= 0) return null
+
+    const currentMap = maps[index] || null
+    if (!currentMap) return null
+
+    const currentTrack = Boolean(currentMap.isLegendary)
+    for (let sourceIndex = index - 1; sourceIndex >= 0; sourceIndex -= 1) {
+        const candidate = maps[sourceIndex]
+        if (!candidate) continue
+        if (Boolean(candidate.isLegendary) === currentTrack) {
+            return candidate
+        }
+    }
+
+    return null
+}
+
+const resolveNextMapInTrack = (maps, index) => {
+    const currentMap = maps[index] || null
+    if (!currentMap) return null
+
+    const currentTrack = Boolean(currentMap.isLegendary)
+    for (let nextIndex = index + 1; nextIndex < maps.length; nextIndex += 1) {
+        const candidate = maps[nextIndex]
+        if (!candidate) continue
+        if (Boolean(candidate.isLegendary) === currentTrack) {
+            return candidate
+        }
+    }
+
+    return null
+}
+
 const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
     const currentMap = maps[index] || null
     const currentPlayerLevel = Math.max(1, Number(playerLevel) || 1)
     const requiredPlayerLevel = Math.max(1, Number(currentMap?.requiredPlayerLevel) || 1)
     const remainingPlayerLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
 
-    if (index <= 0) {
+    const sourceMap = resolveSourceMapForUnlock(maps, index)
+    if (!sourceMap) {
         return {
             requiredSearches: 0,
             currentSearches: 0,
@@ -562,7 +732,6 @@ const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
         }
     }
 
-    const sourceMap = maps[index - 1]
     const sourceProgress = progressById.get(sourceMap._id.toString())
     const requiredSearches = Math.max(0, sourceMap.requiredSearches || 0)
     const currentSearches = sourceProgress?.totalSearches || 0
@@ -717,8 +886,9 @@ router.post('/search', authMiddleware, async (req, res, next) => {
 
         if (!isAdmin) {
             let progressById = new Map()
-            if (mapIndex > 0) {
-                const sourceMapId = orderedMaps[mapIndex - 1]._id
+            const sourceMap = resolveSourceMapForUnlock(orderedMaps, mapIndex)
+            if (sourceMap?._id) {
+                const sourceMapId = sourceMap._id
                 const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
                     .select('mapId totalSearches')
                     .lean()
@@ -749,10 +919,12 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         })
 
         if (!isAdmin) {
-            const requiredToUnlockNext = Math.max(0, map.requiredSearches || 0)
-            if (mapProgress.totalSearches >= requiredToUnlockNext && mapIndex < orderedMaps.length - 1) {
-                const nextMap = orderedMaps[mapIndex + 1]
-                await ensureMapUnlocked(userId, nextMap._id)
+            const nextMap = resolveNextMapInTrack(orderedMaps, mapIndex)
+            if (nextMap?._id) {
+                const requiredToUnlockNext = Math.max(0, map.requiredSearches || 0)
+                if (mapProgress.totalSearches >= requiredToUnlockNext) {
+                    await ensureMapUnlocked(userId, nextMap._id)
+                }
             }
         }
 
@@ -1088,8 +1260,9 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
         }
 
         const progresses = []
-        if (mapIndex > 0) {
-            const sourceMapId = orderedMaps[mapIndex - 1]._id
+        const sourceMap = resolveSourceMapForUnlock(orderedMaps, mapIndex)
+        if (sourceMap?._id) {
+            const sourceMapId = sourceMap._id
             const sourceProgress = await MapProgress.findOne({ userId, mapId: sourceMapId })
                 .select('mapId totalSearches')
                 .lean()
@@ -1289,7 +1462,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         const party = await UserPokemon.find({ userId, location: 'party' })
             .select('pokemonId level moves nickname formId partyIndex')
             .sort({ partyIndex: 1 })
-            .populate('pokemonId', 'name baseStats rarity forms defaultFormId')
+            .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
 
         const activePokemon = normalizedActivePokemonId
             ? (party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null)
@@ -1298,13 +1471,16 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
         }
 
-        const knownMoves = Array.isArray(activePokemon.moves)
-            ? activePokemon.moves.map((item) => String(item || '').trim()).filter(Boolean)
-            : []
+        const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
+        const attackerSpecies = activePokemon?.pokemonId || {}
+        const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves, attackerSpecies, attackerLevel)
         const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
 
         let selectedMoveName = String(moveName || move?.name || knownMoves[0] || 'Struggle').trim()
         if (!selectedMoveName) selectedMoveName = 'Struggle'
+        const requestedMoveName = selectedMoveName
+        let moveFallbackReason = ''
+        let moveFallbackFrom = ''
 
         const selectedMoveKey = normalizeMoveName(selectedMoveName)
         if (knownMoves.length > 0 && !normalizedKnownMoves.has(selectedMoveKey)) {
@@ -1322,6 +1498,12 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             resolvedPower = normalizeMoveName(selectedMoveName) === 'struggle' ? 35 : 50
         }
         resolvedPower = clamp(Math.floor(resolvedPower), 1, 250)
+
+        let moveType = normalizeTypeToken(moveDoc?.type || move?.type || inferMoveType(selectedMoveName)) || 'normal'
+        let moveCategory = resolveMoveCategory(moveDoc, move, resolvedPower)
+        let moveAccuracy = resolveMoveAccuracy(moveDoc, move)
+        let movePriority = resolveMovePriority(moveDoc, move)
+        let moveCriticalChance = resolveMoveCriticalChance(moveDoc, move)
 
         let mpCost = Number(move?.mp)
         if (!Number.isFinite(mpCost) || mpCost < 0) {
@@ -1356,9 +1538,16 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 playerState = mpUpdatedState
                 emitPlayerState(userId.toString(), playerState)
             } else {
+                moveFallbackReason = 'INSUFFICIENT_MP'
+                moveFallbackFrom = requestedMoveName
                 selectedMoveName = 'Struggle'
                 resolvedPower = 35
                 mpCost = 0
+                moveType = 'normal'
+                moveCategory = 'physical'
+                moveAccuracy = 100
+                movePriority = 0
+                moveCriticalChance = 0.0625
                 playerState = await PlayerState.findOneAndUpdate(
                     { userId },
                     { $setOnInsert: { userId } },
@@ -1367,14 +1556,19 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
         }
 
-        const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
-        const attackerSpecies = activePokemon?.pokemonId || {}
         const attackerBaseStats = attackerSpecies.baseStats || {}
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
+        const attackerTypes = normalizePokemonTypes(attackerSpecies.types)
         const attackerAtk = Math.max(
             1,
             Number(attackerScaledStats?.atk) ||
             Number(attackerScaledStats?.spatk) ||
+            (20 + attackerLevel * 2)
+        )
+        const attackerSpAtk = Math.max(
+            1,
+            getSpecialAttackStat(attackerScaledStats) ||
+            Number(attackerScaledStats?.atk) ||
             (20 + attackerLevel * 2)
         )
 
@@ -1391,9 +1585,16 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             Number(attackerScaledStats?.spdef) ||
             (20 + attackerLevel * 2)
         )
+        const playerSpDef = Math.max(
+            1,
+            getSpecialDefenseStat(attackerScaledStats) ||
+            Number(attackerScaledStats?.def) ||
+            (20 + attackerLevel * 2)
+        )
 
         let targetName = String(opponent.name || 'Opponent Pokemon')
         let targetLevel = Math.max(1, Number(opponent.level) || 1)
+        let targetTypes = normalizePokemonTypes(opponent.types)
         let targetMaxHp = Math.max(1, Number(opponent.maxHp) || 1)
         let targetCurrentHp = clamp(
             Math.floor(Number.isFinite(Number(opponent.currentHp)) ? Number(opponent.currentHp) : targetMaxHp),
@@ -1406,10 +1607,22 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             Number(opponent.baseStats?.spatk) ||
             (20 + targetLevel * 2)
         )
+        let targetSpAtk = Math.max(
+            1,
+            getSpecialAttackStat(opponent.baseStats) ||
+            Number(opponent.baseStats?.atk) ||
+            (20 + targetLevel * 2)
+        )
         let targetDef = Math.max(
             1,
             Number(opponent.baseStats?.def) ||
             getSpecialDefenseStat(opponent.baseStats) ||
+            (20 + targetLevel * 2)
+        )
+        let targetSpDef = Math.max(
+            1,
+            getSpecialDefenseStat(opponent.baseStats) ||
+            Number(opponent.baseStats?.def) ||
             (20 + targetLevel * 2)
         )
 
@@ -1420,7 +1633,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
-                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId')
+                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types')
                 .lean()
 
             if (!trainer) {
@@ -1465,6 +1678,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             activeTrainerOpponent = trainerSession.team[activeOpponentIndex]
             targetName = activeTrainerOpponent.name || targetName
             targetLevel = Math.max(1, Number(activeTrainerOpponent.level) || targetLevel)
+            targetTypes = normalizePokemonTypes(activeTrainerOpponent.types)
             targetMaxHp = Math.max(1, Number(activeTrainerOpponent.maxHp) || targetMaxHp)
             const trainerTargetCurrentHpRaw = Number(activeTrainerOpponent.currentHp)
             const trainerTargetCurrentHp = Number.isFinite(trainerTargetCurrentHpRaw)
@@ -1477,10 +1691,22 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 Number(activeTrainerOpponent.baseStats?.spatk) ||
                 (20 + targetLevel * 2)
             )
+            targetSpAtk = Math.max(
+                1,
+                getSpecialAttackStat(activeTrainerOpponent.baseStats) ||
+                Number(activeTrainerOpponent.baseStats?.atk) ||
+                (20 + targetLevel * 2)
+            )
             targetDef = Math.max(
                 1,
                 Number(activeTrainerOpponent.baseStats?.def) ||
                 getSpecialDefenseStat(activeTrainerOpponent.baseStats) ||
+                (20 + targetLevel * 2)
+            )
+            targetSpDef = Math.max(
+                1,
+                getSpecialDefenseStat(activeTrainerOpponent.baseStats) ||
+                Number(activeTrainerOpponent.baseStats?.def) ||
                 (20 + targetLevel * 2)
             )
 
@@ -1489,13 +1715,27 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
         }
 
-        const damage = calcBattleDamage({
-            attackerLevel,
-            movePower: resolvedPower,
-            attackStat: attackerAtk,
-            defenseStat: targetDef,
-        })
+        const playerAttackStat = moveCategory === 'special' ? attackerSpAtk : attackerAtk
+        const playerDefenseStat = moveCategory === 'special' ? targetSpDef : targetDef
+        const isStatusMove = moveCategory === 'status'
+        const didPlayerMoveHit = moveAccuracy >= 100 || (Math.random() * 100) <= moveAccuracy
+        const playerTypeEffectiveness = resolveTypeEffectiveness(moveType, targetTypes)
+        const playerStabMultiplier = attackerTypes.includes(moveType) ? 1.5 : 1
+        const didPlayerCritical = !isStatusMove && didPlayerMoveHit && Math.random() < moveCriticalChance
+        const playerCriticalMultiplier = didPlayerCritical ? 1.5 : 1
+        const playerDamageModifier = playerStabMultiplier * playerTypeEffectiveness.multiplier * playerCriticalMultiplier
+
+        const damage = (!didPlayerMoveHit || isStatusMove || playerTypeEffectiveness.multiplier <= 0)
+            ? 0
+            : calcBattleDamage({
+                attackerLevel,
+                movePower: resolvedPower,
+                attackStat: playerAttackStat,
+                defenseStat: playerDefenseStat,
+                modifier: playerDamageModifier,
+            })
         const currentHp = Math.max(0, targetCurrentHp - damage)
+        const playerEffectivenessText = didPlayerMoveHit ? resolveEffectivenessText(playerTypeEffectiveness.multiplier) : ''
 
         if (activeTrainerOpponent) {
             const didDefeatOpponent = targetCurrentHp > 0 && currentHp <= 0
@@ -1529,12 +1769,25 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let resultingPlayerHp = playerCurrentHp
         if (currentHp > 0) {
             const opponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
-            const counterDamage = calcBattleDamage({
-                attackerLevel: targetLevel,
-                movePower: opponentMovePower,
-                attackStat: targetAtk,
-                defenseStat: playerDef,
-            })
+            const opponentMoveType = targetTypes[0] || 'normal'
+            const opponentMoveCategory = targetSpAtk > targetAtk ? 'special' : 'physical'
+            const opponentMoveAccuracy = 95
+            const didOpponentMoveHit = (Math.random() * 100) <= opponentMoveAccuracy
+            const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
+            const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
+            const didOpponentCritical = didOpponentMoveHit && Math.random() < 0.0625
+            const opponentCriticalMultiplier = didOpponentCritical ? 1.5 : 1
+            const opponentAttackStat = opponentMoveCategory === 'special' ? targetSpAtk : targetAtk
+            const opponentDefenseStat = opponentMoveCategory === 'special' ? playerSpDef : playerDef
+            const counterDamage = (!didOpponentMoveHit || opponentTypeEffectiveness.multiplier <= 0)
+                ? 0
+                : calcBattleDamage({
+                    attackerLevel: targetLevel,
+                    movePower: opponentMovePower,
+                    attackStat: opponentAttackStat,
+                    defenseStat: opponentDefenseStat,
+                    modifier: opponentStabMultiplier * opponentTypeEffectiveness.multiplier * opponentCriticalMultiplier,
+                })
             const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
             resultingPlayerHp = nextPlayerHp
 
@@ -1549,13 +1802,21 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 currentHp: nextPlayerHp,
                 maxHp: playerMaxHp,
                 defeatedPlayer: nextPlayerHp <= 0,
+                hit: didOpponentMoveHit,
+                effectiveness: opponentTypeEffectiveness.multiplier,
+                critical: didOpponentCritical,
                 move: {
                     name: 'Counter Strike',
-                    type: 'normal',
+                    type: opponentMoveType,
+                    category: opponentMoveCategory,
+                    accuracy: opponentMoveAccuracy,
+                    priority: 0,
                     power: opponentMovePower,
                     mp: 0,
                 },
-                log: `${targetName} retaliated for ${counterDamage} damage.`,
+                log: didOpponentMoveHit
+                    ? `${targetName} retaliated for ${counterDamage} damage. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
+                    : `${targetName} retaliated but missed.`,
             }
         }
 
@@ -1573,6 +1834,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     pokemonId: entry.pokemonId,
                     name: entry.name,
                     level: entry.level,
+                    types: normalizePokemonTypes(entry.types),
                     currentHp: entry.currentHp,
                     maxHp: entry.maxHp,
                 })),
@@ -1588,9 +1850,18 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 defeated: currentHp <= 0,
                 move: {
                     name: selectedMoveName,
-                    type: moveDoc?.type || inferMoveType(selectedMoveName),
+                    type: moveType,
+                    category: moveCategory,
+                    accuracy: moveAccuracy,
+                    priority: movePriority,
+                    hit: didPlayerMoveHit,
+                    critical: didPlayerCritical,
+                    effectiveness: playerTypeEffectiveness.multiplier,
+                    stabMultiplier: playerStabMultiplier,
                     power: resolvedPower,
                     mp: mpCost,
+                    fallbackReason: moveFallbackReason,
+                    fallbackFrom: moveFallbackFrom,
                 },
                 player: {
                     id: activePokemon._id,
@@ -1602,7 +1873,9 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 },
                 opponent: trainerState,
                 counterAttack,
-                log: `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage.`,
+                log: didPlayerMoveHit
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage. ${moveFallbackReason === 'INSUFFICIENT_MP' ? '(Không đủ MP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
+                    : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'INSUFFICIENT_MP' ? ' (Không đủ MP nên tự dùng Struggle.)' : ''}`,
             },
         })
     } catch (error) {

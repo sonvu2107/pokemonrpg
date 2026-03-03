@@ -87,7 +87,7 @@ export default function MoveFormPage() {
         try {
             const data = await pokemonApi.list({ page: 1, limit: 1000 })
             setPokemonOptions(data.pokemon || [])
-        } catch {
+        } catch (_err) {
             setPokemonOptions([])
         }
     }

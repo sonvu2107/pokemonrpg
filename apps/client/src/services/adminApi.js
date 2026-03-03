@@ -11,7 +11,7 @@ const throwApiError = async (res, fallbackMessage) => {
     let err = null
     try {
         err = await res.json()
-    } catch {
+    } catch (_err) {
         err = null
     }
 
@@ -336,22 +336,6 @@ export const itemApi = {
         return res.json()
     },
 
-    async importMoveCsv(moves = []) {
-        const res = await fetch(`${API_URL}/admin/moves/import/csv`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...getAuthHeader(),
-            },
-            body: JSON.stringify({ moves }),
-        })
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}))
-            throw new Error(err.message || 'Import kỹ năng thất bại')
-        }
-        return res.json()
-    },
-
     async update(id, data) {
         const res = await fetch(`${API_URL}/admin/items/${id}`, {
             method: 'PUT',
@@ -421,6 +405,22 @@ export const moveApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Tạo kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
+    async importMoveCsv(moves = []) {
+        const res = await fetch(`${API_URL}/admin/moves/import/csv`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ moves }),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Import kỹ năng thất bại')
         }
         return res.json()
     },

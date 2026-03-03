@@ -10,7 +10,7 @@ const decodeJwtPayload = (token) => {
         const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
         const decoded = atob(padded)
         return JSON.parse(decoded)
-    } catch {
+    } catch (_err) {
         return null
     }
 }

@@ -192,7 +192,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 createdAt: user.createdAt,
             },
             playerState: playerState || {
-                hp: 100, maxHp: 100, gold: 0, clicks: 0,
+                hp: 100, maxHp: 100, mp: 50, maxMp: 50, gold: 0, clicks: 0,
                 level: 1, experience: 0, stamina: 100, maxStamina: 100,
                 moonPoints: 0, wins: 0, losses: 0
             },

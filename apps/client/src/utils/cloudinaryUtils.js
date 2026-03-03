@@ -35,7 +35,7 @@ export const uploadToCloudinary = async (file, onProgress) => {
                 try {
                     const error = JSON.parse(xhr.responseText)
                     reject(new Error(`Tải lên thất bại: ${error.error?.message || 'Lỗi không xác định'}`))
-                } catch {
+                } catch (_err) {
                     reject(new Error(`Tải lên thất bại với mã trạng thái ${xhr.status}`))
                 }
             }
