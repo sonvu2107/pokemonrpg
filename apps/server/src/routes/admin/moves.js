@@ -226,6 +226,15 @@ const validateLearnConfig = ({ learnScope, allowedTypes, allowedPokemonIds, allo
 }
 
 const resolveLearnConfigByScope = ({ learnScope, allowedTypes, allowedPokemonIds, allowedRarities }) => {
+    if (learnScope === 'move_type') {
+        return {
+            learnScope,
+            allowedTypes: [],
+            allowedPokemonIds: [],
+            allowedRarities: [],
+        }
+    }
+
     if (learnScope === 'type') {
         return {
             learnScope,

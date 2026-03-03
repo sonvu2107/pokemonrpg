@@ -230,6 +230,20 @@ router.post('/use', async (req, res) => {
             let maxHp = Math.max(1, Number(playerState.maxHp || 1))
             let nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
 
+            let targetPokemon = null
+            if (activePokemonId) {
+                targetPokemon = await UserPokemon.findOne({
+                    _id: activePokemonId,
+                    userId,
+                }).populate('pokemonId', 'levelUpMoves')
+            }
+
+            if (!targetPokemon) {
+                targetPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+                    .sort({ partyIndex: 1 })
+                    .populate('pokemonId', 'levelUpMoves')
+            }
+
             let activeBattleSession = null
             if (!encounterId && targetPokemon) {
                 activeBattleSession = await BattleSession.findOne({
@@ -247,20 +261,6 @@ router.post('/use', async (req, res) => {
             }
 
             const healedHp = Math.max(0, nextHp - beforeHp)
-
-            let targetPokemon = null
-            if (activePokemonId) {
-                targetPokemon = await UserPokemon.findOne({
-                    _id: activePokemonId,
-                    userId,
-                }).populate('pokemonId', 'levelUpMoves')
-            }
-
-            if (!targetPokemon) {
-                targetPokemon = await UserPokemon.findOne({ userId, location: 'party' })
-                    .sort({ partyIndex: 1 })
-                    .populate('pokemonId', 'levelUpMoves')
-            }
 
             let healedPp = 0
             let restoredPpMoves = []

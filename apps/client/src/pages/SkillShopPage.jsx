@@ -54,6 +54,9 @@ const POKEMON_RARITY_LABELS = {
 
 const describeLearnScope = (skill) => {
     const scope = String(skill?.learnScope || 'all').toLowerCase()
+    if (scope === 'move_type') {
+        return 'Chỉ Pokemon cùng hệ với kỹ năng mới học được'
+    }
     if (scope === 'type') {
         const types = Array.isArray(skill?.allowedTypes) ? skill.allowedTypes : []
         return types.length > 0

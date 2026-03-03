@@ -289,6 +289,22 @@ export const gameApi = {
         return res.json()
     },
 
+    // POST /api/pokemon/:id/remove-skill
+    async removePokemonSkill(id, payload) {
+        const res = await fetch(`${API_URL}/pokemon/${id}/remove-skill`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Gỡ kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
     // GET /api/party
     async getParty() {
         const res = await fetch(`${API_URL}/party`, {

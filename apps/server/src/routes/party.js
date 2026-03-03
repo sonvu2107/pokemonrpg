@@ -2,7 +2,7 @@ import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
-import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
+import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 
 const router = express.Router()
 
@@ -40,8 +40,12 @@ router.get('/', async (req, res) => {
                     moveNames: mergedMoveNames,
                     movePpState: po.movePpState,
                     moveLookupMap,
-                })
+                }).map((entry) => ({
+                    ...entry,
+                    currentPp: entry.maxPp,
+                }))
                 po.moves = movePpState.map((entry) => ({
+                    ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
                     name: entry.moveName,
                     currentPp: entry.currentPp,
                     maxPp: entry.maxPp,
@@ -63,8 +67,12 @@ router.get('/', async (req, res) => {
                         moveNames: mergedMoveNames,
                         movePpState: po.movePpState,
                         moveLookupMap,
-                    })
+                    }).map((entry) => ({
+                        ...entry,
+                        currentPp: entry.maxPp,
+                    }))
                     po.moves = movePpState.map((entry) => ({
+                        ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
                         name: entry.moveName,
                         currentPp: entry.currentPp,
                         maxPp: entry.maxPp,

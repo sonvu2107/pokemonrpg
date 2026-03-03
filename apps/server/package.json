@@ -10,6 +10,8 @@
         "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js",
         "migrate:pokemon-move-ids:dry": "node scripts/migratePokemonMoveIds.js",
         "migrate:pokemon-move-ids": "node scripts/migratePokemonMoveIds.js --apply",
+        "set:moves:learn-scope:move-type:dry": "node scripts/setMoveLearnScopeMoveType.js",
+        "set:moves:learn-scope:move-type": "node scripts/setMoveLearnScopeMoveType.js --apply",
         "test:skill-shop-teach-flow": "node scripts/testSkillShopTeachFlow.js",
         "chat:setup": "node src/scripts/setupChatDatabase.js",
         "chat:seed": "node src/scripts/seedChatMessages.js",

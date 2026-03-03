@@ -25,6 +25,7 @@ const MOVE_RARITIES = [
 
 const LEARN_SCOPE_OPTIONS = [
     { value: 'all', label: 'Mọi Pokemon' },
+    { value: 'move_type', label: 'Cùng hệ với kỹ năng' },
     { value: 'type', label: 'Theo hệ Pokemon' },
     { value: 'species', label: 'Pokemon đặc biệt' },
     { value: 'rarity', label: 'Theo độ hiếm' },
@@ -337,6 +338,12 @@ export default function MoveFormPage() {
                                 ))}
                             </select>
                         </div>
+
+                        {formData.learnScope === 'move_type' && (
+                            <div className="text-xs text-slate-600 bg-white border border-slate-200 rounded p-2">
+                                Tự động áp dụng: chỉ Pokemon có hệ trùng với hệ của kỹ năng mới học được (không cần tick tay).
+                            </div>
+                        )}
 
                         {formData.learnScope === 'type' && (
                             <div>

@@ -63,6 +63,7 @@ export default function PokemonInfoPage() {
     const [selectedSkillId, setSelectedSkillId] = useState('')
     const [replaceMoveIndex, setReplaceMoveIndex] = useState(-1)
     const [teachingSkill, setTeachingSkill] = useState(false)
+    const [removingSkillName, setRemovingSkillName] = useState('')
 
     useEffect(() => {
         loadPokemon()
@@ -156,6 +157,31 @@ export default function PokemonInfoPage() {
             setFeatureNotice(err.message || 'Dạy kỹ năng thất bại.')
         } finally {
             setTeachingSkill(false)
+        }
+    }
+
+    const handleRemoveSkill = async (moveName) => {
+        const safeMoveName = String(moveName || '').trim()
+        if (!safeMoveName) return
+        const confirmed = window.confirm(`Gỡ kỹ năng ${safeMoveName} khỏi Pokemon này?`)
+        if (!confirmed) return
+
+        try {
+            setRemovingSkillName(safeMoveName)
+            const data = await gameApi.removePokemonSkill(id, { moveName: safeMoveName })
+            setPokemon((prev) => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    moves: Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves,
+                    movePpState: Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState,
+                }
+            })
+            setFeatureNotice(data?.message || `Đã gỡ kỹ năng ${safeMoveName}.`)
+        } catch (err) {
+            setFeatureNotice(err.message || 'Gỡ kỹ năng thất bại.')
+        } finally {
+            setRemovingSkillName('')
         }
     }
 
@@ -393,7 +419,7 @@ export default function PokemonInfoPage() {
                         </div>
 
                         {isOwnerViewing && (
-                            <div className="p-2 bg-slate-50 border-t border-blue-200 text-center">
+                            <div className="p-2 bg-slate-50 border-t border-blue-200 text-center space-y-2">
                                 <button
                                     type="button"
                                     onClick={openSkillModal}
@@ -401,6 +427,21 @@ export default function PokemonInfoPage() {
                                 >
                                     Học Kỹ Năng Từ Kho
                                 </button>
+                                {currentMoves.length > 0 && (
+                                    <div className="flex flex-wrap justify-center gap-1">
+                                        {currentMoves.map((moveName, index) => (
+                                            <button
+                                                key={`${moveName}-${index}-remove`}
+                                                type="button"
+                                                onClick={() => handleRemoveSkill(moveName)}
+                                                disabled={removingSkillName === moveName}
+                                                className="px-2 py-1 text-[11px] font-bold rounded bg-white border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                {removingSkillName === moveName ? 'Đang gỡ...' : `Gỡ ${moveName}`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

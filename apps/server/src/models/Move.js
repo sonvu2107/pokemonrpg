@@ -20,6 +20,7 @@ export const POKEMON_RARITIES = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 export const MOVE_LEARN_SCOPES = [
     'all',
+    'move_type',
     'type',
     'species',
     'rarity',

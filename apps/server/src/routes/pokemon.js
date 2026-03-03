@@ -28,6 +28,18 @@ const normalizeStringSet = (values) => new Set(
         .filter(Boolean)
 )
 
+const toDisplayMovePpState = (entries = []) => (Array.isArray(entries) ? entries : [])
+    .map((entry) => {
+        const moveName = String(entry?.moveName || '').trim()
+        const maxPp = Math.max(1, Number(entry?.maxPp || 1))
+        return {
+            moveName,
+            currentPp: maxPp,
+            maxPp,
+        }
+    })
+    .filter((entry) => entry.moveName)
+
 const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
     const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
     const speciesId = String(pokemonSpecies?._id || '').trim()
@@ -35,6 +47,17 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
     const speciesRarity = String(pokemonSpecies?.rarity || '').trim().toLowerCase()
 
     if (learnScope === 'all') {
+        return { canLearn: true, reason: '' }
+    }
+
+    if (learnScope === 'move_type') {
+        const moveType = String(move?.type || '').trim().toLowerCase()
+        if (!moveType || !speciesTypes.has(moveType)) {
+            return {
+                canLearn: false,
+                reason: 'Kỹ năng này chỉ học được bởi Pokemon cùng hệ với kỹ năng',
+            }
+        }
         return { canLearn: true, reason: '' }
     }
 
@@ -274,7 +297,7 @@ router.get('/:id', async (req, res) => {
         const responseData = {
             ...userPokemon,
             moves: mergedMoves,
-            movePpState,
+            movePpState: toDisplayMovePpState(movePpState),
             stats: {
                 ...stats,
                 maxHp,
@@ -588,7 +611,7 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             pokemon: {
                 _id: userPokemon._id,
                 moves: userPokemon.moves,
-                movePpState: userPokemon.movePpState,
+                movePpState: toDisplayMovePpState(userPokemon.movePpState),
             },
             taughtMove: {
                 _id: move._id,
@@ -615,6 +638,85 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             }
         }
         console.error('POST /api/pokemon/:id/teach-skill error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/pokemon/:id/remove-skill (protected)
+router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const rawMoveName = String(req.body?.moveName || '').trim()
+        const rawMoveIndex = req.body?.moveIndex
+
+        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+            .populate('pokemonId', 'levelUpMoves')
+
+        if (!userPokemon) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
+        }
+
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: userPokemon.pokemonId,
+            level: userPokemon.level,
+        })
+
+        const currentMoves = Array.isArray(userPokemon.moves)
+            ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
+            : []
+
+        if (currentMoves.length <= 1) {
+            return res.status(400).json({ ok: false, message: 'Pokemon phải giữ lại ít nhất 1 kỹ năng' })
+        }
+
+        let moveIndex = -1
+        if (rawMoveName) {
+            const targetKey = normalizeMoveName(rawMoveName)
+            moveIndex = currentMoves.findIndex((entry) => normalizeMoveName(entry) === targetKey)
+        } else if (rawMoveIndex !== undefined && rawMoveIndex !== null && rawMoveIndex !== '') {
+            const parsed = Number.parseInt(rawMoveIndex, 10)
+            if (Number.isInteger(parsed)) {
+                moveIndex = parsed
+            }
+        }
+
+        if (moveIndex < 0 || moveIndex >= currentMoves.length) {
+            return res.status(400).json({ ok: false, message: 'Không tìm thấy kỹ năng cần gỡ' })
+        }
+
+        const moveName = currentMoves[moveIndex]
+        const levelLearnedMoves = buildMovesForLevel(userPokemon.pokemonId, userPokemon.level)
+        const defaultMoveSet = new Set(levelLearnedMoves.map((entry) => normalizeMoveName(entry)))
+
+        if (defaultMoveSet.has(normalizeMoveName(moveName))) {
+            return res.status(400).json({ ok: false, message: 'Không thể gỡ kỹ năng học theo cấp độ mặc định' })
+        }
+
+        const nextMoves = currentMoves.filter((_, index) => index !== moveIndex)
+        const removeKey = normalizeMoveName(moveName)
+        const nextMovePpState = (Array.isArray(userPokemon.movePpState) ? userPokemon.movePpState : [])
+            .filter((entry) => normalizeMoveName(entry?.moveName) !== removeKey)
+
+        userPokemon.moves = nextMoves
+        userPokemon.movePpState = nextMovePpState
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: userPokemon.pokemonId,
+            level: userPokemon.level,
+        })
+        await userPokemon.save()
+
+        res.json({
+            ok: true,
+            message: `${userPokemon.nickname || 'Pokemon'} đã gỡ kỹ năng ${moveName}`,
+            pokemon: {
+                _id: userPokemon._id,
+                moves: userPokemon.moves,
+                movePpState: toDisplayMovePpState(userPokemon.movePpState),
+            },
+            removedMove: moveName,
+        })
+    } catch (error) {
+        console.error('POST /api/pokemon/:id/remove-skill error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })

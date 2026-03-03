@@ -63,22 +63,31 @@ const buildMovesForLevel = (pokemon, level) => {
 const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
     const explicit = (Array.isArray(moves) ? moves : [])
         .map((entry) => {
-            if (typeof entry === 'string') return entry
-            return String(entry?.name || entry?.moveName || '').trim()
+            if (typeof entry === 'string') {
+                const name = String(entry || '').trim()
+                return name ? { name } : null
+            }
+
+            const name = String(entry?.name || entry?.moveName || '').trim()
+            if (!name) return null
+
+            return {
+                ...entry,
+                name,
+            }
         })
-        .map((entry) => String(entry || '').trim())
         .filter(Boolean)
 
     if (explicit.length >= 4) return explicit.slice(0, 4)
 
     const merged = [...explicit]
-    const knownSet = new Set(explicit.map((entry) => normalizeMoveNameKey(entry)))
+    const knownSet = new Set(explicit.map((entry) => normalizeMoveNameKey(entry?.name || '')))
     const fallback = buildMovesForLevel(pokemon, level)
 
     for (const moveName of fallback) {
         const key = normalizeMoveNameKey(moveName)
         if (!key || knownSet.has(key)) continue
-        merged.push(moveName)
+        merged.push({ name: moveName })
         knownSet.add(key)
         if (merged.length >= 4) break
     }
@@ -94,7 +103,11 @@ const normalizeMoveList = (moves = []) => {
                 ? entry
                 : String(entry?.name || entry?.moveName || '').trim()
             if (!name) return null
-            const type = normalizeMoveType(name)
+            const type = String(entry?.type || '').trim().toLowerCase() || normalizeMoveType(name)
+            const powerRaw = Number(entry?.power)
+            const power = Number.isFinite(powerRaw) && powerRaw > 0
+                ? Math.floor(powerRaw)
+                : inferMovePower(name)
             const currentPpRaw = Number(entry?.currentPp ?? entry?.pp)
             const maxPpRaw = Number(entry?.maxPp)
             const defaultPp = Math.max(1, Math.floor(Number(entry?.pp) || 10))
@@ -106,7 +119,7 @@ const normalizeMoveList = (moves = []) => {
                 id: `${name}-${index}`,
                 name,
                 type,
-                power: inferMovePower(name),
+                power,
                 currentPp,
                 maxPp,
             }
@@ -319,7 +332,10 @@ const ActiveBattleView = ({
                                             {move.currentPp}/{move.maxPp} PP
                                         </div>
                                     </div>
-                                    <div className="text-xs font-bold">{move.power}</div>
+                                    <div className="text-[11px] font-bold text-right leading-tight">
+                                        <div className="text-slate-500 uppercase">Pow</div>
+                                        <div>{move.power}</div>
+                                    </div>
                                 </button>
                             )
                         })}

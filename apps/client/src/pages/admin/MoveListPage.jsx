@@ -58,6 +58,9 @@ const POKEMON_RARITY_LABELS = {
 
 const describeLearnScope = (move) => {
     const scope = String(move?.learnScope || 'all').toLowerCase()
+    if (scope === 'move_type') {
+        return 'Tự động theo hệ của kỹ năng'
+    }
     if (scope === 'type') {
         const types = Array.isArray(move?.allowedTypes) ? move.allowedTypes : []
         if (types.length === 0) return 'Theo hệ (chưa cấu hình)'

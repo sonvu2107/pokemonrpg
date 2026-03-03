@@ -1484,10 +1484,6 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
         const attackerSpecies = activePokemon?.pokemonId || {}
-        await syncUserPokemonMovesAndPp(activePokemon, {
-            pokemonSpecies: attackerSpecies,
-            level: attackerLevel,
-        })
         const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves, attackerSpecies, attackerLevel)
         const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
 
@@ -1520,21 +1516,25 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let movePriority = resolveMovePriority(moveDoc, move)
         let moveCriticalChance = resolveMoveCriticalChance(moveDoc, move)
 
-        const movePpState = Array.isArray(activePokemon.movePpState)
-            ? activePokemon.movePpState.map((entry) => ({
-                moveName: String(entry?.moveName || '').trim(),
-                currentPp: Math.max(0, Math.floor(Number(entry?.currentPp) || 0)),
-                maxPp: Math.max(1, Math.floor(Number(entry?.maxPp) || 1)),
-            }))
-            : []
-
-        const selectedMovePpIndex = movePpState.findIndex((entry) => normalizeMoveName(entry.moveName) === normalizeMoveName(selectedMoveName))
         const isStruggleMove = normalizeMoveName(selectedMoveName) === 'struggle'
         let consumedMovePp = 0
+        let selectedMoveCurrentPp = 0
+        let selectedMoveMaxPp = 0
+        let playerMovePpStatePayload = []
 
         if (!isStruggleMove) {
-            const selectedMovePpEntry = selectedMovePpIndex >= 0 ? movePpState[selectedMovePpIndex] : null
-            const currentPp = Number(selectedMovePpEntry?.currentPp || 0)
+            const fallbackMaxPpRaw = Number(moveDoc?.pp)
+            const payloadMaxPpRaw = Number(move?.maxPp)
+            const maxPp = Number.isFinite(payloadMaxPpRaw) && payloadMaxPpRaw > 0
+                ? Math.max(1, Math.floor(payloadMaxPpRaw))
+                : (Number.isFinite(fallbackMaxPpRaw) && fallbackMaxPpRaw > 0
+                    ? Math.max(1, Math.floor(fallbackMaxPpRaw))
+                    : 10)
+
+            const clientReportedPpRaw = Number(move?.currentPp ?? move?.pp)
+            let currentPp = Number.isFinite(clientReportedPpRaw)
+                ? Math.max(0, Math.min(maxPp, Math.floor(clientReportedPpRaw)))
+                : maxPp
 
             if (currentPp <= 0) {
                 moveFallbackReason = 'OUT_OF_PP'
@@ -1547,16 +1547,16 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 movePriority = 0
                 moveCriticalChance = 0.0625
             } else {
-                movePpState[selectedMovePpIndex] = {
-                    ...selectedMovePpEntry,
-                    currentPp: currentPp - 1,
-                }
+                selectedMoveMaxPp = maxPp
+                selectedMoveCurrentPp = Math.max(0, currentPp - 1)
+                playerMovePpStatePayload = [{
+                    moveName: selectedMoveName,
+                    currentPp: selectedMoveCurrentPp,
+                    maxPp,
+                }]
                 consumedMovePp = 1
             }
         }
-
-        activePokemon.movePpState = movePpState
-        await activePokemon.save()
 
         const attackerBaseStats = attackerSpecies.baseStats || {}
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
@@ -1862,6 +1862,8 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     stabMultiplier: playerStabMultiplier,
                     power: resolvedPower,
                     ppCost: consumedMovePp,
+                    currentPp: normalizeMoveName(selectedMoveName) === 'struggle' ? 99 : selectedMoveCurrentPp,
+                    maxPp: normalizeMoveName(selectedMoveName) === 'struggle' ? 99 : selectedMoveMaxPp,
                     fallbackReason: moveFallbackReason,
                     fallbackFrom: moveFallbackFrom,
                 },
@@ -1870,7 +1872,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
                     currentHp: resultingPlayerHp,
                     maxHp: playerMaxHp,
-                    movePpState: activePokemon.movePpState,
+                    movePpState: playerMovePpStatePayload,
                 },
                 opponent: trainerState,
                 counterAttack,

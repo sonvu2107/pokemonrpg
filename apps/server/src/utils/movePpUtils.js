@@ -53,7 +53,7 @@ export const buildMoveLookupByName = async (moveNames = []) => {
     }
 
     const docs = await Move.find({ nameLower: { $in: normalizedKeys } })
-        .select('name nameLower pp')
+        .select('name nameLower pp type category power accuracy')
         .lean()
 
     const map = new Map()
