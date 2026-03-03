@@ -743,11 +743,18 @@ export function BattlePage() {
 
                     const sourceMoves = Array.isArray(targetSlot.moves) ? targetSlot.moves : []
                     const nextMoves = sourceMoves.map((entry) => {
-                        const name = typeof entry === 'string'
-                            ? String(entry || '').trim()
-                            : String(entry?.name || entry?.moveName || '').trim()
+                        const baseMove = typeof entry === 'string'
+                            ? { name: String(entry || '').trim() }
+                            : { ...(entry || {}) }
+                        const name = String(baseMove?.name || baseMove?.moveName || '').trim()
                         const key = name.toLowerCase()
-                        return moveMap.get(key) || entry
+                        const ppPatch = moveMap.get(key)
+                        if (!ppPatch) return baseMove
+                        return {
+                            ...baseMove,
+                            ...ppPatch,
+                            name: ppPatch.name || baseMove.name,
+                        }
                     })
 
                     nextParty[resolvedActiveIndex] = {
