@@ -180,6 +180,19 @@ router.get('/skills', async (req, res) => {
         const type = String(req.query.type || '').trim().toLowerCase()
         const category = String(req.query.category || '').trim().toLowerCase()
         const rarity = String(req.query.rarity || '').trim().toLowerCase()
+        const sort = String(req.query.sort || '').trim().toLowerCase()
+
+        const sortOptions = {
+            price_asc: { shopPrice: 1, nameLower: 1, _id: 1 },
+            price_desc: { shopPrice: -1, nameLower: 1, _id: 1 },
+            type_asc: { type: 1, nameLower: 1, _id: 1 },
+            type_desc: { type: -1, nameLower: 1, _id: 1 },
+            rarity_asc: { rarity: 1, nameLower: 1, _id: 1 },
+            rarity_desc: { rarity: -1, nameLower: 1, _id: 1 },
+            name_asc: { nameLower: 1, _id: 1 },
+            name_desc: { nameLower: -1, _id: 1 },
+        }
+        const sortQuery = sortOptions[sort] || sortOptions.price_asc
 
         const query = {
             isShopEnabled: true,
@@ -200,7 +213,7 @@ router.get('/skills', async (req, res) => {
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             Move.find(query)
                 .select('name type category power accuracy pp priority description imageUrl rarity shopPrice learnScope allowedTypes allowedRarities')
-                .sort({ shopPrice: 1, nameLower: 1, _id: 1 })
+                .sort(sortQuery)
                 .skip(skip)
                 .limit(limit)
                 .lean(),

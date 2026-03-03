@@ -236,6 +236,30 @@ export default function PokemonInfoPage() {
     const speciesTotal = Number(serverStats.speciesTotal) || 0
     const speciesRank = Number(serverStats.speciesRank)
     const totalPokemonInServer = Number(serverStats.totalPokemon) || 0
+    const pokemonTypes = Array.isArray(base?.types)
+        ? base.types.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
+        : []
+
+    const typeBadgeClass = {
+        normal: 'bg-slate-200 text-slate-700 border-slate-300',
+        fire: 'bg-red-100 text-red-700 border-red-200',
+        water: 'bg-blue-100 text-blue-700 border-blue-200',
+        electric: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+        grass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        ice: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+        fighting: 'bg-orange-100 text-orange-700 border-orange-200',
+        poison: 'bg-purple-100 text-purple-700 border-purple-200',
+        ground: 'bg-amber-100 text-amber-700 border-amber-200',
+        flying: 'bg-sky-100 text-sky-700 border-sky-200',
+        psychic: 'bg-pink-100 text-pink-700 border-pink-200',
+        bug: 'bg-lime-100 text-lime-700 border-lime-200',
+        rock: 'bg-stone-200 text-stone-700 border-stone-300',
+        ghost: 'bg-violet-100 text-violet-700 border-violet-200',
+        dragon: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+        dark: 'bg-slate-300 text-slate-800 border-slate-400',
+        steel: 'bg-zinc-200 text-zinc-700 border-zinc-300',
+        fairy: 'bg-rose-100 text-rose-700 border-rose-200',
+    }
 
     // Format rarity
     const rarityColor = {
@@ -304,6 +328,19 @@ export default function PokemonInfoPage() {
                             <span className={`bg-slate-100 px-2 py-0.5 rounded uppercase ${rarityColor}`}>
                                 {base.rarity.toUpperCase()}
                             </span>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                            {pokemonTypes.length > 0 ? pokemonTypes.map((type) => (
+                                <span
+                                    key={type}
+                                    className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${typeBadgeClass[type] || 'bg-slate-100 text-slate-700 border-slate-200'}`}
+                                >
+                                    {type}
+                                </span>
+                            )) : (
+                                <span className="text-[10px] text-slate-400">Chưa có dữ liệu hệ</span>
+                            )}
                         </div>
 
                         {/* Experience Bar? Optional */}

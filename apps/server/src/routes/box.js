@@ -77,11 +77,62 @@ router.get('/', async (req, res) => {
 
         const total = await UserPokemon.countDocuments(query)
 
-        const userPokemon = await UserPokemon.find(query)
-            .populate('pokemonId')
-            .sort(sortOptions)
-            .skip((pageNum - 1) * limitNum)
-            .limit(limitNum)
+        let userPokemon = []
+
+        if (sort === 'type') {
+            userPokemon = await UserPokemon.aggregate([
+                { $match: query },
+                {
+                    $lookup: {
+                        from: 'pokemons',
+                        localField: 'pokemonId',
+                        foreignField: '_id',
+                        as: 'pokemonId',
+                    },
+                },
+                {
+                    $unwind: {
+                        path: '$pokemonId',
+                        preserveNullAndEmptyArrays: true,
+                    },
+                },
+                {
+                    $addFields: {
+                        sortType: {
+                            $ifNull: [
+                                { $arrayElemAt: ['$pokemonId.types', 0] },
+                                'zzz',
+                            ],
+                        },
+                        sortName: {
+                            $ifNull: ['$pokemonId.nameLower', 'zzz'],
+                        },
+                    },
+                },
+                {
+                    $sort: {
+                        sortType: 1,
+                        sortName: 1,
+                        level: -1,
+                        _id: 1,
+                    },
+                },
+                { $skip: (pageNum - 1) * limitNum },
+                { $limit: limitNum },
+                {
+                    $project: {
+                        sortType: 0,
+                        sortName: 0,
+                    },
+                },
+            ])
+        } else {
+            userPokemon = await UserPokemon.find(query)
+                .populate('pokemonId')
+                .sort(sortOptions)
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum)
+        }
 
         res.json({
             pokemon: userPokemon,

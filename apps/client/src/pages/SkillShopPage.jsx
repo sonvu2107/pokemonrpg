@@ -84,6 +84,7 @@ export default function SkillShopPage() {
     const [typeFilter, setTypeFilter] = useState('all')
     const [categoryFilter, setCategoryFilter] = useState('all')
     const [rarityFilter, setRarityFilter] = useState('all')
+    const [sortBy, setSortBy] = useState('price_asc')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [buyingMoveId, setBuyingMoveId] = useState('')
@@ -94,8 +95,9 @@ export default function SkillShopPage() {
             type: typeFilter,
             category: categoryFilter,
             rarity: rarityFilter,
+            sort: sortBy,
         })
-    }, [typeFilter, categoryFilter, rarityFilter])
+    }, [typeFilter, categoryFilter, rarityFilter, sortBy])
 
     const availableTypes = useMemo(() => {
         const dynamicTypes = [...new Set(skills.map((skill) => skill.type).filter(Boolean))]
@@ -131,6 +133,9 @@ export default function SkillShopPage() {
             if (filters.rarity && filters.rarity !== 'all') {
                 params.rarity = filters.rarity
             }
+            if (filters.sort) {
+                params.sort = filters.sort
+            }
 
             const data = await gameApi.getShopSkills(params)
             setSkills(data.skills || [])
@@ -156,6 +161,7 @@ export default function SkillShopPage() {
             type: typeFilter,
             category: categoryFilter,
             rarity: rarityFilter,
+            sort: sortBy,
         })
     }
 
@@ -190,7 +196,7 @@ export default function SkillShopPage() {
                 <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                     <SectionHeader title="Skill Shop" />
 
-                    <div className="bg-blue-100/50 border-b border-blue-200 p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-3 md:gap-4">
+                    <div className="bg-blue-100/50 border-b border-blue-200 p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-5 gap-3 md:gap-4">
                         <div className="flex items-center gap-2">
                             <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[64px]">Hệ</label>
                             <select
@@ -241,6 +247,24 @@ export default function SkillShopPage() {
                                 <option value={5}>x5</option>
                                 <option value={10}>x10</option>
                                 <option value={20}>x20</option>
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[55px]">Sắp xếp</label>
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
+                            >
+                                <option value="price_asc">Giá tăng dần</option>
+                                <option value="price_desc">Giá giảm dần</option>
+                                <option value="type_asc">Hệ A-Z</option>
+                                <option value="type_desc">Hệ Z-A</option>
+                                <option value="name_asc">Tên A-Z</option>
+                                <option value="name_desc">Tên Z-A</option>
+                                <option value="rarity_asc">Độ hiếm tăng</option>
+                                <option value="rarity_desc">Độ hiếm giảm</option>
                             </select>
                         </div>
                     </div>
