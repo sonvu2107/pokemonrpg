@@ -265,8 +265,20 @@ export default function MapFormPage() {
     const totalSpecialWeight = formData.specialPokemonConfigs
         .reduce((sum, entry) => sum + (Number(entry.weight) > 0 ? Number(entry.weight) : 0), 0)
 
+    const clampRate = (value) => Math.max(0, Math.min(1, Number(value) || 0))
+    const formatPercent = (rate) => `${(Math.max(0, Number(rate) || 0) * 100).toFixed(3).replace(/\.?0+$/, '')}%`
+    const hasSpecialPokemonPool = formData.specialPokemonConfigs.length > 0
+    const encounterRatePreview = clampRate(formData.encounterRate)
+    const specialPokemonRatePreview = clampRate(formData.specialPokemonEncounterRate)
+    const specialEncounterPerSearchRate = hasSpecialPokemonPool
+        ? encounterRatePreview * specialPokemonRatePreview
+        : 0
+
     const selectedSpecialPokemon = formData.specialPokemonConfigs
         .map((entry) => {
+            const weight = Number(entry.weight) > 0 ? Number(entry.weight) : 0
+            const relativePoolRate = totalSpecialWeight > 0 ? (weight / totalSpecialWeight) : 0
+            const perSearchRate = specialEncounterPerSearchRate * relativePoolRate
             const pokemon = pokemonLookup[entry.pokemonId] || null
             if (!pokemon) {
                 return {
@@ -277,7 +289,9 @@ export default function MapFormPage() {
                     formName: normalizeFormId(entry.formId),
                     formImageUrl: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png',
                     key: `${entry.pokemonId}:${normalizeFormId(entry.formId)}`,
-                    weight: Number(entry.weight) > 0 ? Number(entry.weight) : 0,
+                    weight,
+                    relativePoolRate,
+                    perSearchRate,
                     isMissing: true,
                 }
             }
@@ -299,7 +313,9 @@ export default function MapFormPage() {
                 formName: resolvedForm?.formName || resolvedFormId,
                 formImageUrl: imageUrl,
                 key: `${pokemon._id}:${resolvedFormId}`,
-                weight: Number(entry.weight) > 0 ? Number(entry.weight) : 0,
+                weight,
+                relativePoolRate,
+                perSearchRate,
                 isMissing: false,
             }
         })
@@ -507,6 +523,9 @@ export default function MapFormPage() {
                                         className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Ví dụ: 0.6 = 60% gặp</p>
+                                    <p className="text-xs text-blue-700 mt-1 font-semibold">
+                                        Preview: {formatPercent(encounterRatePreview)} mỗi lượt tìm sẽ gặp Pokemon.
+                                    </p>
                                 </div>
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
@@ -596,6 +615,14 @@ export default function MapFormPage() {
                                     <p className="text-xs text-slate-500 mt-1">
                                         Ví dụ: 0.2 = 20% số lần gặp Pokemon sẽ lấy từ danh sách đặc biệt.
                                     </p>
+                                    <p className="text-xs text-blue-700 mt-1 font-semibold">
+                                        Preview: {formatPercent(specialEncounterPerSearchRate)} mỗi lượt tìm sẽ gặp Pokemon đặc biệt.
+                                    </p>
+                                    {!hasSpecialPokemonPool && (
+                                        <p className="text-xs text-amber-600 mt-1">
+                                            Chưa chọn Pokemon đặc biệt nên tỉ lệ thực tế hiện tại vẫn là 0%.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-3">
@@ -635,7 +662,10 @@ export default function MapFormPage() {
                                                             className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] text-center font-semibold"
                                                         />
                                                         <div className="text-[10px] text-center text-violet-700 font-bold">
-                                                            {totalSpecialWeight > 0 ? ((pokemon.weight / totalSpecialWeight) * 100).toFixed(1) : '0.0'}%
+                                                            Pool: {formatPercent(pokemon.relativePoolRate)}
+                                                        </div>
+                                                        <div className="text-[10px] text-center text-emerald-700 font-bold">
+                                                            Mỗi lượt tìm: {formatPercent(pokemon.perSearchRate)}
                                                         </div>
                                                     </div>
                                                     <button

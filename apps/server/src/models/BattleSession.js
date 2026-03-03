@@ -17,6 +17,12 @@ const battleSessionOpponentSchema = new mongoose.Schema(
         },
         currentHp: { type: Number, required: true, min: 0 },
         maxHp: { type: Number, required: true, min: 1 },
+        status: { type: String, default: '', trim: true },
+        statusTurns: { type: Number, default: 0, min: 0 },
+        statStages: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        damageGuards: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        wasDamagedLastTurn: { type: Boolean, default: false },
+        volatileState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     },
     { _id: false }
 )
@@ -39,6 +45,13 @@ const battleSessionSchema = new mongoose.Schema(
         playerPokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserPokemon', default: null },
         playerCurrentHp: { type: Number, default: 0, min: 0 },
         playerMaxHp: { type: Number, default: 1, min: 1 },
+        playerStatus: { type: String, default: '', trim: true },
+        playerStatusTurns: { type: Number, default: 0, min: 0 },
+        playerStatStages: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        playerDamageGuards: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        playerWasDamagedLastTurn: { type: Boolean, default: false },
+        playerVolatileState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        fieldState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         expiresAt: { type: Date, required: true },
     },
     { timestamps: true }

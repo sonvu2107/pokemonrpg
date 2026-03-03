@@ -18,6 +18,8 @@ const formatDate = (value) => {
     })
 }
 
+const SELL_POKEMON_MODAL_PAGE_SIZE = 24
+
 export default function ShopSellPage() {
     const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
     const [availablePokemon, setAvailablePokemon] = useState([])
@@ -36,6 +38,9 @@ export default function ShopSellPage() {
     const [submitting, setSubmitting] = useState(false)
     const [cancellingId, setCancellingId] = useState('')
     const [loadedAvailable, setLoadedAvailable] = useState(false)
+    const [showPokemonPickerModal, setShowPokemonPickerModal] = useState(false)
+    const [pokemonPickerSearchTerm, setPokemonPickerSearchTerm] = useState('')
+    const [pokemonPickerPage, setPokemonPickerPage] = useState(1)
 
     const activePage = pagination?.active?.page || 1
     const soldPage = pagination?.sold?.page || 1
@@ -48,6 +53,37 @@ export default function ShopSellPage() {
         () => availablePokemon.find((entry) => entry.id === selectedPokemonId) || null,
         [availablePokemon, selectedPokemonId]
     )
+
+    const pokemonPickerRows = useMemo(() => {
+        const normalizedSearch = String(pokemonPickerSearchTerm || '').trim().toLowerCase()
+        if (!normalizedSearch) return availablePokemon
+
+        return availablePokemon.filter((entry) => {
+            const pokemonName = String(entry?.pokemonName || '').toLowerCase()
+            const speciesName = String(entry?.speciesName || '').toLowerCase()
+            const formName = String(entry?.formName || '').toLowerCase()
+            const formId = String(entry?.formId || '').toLowerCase()
+            return pokemonName.includes(normalizedSearch)
+                || speciesName.includes(normalizedSearch)
+                || formName.includes(normalizedSearch)
+                || formId.includes(normalizedSearch)
+        })
+    }, [availablePokemon, pokemonPickerSearchTerm])
+
+    const pokemonPickerTotal = pokemonPickerRows.length
+    const pokemonPickerTotalPages = Math.max(1, Math.ceil(pokemonPickerTotal / SELL_POKEMON_MODAL_PAGE_SIZE))
+    const normalizedPokemonPickerPage = Math.min(pokemonPickerPage, pokemonPickerTotalPages)
+    const pokemonPickerPageStartIndex = (normalizedPokemonPickerPage - 1) * SELL_POKEMON_MODAL_PAGE_SIZE
+    const pokemonPickerPageRows = pokemonPickerRows.slice(
+        pokemonPickerPageStartIndex,
+        pokemonPickerPageStartIndex + SELL_POKEMON_MODAL_PAGE_SIZE
+    )
+    const pokemonPickerPageStart = pokemonPickerTotal > 0
+        ? pokemonPickerPageStartIndex + 1
+        : 0
+    const pokemonPickerPageEnd = pokemonPickerTotal > 0
+        ? Math.min(pokemonPickerTotal, pokemonPickerPageStartIndex + SELL_POKEMON_MODAL_PAGE_SIZE)
+        : 0
 
     const loadSellData = async (nextActivePage = 1, nextSoldPage = 1, options = {}) => {
         try {
@@ -125,6 +161,17 @@ export default function ShopSellPage() {
         }
     }
 
+    const handleOpenPokemonPickerModal = () => {
+        setPokemonPickerSearchTerm('')
+        setPokemonPickerPage(1)
+        setShowPokemonPickerModal(true)
+    }
+
+    const handleSelectPokemonFromModal = (pokemonId) => {
+        setSelectedPokemonId(String(pokemonId || '').trim())
+        setShowPokemonPickerModal(false)
+    }
+
     const renderPageButtons = (type) => {
         const pageInfo = pagination?.[type] || { page: 1, totalPages: 1 }
         const totalPages = pageInfo.totalPages || 1
@@ -182,18 +229,15 @@ export default function ShopSellPage() {
                         ) : (
                             <>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <select
-                                        value={selectedPokemonId}
-                                        onChange={(e) => setSelectedPokemonId(e.target.value)}
-                                        className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-blue-500"
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenPokemonPickerModal}
+                                        className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-700 bg-white text-left focus:outline-none focus:border-blue-500 hover:bg-slate-50"
                                     >
-                                        <option value="">Chọn Pokemon muốn bán</option>
-                                        {availablePokemon.map((entry) => (
-                                            <option key={entry.id} value={entry.id}>
-                                                {entry.pokemonName} (Lv.{entry.level})
-                                            </option>
-                                        ))}
-                                    </select>
+                                        {selectedPokemon
+                                            ? `${selectedPokemon.pokemonName} (Lv.${selectedPokemon.level})`
+                                            : 'Chọn Pokemon muốn bán'}
+                                    </button>
 
                                     <input
                                         type="number"
@@ -215,6 +259,9 @@ export default function ShopSellPage() {
                                         <div className="text-sm">
                                             <div className="font-bold text-slate-800">{selectedPokemon.pokemonName}</div>
                                             <div className="text-slate-600">Loài: {selectedPokemon.speciesName}</div>
+                                            {selectedPokemon.formId && selectedPokemon.formId !== 'normal' && (
+                                                <div className="text-sky-700 font-bold text-xs uppercase">Form: {selectedPokemon.formName || selectedPokemon.formId}</div>
+                                            )}
                                             <div className="text-slate-600">Cấp độ: {selectedPokemon.level}</div>
                                         </div>
                                     </div>
@@ -263,6 +310,9 @@ export default function ShopSellPage() {
                                                     </td>
                                                     <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
                                                         <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
+                                                        {listing.formId && listing.formId !== 'normal' && (
+                                                            <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
+                                                        )}
                                                         <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
                                                         <div className="text-[10px] sm:text-xs text-slate-500">Đăng ngày: {formatDate(listing.listedAt)}</div>
                                                     </td>
@@ -314,6 +364,9 @@ export default function ShopSellPage() {
                                             </td>
                                             <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
                                                 <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
+                                                {listing.formId && listing.formId !== 'normal' && (
+                                                    <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
+                                                )}
                                                 <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
                                                 <div className="text-[10px] sm:text-xs text-slate-500">Bán ngày: {formatDate(listing.soldAt || listing.listedAt)}</div>
                                             </td>
@@ -332,6 +385,114 @@ export default function ShopSellPage() {
                     {renderPageButtons('sold')}
                 </section>
             </div>
+
+            {showPokemonPickerModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+                    onClick={() => setShowPokemonPickerModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-lg font-bold text-slate-800">Chọn Pokemon để đăng bán</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowPokemonPickerModal(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokemon</label>
+                                <input
+                                    type="text"
+                                    value={pokemonPickerSearchTerm}
+                                    onChange={(event) => {
+                                        setPokemonPickerSearchTerm(event.target.value)
+                                        setPokemonPickerPage(1)
+                                    }}
+                                    placeholder="Nhập tên Pokemon"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                                />
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                {pokemonPickerPageRows.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không có Pokemon phù hợp</div>
+                                ) : (
+                                    pokemonPickerPageRows.map((entry) => {
+                                        const isSelected = entry.id === selectedPokemonId
+                                        return (
+                                            <button
+                                                key={entry.id}
+                                                type="button"
+                                                onClick={() => handleSelectPokemonFromModal(entry.id)}
+                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                                            >
+                                                <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                    <img
+                                                        src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                        alt={entry.speciesName}
+                                                        className="w-8 h-8 object-contain pixelated"
+                                                    />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="font-semibold text-slate-700 truncate">{entry.pokemonName}</span>
+                                                        <span className="text-xs text-slate-500">Lv.{entry.level}</span>
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 truncate mt-0.5">{entry.speciesName}</div>
+                                                    {entry.formId && entry.formId !== 'normal' && (
+                                                        <div className="mt-1">
+                                                            <span className="px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide border bg-blue-100 text-blue-700 border-blue-200">
+                                                                {entry.formName || entry.formId}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>
+                                    Hiển thị {pokemonPickerPageStart}-{pokemonPickerPageEnd} / {pokemonPickerTotal} Pokemon
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPokemonPickerPage((prev) => Math.max(1, prev - 1))}
+                                        disabled={normalizedPokemonPickerPage <= 1}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Trước
+                                    </button>
+                                    <span className="font-semibold text-slate-600">
+                                        Trang {normalizedPokemonPickerPage}/{pokemonPickerTotalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPokemonPickerPage((prev) => Math.min(pokemonPickerTotalPages, prev + 1))}
+                                        disabled={normalizedPokemonPickerPage >= pokemonPickerTotalPages}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

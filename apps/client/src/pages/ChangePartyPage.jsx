@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
@@ -14,7 +15,6 @@ export default function ChangePartyPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
-    // For refreshing data
     const [refreshKey, setRefreshKey] = useState(0)
 
     useEffect(() => {
@@ -39,7 +39,7 @@ export default function ChangePartyPage() {
         if (fromIndex === toIndex) return
         try {
             await gameApi.swapParty(fromIndex, toIndex)
-            setRefreshKey(k => k + 1) // Reload to get synced state
+            setRefreshKey(k => k + 1)
         } catch (err) {
             alert(err.message)
         }
@@ -55,7 +55,6 @@ export default function ChangePartyPage() {
         }
     }
 
-    // Slots names as per screenshot
     const slotNames = [
         'Vị Trí 1', 'Vị Trí 2', 'Vị Trí 3',
         'Vị Trí 4', 'Vị Trí 5', 'Vị Trí 6'
@@ -78,7 +77,6 @@ export default function ChangePartyPage() {
                 <SectionHeader title="Thay Đổi Đội Hình" />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border-blue-200">
-                    {/* Top Row: 0, 1, 2 */}
                     {[0, 1, 2].map(index =>
                         <PartySlot
                             key={index}
@@ -91,7 +89,6 @@ export default function ChangePartyPage() {
                     )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border-t border-blue-200">
-                    {/* Bottom Row: 3, 4, 5 */}
                     {[3, 4, 5].map(index =>
                         <PartySlot
                             key={index}
@@ -136,7 +133,13 @@ function PartySlot({ index, data, label, onSwap, onRemove }) {
     }
 
     const species = data.pokemonId || {}
-    const sprite = data.isShiny ? (species.sprites?.shiny || species.imageUrl) : (species.imageUrl || species.sprites?.normal)
+    const { formId, formName } = resolvePokemonForm(species, data.formId)
+    const sprite = resolvePokemonSprite({
+        species,
+        formId,
+        isShiny: Boolean(data.isShiny),
+        fallback: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
+    })
 
     return (
         <div className="p-4 flex flex-col items-center min-h-[200px] bg-white transition-colors hover:bg-blue-50 text-center relative group">
@@ -144,7 +147,6 @@ function PartySlot({ index, data, label, onSwap, onRemove }) {
                 {label}
             </div>
 
-            {/* Remove Button (X) */}
             <button
                 onClick={() => onRemove(data._id)}
                 className="absolute top-12 right-2 text-slate-300 hover:text-red-500 font-bold p-1 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -168,13 +170,17 @@ function PartySlot({ index, data, label, onSwap, onRemove }) {
             <div className="text-sm font-bold text-blue-900">
                 {data.nickname || species.name}
             </div>
+            {formId !== 'normal' && (
+                <div className="text-[10px] font-bold text-sky-700 uppercase">
+                    {formName}
+                </div>
+            )}
             <div className="text-xs font-bold text-slate-600">
                 Level: {data.level}
             </div>
             <div className="text-xs text-slate-500">
                 EXP: {data.experience}/{250 + Math.max(0, data.level - 1) * 100}
             </div>
-            {/* HP would need actual stats calculation or stored currentHp */}
             <div className="text-xs text-slate-500">
                 HP: {data.stats ? `${data.stats.hp}/${data.stats.hp}` : '?/?'}
             </div>

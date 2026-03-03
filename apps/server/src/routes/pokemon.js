@@ -22,6 +22,8 @@ const toBoolean = (value) => {
     return ['1', 'true', 'yes', 'on'].includes(normalized)
 }
 
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
 const normalizeStringSet = (values) => new Set(
     (Array.isArray(values) ? values : [])
         .map((entry) => String(entry || '').trim().toLowerCase())
@@ -128,12 +130,39 @@ const resolveEvolutionRule = (species, currentFormId) => {
     return null
 }
 
-const resolvePokemonSprite = (pokemonLike) => {
-    if (!pokemonLike) return ''
+const resolvePokemonFormDisplay = (pokemonLike, requestedFormId = null) => {
+    if (!pokemonLike) {
+        return {
+            form: null,
+            formId: 'normal',
+            formName: 'normal',
+            sprite: '',
+        }
+    }
+
     const forms = Array.isArray(pokemonLike.forms) ? pokemonLike.forms : []
-    const defaultFormId = String(pokemonLike.defaultFormId || 'normal').trim() || 'normal'
-    const defaultForm = forms.find((entry) => String(entry?.formId || '').trim() === defaultFormId) || null
-    return defaultForm?.sprites?.normal || defaultForm?.sprites?.icon || defaultForm?.imageUrl || pokemonLike.imageUrl || pokemonLike.sprites?.normal || pokemonLike.sprites?.icon || ''
+    const defaultFormId = normalizeFormId(pokemonLike.defaultFormId || 'normal')
+    const normalizedRequestedFormId = normalizeFormId(requestedFormId || defaultFormId)
+    let resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === normalizedRequestedFormId) || null
+    let resolvedFormId = normalizedRequestedFormId
+
+    if (!resolvedForm && forms.length > 0) {
+        resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId) || forms[0]
+        resolvedFormId = normalizeFormId(resolvedForm?.formId || defaultFormId)
+    }
+
+    return {
+        form: resolvedForm,
+        formId: resolvedFormId,
+        formName: String(resolvedForm?.formName || resolvedForm?.formId || resolvedFormId).trim(),
+        sprite: resolvedForm?.sprites?.normal
+            || resolvedForm?.sprites?.icon
+            || resolvedForm?.imageUrl
+            || pokemonLike.imageUrl
+            || pokemonLike.sprites?.normal
+            || pokemonLike.sprites?.icon
+            || '',
+    }
 }
 
 // GET /api/pokemon - Public master list (lightweight)
@@ -305,6 +334,7 @@ router.get('/:id', async (req, res) => {
             },
         }
 
+        const currentFormId = normalizeFormId(userPokemon.formId || basePokemon.defaultFormId || 'normal')
         const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)
         const minLevel = Number.isFinite(evolutionRule?.minLevel) ? evolutionRule.minLevel : null
         const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1
@@ -317,12 +347,17 @@ router.get('/:id', async (req, res) => {
                 .lean()
 
             if (target) {
+                const targetDisplay = resolvePokemonFormDisplay(target, currentFormId)
                 targetPokemon = {
                     _id: target._id,
                     name: target.name,
                     pokedexNumber: target.pokedexNumber,
+                    formId: targetDisplay.formId,
+                    formName: targetDisplay.formName,
+                    defaultFormId: target.defaultFormId || 'normal',
+                    forms: Array.isArray(target.forms) ? target.forms : [],
                     sprites: {
-                        normal: resolvePokemonSprite(target),
+                        normal: targetDisplay.sprite,
                     },
                 }
             }
@@ -335,12 +370,13 @@ router.get('/:id', async (req, res) => {
             .lean()
 
         if (previousSpecies) {
+            const previousDisplay = resolvePokemonFormDisplay(previousSpecies, currentFormId)
             previousPokemon = {
                 _id: previousSpecies._id,
                 name: previousSpecies.name,
                 pokedexNumber: previousSpecies.pokedexNumber,
                 sprites: {
-                    normal: resolvePokemonSprite(previousSpecies),
+                    normal: previousDisplay.sprite,
                 },
             }
         }

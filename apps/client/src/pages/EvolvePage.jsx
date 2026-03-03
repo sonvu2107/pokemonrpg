@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { api } from '../services/api'
 import { useToast } from '../context/ToastContext'
+import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 export default function EvolvePage() {
     const { id } = useParams()
@@ -152,10 +153,19 @@ export default function EvolvePage() {
     }
 
     const currentName = pokemon.nickname || pokemon.pokemonId?.name || 'Pokemon'
-    const currentSprite = pokemon.pokemonId?.sprites?.normal || pokemon.pokemonId?.imageUrl || ''
+    const currentSprite = resolvePokemonSprite({
+        species: pokemon.pokemonId || {},
+        formId: pokemon.formId,
+        isShiny: Boolean(pokemon.isShiny),
+    })
     const targetPokemon = pokemon.evolution?.targetPokemon || null
     const targetName = targetPokemon?.name || 'Chưa có'
-    const targetSprite = targetPokemon?.sprites?.normal || ''
+    const targetSprite = resolvePokemonSprite({
+        species: targetPokemon || {},
+        formId: pokemon.formId,
+        isShiny: false,
+        fallback: targetPokemon?.sprites?.normal || '',
+    })
     const evolutionLevel = pokemon.evolution?.evolutionLevel || null
     const canEvolve = Boolean(pokemon.evolution?.canEvolve)
 
@@ -173,9 +183,7 @@ export default function EvolvePage() {
                         Tiến Hóa Pokémon
                     </h1>
 
-                    {/* Evolution Stage - Always visible but styled differently when evolved */}
                     <div className="flex items-center justify-center gap-8 md:gap-16 py-8">
-                        {/* Current Form */}
                         <div className="flex flex-col items-center gap-3 group">
                             <div className="relative">
                                 <div className="w-24 h-24 md:w-32 md:h-32 bg-slate-100 rounded-full flex items-center justify-center shadow-inner border-4 border-white ring-2 ring-slate-100">
@@ -186,14 +194,9 @@ export default function EvolvePage() {
                                     />
                                 </div>
                             </div>
-                            {/* Hide name in success state if we strictly follow screenshot, but keeping it is usually better. 
-                                The screenshot has text BELOW the sprites saying 'Bulbasaur has evolved into Ivysaur'. 
-                                I'll keep names hidden or small? The screenshot shows icons only, then text below.
-                            */}
                             {!evolved && <span className="font-bold text-slate-600">{currentName}</span>}
                         </div>
 
-                        {/* Arrow - Hide when evolved if strictly matching simple view, or keep for flow */}
                         {!evolved && (
                             <div className="flex flex-col items-center gap-1 text-blue-300">
                                 <div className="flex gap-1 animate-pulse">
@@ -204,7 +207,6 @@ export default function EvolvePage() {
                             </div>
                         )}
 
-                        {/* Target Form */}
                         <div className="flex flex-col items-center gap-3">
                             <div className={`w-24 h-24 md:w-32 md:h-32 rounded-full flex items-center justify-center border-4 border-white ring-2 shadow-inner transition-all duration-500 ${evolved ? 'bg-yellow-50 ring-yellow-400 scale-110' : 'bg-slate-100 ring-slate-100'}`}>
                                 {targetSprite ? (
@@ -226,7 +228,6 @@ export default function EvolvePage() {
                             <p className="text-green-700 font-medium text-lg bg-green-50 inline-block px-6 py-2 rounded-full border border-green-100">
                                 <span className="font-bold">{currentName}</span> có thể tiến hóa thành <span className="font-bold">{targetName}</span>{evolutionLevel ? <> (mốc cấp <span className="font-bold">{evolutionLevel}</span>)</> : ''}.
                             </p>
-
                             <div>
                                 <button
                                     onClick={handleEvolve}
@@ -250,9 +251,6 @@ export default function EvolvePage() {
                             <p className="text-slate-800 font-medium text-xl">
                                 <span className="font-bold">{currentName}</span> đã tiến hóa thành <span className="font-bold text-blue-600">{targetName}</span>!
                             </p>
-
-                            {/* Optional: Add confetti or effect here? user just asked for UI match */}
-
                             <button
                                 onClick={() => navigate('/box')}
                                 className="px-6 py-2 border-2 border-slate-300 hover:border-slate-400 text-slate-600 font-bold rounded-lg transition-colors"

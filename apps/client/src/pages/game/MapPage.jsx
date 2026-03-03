@@ -482,7 +482,12 @@ export default function MapPage() {
                         {encounter && (
                             <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center animate-fadeIn z-20">
                                 <img
-                                    src={encounter.pokemon.imageUrl || encounter.pokemon.sprites?.front_default || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.pokemon.pokedexNumber}.png`}
+                                    src={encounter.pokemon.resolvedImageUrl
+                                        || encounter.pokemon.form?.imageUrl
+                                        || encounter.pokemon.form?.sprites?.normal
+                                        || encounter.pokemon.imageUrl
+                                        || encounter.pokemon.sprites?.front_default
+                                        || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.pokemon.pokedexNumber}.png`}
                                     alt={encounter.pokemon.name}
                                     className="w-32 h-32 animate-bounce drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]"
                                 />

@@ -25,6 +25,7 @@ import {
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 import { syncUserPokemonMovesAndPp } from '../utils/movePpUtils.js'
+import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
 
 
 
@@ -76,6 +77,19 @@ const normalizeTypeToken = (value = '') => String(value || '').trim().toLowerCas
 const normalizePokemonTypes = (types = []) => {
     const entries = Array.isArray(types) ? types : []
     return [...new Set(entries.map((entry) => normalizeTypeToken(entry)).filter(Boolean))]
+}
+
+const WEATHER_CHIP_IMMUNITY = {
+    hail: new Set(['ice']),
+    sandstorm: new Set(['rock', 'ground', 'steel']),
+}
+
+const isImmuneToWeatherChip = (weather = '', pokemonTypes = []) => {
+    const normalizedWeather = String(weather || '').trim().toLowerCase()
+    const immuneTypes = WEATHER_CHIP_IMMUNITY[normalizedWeather]
+    if (!immuneTypes) return true
+    const types = normalizePokemonTypes(pokemonTypes)
+    return types.some((type) => immuneTypes.has(type))
 }
 
 const resolveMoveCategory = (moveDoc, fallbackMove, resolvedPower) => {
@@ -165,6 +179,551 @@ const calcBattleDamage = ({ attackerLevel, movePower, attackStat, defenseStat, m
     return Math.max(1, Math.floor(base * modifier * randomFactor))
 }
 
+const normalizeEffectSpecs = (value) => (Array.isArray(value) ? value : [])
+
+const SUPPORTED_STAT_STAGE_KEYS = new Set(['atk', 'def', 'spatk', 'spdef', 'spd', 'acc', 'eva'])
+
+const STATUS_ALIASES = {
+    burn: 'burn',
+    burned: 'burn',
+    poison: 'poison',
+    poisoned: 'poison',
+    toxic: 'poison',
+    paralysis: 'paralyze',
+    paralyzed: 'paralyze',
+    paralyze: 'paralyze',
+    freeze: 'freeze',
+    frozen: 'freeze',
+    sleep: 'sleep',
+    asleep: 'sleep',
+    confuse: 'confuse',
+    confusion: 'confuse',
+    flinch: 'flinch',
+}
+
+const normalizeBattleStatus = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return ''
+    return STATUS_ALIASES[normalized] || ''
+}
+
+const DEFAULT_STATUS_TURN_RANGES = {
+    sleep: [1, 3],
+    freeze: [2, 4],
+    confuse: [2, 4],
+    flinch: [1, 1],
+}
+
+const normalizeStatusTurns = (value = 0) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return 0
+    return Math.max(0, Math.floor(parsed))
+}
+
+const clampGuardMultiplier = (value = 1) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return 1
+    return Math.max(0, Math.min(1, parsed))
+}
+
+const normalizeDamageGuardEntry = (value = null) => {
+    if (!value || typeof value !== 'object') return null
+    const turns = normalizeStatusTurns(value.turns)
+    if (turns <= 0) return null
+    return {
+        multiplier: clampGuardMultiplier(value.multiplier),
+        turns,
+    }
+}
+
+const normalizeDamageGuards = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const physical = normalizeDamageGuardEntry(source.physical)
+    const special = normalizeDamageGuardEntry(source.special)
+    return {
+        ...(physical ? { physical } : {}),
+        ...(special ? { special } : {}),
+    }
+}
+
+const mergeDamageGuards = (base = {}, patch = {}) => {
+    const current = normalizeDamageGuards(base)
+    const nextPatch = normalizeDamageGuards(patch)
+    return {
+        ...current,
+        ...nextPatch,
+    }
+}
+
+const decrementDamageGuards = (value = {}) => {
+    const current = normalizeDamageGuards(value)
+    const next = {}
+
+    if (current.physical && current.physical.turns > 1) {
+        next.physical = {
+            ...current.physical,
+            turns: current.physical.turns - 1,
+        }
+    }
+    if (current.special && current.special.turns > 1) {
+        next.special = {
+            ...current.special,
+            turns: current.special.turns - 1,
+        }
+    }
+
+    return next
+}
+
+const applyDamageGuardsToDamage = (damage = 0, category = 'physical', guards = {}) => {
+    const baseDamage = Math.max(0, Math.floor(Number(damage) || 0))
+    if (baseDamage <= 0) return 0
+    const normalizedCategory = String(category || '').trim().toLowerCase()
+    if (normalizedCategory !== 'physical' && normalizedCategory !== 'special') return baseDamage
+
+    const normalizedGuards = normalizeDamageGuards(guards)
+    const guard = normalizedGuards[normalizedCategory]
+    if (!guard || guard.turns <= 0) return baseDamage
+    return Math.max(0, Math.floor(baseDamage * clampGuardMultiplier(guard.multiplier)))
+}
+
+const clampFraction = (value, fallback = 0) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return fallback
+    return Math.max(0, Math.min(1, parsed))
+}
+
+const normalizeVolatileState = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const rechargeTurns = normalizeStatusTurns(source.rechargeTurns)
+    const bindTurns = normalizeStatusTurns(source.bindTurns)
+    const bindFraction = clampFraction(source.bindFraction, 1 / 16)
+    const lockedRepeatMoveName = String(source.lockedRepeatMoveName || '').trim()
+    const statusShieldTurns = normalizeStatusTurns(source.statusShieldTurns)
+    const statDropShieldTurns = normalizeStatusTurns(source.statDropShieldTurns)
+    const healBlockTurns = normalizeStatusTurns(source.healBlockTurns)
+    const critBlockTurns = normalizeStatusTurns(source.critBlockTurns)
+    const statusMoveBlockTurns = normalizeStatusTurns(source.statusMoveBlockTurns)
+    const pendingAlwaysCrit = Boolean(source.pendingAlwaysCrit)
+    const pendingNeverMiss = Boolean(source.pendingNeverMiss)
+
+    return {
+        ...(rechargeTurns > 0 ? { rechargeTurns } : {}),
+        ...(bindTurns > 0 ? { bindTurns } : {}),
+        ...(bindTurns > 0 ? { bindFraction } : {}),
+        ...(lockedRepeatMoveName ? { lockedRepeatMoveName } : {}),
+        ...(statusShieldTurns > 0 ? { statusShieldTurns } : {}),
+        ...(statDropShieldTurns > 0 ? { statDropShieldTurns } : {}),
+        ...(healBlockTurns > 0 ? { healBlockTurns } : {}),
+        ...(critBlockTurns > 0 ? { critBlockTurns } : {}),
+        ...(statusMoveBlockTurns > 0 ? { statusMoveBlockTurns } : {}),
+        ...(pendingAlwaysCrit ? { pendingAlwaysCrit: true } : {}),
+        ...(pendingNeverMiss ? { pendingNeverMiss: true } : {}),
+    }
+}
+
+const normalizeWeather = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (['sun', 'rain', 'sandstorm', 'hail'].includes(normalized)) return normalized
+    return ''
+}
+
+const normalizeTerrain = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (['electric', 'grassy', 'misty', 'psychic'].includes(normalized)) return normalized
+    return ''
+}
+
+const normalizeFieldState = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const weather = normalizeWeather(source.weather)
+    const terrain = normalizeTerrain(source.terrain)
+    const weatherTurns = weather ? normalizeStatusTurns(source.weatherTurns) : 0
+    const terrainTurns = terrain ? normalizeStatusTurns(source.terrainTurns) : 0
+    const normalMovesBecomeElectricTurns = normalizeStatusTurns(source.normalMovesBecomeElectricTurns)
+
+    return {
+        ...(weather && weatherTurns > 0 ? { weather, weatherTurns } : {}),
+        ...(terrain && terrainTurns > 0 ? { terrain, terrainTurns } : {}),
+        ...(normalMovesBecomeElectricTurns > 0 ? { normalMovesBecomeElectricTurns } : {}),
+    }
+}
+
+const mergeFieldState = (base = {}, patch = {}) => {
+    const current = normalizeFieldState(base)
+    const next = patch && typeof patch === 'object' ? patch : {}
+
+    if (next.clearTerrain) {
+        const withoutTerrain = { ...current }
+        delete withoutTerrain.terrain
+        delete withoutTerrain.terrainTurns
+        return normalizeFieldState(withoutTerrain)
+    }
+
+    const merged = { ...current }
+
+    const patchWeather = normalizeWeather(next.weather)
+    if (patchWeather) {
+        merged.weather = patchWeather
+        merged.weatherTurns = Math.max(1, normalizeStatusTurns(next.weatherTurns) || 5)
+    }
+
+    const patchTerrain = normalizeTerrain(next.terrain)
+    if (patchTerrain) {
+        merged.terrain = patchTerrain
+        merged.terrainTurns = Math.max(1, normalizeStatusTurns(next.terrainTurns) || 5)
+    }
+
+    if (normalizeStatusTurns(next.normalMovesBecomeElectricTurns) > 0) {
+        merged.normalMovesBecomeElectricTurns = Math.max(1, normalizeStatusTurns(next.normalMovesBecomeElectricTurns))
+    }
+
+    return normalizeFieldState(merged)
+}
+
+const decrementFieldState = (value = {}) => {
+    const current = normalizeFieldState(value)
+    const next = { ...current }
+
+    if (next.weather) {
+        const turns = normalizeStatusTurns(next.weatherTurns)
+        if (turns > 1) {
+            next.weatherTurns = turns - 1
+        } else {
+            delete next.weather
+            delete next.weatherTurns
+        }
+    }
+
+    if (next.terrain) {
+        const turns = normalizeStatusTurns(next.terrainTurns)
+        if (turns > 1) {
+            next.terrainTurns = turns - 1
+        } else {
+            delete next.terrain
+            delete next.terrainTurns
+        }
+    }
+
+    if (next.normalMovesBecomeElectricTurns) {
+        const turns = normalizeStatusTurns(next.normalMovesBecomeElectricTurns)
+        if (turns > 1) {
+            next.normalMovesBecomeElectricTurns = turns - 1
+        } else {
+            delete next.normalMovesBecomeElectricTurns
+        }
+    }
+
+    return normalizeFieldState(next)
+}
+
+const mergeVolatileState = (base = {}, patch = {}) => {
+    const current = normalizeVolatileState(base)
+    const nextPatch = normalizeVolatileState(patch)
+
+    const merged = {
+        ...current,
+        ...nextPatch,
+    }
+
+    if (!merged.bindTurns || merged.bindTurns <= 0) {
+        delete merged.bindTurns
+        delete merged.bindFraction
+    }
+
+    return normalizeVolatileState(merged)
+}
+
+const pickStatusTurnCount = (status = '', random = Math.random) => {
+    const normalizedStatus = normalizeBattleStatus(status)
+    const range = DEFAULT_STATUS_TURN_RANGES[normalizedStatus]
+    if (!range) return 0
+    const minTurns = Math.max(1, Math.floor(Number(range[0]) || 1))
+    const maxTurns = Math.max(minTurns, Math.floor(Number(range[1]) || minTurns))
+    return minTurns + Math.floor(random() * (maxTurns - minTurns + 1))
+}
+
+const applyStatusPatch = ({
+    currentStatus = '',
+    currentTurns = 0,
+    nextStatus = '',
+    nextTurns = null,
+    random = Math.random,
+} = {}) => {
+    const normalizedNextStatus = normalizeBattleStatus(nextStatus)
+    if (!normalizedNextStatus) {
+        return {
+            status: normalizeBattleStatus(currentStatus),
+            statusTurns: normalizeStatusTurns(currentTurns),
+        }
+    }
+
+    const explicitTurns = normalizeStatusTurns(nextTurns)
+    return {
+        status: normalizedNextStatus,
+        statusTurns: explicitTurns > 0 ? explicitTurns : pickStatusTurnCount(normalizedNextStatus, random),
+    }
+}
+
+const clampStatStage = (value) => clamp(Math.floor(Number(value) || 0), -6, 6)
+
+const normalizeStatStages = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return Object.entries(source).reduce((acc, [rawKey, rawValue]) => {
+        const key = String(rawKey || '').trim().toLowerCase()
+        if (!SUPPORTED_STAT_STAGE_KEYS.has(key)) return acc
+        const stage = clampStatStage(rawValue)
+        if (stage === 0) return acc
+        return {
+            ...acc,
+            [key]: stage,
+        }
+    }, {})
+}
+
+const combineStatStageDeltas = (base = {}, nextValue = {}) => {
+    const current = normalizeStatStages(base)
+    const delta = normalizeStatStages(nextValue)
+    const merged = { ...current }
+
+    Object.entries(delta).forEach(([key, value]) => {
+        merged[key] = clampStatStage((merged[key] || 0) + value)
+    })
+
+    return normalizeStatStages(merged)
+}
+
+const applyAbsoluteStatStages = (base = {}, absoluteValues = {}) => {
+    const current = normalizeStatStages(base)
+    const absolute = normalizeStatStages(absoluteValues)
+    return {
+        ...current,
+        ...absolute,
+    }
+}
+
+const filterNegativeStatStageDeltas = (delta = {}, shieldTurns = 0) => {
+    const normalizedDelta = normalizeStatStages(delta)
+    if (normalizeStatusTurns(shieldTurns) <= 0) return normalizedDelta
+    return Object.entries(normalizedDelta).reduce((acc, [key, value]) => {
+        if (Number(value) < 0) return acc
+        return {
+            ...acc,
+            [key]: value,
+        }
+    }, {})
+}
+
+const decrementVolatileTurnState = (value = {}) => {
+    const current = normalizeVolatileState(value)
+    const next = { ...current }
+
+    if (next.statusShieldTurns > 0) {
+        next.statusShieldTurns -= 1
+        if (next.statusShieldTurns <= 0) {
+            delete next.statusShieldTurns
+        }
+    }
+
+    if (next.statDropShieldTurns > 0) {
+        next.statDropShieldTurns -= 1
+        if (next.statDropShieldTurns <= 0) {
+            delete next.statDropShieldTurns
+        }
+    }
+
+    if (next.healBlockTurns > 0) {
+        next.healBlockTurns -= 1
+        if (next.healBlockTurns <= 0) {
+            delete next.healBlockTurns
+        }
+    }
+
+    if (next.critBlockTurns > 0) {
+        next.critBlockTurns -= 1
+        if (next.critBlockTurns <= 0) {
+            delete next.critBlockTurns
+        }
+    }
+
+    return normalizeVolatileState(next)
+}
+
+const resolveStatStageMultiplier = (stage = 0) => {
+    const normalizedStage = clampStatStage(stage)
+    if (normalizedStage >= 0) {
+        return (2 + normalizedStage) / 2
+    }
+    return 2 / (2 - normalizedStage)
+}
+
+const applyStatStageToValue = (value, stage = 0) => {
+    const numericValue = Math.max(1, Number(value) || 1)
+    const multiplier = resolveStatStageMultiplier(stage)
+    return Math.max(1, Math.floor(numericValue * multiplier))
+}
+
+const resolveActionAvailabilityByStatus = ({ status = '', statusTurns = 0, random = Math.random } = {}) => {
+    const normalizedStatus = normalizeBattleStatus(status)
+    const normalizedTurns = normalizeStatusTurns(statusTurns)
+    if (!normalizedStatus) {
+        return {
+            canAct: true,
+            statusAfterCheck: '',
+            statusTurnsAfterCheck: 0,
+        }
+    }
+
+    if (normalizedStatus === 'flinch') {
+        return {
+            canAct: false,
+            statusAfterCheck: '',
+            statusTurnsAfterCheck: 0,
+            reason: 'flinch',
+            log: 'Bị choáng nên không thể hành động.',
+        }
+    }
+
+    if (normalizedStatus === 'paralyze') {
+        if (random() < 0.25) {
+            return {
+                canAct: false,
+                statusAfterCheck: normalizedStatus,
+                statusTurnsAfterCheck: 0,
+                reason: 'paralyze',
+                log: 'Bị tê liệt nên không thể hành động.',
+            }
+        }
+        return {
+            canAct: true,
+            statusAfterCheck: normalizedStatus,
+            statusTurnsAfterCheck: 0,
+        }
+    }
+
+    if (normalizedStatus === 'sleep') {
+        if (normalizedTurns > 1) {
+            return {
+                canAct: false,
+                statusAfterCheck: normalizedStatus,
+                statusTurnsAfterCheck: normalizedTurns - 1,
+                reason: 'sleep',
+                log: 'Đang ngủ nên không thể hành động.',
+            }
+        }
+
+        return {
+            canAct: true,
+            statusAfterCheck: '',
+            statusTurnsAfterCheck: 0,
+            reason: 'wakeup',
+            log: 'Đã tỉnh giấc.',
+        }
+    }
+
+    if (normalizedStatus === 'freeze') {
+        if (normalizedTurns > 1 && random() >= 0.2) {
+            return {
+                canAct: false,
+                statusAfterCheck: normalizedStatus,
+                statusTurnsAfterCheck: normalizedTurns - 1,
+                reason: 'freeze',
+                log: 'Bị đóng băng nên không thể hành động.',
+            }
+        }
+        return {
+            canAct: true,
+            statusAfterCheck: '',
+            statusTurnsAfterCheck: 0,
+            reason: 'thaw',
+            log: 'Đã tan băng.',
+        }
+    }
+
+    if (normalizedStatus === 'confuse') {
+        const nextTurns = normalizedTurns > 0 ? normalizedTurns - 1 : 0
+        if (random() < 0.33) {
+            return {
+                canAct: false,
+                statusAfterCheck: nextTurns > 0 ? normalizedStatus : '',
+                statusTurnsAfterCheck: nextTurns,
+                reason: 'confuse',
+                log: 'Bị rối loạn nên không thể hành động.',
+            }
+        }
+        return {
+            canAct: true,
+            statusAfterCheck: nextTurns > 0 ? normalizedStatus : '',
+            statusTurnsAfterCheck: nextTurns,
+            reason: nextTurns <= 0 ? 'confuse_end' : '',
+            log: nextTurns <= 0 ? 'Không còn rối loạn nữa.' : '',
+        }
+    }
+
+    return {
+        canAct: true,
+        statusAfterCheck: normalizedStatus,
+        statusTurnsAfterCheck: normalizedTurns,
+    }
+}
+
+const calcResidualStatusDamage = ({ status = '', maxHp = 1 } = {}) => {
+    const normalizedStatus = normalizeBattleStatus(status)
+    if (normalizedStatus !== 'burn' && normalizedStatus !== 'poison') return 0
+    const resolvedMaxHp = Math.max(1, Number(maxHp) || 1)
+    return Math.max(1, Math.floor(resolvedMaxHp / 16))
+}
+
+const effectSpecsByTrigger = (effectSpecs = [], trigger = '') => {
+    const normalizedTrigger = String(trigger || '').trim()
+    return normalizeEffectSpecs(effectSpecs)
+        .filter((entry) => String(entry?.trigger || '').trim() === normalizedTrigger)
+}
+
+const mergeEffectStatePatches = (base = {}, nextPatch = {}) => ({
+    ...base,
+    ...nextPatch,
+    powerMultiplier: Number.isFinite(Number(nextPatch?.powerMultiplier))
+        ? Math.max(0.1, Number(nextPatch.powerMultiplier))
+        : (Number.isFinite(Number(base?.powerMultiplier)) ? Math.max(0.1, Number(base.powerMultiplier)) : 1),
+    statusTurns: Number.isFinite(Number(nextPatch?.statusTurns))
+        ? normalizeStatusTurns(nextPatch.statusTurns)
+        : normalizeStatusTurns(base?.statusTurns),
+    damageGuards: mergeDamageGuards(base?.damageGuards, nextPatch?.damageGuards),
+    volatileState: mergeVolatileState(base?.volatileState, nextPatch?.volatileState),
+    statStages: combineStatStageDeltas(base?.statStages, nextPatch?.statStages),
+    setStatStages: {
+        ...(base?.setStatStages && typeof base.setStatStages === 'object' ? base.setStatStages : {}),
+        ...(nextPatch?.setStatStages && typeof nextPatch.setStatStages === 'object' ? nextPatch.setStatStages : {}),
+    },
+})
+
+const mergeEffectAggregate = (base, nextAggregate) => {
+    if (!nextAggregate) return base
+    return {
+        appliedEffects: [...(base?.appliedEffects || []), ...(nextAggregate?.appliedEffects || [])],
+        logs: [...(base?.logs || []), ...(nextAggregate?.logs || [])],
+        statePatches: {
+            self: mergeEffectStatePatches(base?.statePatches?.self, nextAggregate?.statePatches?.self),
+            opponent: mergeEffectStatePatches(base?.statePatches?.opponent, nextAggregate?.statePatches?.opponent),
+            field: {
+                ...(base?.statePatches?.field && typeof base.statePatches.field === 'object' ? base.statePatches.field : {}),
+                ...(nextAggregate?.statePatches?.field && typeof nextAggregate.statePatches.field === 'object' ? nextAggregate.statePatches.field : {}),
+            },
+        },
+    }
+}
+
+const createEmptyEffectAggregate = () => ({
+    appliedEffects: [],
+    logs: [],
+    statePatches: {
+        self: {},
+        opponent: {},
+        field: {},
+    },
+})
+
 const calcCatchChance = ({ catchRate, hp, maxHp }) => {
     const rate = Math.min(255, Math.max(1, catchRate || 45))
     const hpFactor = (3 * maxHp - 2 * hp) / (3 * maxHp)
@@ -204,6 +763,40 @@ const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 
     }
 
     return merged.slice(0, 4)
+}
+
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const resolvePokemonForm = (pokemon, formId) => {
+    const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
+    const defaultFormId = normalizeFormId(pokemon?.defaultFormId || 'normal')
+    const requestedFormId = normalizeFormId(formId || defaultFormId)
+    let resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId) || null
+    let resolvedFormId = requestedFormId
+
+    if (!resolvedForm && forms.length > 0) {
+        resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId) || forms[0]
+        resolvedFormId = normalizeFormId(resolvedForm?.formId || defaultFormId)
+    }
+
+    return { form: resolvedForm, formId: resolvedFormId }
+}
+
+const resolvePokemonImageForForm = (pokemon, formId, isShiny = false) => {
+    const { form } = resolvePokemonForm(pokemon, formId)
+    const normalSprite = form?.imageUrl
+        || form?.sprites?.normal
+        || form?.sprites?.icon
+        || pokemon?.imageUrl
+        || pokemon?.sprites?.normal
+        || pokemon?.sprites?.front_default
+        || ''
+
+    if (isShiny) {
+        return form?.sprites?.shiny || pokemon?.sprites?.shiny || normalSprite
+    }
+
+    return normalSprite
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
@@ -298,15 +891,7 @@ const getSpecialAttackStat = (stats = {}) => (
 )
 
 const resolveTrainerBattleForm = (pokemon, formId) => {
-    const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
-    const defaultFormId = String(pokemon?.defaultFormId || 'normal').trim() || 'normal'
-    let resolvedFormId = String(formId || defaultFormId).trim() || defaultFormId
-    let form = forms.find((entry) => String(entry?.formId || '').trim() === resolvedFormId) || null
-    if (!form && forms.length > 0) {
-        resolvedFormId = defaultFormId || String(forms[0]?.formId || 'normal').trim() || 'normal'
-        form = forms.find((entry) => String(entry?.formId || '').trim() === resolvedFormId) || forms[0]
-    }
-    return { form, formId: resolvedFormId }
+    return resolvePokemonForm(pokemon, formId)
 }
 
 const buildTrainerBattleTeam = (trainer) => {
@@ -331,6 +916,12 @@ const buildTrainerBattleTeam = (trainer) => {
                 baseStats: scaledStats,
                 currentHp: maxHp,
                 maxHp,
+                status: '',
+                statusTurns: 0,
+                statStages: {},
+                damageGuards: {},
+                wasDamagedLastTurn: false,
+                volatileState: {},
             }
         })
         .filter(Boolean)
@@ -348,6 +939,13 @@ const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
             team: buildTrainerBattleTeam(trainer),
             knockoutCounts: [],
             currentIndex: 0,
+            playerStatus: '',
+            playerStatusTurns: 0,
+            playerStatStages: {},
+            playerDamageGuards: {},
+            playerWasDamagedLastTurn: false,
+            playerVolatileState: {},
+            fieldState: {},
             expiresAt,
         })
     }
@@ -360,6 +958,13 @@ const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
         session.playerPokemonId = null
         session.playerCurrentHp = 0
         session.playerMaxHp = 1
+        session.playerStatus = ''
+        session.playerStatusTurns = 0
+        session.playerStatStages = {}
+        session.playerDamageGuards = {}
+        session.playerWasDamagedLastTurn = false
+        session.playerVolatileState = {}
+        session.fieldState = {}
     }
 
     session.expiresAt = expiresAt
@@ -1118,14 +1723,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             { $set: { isActive: false, endedAt: new Date() } }
         )
 
-        const defaultFormId = pokemon.defaultFormId || 'normal'
-        let formId = selectedFormId || defaultFormId
-        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
-        let resolvedForm = forms.find((form) => form.formId === formId) || null
-        if (!resolvedForm && forms.length > 0) {
-            formId = defaultFormId || forms[0].formId
-            resolvedForm = forms.find((form) => form.formId === formId) || forms[0]
-        }
+        const { form: resolvedForm, formId } = resolvePokemonForm(pokemon, selectedFormId)
         const formStats = resolvedForm?.stats || null
         const formSprites = resolvedForm?.sprites || null
         const formImageUrl = resolvedForm?.imageUrl || ''
@@ -1463,6 +2061,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             move = null,
             opponent = {},
             player = {},
+            fieldState = {},
             trainerId = null,
             activePokemonId = null,
         } = req.body || {}
@@ -1514,7 +2113,27 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let moveCategory = resolveMoveCategory(moveDoc, move, resolvedPower)
         let moveAccuracy = resolveMoveAccuracy(moveDoc, move)
         let movePriority = resolveMovePriority(moveDoc, move)
+        const baseMovePriority = movePriority
         let moveCriticalChance = resolveMoveCriticalChance(moveDoc, move)
+        const moveEffectSpecs = normalizeEffectSpecs(moveDoc?.effectSpecs?.length ? moveDoc.effectSpecs : move?.effectSpecs)
+        const randomFn = () => Math.random()
+
+        let selectMoveEffects = applyEffectSpecs({
+            effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'on_select_move'),
+            context: {
+                random: randomFn,
+                weather: normalizeFieldState(fieldState).weather || '',
+                terrain: normalizeFieldState(fieldState).terrain || '',
+            },
+        })
+        if (Number.isFinite(Number(selectMoveEffects?.statePatches?.self?.priorityDelta))) {
+            movePriority = clamp(
+                movePriority + Number(selectMoveEffects.statePatches.self.priorityDelta),
+                -7,
+                7
+            )
+        }
+        let damageCalcEffects = createEmptyEffectAggregate()
 
         const isStruggleMove = normalizeMoveName(selectedMoveName) === 'struggle'
         let consumedMovePp = 0
@@ -1632,6 +2251,19 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let activeOpponentIndex = -1
         let activeTrainerOpponent = null
         let trainerSessionDirty = false
+        let playerStatus = ''
+        let playerStatusTurns = 0
+        let playerStatStages = {}
+        let playerDamageGuards = {}
+        let playerWasDamagedLastTurn = Boolean(player?.wasDamagedLastTurn)
+        let playerVolatileState = normalizeVolatileState(player?.volatileState)
+        let battleFieldState = normalizeFieldState(fieldState)
+        let opponentStatus = normalizeBattleStatus(opponent?.status)
+        let opponentStatusTurns = normalizeStatusTurns(opponent?.statusTurns)
+        let opponentStatStages = normalizeStatStages(opponent?.statStages)
+        let opponentDamageGuards = normalizeDamageGuards(opponent?.damageGuards)
+        let opponentWasDamagedLastTurn = Boolean(opponent?.wasDamagedLastTurn)
+        let opponentVolatileState = normalizeVolatileState(opponent?.volatileState)
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
@@ -1649,6 +2281,12 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 trainerSession.playerPokemonId = activePokemon._id
                 trainerSession.playerMaxHp = playerMaxHp
                 trainerSession.playerCurrentHp = playerMaxHp
+                trainerSession.playerStatus = ''
+                trainerSession.playerStatusTurns = 0
+                trainerSession.playerStatStages = {}
+                trainerSession.playerDamageGuards = {}
+                trainerSession.playerWasDamagedLastTurn = false
+                trainerSession.playerVolatileState = {}
                 trainerSessionDirty = true
             }
 
@@ -1678,6 +2316,12 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
 
             activeTrainerOpponent = trainerSession.team[activeOpponentIndex]
+            activeTrainerOpponent.status = normalizeBattleStatus(activeTrainerOpponent.status)
+            activeTrainerOpponent.statusTurns = normalizeStatusTurns(activeTrainerOpponent.statusTurns)
+            activeTrainerOpponent.statStages = normalizeStatStages(activeTrainerOpponent.statStages)
+            activeTrainerOpponent.damageGuards = normalizeDamageGuards(activeTrainerOpponent.damageGuards)
+            activeTrainerOpponent.wasDamagedLastTurn = Boolean(activeTrainerOpponent.wasDamagedLastTurn)
+            activeTrainerOpponent.volatileState = normalizeVolatileState(activeTrainerOpponent.volatileState)
             targetName = activeTrainerOpponent.name || targetName
             targetLevel = Math.max(1, Number(activeTrainerOpponent.level) || targetLevel)
             targetTypes = normalizePokemonTypes(activeTrainerOpponent.types)
@@ -1715,19 +2359,261 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             if (playerCurrentHp <= 0) {
                 return res.status(400).json({ ok: false, message: 'Pokemon của bạn đã bại trận. Hãy đổi Pokemon hoặc bắt đầu lại trận đấu.' })
             }
+
+            playerStatus = normalizeBattleStatus(trainerSession.playerStatus)
+            playerStatusTurns = normalizeStatusTurns(trainerSession.playerStatusTurns)
+            playerStatStages = normalizeStatStages(trainerSession.playerStatStages)
+            playerDamageGuards = normalizeDamageGuards(trainerSession.playerDamageGuards)
+            playerWasDamagedLastTurn = Boolean(trainerSession.playerWasDamagedLastTurn)
+            playerVolatileState = normalizeVolatileState(trainerSession.playerVolatileState)
+            battleFieldState = normalizeFieldState(trainerSession.fieldState)
+            opponentStatus = normalizeBattleStatus(activeTrainerOpponent.status)
+            opponentStatusTurns = normalizeStatusTurns(activeTrainerOpponent.statusTurns)
+            opponentStatStages = normalizeStatStages(activeTrainerOpponent.statStages)
+            opponentDamageGuards = normalizeDamageGuards(activeTrainerOpponent.damageGuards)
+            opponentWasDamagedLastTurn = Boolean(activeTrainerOpponent.wasDamagedLastTurn)
+            opponentVolatileState = normalizeVolatileState(activeTrainerOpponent.volatileState)
         }
 
-        const playerAttackStat = moveCategory === 'special' ? attackerSpAtk : attackerAtk
-        const playerDefenseStat = moveCategory === 'special' ? targetSpDef : targetDef
+        if (!normalizedTrainerId) {
+            playerStatus = normalizeBattleStatus(player?.status)
+            playerStatusTurns = normalizeStatusTurns(player?.statusTurns)
+            playerStatStages = normalizeStatStages(player?.statStages)
+            playerDamageGuards = normalizeDamageGuards(player?.damageGuards)
+            playerVolatileState = normalizeVolatileState(player?.volatileState)
+        }
+
+        selectMoveEffects = applyEffectSpecs({
+            effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'on_select_move'),
+            context: {
+                random: randomFn,
+                weather: battleFieldState.weather || '',
+                terrain: battleFieldState.terrain || '',
+            },
+        })
+        movePriority = baseMovePriority
+        if (Number.isFinite(Number(selectMoveEffects?.statePatches?.self?.priorityDelta))) {
+            movePriority = clamp(
+                movePriority + Number(selectMoveEffects.statePatches.self.priorityDelta),
+                -7,
+                7
+            )
+        }
+
+        if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && moveType === 'normal') {
+            moveType = 'electric'
+        }
+
+        const playerTurnStartHp = playerCurrentHp
+        const opponentTurnStartHp = targetCurrentHp
+        const precomputedTypeEffectiveness = resolveTypeEffectiveness(moveType, targetTypes)
+
+        damageCalcEffects = applyEffectSpecs({
+            effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'on_calculate_damage'),
+            context: {
+                random: randomFn,
+                moveName: selectedMoveName,
+                userWasDamagedLastTurn: playerWasDamagedLastTurn,
+                targetWasDamagedLastTurn: opponentWasDamagedLastTurn,
+                userHasNoHeldItem: true,
+                targetIsDynamaxed: Boolean(opponent?.isDynamaxed),
+                userActsFirst: true,
+                isSuperEffective: precomputedTypeEffectiveness.multiplier > 1,
+                userMaxHp: playerMaxHp,
+                userCurrentHp: playerCurrentHp,
+                userStatus: playerStatus,
+                targetStatus: opponentStatus,
+                weather: battleFieldState.weather || '',
+                terrain: battleFieldState.terrain || '',
+                userStatStages: playerStatStages,
+                targetStatStages: opponentStatStages,
+                targetCurrentHp,
+                targetMaxHp,
+            },
+        })
+        if (damageCalcEffects?.statePatches?.self?.alwaysCrit) {
+            moveCriticalChance = 1
+        }
+        if (Number.isFinite(Number(damageCalcEffects?.statePatches?.self?.critRateMultiplier))) {
+            moveCriticalChance = clamp(
+                moveCriticalChance * Number(damageCalcEffects.statePatches.self.critRateMultiplier),
+                0,
+                1
+            )
+        }
+        if (Number.isFinite(Number(damageCalcEffects?.statePatches?.self?.powerMultiplier))) {
+            resolvedPower = clamp(
+                Math.floor(resolvedPower * Number(damageCalcEffects.statePatches.self.powerMultiplier)),
+                1,
+                400
+            )
+        }
+
+        const useDefenseAsAttack = Boolean(damageCalcEffects?.statePatches?.self?.useDefenseAsAttack)
+        const useTargetAttackAsAttack = Boolean(damageCalcEffects?.statePatches?.self?.useTargetAttackAsAttack)
+        const useHigherOffenseStat = Boolean(damageCalcEffects?.statePatches?.self?.useHigherOffenseStat)
+        const ignoreTargetStatStages = Boolean(damageCalcEffects?.statePatches?.self?.ignoreTargetStatStages)
+        const ignoreOpponentDamageGuards = Boolean(damageCalcEffects?.statePatches?.self?.ignoreDamageGuards)
+        const useTargetDefenseForSpecial = Boolean(damageCalcEffects?.statePatches?.self?.useTargetDefenseForSpecial)
+        const requireTerrain = Boolean(damageCalcEffects?.statePatches?.self?.requireTerrain)
+        const targetAttackForFoulPlay = applyStatStageToValue(targetAtk, ignoreTargetStatStages ? 0 : opponentStatStages?.atk)
+        const stagedAtk = applyStatStageToValue(attackerAtk, playerStatStages?.atk)
+        const stagedSpAtk = applyStatStageToValue(attackerSpAtk, playerStatStages?.spatk)
+        const stagedPlayerAttack = moveCategory === 'special'
+            ? (useHigherOffenseStat ? Math.max(stagedAtk, stagedSpAtk) : stagedSpAtk)
+            : (useTargetAttackAsAttack
+                ? targetAttackForFoulPlay
+                : (useDefenseAsAttack
+                ? applyStatStageToValue(playerDef, playerStatStages?.def)
+                : (useHigherOffenseStat ? Math.max(stagedAtk, stagedSpAtk) : stagedAtk)))
+        const stagedTargetDefense = moveCategory === 'special'
+            ? (useTargetDefenseForSpecial
+                ? applyStatStageToValue(targetDef, ignoreTargetStatStages ? 0 : opponentStatStages?.def)
+                : applyStatStageToValue(targetSpDef, ignoreTargetStatStages ? 0 : opponentStatStages?.spdef))
+            : applyStatStageToValue(targetDef, ignoreTargetStatStages ? 0 : opponentStatStages?.def)
+        const playerAttackStat = stagedPlayerAttack
+        const playerDefenseStat = stagedTargetDefense
         const isStatusMove = moveCategory === 'status'
-        const didPlayerMoveHit = moveAccuracy >= 100 || (Math.random() * 100) <= moveAccuracy
-        const playerTypeEffectiveness = resolveTypeEffectiveness(moveType, targetTypes)
+        const battleExtraLogs = []
+        const playerTurnStatusCheck = resolveActionAvailabilityByStatus({
+            status: playerStatus,
+            statusTurns: playerStatusTurns,
+            random: randomFn,
+        })
+        playerStatus = normalizeBattleStatus(playerTurnStatusCheck.statusAfterCheck)
+        playerStatusTurns = normalizeStatusTurns(playerTurnStatusCheck.statusTurnsAfterCheck)
+        let canPlayerActByVolatile = true
+        const rechargeTurns = normalizeStatusTurns(playerVolatileState?.rechargeTurns)
+        if (rechargeTurns > 0) {
+            canPlayerActByVolatile = false
+            playerVolatileState = {
+                ...playerVolatileState,
+                rechargeTurns: Math.max(0, rechargeTurns - 1),
+            }
+            if (!playerVolatileState.rechargeTurns) {
+                delete playerVolatileState.rechargeTurns
+            }
+            battleExtraLogs.push('Pokemon của bạn cần hồi sức nên không thể hành động.')
+        }
+
+        const lockedRepeatMoveName = String(playerVolatileState?.lockedRepeatMoveName || '').trim()
+        const lockedRepeatMoveKey = normalizeMoveName(lockedRepeatMoveName)
+        if (canPlayerActByVolatile && lockedRepeatMoveKey && normalizeMoveName(selectedMoveName) === lockedRepeatMoveKey) {
+            canPlayerActByVolatile = false
+            battleExtraLogs.push(`Chiêu ${selectedMoveName} không thể dùng liên tiếp.`)
+        }
+        if (canPlayerActByVolatile && lockedRepeatMoveName && normalizeMoveName(selectedMoveName) !== lockedRepeatMoveKey) {
+            const nextVolatileState = { ...playerVolatileState }
+            delete nextVolatileState.lockedRepeatMoveName
+            playerVolatileState = nextVolatileState
+        }
+
+        const playerStatusMoveBlockTurns = normalizeStatusTurns(playerVolatileState?.statusMoveBlockTurns)
+        if (playerStatusMoveBlockTurns > 0) {
+            playerVolatileState = {
+                ...playerVolatileState,
+                statusMoveBlockTurns: Math.max(0, playerStatusMoveBlockTurns - 1),
+            }
+            if (!playerVolatileState.statusMoveBlockTurns) {
+                delete playerVolatileState.statusMoveBlockTurns
+            }
+            if (canPlayerActByVolatile && isStatusMove) {
+                canPlayerActByVolatile = false
+                battleExtraLogs.push('Pokemon của bạn bị khiêu khích nên không thể dùng chiêu trạng thái.')
+            }
+        }
+
+        const moveBlockedByTerrainRequirement = requireTerrain && !battleFieldState.terrain
+        const canPlayerAct = Boolean(playerTurnStatusCheck.canAct) && canPlayerActByVolatile
+
+        if (moveBlockedByTerrainRequirement) {
+            battleExtraLogs.push('Chiêu này thất bại vì sân đấu không có địa hình phù hợp.')
+        }
+        const pendingAlwaysCrit = Boolean(playerVolatileState?.pendingAlwaysCrit)
+        const pendingNeverMiss = Boolean(playerVolatileState?.pendingNeverMiss)
+
+        if (pendingAlwaysCrit) {
+            moveCriticalChance = 1
+        }
+
+        if (!canPlayerAct && consumedMovePp > 0 && selectedMoveMaxPp > 0) {
+            consumedMovePp = 0
+            selectedMoveCurrentPp = clamp(selectedMoveCurrentPp + 1, 0, selectedMoveMaxPp)
+            playerMovePpStatePayload = [{
+                moveName: selectedMoveName,
+                currentPp: selectedMoveCurrentPp,
+                maxPp: selectedMoveMaxPp,
+            }]
+        }
+
+        if (playerTurnStatusCheck.log) {
+            battleExtraLogs.push(`Pokemon của bạn: ${playerTurnStatusCheck.log}`)
+        }
+
+        const beforeAccuracyEffects = canPlayerAct
+            ? applyEffectSpecs({
+                effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'before_accuracy_check'),
+                context: { random: randomFn },
+            })
+            : createEmptyEffectAggregate()
+        const forcedHit = canPlayerAct && !moveBlockedByTerrainRequirement
+            && (Boolean(beforeAccuracyEffects?.statePatches?.self?.neverMiss) || pendingNeverMiss)
+        const didPlayerMoveHit = canPlayerAct && !moveBlockedByTerrainRequirement
+            && (forcedHit || moveAccuracy >= 100 || (Math.random() * 100) <= moveAccuracy)
+        const playerTypeEffectiveness = precomputedTypeEffectiveness
         const playerStabMultiplier = attackerTypes.includes(moveType) ? 1.5 : 1
-        const didPlayerCritical = !isStatusMove && didPlayerMoveHit && Math.random() < moveCriticalChance
+        const opponentCritBlockTurns = normalizeStatusTurns(opponentVolatileState?.critBlockTurns)
+        const didPlayerCritical = !isStatusMove
+            && canPlayerAct
+            && didPlayerMoveHit
+            && opponentCritBlockTurns <= 0
+            && Math.random() < moveCriticalChance
+        if (!isStatusMove && canPlayerAct && didPlayerMoveHit && opponentCritBlockTurns > 0) {
+            battleExtraLogs.push(`${targetName} được bảo vệ khỏi đòn chí mạng.`)
+        }
         const playerCriticalMultiplier = didPlayerCritical ? 1.5 : 1
         const playerDamageModifier = playerStabMultiplier * playerTypeEffectiveness.multiplier * playerCriticalMultiplier
 
-        const damage = (!didPlayerMoveHit || isStatusMove || playerTypeEffectiveness.multiplier <= 0)
+        const onHitEffects = didPlayerMoveHit
+            ? applyEffectSpecs({
+                effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'on_hit'),
+                context: {
+                    random: randomFn,
+                    moveName: selectedMoveName,
+                    userLevel: attackerLevel,
+                    userCurrentHp: playerCurrentHp,
+                    userMaxHp: playerMaxHp,
+                    userStatus: playerStatus,
+                    userStatusTurns: playerStatusTurns,
+                    userStatStages: playerStatStages,
+                    targetStatus: opponentStatus,
+                    weather: battleFieldState.weather || '',
+                    terrain: battleFieldState.terrain || '',
+                    targetStatStages: opponentStatStages,
+                    targetCurrentHp,
+                    targetMaxHp,
+                },
+            })
+            : createEmptyEffectAggregate()
+
+        const multiHitPatch = onHitEffects?.statePatches?.self?.multiHit
+        const canMultiHit = didPlayerMoveHit && !isStatusMove && playerTypeEffectiveness.multiplier > 0 && multiHitPatch
+        const minHits = canMultiHit ? Math.max(1, Math.floor(Number(multiHitPatch.minHits) || 1)) : 1
+        const maxHits = canMultiHit ? Math.max(minHits, Math.floor(Number(multiHitPatch.maxHits) || minHits)) : 1
+        const hitCount = canMultiHit
+            ? (minHits + Math.floor(Math.random() * (maxHits - minHits + 1)))
+            : 1
+
+        const onHitSelfPatch = onHitEffects?.statePatches?.self || {}
+        const consumedPendingCrit = pendingAlwaysCrit && canPlayerAct && !isStatusMove
+        const consumedPendingNeverMiss = pendingNeverMiss && canPlayerAct && !isStatusMove
+        const shouldForceTargetKo = Boolean(onHitSelfPatch?.forceTargetKo)
+        const shouldUseUserCurrentHpAsDamage = Boolean(onHitSelfPatch?.fixedDamageFromUserCurrentHp)
+        const fixedDamageValue = Math.max(0, Math.floor(Number(onHitSelfPatch?.fixedDamageValue) || 0))
+        const fixedDamageFractionTargetCurrentHp = clampFraction(onHitSelfPatch?.fixedDamageFractionTargetCurrentHp, 0)
+        const minTargetHpAfterHit = Math.max(0, Math.floor(Number(onHitSelfPatch?.minTargetHp || 0)))
+
+        const rawSingleHitDamage = (!canPlayerAct || !didPlayerMoveHit || isStatusMove || playerTypeEffectiveness.multiplier <= 0)
             ? 0
             : calcBattleDamage({
                 attackerLevel,
@@ -1736,52 +2622,298 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 defenseStat: playerDefenseStat,
                 modifier: playerDamageModifier,
             })
-        const currentHp = Math.max(0, targetCurrentHp - damage)
+        const singleHitDamage = ignoreOpponentDamageGuards
+            ? rawSingleHitDamage
+            : applyDamageGuardsToDamage(rawSingleHitDamage, moveCategory, opponentDamageGuards)
+        if (singleHitDamage < rawSingleHitDamage) {
+            battleExtraLogs.push(`${targetName} giảm sát thương nhờ hiệu ứng phòng thủ.`)
+        }
+        let damage = Math.max(0, singleHitDamage * hitCount)
+        if (shouldUseUserCurrentHpAsDamage && didPlayerMoveHit && !isStatusMove) {
+            damage = Math.max(0, Math.floor(playerCurrentHp))
+        } else if (fixedDamageValue > 0 && didPlayerMoveHit && !isStatusMove) {
+            damage = fixedDamageValue
+        } else if (fixedDamageFractionTargetCurrentHp > 0 && didPlayerMoveHit && !isStatusMove) {
+            damage = Math.max(1, Math.floor(targetCurrentHp * fixedDamageFractionTargetCurrentHp))
+        }
+        if (shouldForceTargetKo && didPlayerMoveHit && !isStatusMove) {
+            damage = Math.max(damage, targetCurrentHp)
+        }
+        let currentHp = Math.max(0, targetCurrentHp - damage)
+        if (minTargetHpAfterHit > 0 && currentHp < minTargetHpAfterHit && targetCurrentHp > minTargetHpAfterHit) {
+            currentHp = minTargetHpAfterHit
+            damage = Math.max(0, targetCurrentHp - currentHp)
+        }
         const playerEffectivenessText = didPlayerMoveHit ? resolveEffectivenessText(playerTypeEffectiveness.multiplier) : ''
 
-        if (activeTrainerOpponent) {
-            const didDefeatOpponent = targetCurrentHp > 0 && currentHp <= 0
-            activeTrainerOpponent.currentHp = currentHp
-            if (didDefeatOpponent) {
-                if (!Array.isArray(trainerSession.knockoutCounts)) {
-                    trainerSession.knockoutCounts = []
-                }
-                const activePokemonIdString = String(activePokemon._id)
-                const knockoutEntry = trainerSession.knockoutCounts.find(
-                    (entry) => String(entry?.userPokemonId || '') === activePokemonIdString
-                )
-                if (knockoutEntry) {
-                    knockoutEntry.defeatedCount = Math.max(0, Number(knockoutEntry.defeatedCount) || 0) + 1
-                } else {
-                    trainerSession.knockoutCounts.push({
-                        userPokemonId: activePokemon._id,
-                        defeatedCount: 1,
-                    })
-                }
+        const afterDamageEffects = canPlayerAct
+            ? applyEffectSpecs({
+                effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'after_damage'),
+                context: {
+                    random: randomFn,
+                    dealtDamage: damage,
+                    didMoveHit: didPlayerMoveHit,
+                    userMaxHp: playerMaxHp,
+                    targetMaxHp,
+                    targetWasKo: currentHp <= 0,
+                },
+            })
+            : createEmptyEffectAggregate()
+
+        const endTurnEffects = canPlayerAct
+            ? applyEffectSpecs({
+                effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'end_turn'),
+                context: {
+                    random: randomFn,
+                    dealtDamage: damage,
+                    userMaxHp: playerMaxHp,
+                    targetMaxHp,
+                },
+            })
+            : createEmptyEffectAggregate()
+
+        const combinedEffectResult = [
+            selectMoveEffects,
+            damageCalcEffects,
+            beforeAccuracyEffects,
+            onHitEffects,
+            afterDamageEffects,
+            endTurnEffects,
+        ].reduce((aggregate, entry) => mergeEffectAggregate(aggregate, entry), createEmptyEffectAggregate())
+
+        const effectSelfPatches = combinedEffectResult?.statePatches?.self || {}
+        const effectOpponentPatches = combinedEffectResult?.statePatches?.opponent || {}
+        const effectFieldPatch = combinedEffectResult?.statePatches?.field || {}
+        const selfStatusShieldTurns = normalizeStatusTurns(playerVolatileState?.statusShieldTurns)
+        const opponentStatusShieldTurns = normalizeStatusTurns(opponentVolatileState?.statusShieldTurns)
+        const selfStatDropShieldTurns = normalizeStatusTurns(playerVolatileState?.statDropShieldTurns)
+        const opponentStatDropShieldTurns = normalizeStatusTurns(opponentVolatileState?.statDropShieldTurns)
+        const selfHealBlockTurns = normalizeStatusTurns(playerVolatileState?.healBlockTurns)
+        const opponentHealBlockTurns = normalizeStatusTurns(opponentVolatileState?.healBlockTurns)
+
+        if (effectSelfPatches?.clearStatus) {
+            playerStatus = ''
+            playerStatusTurns = 0
+        } else {
+            const incomingSelfStatus = normalizeBattleStatus(effectSelfPatches?.status)
+            const nextSelfStatus = incomingSelfStatus && selfStatusShieldTurns > 0 ? '' : effectSelfPatches?.status
+            if (incomingSelfStatus && selfStatusShieldTurns > 0) {
+                battleExtraLogs.push('Lá chắn trạng thái bảo vệ Pokemon của bạn khỏi hiệu ứng bất lợi.')
             }
-            trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, activeOpponentIndex)
-            if (trainerSession.currentIndex === -1) {
-                trainerSession.currentIndex = trainerSession.team.length
+            const patchedSelfStatus = applyStatusPatch({
+                currentStatus: playerStatus,
+                currentTurns: playerStatusTurns,
+                nextStatus: nextSelfStatus,
+                nextTurns: effectSelfPatches?.statusTurns,
+                random: randomFn,
+            })
+            playerStatus = patchedSelfStatus.status
+            playerStatusTurns = patchedSelfStatus.statusTurns
+        }
+
+        if (effectOpponentPatches?.clearStatus) {
+            opponentStatus = ''
+            opponentStatusTurns = 0
+        } else {
+            const incomingOpponentStatus = normalizeBattleStatus(effectOpponentPatches?.status)
+            const nextOpponentStatus = incomingOpponentStatus && opponentStatusShieldTurns > 0 ? '' : effectOpponentPatches?.status
+            if (incomingOpponentStatus && opponentStatusShieldTurns > 0) {
+                battleExtraLogs.push(`${targetName} được lá chắn trạng thái bảo vệ.`)
             }
-            trainerSession.expiresAt = getBattleSessionExpiryDate()
-            trainerSessionDirty = true
+            const patchedOpponentStatus = applyStatusPatch({
+                currentStatus: opponentStatus,
+                currentTurns: opponentStatusTurns,
+                nextStatus: nextOpponentStatus,
+                nextTurns: effectOpponentPatches?.statusTurns,
+                random: randomFn,
+            })
+            opponentStatus = patchedOpponentStatus.status
+            opponentStatusTurns = patchedOpponentStatus.statusTurns
+        }
+
+        const filteredSelfStatDelta = filterNegativeStatStageDeltas(effectSelfPatches?.statStages, selfStatDropShieldTurns)
+        const filteredOpponentStatDelta = filterNegativeStatStageDeltas(effectOpponentPatches?.statStages, opponentStatDropShieldTurns)
+        if (selfStatDropShieldTurns > 0 && Object.keys(normalizeStatStages(effectSelfPatches?.statStages)).length > Object.keys(filteredSelfStatDelta).length) {
+            battleExtraLogs.push('Lá chắn chỉ số ngăn Pokemon của bạn bị giảm chỉ số.')
+        }
+        if (opponentStatDropShieldTurns > 0 && Object.keys(normalizeStatStages(effectOpponentPatches?.statStages)).length > Object.keys(filteredOpponentStatDelta).length) {
+            battleExtraLogs.push(`${targetName} được lá chắn chỉ số bảo vệ khỏi giảm chỉ số.`)
+        }
+
+        playerStatStages = combineStatStageDeltas(playerStatStages, filteredSelfStatDelta)
+        opponentStatStages = combineStatStageDeltas(opponentStatStages, filteredOpponentStatDelta)
+        if (effectSelfPatches?.replaceStatStages && typeof effectSelfPatches.replaceStatStages === 'object') {
+            playerStatStages = normalizeStatStages(effectSelfPatches.replaceStatStages)
+        }
+        if (effectOpponentPatches?.replaceStatStages && typeof effectOpponentPatches.replaceStatStages === 'object') {
+            opponentStatStages = normalizeStatStages(effectOpponentPatches.replaceStatStages)
+        }
+        playerStatStages = applyAbsoluteStatStages(playerStatStages, effectSelfPatches?.setStatStages)
+        opponentStatStages = applyAbsoluteStatStages(opponentStatStages, effectOpponentPatches?.setStatStages)
+        if (effectSelfPatches?.clearStatStages) {
+            playerStatStages = {}
+        }
+        if (effectOpponentPatches?.clearStatStages) {
+            opponentStatStages = {}
+        }
+        playerDamageGuards = mergeDamageGuards(playerDamageGuards, effectSelfPatches?.damageGuards)
+        opponentDamageGuards = mergeDamageGuards(opponentDamageGuards, effectOpponentPatches?.damageGuards)
+        if (effectSelfPatches?.clearDamageGuards) {
+            playerDamageGuards = {}
+        }
+        if (effectOpponentPatches?.clearDamageGuards) {
+            opponentDamageGuards = {}
+        }
+        playerVolatileState = mergeVolatileState(playerVolatileState, effectSelfPatches?.volatileState)
+        opponentVolatileState = mergeVolatileState(opponentVolatileState, effectOpponentPatches?.volatileState)
+
+        if (consumedPendingCrit && playerVolatileState?.pendingAlwaysCrit) {
+            const nextVolatile = { ...playerVolatileState }
+            delete nextVolatile.pendingAlwaysCrit
+            playerVolatileState = nextVolatile
+        }
+        if (consumedPendingNeverMiss && playerVolatileState?.pendingNeverMiss) {
+            const nextVolatile = { ...playerVolatileState }
+            delete nextVolatile.pendingNeverMiss
+            playerVolatileState = nextVolatile
+        }
+
+        battleFieldState = mergeFieldState(battleFieldState, effectFieldPatch)
+
+        const selfHealHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.healHp) || 0))
+        if (selfHealHp > 0 && selfHealBlockTurns > 0) {
+            battleExtraLogs.push('Pokemon của bạn bị chặn hồi máu.')
+        } else if (selfHealHp > 0) {
+            playerCurrentHp = Math.min(playerMaxHp, playerCurrentHp + selfHealHp)
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = playerCurrentHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
+        }
+
+        const opponentHealHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.opponent?.healHp) || 0))
+        if (opponentHealHp > 0 && currentHp > 0 && opponentHealBlockTurns > 0) {
+            battleExtraLogs.push(`${targetName} bị chặn hồi máu.`)
+        } else if (opponentHealHp > 0 && currentHp > 0) {
+            currentHp = Math.min(targetMaxHp, currentHp + opponentHealHp)
+        }
+
+        const crashDamageOnMissFraction = clampFraction(
+            combinedEffectResult?.statePatches?.self?.crashDamageOnMissFractionMaxHp,
+            0
+        )
+        if (!didPlayerMoveHit && !isStatusMove && crashDamageOnMissFraction > 0 && playerCurrentHp > 0) {
+            const crashDamage = Math.max(1, Math.floor(playerMaxHp * crashDamageOnMissFraction))
+            playerCurrentHp = Math.max(0, playerCurrentHp - crashDamage)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${crashDamage} sát thương do đòn trượt.`)
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = playerCurrentHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
+        }
+
+        const selfRecoilHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.recoilHp) || 0))
+        if (selfRecoilHp > 0) {
+            playerCurrentHp = Math.max(0, playerCurrentHp - selfRecoilHp)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${selfRecoilHp} sát thương phản lực.`)
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = playerCurrentHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
+        }
+
+        const selfHpCost = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.selfHpCost) || 0))
+        if (selfHpCost > 0 && playerCurrentHp > 0) {
+            playerCurrentHp = Math.max(1, playerCurrentHp - selfHpCost)
+            battleExtraLogs.push(`Pokemon của bạn tiêu hao ${selfHpCost} HP để kích hoạt hiệu ứng.`)
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = playerCurrentHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
+        }
+
+        if (combinedEffectResult?.statePatches?.self?.selfFaint && playerCurrentHp > 0) {
+            playerCurrentHp = 0
+            battleExtraLogs.push('Pokemon của bạn bị ngất do tác dụng của chiêu.')
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = playerCurrentHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
         }
 
         let counterAttack = null
         let resultingPlayerHp = playerCurrentHp
-        if (currentHp > 0) {
+        if (currentHp > 0 && playerCurrentHp > 0) {
+            const opponentTurnStatusCheck = resolveActionAvailabilityByStatus({
+                status: opponentStatus,
+                statusTurns: opponentStatusTurns,
+                random: randomFn,
+            })
+            opponentStatus = normalizeBattleStatus(opponentTurnStatusCheck.statusAfterCheck)
+            opponentStatusTurns = normalizeStatusTurns(opponentTurnStatusCheck.statusTurnsAfterCheck)
+            let canOpponentActByVolatile = true
+            const opponentRechargeTurns = normalizeStatusTurns(opponentVolatileState?.rechargeTurns)
+            if (opponentRechargeTurns > 0) {
+                canOpponentActByVolatile = false
+                opponentVolatileState = {
+                    ...opponentVolatileState,
+                    rechargeTurns: Math.max(0, opponentRechargeTurns - 1),
+                }
+                if (!opponentVolatileState.rechargeTurns) {
+                    delete opponentVolatileState.rechargeTurns
+                }
+                battleExtraLogs.push(`${targetName} cần hồi sức nên không thể hành động.`)
+            }
+            const opponentStatusMoveBlockTurns = normalizeStatusTurns(opponentVolatileState?.statusMoveBlockTurns)
+            if (opponentStatusMoveBlockTurns > 0) {
+                opponentVolatileState = {
+                    ...opponentVolatileState,
+                    statusMoveBlockTurns: Math.max(0, opponentStatusMoveBlockTurns - 1),
+                }
+                if (!opponentVolatileState.statusMoveBlockTurns) {
+                    delete opponentVolatileState.statusMoveBlockTurns
+                }
+            }
+            const canOpponentAct = Boolean(opponentTurnStatusCheck.canAct) && canOpponentActByVolatile
+            if (opponentTurnStatusCheck.log) {
+                battleExtraLogs.push(`${targetName}: ${opponentTurnStatusCheck.log}`)
+            }
+
             const opponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
-            const opponentMoveType = targetTypes[0] || 'normal'
+            let opponentMoveType = targetTypes[0] || 'normal'
+            if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && opponentMoveType === 'normal') {
+                opponentMoveType = 'electric'
+            }
             const opponentMoveCategory = targetSpAtk > targetAtk ? 'special' : 'physical'
             const opponentMoveAccuracy = 95
-            const didOpponentMoveHit = (Math.random() * 100) <= opponentMoveAccuracy
+            const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
             const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
             const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
-            const didOpponentCritical = didOpponentMoveHit && Math.random() < 0.0625
+            const playerCritBlockTurns = normalizeStatusTurns(playerVolatileState?.critBlockTurns)
+            const didOpponentCritical = canOpponentAct
+                && didOpponentMoveHit
+                && playerCritBlockTurns <= 0
+                && Math.random() < 0.0625
+            if (canOpponentAct && didOpponentMoveHit && playerCritBlockTurns > 0) {
+                battleExtraLogs.push('Pokemon của bạn được bảo vệ khỏi đòn chí mạng.')
+            }
             const opponentCriticalMultiplier = didOpponentCritical ? 1.5 : 1
-            const opponentAttackStat = opponentMoveCategory === 'special' ? targetSpAtk : targetAtk
-            const opponentDefenseStat = opponentMoveCategory === 'special' ? playerSpDef : playerDef
-            const counterDamage = (!didOpponentMoveHit || opponentTypeEffectiveness.multiplier <= 0)
+            const opponentAttackStage = opponentMoveCategory === 'special' ? opponentStatStages?.spatk : opponentStatStages?.atk
+            const playerDefenseStage = opponentMoveCategory === 'special' ? playerStatStages?.spdef : playerStatStages?.def
+            const opponentAttackStat = applyStatStageToValue(
+                opponentMoveCategory === 'special' ? targetSpAtk : targetAtk,
+                opponentAttackStage
+            )
+            const opponentDefenseStat = applyStatStageToValue(
+                opponentMoveCategory === 'special' ? playerSpDef : playerDef,
+                playerDefenseStage
+            )
+            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentTypeEffectiveness.multiplier <= 0)
                 ? 0
                 : calcBattleDamage({
                     attackerLevel: targetLevel,
@@ -1790,6 +2922,10 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     defenseStat: opponentDefenseStat,
                     modifier: opponentStabMultiplier * opponentTypeEffectiveness.multiplier * opponentCriticalMultiplier,
                 })
+            const counterDamage = applyDamageGuardsToDamage(rawCounterDamage, opponentMoveCategory, playerDamageGuards)
+            if (counterDamage < rawCounterDamage) {
+                battleExtraLogs.push('Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.')
+            }
             const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
             resultingPlayerHp = nextPlayerHp
 
@@ -1815,11 +2951,189 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     priority: 0,
                     power: opponentMovePower,
                     ppCost: 0,
+                    canAct: canOpponentAct,
                 },
-                log: didOpponentMoveHit
+                log: !canOpponentAct
+                    ? `${targetName} không thể hành động.`
+                    : (didOpponentMoveHit
                     ? `${targetName} retaliated for ${counterDamage} damage. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
-                    : `${targetName} retaliated but missed.`,
+                    : `${targetName} retaliated but missed.`),
             }
+        }
+
+        const playerResidualDamage = resultingPlayerHp > 0
+            ? calcResidualStatusDamage({
+                status: playerStatus,
+                maxHp: playerMaxHp,
+            })
+            : 0
+        if (playerResidualDamage > 0) {
+            resultingPlayerHp = Math.max(0, resultingPlayerHp - playerResidualDamage)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${playerResidualDamage} sát thương do ${playerStatus}.`)
+        }
+
+        const opponentResidualDamage = currentHp > 0
+            ? calcResidualStatusDamage({
+                status: opponentStatus,
+                maxHp: targetMaxHp,
+            })
+            : 0
+        if (opponentResidualDamage > 0) {
+            currentHp = Math.max(0, currentHp - opponentResidualDamage)
+            battleExtraLogs.push(`${targetName} chịu ${opponentResidualDamage} sát thương do ${opponentStatus}.`)
+        }
+
+        const playerBindTurns = normalizeStatusTurns(playerVolatileState?.bindTurns)
+        const playerBindFraction = clampFraction(playerVolatileState?.bindFraction, 1 / 16)
+        if (resultingPlayerHp > 0 && playerBindTurns > 0) {
+            const bindDamage = Math.max(1, Math.floor(playerMaxHp * playerBindFraction))
+            resultingPlayerHp = Math.max(0, resultingPlayerHp - bindDamage)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${bindDamage} sát thương do bị trói.`)
+            if (playerBindTurns > 1) {
+                playerVolatileState = {
+                    ...playerVolatileState,
+                    bindTurns: playerBindTurns - 1,
+                    bindFraction: playerBindFraction,
+                }
+            } else {
+                const nextVolatileState = { ...playerVolatileState }
+                delete nextVolatileState.bindTurns
+                delete nextVolatileState.bindFraction
+                playerVolatileState = nextVolatileState
+            }
+        }
+
+        const opponentBindTurns = normalizeStatusTurns(opponentVolatileState?.bindTurns)
+        const opponentBindFraction = clampFraction(opponentVolatileState?.bindFraction, 1 / 16)
+        if (currentHp > 0 && opponentBindTurns > 0) {
+            const bindDamage = Math.max(1, Math.floor(targetMaxHp * opponentBindFraction))
+            currentHp = Math.max(0, currentHp - bindDamage)
+            battleExtraLogs.push(`${targetName} chịu ${bindDamage} sát thương do bị trói.`)
+            if (opponentBindTurns > 1) {
+                opponentVolatileState = {
+                    ...opponentVolatileState,
+                    bindTurns: opponentBindTurns - 1,
+                    bindFraction: opponentBindFraction,
+                }
+            } else {
+                const nextVolatileState = { ...opponentVolatileState }
+                delete nextVolatileState.bindTurns
+                delete nextVolatileState.bindFraction
+                opponentVolatileState = nextVolatileState
+            }
+        }
+
+        const activeWeather = String(battleFieldState?.weather || '').trim().toLowerCase()
+        if ((activeWeather === 'hail' || activeWeather === 'sandstorm') && resultingPlayerHp > 0 && !isImmuneToWeatherChip(activeWeather, attackerTypes)) {
+            const weatherDamage = Math.max(1, Math.floor(playerMaxHp / 16))
+            resultingPlayerHp = Math.max(0, resultingPlayerHp - weatherDamage)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${weatherDamage} sát thương từ ${activeWeather}.`)
+        }
+        if ((activeWeather === 'hail' || activeWeather === 'sandstorm') && currentHp > 0 && !isImmuneToWeatherChip(activeWeather, targetTypes)) {
+            const weatherDamage = Math.max(1, Math.floor(targetMaxHp / 16))
+            currentHp = Math.max(0, currentHp - weatherDamage)
+            battleExtraLogs.push(`${targetName} chịu ${weatherDamage} sát thương từ ${activeWeather}.`)
+        }
+
+        if (String(battleFieldState?.terrain || '').trim().toLowerCase() === 'grassy') {
+            const playerHealBlockNow = normalizeStatusTurns(playerVolatileState?.healBlockTurns)
+            const opponentHealBlockNow = normalizeStatusTurns(opponentVolatileState?.healBlockTurns)
+
+            if (resultingPlayerHp > 0) {
+                if (playerHealBlockNow > 0) {
+                    battleExtraLogs.push('Pokemon của bạn không thể hồi máu do bị chặn hồi máu.')
+                } else {
+                    const healAmount = Math.max(1, Math.floor(playerMaxHp / 16))
+                    resultingPlayerHp = Math.min(playerMaxHp, resultingPlayerHp + healAmount)
+                    battleExtraLogs.push(`Pokemon của bạn hồi ${healAmount} HP nhờ địa hình cỏ.`)
+                }
+            }
+
+            if (currentHp > 0) {
+                if (opponentHealBlockNow > 0) {
+                    battleExtraLogs.push(`${targetName} không thể hồi máu do bị chặn hồi máu.`)
+                } else {
+                    const healAmount = Math.max(1, Math.floor(targetMaxHp / 16))
+                    currentHp = Math.min(targetMaxHp, currentHp + healAmount)
+                    battleExtraLogs.push(`${targetName} hồi ${healAmount} HP nhờ địa hình cỏ.`)
+                }
+            }
+        }
+
+        if (counterAttack) {
+            counterAttack.currentHp = resultingPlayerHp
+            counterAttack.defeatedPlayer = resultingPlayerHp <= 0
+        }
+
+        playerWasDamagedLastTurn = resultingPlayerHp < playerTurnStartHp
+        opponentWasDamagedLastTurn = currentHp < opponentTurnStartHp
+
+        playerDamageGuards = decrementDamageGuards(playerDamageGuards)
+        opponentDamageGuards = currentHp > 0 ? decrementDamageGuards(opponentDamageGuards) : {}
+        battleFieldState = decrementFieldState(battleFieldState)
+        playerVolatileState = decrementVolatileTurnState(playerVolatileState)
+        opponentVolatileState = currentHp > 0 ? decrementVolatileTurnState(opponentVolatileState) : {}
+
+        if (currentHp <= 0) {
+            opponentStatus = ''
+            opponentStatusTurns = 0
+            opponentStatStages = {}
+            opponentDamageGuards = {}
+            opponentVolatileState = {}
+        }
+
+        if (resultingPlayerHp <= 0) {
+            playerStatus = ''
+            playerStatusTurns = 0
+            playerStatStages = {}
+            playerDamageGuards = {}
+            playerVolatileState = {}
+        }
+
+        if (trainerSession) {
+            trainerSession.playerCurrentHp = resultingPlayerHp
+            trainerSession.playerStatus = playerStatus
+            trainerSession.playerStatusTurns = playerStatusTurns
+            trainerSession.playerStatStages = playerStatStages
+            trainerSession.playerDamageGuards = playerDamageGuards
+            trainerSession.playerWasDamagedLastTurn = playerWasDamagedLastTurn
+            trainerSession.playerVolatileState = playerVolatileState
+            trainerSession.fieldState = battleFieldState
+            if (activeTrainerOpponent) {
+                const didDefeatOpponent = targetCurrentHp > 0 && currentHp <= 0
+                activeTrainerOpponent.currentHp = currentHp
+                activeTrainerOpponent.status = opponentStatus
+                activeTrainerOpponent.statusTurns = opponentStatusTurns
+                activeTrainerOpponent.statStages = opponentStatStages
+                activeTrainerOpponent.damageGuards = opponentDamageGuards
+                activeTrainerOpponent.wasDamagedLastTurn = opponentWasDamagedLastTurn
+                activeTrainerOpponent.volatileState = opponentVolatileState
+
+                if (didDefeatOpponent) {
+                    if (!Array.isArray(trainerSession.knockoutCounts)) {
+                        trainerSession.knockoutCounts = []
+                    }
+                    const activePokemonIdString = String(activePokemon._id)
+                    const knockoutEntry = trainerSession.knockoutCounts.find(
+                        (entry) => String(entry?.userPokemonId || '') === activePokemonIdString
+                    )
+                    if (knockoutEntry) {
+                        knockoutEntry.defeatedCount = Math.max(0, Number(knockoutEntry.defeatedCount) || 0) + 1
+                    } else {
+                        trainerSession.knockoutCounts.push({
+                            userPokemonId: activePokemon._id,
+                            defeatedCount: 1,
+                        })
+                    }
+                }
+
+                trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, activeOpponentIndex)
+                if (trainerSession.currentIndex === -1) {
+                    trainerSession.currentIndex = trainerSession.team.length
+                }
+            }
+            trainerSession.expiresAt = getBattleSessionExpiryDate()
+            trainerSessionDirty = true
         }
 
         if (trainerSessionDirty && trainerSession) {
@@ -1831,6 +3145,13 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 trainerId: normalizedTrainerId,
                 currentIndex: trainerSession.currentIndex,
                 defeatedAll: trainerSession.currentIndex >= trainerSession.team.length,
+                playerStatus: normalizeBattleStatus(trainerSession.playerStatus),
+                playerStatusTurns: normalizeStatusTurns(trainerSession.playerStatusTurns),
+                playerStatStages: normalizeStatStages(trainerSession.playerStatStages),
+                playerDamageGuards: normalizeDamageGuards(trainerSession.playerDamageGuards),
+                playerWasDamagedLastTurn: Boolean(trainerSession.playerWasDamagedLastTurn),
+                playerVolatileState: normalizeVolatileState(trainerSession.playerVolatileState),
+                fieldState: normalizeFieldState(trainerSession.fieldState),
                 team: trainerSession.team.map((entry) => ({
                     slot: entry.slot,
                     pokemonId: entry.pokemonId,
@@ -1839,6 +3160,12 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     types: normalizePokemonTypes(entry.types),
                     currentHp: entry.currentHp,
                     maxHp: entry.maxHp,
+                    status: normalizeBattleStatus(entry.status),
+                    statusTurns: normalizeStatusTurns(entry.statusTurns),
+                    statStages: normalizeStatStages(entry.statStages),
+                    damageGuards: normalizeDamageGuards(entry.damageGuards),
+                    wasDamagedLastTurn: Boolean(entry.wasDamagedLastTurn),
+                    volatileState: normalizeVolatileState(entry.volatileState),
                 })),
             }
             : null
@@ -1857,6 +3184,8 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     accuracy: moveAccuracy,
                     priority: movePriority,
                     hit: didPlayerMoveHit,
+                    forcedHit,
+                    hitCount,
                     critical: didPlayerCritical,
                     effectiveness: playerTypeEffectiveness.multiplier,
                     stabMultiplier: playerStabMultiplier,
@@ -1872,13 +3201,40 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
                     currentHp: resultingPlayerHp,
                     maxHp: playerMaxHp,
+                    status: playerStatus,
+                    statusTurns: playerStatusTurns,
+                    statStages: playerStatStages,
+                    damageGuards: playerDamageGuards,
+                    wasDamagedLastTurn: playerWasDamagedLastTurn,
+                    volatileState: playerVolatileState,
                     movePpState: playerMovePpStatePayload,
                 },
                 opponent: trainerState,
+                targetState: {
+                    name: targetName,
+                    currentHp,
+                    maxHp: targetMaxHp,
+                    status: opponentStatus,
+                    statusTurns: opponentStatusTurns,
+                    statStages: opponentStatStages,
+                    damageGuards: opponentDamageGuards,
+                    wasDamagedLastTurn: opponentWasDamagedLastTurn,
+                    volatileState: opponentVolatileState,
+                },
                 counterAttack,
-                log: didPlayerMoveHit
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
-                    : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`,
+                effects: {
+                    logs: [...combinedEffectResult.logs, ...battleExtraLogs],
+                    appliedOps: combinedEffectResult.appliedEffects.map((entry) => String(entry?.op || '').trim()).filter(Boolean),
+                    statePatches: combinedEffectResult.statePatches,
+                },
+                fieldState: battleFieldState,
+                log: !canPlayerAct
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} không thể hành động.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
+                    : (didPlayerMoveHit
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage${hitCount > 1 ? ` (${hitCount} hits)` : ''}. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
+                    : (moveBlockedByTerrainRequirement
+                        ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but it failed because there is no active terrain.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
+                        : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
             },
         })
     } catch (error) {
@@ -1979,9 +3335,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         const happinessAwarded = 13
 
         const party = await UserPokemon.find({ userId, location: 'party' })
-            .select('pokemonId level experience friendship nickname formId partyIndex')
+            .select('pokemonId level experience friendship nickname formId isShiny partyIndex')
             .sort({ partyIndex: 1 })
-            .populate('pokemonId', 'rarity name imageUrl sprites')
+            .populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
         const activePokemon = party.find(p => p) || null
 
         if (!activePokemon) {
@@ -2052,7 +3408,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             const evolutions = levelsGained > 0 ? await applyLevelEvolution(participantPokemon) : []
 
             await participantPokemon.save()
-            await participantPokemon.populate('pokemonId', 'rarity name imageUrl sprites')
+            await participantPokemon.populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
 
             totalLevelsGained += levelsGained
             if (evolutions.length > 0) {
@@ -2065,10 +3421,11 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 baseExp: expParticipant.baseExp,
                 finalExp,
                 name: participantPokemon.nickname || participantPokemon.pokemonId?.name || 'Pokemon',
-                imageUrl: participantPokemon.pokemonId?.imageUrl ||
-                    participantPokemon.pokemonId?.sprites?.normal ||
-                    participantPokemon.pokemonId?.sprites?.front_default ||
-                    '',
+                imageUrl: resolvePokemonImageForForm(
+                    participantPokemon.pokemonId,
+                    participantPokemon.formId,
+                    Boolean(participantPokemon.isShiny)
+                ),
                 level: participantPokemon.level,
                 exp: participantPokemon.experience,
                 expToNext: participantPokemon.level * 100,
@@ -2084,10 +3441,11 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 (b.baseExp - a.baseExp)
             ))[0] || {
                 name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Pokemon',
-                imageUrl: activePokemon.pokemonId?.imageUrl ||
-                    activePokemon.pokemonId?.sprites?.normal ||
-                    activePokemon.pokemonId?.sprites?.front_default ||
-                    '',
+                imageUrl: resolvePokemonImageForForm(
+                    activePokemon.pokemonId,
+                    activePokemon.formId,
+                    Boolean(activePokemon.isShiny)
+                ),
                 level: activePokemon.level,
                 exp: activePokemon.experience,
                 expToNext: activePokemon.level * 100,
@@ -2251,14 +3609,7 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
-        const defaultFormId = pokemon.defaultFormId || 'normal'
-        let formId = encounter.formId || defaultFormId
-        const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
-        let resolvedForm = forms.find((form) => form.formId === formId) || null
-        if (!resolvedForm && forms.length > 0) {
-            formId = defaultFormId || forms[0].formId
-            resolvedForm = forms.find((form) => form.formId === formId) || forms[0]
-        }
+        const { form: resolvedForm, formId } = resolvePokemonForm(pokemon, encounter.formId)
         const formStats = resolvedForm?.stats || null
         const formSprites = resolvedForm?.sprites || null
         const formImageUrl = resolvedForm?.imageUrl || ''
@@ -2288,5 +3639,17 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
         next(error)
     }
 })
+
+export const __battleEffectInternals = {
+    normalizeBattleStatus,
+    normalizeStatusTurns,
+    normalizeVolatileState,
+    mergeVolatileState,
+    applyStatusPatch,
+    resolveActionAvailabilityByStatus,
+    calcResidualStatusDamage,
+    applyDamageGuardsToDamage,
+    decrementDamageGuards,
+}
 
 export default router

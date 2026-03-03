@@ -56,6 +56,20 @@ const POKEMON_RARITY_LABELS = {
     d: 'D',
 }
 
+const MOVE_SORT_OPTIONS = [
+    { value: 'createdAt_desc', label: 'Mới nhất' },
+    { value: 'implemented_effects_desc', label: 'Có hiệu ứng trước' },
+    { value: 'name_asc', label: 'Tên A -> Z' },
+    { value: 'name_desc', label: 'Tên Z -> A' },
+]
+
+const EFFECT_STATE_OPTIONS = [
+    { value: 'all', label: 'Mọi kỹ năng' },
+    { value: 'implemented', label: 'Đã có hiệu ứng' },
+    { value: 'incomplete', label: 'Chỉ còn hiệu ứng chưa hoàn chỉnh' },
+    { value: 'none', label: 'Chưa có effectSpecs' },
+]
+
 const describeLearnScope = (move) => {
     const scope = String(move?.learnScope || 'all').toLowerCase()
     if (scope === 'move_type') {
@@ -91,6 +105,12 @@ export default function MoveListPage() {
     const [page, setPage] = useState(1)
     const [pagination, setPagination] = useState({ total: 0, pages: 0 })
     const [meta, setMeta] = useState({ types: [], categories: [], rarities: [] })
+    const [sortBy, setSortBy] = useState('createdAt_desc')
+    const [effectStateFilter, setEffectStateFilter] = useState('all')
+
+    const [effectProgress, setEffectProgress] = useState(null)
+    const [effectProgressLoading, setEffectProgressLoading] = useState(false)
+    const [effectProgressError, setEffectProgressError] = useState('')
 
     const [historyLogs, setHistoryLogs] = useState([])
     const [historyLoading, setHistoryLoading] = useState(false)
@@ -106,12 +126,20 @@ export default function MoveListPage() {
     const [moveCsvImportReport, setMoveCsvImportReport] = useState(null)
     const moveCsvImportFileRef = useRef(null)
 
+    const [bulkShopPrice, setBulkShopPrice] = useState('5000')
+    const [bulkShopApplying, setBulkShopApplying] = useState(false)
+    const [bulkShopReport, setBulkShopReport] = useState(null)
+
     useEffect(() => {
         loadMoves()
-    }, [search, typeFilter, categoryFilter, rarityFilter, page])
+    }, [search, typeFilter, categoryFilter, rarityFilter, sortBy, effectStateFilter, page])
 
     useEffect(() => {
         loadAllMoves()
+    }, [])
+
+    useEffect(() => {
+        loadEffectProgress()
     }, [])
 
     useEffect(() => {
@@ -127,6 +155,8 @@ export default function MoveListPage() {
                 type: typeFilter,
                 category: categoryFilter,
                 rarity: rarityFilter,
+                sortBy,
+                effectState: effectStateFilter,
                 page,
                 limit: 20,
             })
@@ -137,6 +167,20 @@ export default function MoveListPage() {
             setError(err.message)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadEffectProgress = async () => {
+        try {
+            setEffectProgressLoading(true)
+            setEffectProgressError('')
+            const data = await moveApi.getEffectProgress()
+            setEffectProgress(data)
+        } catch (err) {
+            setEffectProgressError(err.message)
+            setEffectProgress(null)
+        } finally {
+            setEffectProgressLoading(false)
         }
     }
 
@@ -264,6 +308,7 @@ export default function MoveListPage() {
 
             await loadAllMoves()
             await loadMoves()
+            await loadEffectProgress()
 
             const createdCount = aggregateCreated
             const errorCount = aggregateErrors
@@ -281,9 +326,34 @@ export default function MoveListPage() {
         if (!confirm(`Xóa kỹ năng ${name}?`)) return
         try {
             await moveApi.delete(id)
-            loadMoves()
+            await Promise.all([loadMoves(), loadEffectProgress()])
         } catch (err) {
             alert('Xóa thất bại: ' + err.message)
+        }
+    }
+
+    const handleBulkApplyShop = async () => {
+        const parsedPrice = Number.parseInt(String(bulkShopPrice || '').trim(), 10)
+        if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+            setError('Giá bán hàng loạt phải là số nguyên không âm.')
+            return
+        }
+
+        try {
+            setBulkShopApplying(true)
+            setError('')
+            const data = await moveApi.bulkApplyShop({ shopPrice: parsedPrice })
+            setBulkShopReport(data?.result || null)
+
+            await Promise.all([
+                loadMoves(),
+                loadAllMoves(),
+                loadPurchaseHistory(),
+            ])
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setBulkShopApplying(false)
         }
     }
 
@@ -293,6 +363,8 @@ export default function MoveListPage() {
         if (Number.isNaN(date.getTime())) return '--'
         return date.toLocaleString('vi-VN')
     }
+
+    const eligibleImplementedMovesCount = allMoves.filter((move) => Number(move?.implementedEffectCount || 0) > 0).length
 
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm">
@@ -343,6 +415,24 @@ export default function MoveListPage() {
                         <option value="">Tất cả độ hiếm</option>
                         {meta.rarities.map((rarity) => (
                             <option key={rarity} value={rarity}>{RARITY_LABELS[rarity] || rarity}</option>
+                        ))}
+                    </select>
+                    <select
+                        value={effectStateFilter}
+                        onChange={(e) => { setEffectStateFilter(e.target.value); setPage(1) }}
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-auto focus:outline-none focus:border-blue-500 shadow-sm"
+                    >
+                        {EFFECT_STATE_OPTIONS.map((entry) => (
+                            <option key={entry.value} value={entry.value}>{entry.label}</option>
+                        ))}
+                    </select>
+                    <select
+                        value={sortBy}
+                        onChange={(e) => { setSortBy(e.target.value); setPage(1) }}
+                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 w-full sm:w-auto focus:outline-none focus:border-blue-500 shadow-sm"
+                    >
+                        {MOVE_SORT_OPTIONS.map((entry) => (
+                            <option key={entry.value} value={entry.value}>{entry.label}</option>
                         ))}
                     </select>
                 </div>
@@ -425,6 +515,152 @@ export default function MoveListPage() {
                     )}
                 </div>
 
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+                        <div>
+                            <p className="text-sm font-bold text-indigo-900">Đưa nhanh kỹ năng lên shop (chỉ skill có effect)</p>
+                            <p className="text-[11px] text-indigo-700 mt-1">
+                                Chỉ áp dụng cho skill có `implementedEffectCount &gt; 0`. Bạn có thể đặt cùng 1 giá bán cho toàn bộ skill đủ điều kiện.
+                            </p>
+                        </div>
+                        <div className="flex items-end gap-2">
+                            <div>
+                                <label className="block text-[11px] font-bold uppercase text-indigo-800 mb-1">Giá bán hàng loạt</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={bulkShopPrice}
+                                    onChange={(e) => setBulkShopPrice(e.target.value)}
+                                    className="w-36 px-3 py-1.5 bg-white border border-indigo-300 rounded text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleBulkApplyShop}
+                                disabled={bulkShopApplying || eligibleImplementedMovesCount <= 0}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
+                            >
+                                {bulkShopApplying ? 'Đang áp dụng...' : 'Up shop nhanh'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="text-xs text-indigo-800 bg-white/70 border border-indigo-200 rounded p-2">
+                        Skill đủ điều kiện hiện tại: <span className="font-bold">{eligibleImplementedMovesCount.toLocaleString('vi-VN')}</span>
+                    </div>
+
+                    {bulkShopReport && (
+                        <div className="mt-2 text-xs text-indigo-900 bg-white border border-indigo-200 rounded p-2">
+                            <div className="font-semibold">
+                                Giá áp dụng: {Number(bulkShopReport.shopPrice || 0).toLocaleString('vi-VN')} •
+                                Đủ điều kiện: {Number(bulkShopReport.eligibleCount || 0).toLocaleString('vi-VN')} •
+                                Đã cập nhật: {Number(bulkShopReport.updatedCount || 0).toLocaleString('vi-VN')} •
+                                Không đổi: {Number(bulkShopReport.unchangedCount || 0).toLocaleString('vi-VN')}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-sm font-bold text-indigo-900">Tiến độ hiệu ứng kỹ năng</p>
+                        <button
+                            type="button"
+                            onClick={loadEffectProgress}
+                            disabled={effectProgressLoading}
+                            className="px-3 py-1.5 bg-white border border-indigo-300 hover:bg-indigo-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed rounded text-xs font-bold text-indigo-900"
+                        >
+                            {effectProgressLoading ? 'Đang tải...' : 'Làm mới tiến độ'}
+                        </button>
+                    </div>
+
+                    {effectProgressError && (
+                        <div className="mb-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{effectProgressError}</div>
+                    )}
+
+                    {effectProgress && (
+                        <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+                                <div className="bg-white border border-indigo-200 rounded p-2">
+                                    <p className="text-[11px] text-indigo-600">Tổng kỹ năng</p>
+                                    <p className="text-base font-bold text-indigo-900">{Number(effectProgress?.summary?.totalMoves || 0).toLocaleString('vi-VN')}</p>
+                                </div>
+                                <div className="bg-white border border-emerald-200 rounded p-2">
+                                    <p className="text-[11px] text-emerald-600">Kỹ năng đã có hiệu ứng</p>
+                                    <p className="text-base font-bold text-emerald-800">{Number(effectProgress?.summary?.movesWithImplementedEffects || 0).toLocaleString('vi-VN')}</p>
+                                </div>
+                                <div className="bg-white border border-amber-200 rounded p-2">
+                                    <p className="text-[11px] text-amber-600">Kỹ năng chỉ còn chưa hoàn chỉnh</p>
+                                    <p className="text-base font-bold text-amber-800">{Number(effectProgress?.summary?.movesOnlyIncompleteEffects || 0).toLocaleString('vi-VN')}</p>
+                                </div>
+                                <div className="bg-white border border-blue-200 rounded p-2">
+                                    <p className="text-[11px] text-blue-600">Tỉ lệ hoàn chỉnh</p>
+                                    <p className="text-base font-bold text-blue-800">{Number(effectProgress?.summary?.completionRate || 0).toLocaleString('vi-VN')}%</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="bg-white border border-emerald-200 rounded p-2">
+                                    <p className="text-xs font-bold text-emerald-800 mb-1 uppercase">Hiệu ứng đã hoàn chỉnh (id / EN / VI)</p>
+                                    <div className="max-h-56 overflow-auto border border-emerald-100 rounded">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-emerald-50 sticky top-0">
+                                                <tr>
+                                                    <th className="px-2 py-1 text-left">ID</th>
+                                                    <th className="px-2 py-1 text-left">Tên EN</th>
+                                                    <th className="px-2 py-1 text-left">Tên VI</th>
+                                                    <th className="px-2 py-1 text-right">Số lần</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(effectProgress.completeEffects || []).map((entry) => (
+                                                    <tr key={entry.id} className="border-t border-emerald-100">
+                                                        <td className="px-2 py-1 font-mono text-[11px]">{entry.id}</td>
+                                                        <td className="px-2 py-1">{entry.nameEn}</td>
+                                                        <td className="px-2 py-1">{entry.nameVi}</td>
+                                                        <td className="px-2 py-1 text-right font-semibold">{Number(entry.usageCount || 0).toLocaleString('vi-VN')}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border border-amber-200 rounded p-2">
+                                    <p className="text-xs font-bold text-amber-800 mb-1 uppercase">Hiệu ứng chưa hoàn chỉnh (id / EN / VI)</p>
+                                    <div className="max-h-56 overflow-auto border border-amber-100 rounded">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-amber-50 sticky top-0">
+                                                <tr>
+                                                    <th className="px-2 py-1 text-left">ID</th>
+                                                    <th className="px-2 py-1 text-left">Tên EN</th>
+                                                    <th className="px-2 py-1 text-left">Tên VI</th>
+                                                    <th className="px-2 py-1 text-right">Số lần</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(effectProgress.incompleteEffects || []).map((entry) => (
+                                                    <tr key={entry.id} className="border-t border-amber-100">
+                                                        <td className="px-2 py-1 font-mono text-[11px]">{entry.id}</td>
+                                                        <td className="px-2 py-1">{entry.nameEn}</td>
+                                                        <td className="px-2 py-1">{entry.nameVi}</td>
+                                                        <td className="px-2 py-1 text-right font-semibold">{Number(entry.usageCount || 0).toLocaleString('vi-VN')}</td>
+                                                    </tr>
+                                                ))}
+                                                {(effectProgress.incompleteEffects || []).length === 0 && (
+                                                    <tr>
+                                                        <td colSpan="4" className="px-2 py-2 text-slate-500 italic">Không còn hiệu ứng chưa hoàn chỉnh.</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
                 {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}
 
                 {loading ? (
@@ -446,6 +682,7 @@ export default function MoveListPage() {
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Độ hiếm</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs">Shop</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Giá</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Effects</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs">Hành động</th>
                                         </tr>
                                     </thead>
@@ -479,6 +716,11 @@ export default function MoveListPage() {
                                                     )}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-slate-700 font-bold">{Number(move.shopPrice || 0).toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-right text-slate-700">
+                                                    <span className="font-bold text-emerald-700">{Number(move.implementedEffectCount || 0)}</span>
+                                                    <span className="text-slate-400"> / </span>
+                                                    <span className="font-semibold">{Number(move.effectSpecCount || 0)}</span>
+                                                </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <Link
                                                         to={`/admin/moves/${move._id}/edit`}
@@ -497,7 +739,7 @@ export default function MoveListPage() {
                                         ))}
                                         {moves.length === 0 && (
                                             <tr>
-                                                <td colSpan="11" className="px-4 py-8 text-center text-slate-500 italic">
+                                                <td colSpan="12" className="px-4 py-8 text-center text-slate-500 italic">
                                                     Chưa có kỹ năng nào.
                                                 </td>
                                             </tr>
@@ -566,7 +808,7 @@ export default function MoveListPage() {
 
                 <div className="mt-8 border border-blue-200 rounded-lg overflow-hidden shadow-sm bg-white">
                     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 px-3 py-2 border-b border-blue-600">
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider drop-shadow-sm">Lịch Sử Mua Kỹ Năng (Audit)</h2>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider drop-shadow-sm">Lịch Sử Mua Kỹ Năng</h2>
                     </div>
 
                     <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-2">

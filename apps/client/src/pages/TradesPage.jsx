@@ -321,6 +321,11 @@ export default function TradesPage() {
                                                 <div className="inline-block px-1 sm:px-2 py-1 rounded bg-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
                                                     {listing.pokemonName}
                                                 </div>
+                                                {listing.formId && listing.formId !== 'normal' && (
+                                                    <div className="mt-1 text-[10px] sm:text-xs text-sky-700 font-bold uppercase">
+                                                        {listing.formName || listing.formId}
+                                                    </div>
+                                                )}
                                                 <div className="mt-1 text-xs sm:text-sm font-bold text-slate-700">Cấp độ: {listing.level}</div>
                                                 <div className="text-xs sm:text-sm"><span className="font-bold">Người bán:</span> {listing.seller?.username || 'Không rõ'}</div>
                                                 <div className="text-xs sm:text-sm"><span className="font-bold">OT:</span> {listing.otName || 'Không rõ'}</div>

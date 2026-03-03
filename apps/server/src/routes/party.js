@@ -6,6 +6,19 @@ import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFa
 
 const router = express.Router()
 
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const resolveFormStats = (species = {}, formId = null) => {
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
+    const requestedFormId = normalizeFormId(formId || defaultFormId)
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+    return resolvedForm?.stats || species?.baseStats || {}
+}
+
 router.use(authMiddleware)
 
 // GET /api/party
@@ -30,7 +43,7 @@ router.get('/', async (req, res) => {
             if (p.partyIndex >= 0 && p.partyIndex < 6) {
                 // Calculate stats for this pokemon
                 const base = p.pokemonId || {}
-                const stats = calcStatsForLevel(base.baseStats, p.level, base.rarity)
+                const stats = calcStatsForLevel(resolveFormStats(base, p.formId), p.level, base.rarity)
 
                 // Return a plain object with stats injected
                 const po = p.toObject()
@@ -59,7 +72,7 @@ router.get('/', async (req, res) => {
                 const firstEmpty = slots.findIndex(s => s === null)
                 if (firstEmpty !== -1) {
                     const base = p.pokemonId || {}
-                    const stats = calcStatsForLevel(base.baseStats, p.level, base.rarity)
+                    const stats = calcStatsForLevel(resolveFormStats(base, p.formId), p.level, base.rarity)
                     const po = p.toObject()
                     po.stats = stats
                     const mergedMoveNames = mergeKnownMovesWithFallback(po.moves, base, p.level)

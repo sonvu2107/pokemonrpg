@@ -25,6 +25,34 @@ const toSafePage = (value) => Math.max(1, parseInt(value, 10) || 1)
 const toSafeLimit = (value) => Math.min(50, Math.max(1, parseInt(value, 10) || 20))
 const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const resolvePokemonForm = (pokemon = null, formId = null) => {
+    const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
+    const defaultFormId = normalizeFormId(pokemon?.defaultFormId || 'normal')
+    const requestedFormId = normalizeFormId(formId || defaultFormId)
+
+    let resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId) || null
+    let resolvedFormId = requestedFormId
+
+    if (!resolvedForm && forms.length > 0) {
+        resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId) || forms[0]
+        resolvedFormId = normalizeFormId(resolvedForm?.formId || defaultFormId)
+    }
+
+    return { form: resolvedForm, formId: resolvedFormId }
+}
+
+const resolvePokemonSpriteByForm = (pokemon = null, formId = null) => {
+    const { form } = resolvePokemonForm(pokemon, formId)
+    return form?.imageUrl
+        || form?.sprites?.normal
+        || form?.sprites?.icon
+        || pokemon?.imageUrl
+        || pokemon?.sprites?.normal
+        || pokemon?.sprites?.front_default
+        || ''
+}
 
 router.use(authMiddleware)
 
@@ -404,6 +432,8 @@ router.get('/sell', async (req, res) => {
                             types: '$pokemon.types',
                             imageUrl: '$pokemon.imageUrl',
                             sprites: '$pokemon.sprites',
+                            forms: '$pokemon.forms',
+                            defaultFormId: '$pokemon.defaultFormId',
                         },
                     },
                 },
@@ -470,6 +500,8 @@ router.get('/sell', async (req, res) => {
                                         types: '$pokemon.types',
                                         imageUrl: '$pokemon.imageUrl',
                                         sprites: '$pokemon.sprites',
+                                        forms: '$pokemon.forms',
+                                        defaultFormId: '$pokemon.defaultFormId',
                                     },
                                     buyer: {
                                         _id: '$buyer._id',
@@ -528,6 +560,8 @@ router.get('/sell', async (req, res) => {
                                         types: '$pokemon.types',
                                         imageUrl: '$pokemon.imageUrl',
                                         sprites: '$pokemon.sprites',
+                                        forms: '$pokemon.forms',
+                                        defaultFormId: '$pokemon.defaultFormId',
                                     },
                                     buyer: {
                                         _id: '$buyer._id',
@@ -557,37 +591,45 @@ router.get('/sell', async (req, res) => {
         const soldTotal = listingData.soldTotal?.[0]?.count || 0
 
         const availablePokemon = includeAvailable
-            ? availableRows.map((entry) => ({
-                id: entry._id,
-                pokemonName: entry.nickname || entry?.pokemon?.name || 'Pokemon',
-                speciesName: entry?.pokemon?.name || 'Pokemon',
-                level: entry.level || 1,
-                formId: entry.formId || 'normal',
-                sprite: entry?.pokemon?.sprites?.normal || entry?.pokemon?.sprites?.front_default || entry?.pokemon?.imageUrl || '',
-                type: entry?.pokemon?.types || [],
-            }))
+            ? availableRows.map((entry) => {
+                const resolvedForm = resolvePokemonForm(entry?.pokemon, entry?.formId)
+                return {
+                    id: entry._id,
+                    pokemonName: entry.nickname || entry?.pokemon?.name || 'Pokemon',
+                    speciesName: entry?.pokemon?.name || 'Pokemon',
+                    level: entry.level || 1,
+                    formId: resolvedForm.formId,
+                    formName: resolvedForm.form?.formName || resolvedForm.formId,
+                    sprite: resolvePokemonSpriteByForm(entry?.pokemon, resolvedForm.formId),
+                    type: entry?.pokemon?.types || [],
+                }
+            })
             : null
 
-        const mapListing = (row) => ({
-            id: row._id,
-            userPokemonId: row.userPokemonId,
+        const mapListing = (row) => {
+            const resolvedForm = resolvePokemonForm(row?.pokemon, row?.formId)
+            return {
+                id: row._id,
+                userPokemonId: row.userPokemonId,
                 pokemonName: row.nickname || row?.pokemon?.name || 'Pokemon',
                 speciesName: row?.pokemon?.name || 'Pokemon',
                 level: row.level || 1,
-                formId: row.formId || 'normal',
+                formId: resolvedForm.formId,
+                formName: resolvedForm.form?.formName || resolvedForm.formId,
                 price: row.price || 0,
                 otName: row.otName || '',
                 listedAt: row.listedAt,
                 soldAt: row.soldAt,
-                sprite: row?.pokemon?.sprites?.normal || row?.pokemon?.sprites?.front_default || row?.pokemon?.imageUrl || '',
+                sprite: resolvePokemonSpriteByForm(row?.pokemon, resolvedForm.formId),
                 buyer: row?.buyer
                     ? {
-                    id: row.buyer._id,
-                    username: row.buyer.username || 'Không rõ',
-                }
+                        id: row.buyer._id,
+                        username: row.buyer.username || 'Không rõ',
+                    }
                     : null,
                 status: row.status,
-            })
+            }
+        }
 
         res.json({
             ok: true,
@@ -800,6 +842,8 @@ router.get('/buy', async (req, res) => {
                                     types: '$pokemon.types',
                                     imageUrl: '$pokemon.imageUrl',
                                     sprites: '$pokemon.sprites',
+                                    forms: '$pokemon.forms',
+                                    defaultFormId: '$pokemon.defaultFormId',
                                 },
                                 seller: {
                                     _id: '$seller._id',
@@ -831,13 +875,16 @@ router.get('/buy', async (req, res) => {
         const playerState = await PlayerState.findOne({ userId }).select('gold moonPoints').lean()
 
         const listings = rows.map((row) => {
-            const sprite = row?.pokemon?.sprites?.normal || row?.pokemon?.sprites?.front_default || row?.pokemon?.imageUrl || ''
+            const resolvedForm = resolvePokemonForm(row?.pokemon, row?.formId)
+            const sprite = resolvePokemonSpriteByForm(row?.pokemon, resolvedForm.formId)
             return {
                 id: row._id,
                 pokemonName: row.nickname || row?.pokemon?.name || 'Pokemon',
                 speciesName: row?.pokemon?.name || 'Pokemon',
                 type: row?.pokemon?.types || [],
                 level: row.level || 1,
+                formId: resolvedForm.formId,
+                formName: resolvedForm.form?.formName || resolvedForm.formId,
                 price: row.price || 0,
                 otName: row.otName || row?.seller?.username || 'Không rõ',
                 seller: {

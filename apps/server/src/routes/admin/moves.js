@@ -3,6 +3,16 @@ import mongoose from 'mongoose'
 import Move, { MOVE_LEARN_SCOPES, MOVE_RARITIES, POKEMON_RARITIES, POKEMON_TYPES } from '../../models/Move.js'
 import MovePurchaseLog from '../../models/MovePurchaseLog.js'
 import Pokemon from '../../models/Pokemon.js'
+import { parseMoveEffectText } from '../../battle/effects/effectParser.js'
+import { getRegisteredEffectOps } from '../../battle/effects/effectRegistry.js'
+import {
+    buildEffectOpMeta,
+    buildEffectReasonMeta,
+    getDefaultEffectSpecForOp,
+    getEffectTargetOptions,
+    getEffectTriggerOptions,
+    isImplementedEffectOp,
+} from '../../battle/effects/effectMeta.js'
 
 const router = express.Router()
 
@@ -25,6 +35,58 @@ const parseNumberOrUndefined = (value) => {
     if (value === null || value === '') return null
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : NaN
+}
+
+const DEFAULT_MOVE_SORT = 'createdAt_desc'
+const MOVE_SORT_OPTIONS = new Set([
+    'createdAt_desc',
+    'name_asc',
+    'name_desc',
+    'implemented_effects_desc',
+])
+
+const resolveMoveSortKey = (value = '') => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return DEFAULT_MOVE_SORT
+    return MOVE_SORT_OPTIONS.has(normalized) ? normalized : DEFAULT_MOVE_SORT
+}
+
+const resolveMoveSortStage = (sortBy = DEFAULT_MOVE_SORT) => {
+    if (sortBy === 'name_asc') return { nameLower: 1, _id: 1 }
+    if (sortBy === 'name_desc') return { nameLower: -1, _id: -1 }
+    if (sortBy === 'implemented_effects_desc') {
+        return {
+            hasImplementedEffects: -1,
+            implementedEffectCount: -1,
+            effectSpecCount: -1,
+            createdAt: -1,
+            _id: -1,
+        }
+    }
+    return { createdAt: -1, _id: -1 }
+}
+
+const normalizeEffectStateFilter = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return 'all'
+    if (['all', 'implemented', 'incomplete', 'none'].includes(normalized)) return normalized
+    return 'all'
+}
+
+const buildEffectStateMatchStage = (effectState = 'all') => {
+    if (effectState === 'implemented') return { implementedEffectCount: { $gt: 0 } }
+    if (effectState === 'incomplete') {
+        return {
+            $expr: {
+                $and: [
+                    { $gt: ['$effectSpecCount', 0] },
+                    { $eq: ['$implementedEffectCount', 0] },
+                ],
+            },
+        }
+    }
+    if (effectState === 'none') return { effectSpecCount: { $eq: 0 } }
+    return null
 }
 
 const IMPORT_MAX_ROWS = 500
@@ -84,6 +146,46 @@ const parseMoveImportNumber = (value, { allowNull = true } = {}) => {
     return parsed
 }
 
+const normalizeEffectSpecsInput = (effectSpecs = []) => {
+    if (!Array.isArray(effectSpecs)) return []
+    return effectSpecs
+        .map((entry) => {
+            const op = String(entry?.op || '').trim()
+            if (!op) return null
+            const trigger = String(entry?.trigger || 'on_hit').trim() || 'on_hit'
+            const target = String(entry?.target || 'opponent').trim() || 'opponent'
+            const chanceRaw = Number(entry?.chance)
+            const chance = Number.isFinite(chanceRaw)
+                ? Math.max(0, Math.min(1, chanceRaw))
+                : 1
+            return {
+                op,
+                trigger,
+                target,
+                chance,
+                params: entry?.params && typeof entry.params === 'object' ? entry.params : {},
+                sourceText: String(entry?.sourceText || '').trim(),
+                parserConfidence: Number.isFinite(Number(entry?.parserConfidence))
+                    ? Math.max(0, Math.min(1, Number(entry.parserConfidence)))
+                    : 1,
+            }
+        })
+        .filter(Boolean)
+}
+
+const resolveEffectSpecsFromPayload = ({ effectSpecs, description, effectChance }) => {
+    const normalized = normalizeEffectSpecsInput(effectSpecs)
+    if (normalized.length > 0) {
+        return {
+            effectSpecs: normalized,
+            parserWarnings: [],
+            parserConfidence: 1,
+        }
+    }
+
+    return parseMoveEffectText({ description, probability: effectChance })
+}
+
 const buildBulkImportMoveEntry = (entry, index) => {
     const name = String(entry?.name || '').trim()
     if (!name) {
@@ -130,11 +232,25 @@ const buildBulkImportMoveEntry = (entry, index) => {
     }
     const resolvedLearnConfig = resolveLearnConfigByScope(normalizedLearnConfig)
 
+    const description = String(entry?.description || '').trim()
+
     const baseEffects = entry?.effects && typeof entry.effects === 'object'
         ? { ...entry.effects }
         : {}
     if (parsedEffectChance != null) {
         baseEffects.effectChance = Math.max(0, Math.min(100, parsedEffectChance))
+    }
+
+    const parsedEffects = resolveEffectSpecsFromPayload({
+        effectSpecs: entry?.effectSpecs,
+        description,
+        effectChance: parsedEffectChance,
+    })
+    if (parsedEffects.parserWarnings.length > 0) {
+        baseEffects.parserWarnings = parsedEffects.parserWarnings.slice(0, 5)
+    }
+    if (Number.isFinite(parsedEffects.parserConfidence)) {
+        baseEffects.parserConfidence = parsedEffects.parserConfidence
     }
 
     return {
@@ -146,7 +262,7 @@ const buildBulkImportMoveEntry = (entry, index) => {
             accuracy: parsedAccuracy == null ? 100 : parsedAccuracy,
             pp: parsedPp == null ? 10 : parsedPp,
             priority: parsedPriority == null ? 0 : parsedPriority,
-            description: String(entry?.description || '').trim(),
+            description,
             imageUrl: String(entry?.imageUrl || '').trim(),
             rarity: resolvedRarity,
             shopPrice: Math.max(0, parsedShopPrice == null ? 0 : parsedShopPrice),
@@ -157,6 +273,7 @@ const buildBulkImportMoveEntry = (entry, index) => {
             allowedPokemonIds: resolvedLearnConfig.allowedPokemonIds,
             allowedRarities: resolvedLearnConfig.allowedRarities,
             effects: baseEffects,
+            effectSpecs: parsedEffects.effectSpecs,
         },
     }
 }
@@ -298,12 +415,204 @@ const countPokemonUsingMove = async (move) => {
     return Pokemon.countDocuments(usageQuery)
 }
 
+const getMoveEffectProgressSnapshot = async () => {
+    const [coverageRows, opUsageRows, flavorReasonRows] = await Promise.all([
+        Move.aggregate([
+            {
+                $addFields: {
+                    effectSpecsSafe: { $ifNull: ['$effectSpecs', []] },
+                },
+            },
+            {
+                $addFields: {
+                    effectSpecCount: { $size: '$effectSpecsSafe' },
+                    implementedEffectCount: {
+                        $size: {
+                            $filter: {
+                                input: '$effectSpecsSafe',
+                                as: 'spec',
+                                cond: {
+                                    $and: [
+                                        { $ne: ['$$spec.op', 'flavor_only'] },
+                                        { $ne: ['$$spec.op', 'no_op'] },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalMoves: { $sum: 1 },
+                    movesWithAnyEffects: {
+                        $sum: {
+                            $cond: [{ $gt: ['$effectSpecCount', 0] }, 1, 0],
+                        },
+                    },
+                    movesWithImplementedEffects: {
+                        $sum: {
+                            $cond: [{ $gt: ['$implementedEffectCount', 0] }, 1, 0],
+                        },
+                    },
+                    movesOnlyIncompleteEffects: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $gt: ['$effectSpecCount', 0] },
+                                        { $eq: ['$implementedEffectCount', 0] },
+                                    ],
+                                },
+                                1,
+                                0,
+                            ],
+                        },
+                    },
+                },
+            },
+        ]),
+        Move.aggregate([
+            {
+                $unwind: {
+                    path: '$effectSpecs',
+                    preserveNullAndEmptyArrays: false,
+                },
+            },
+            {
+                $group: {
+                    _id: '$effectSpecs.op',
+                    usageCount: { $sum: 1 },
+                },
+            },
+            { $sort: { usageCount: -1, _id: 1 } },
+        ]),
+        Move.aggregate([
+            {
+                $unwind: {
+                    path: '$effectSpecs',
+                    preserveNullAndEmptyArrays: false,
+                },
+            },
+            {
+                $match: {
+                    'effectSpecs.op': 'flavor_only',
+                },
+            },
+            {
+                $group: {
+                    _id: {
+                        $ifNull: ['$effectSpecs.params.reason', 'unmodeled_effect'],
+                    },
+                    usageCount: { $sum: 1 },
+                },
+            },
+            { $sort: { usageCount: -1, _id: 1 } },
+        ]),
+    ])
+
+    const coverage = coverageRows?.[0] || {
+        totalMoves: 0,
+        movesWithAnyEffects: 0,
+        movesWithImplementedEffects: 0,
+        movesOnlyIncompleteEffects: 0,
+    }
+
+    const opUsageMap = new Map(
+        (opUsageRows || []).map((entry) => [String(entry?._id || '').trim().toLowerCase(), Number(entry?.usageCount || 0)])
+    )
+    const registeredOps = [...new Set(getRegisteredEffectOps().map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))]
+    const allOps = [...new Set([...registeredOps, ...opUsageMap.keys()])]
+
+    const completeEffects = allOps
+        .filter((op) => isImplementedEffectOp(op))
+        .map((op) => ({
+            ...buildEffectOpMeta(op),
+            usageCount: Number(opUsageMap.get(op) || 0),
+        }))
+        .sort((a, b) => b.usageCount - a.usageCount || a.id.localeCompare(b.id))
+
+    const incompleteEffects = (flavorReasonRows || [])
+        .map((entry) => ({
+            ...buildEffectReasonMeta(entry?._id),
+            usageCount: Number(entry?.usageCount || 0),
+        }))
+        .sort((a, b) => b.usageCount - a.usageCount || a.id.localeCompare(b.id))
+
+    const selectableEffects = completeEffects
+        .map((entry) => ({
+            ...entry,
+            defaultEffectSpec: getDefaultEffectSpecForOp(entry.id),
+        }))
+        .sort((a, b) => a.nameEn.localeCompare(b.nameEn))
+
+    const totalMoves = Number(coverage.totalMoves || 0)
+    const movesWithImplementedEffects = Number(coverage.movesWithImplementedEffects || 0)
+    const completionRate = totalMoves > 0
+        ? Number(((movesWithImplementedEffects / totalMoves) * 100).toFixed(2))
+        : 0
+
+    return {
+        summary: {
+            totalMoves,
+            movesWithAnyEffects: Number(coverage.movesWithAnyEffects || 0),
+            movesWithImplementedEffects,
+            movesOnlyIncompleteEffects: Number(coverage.movesOnlyIncompleteEffects || 0),
+            completionRate,
+            totalCompleteEffects: completeEffects.length,
+            totalIncompleteEffects: incompleteEffects.length,
+        },
+        completeEffects,
+        incompleteEffects,
+        selectableEffects,
+        triggerOptions: getEffectTriggerOptions(),
+        targetOptions: getEffectTargetOptions(),
+    }
+}
+
+router.get('/effects/progress', async (_req, res) => {
+    try {
+        const progress = await getMoveEffectProgressSnapshot()
+        res.json({ ok: true, ...progress })
+    } catch (error) {
+        console.error('GET /api/admin/moves/effects/progress error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+router.get('/effects/catalog', async (_req, res) => {
+    try {
+        const progress = await getMoveEffectProgressSnapshot()
+        res.json({
+            ok: true,
+            effects: progress.selectableEffects,
+            triggerOptions: progress.triggerOptions,
+            targetOptions: progress.targetOptions,
+        })
+    } catch (error) {
+        console.error('GET /api/admin/moves/effects/catalog error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
 // GET /api/admin/moves - List moves with search & pagination
 router.get('/', async (req, res) => {
     try {
-        const { search, type, category, rarity, page = 1, limit = 20 } = req.query
+        const {
+            search,
+            type,
+            category,
+            rarity,
+            sortBy,
+            effectState,
+            page = 1,
+            limit = 20,
+        } = req.query
         const safePage = Math.max(1, parseInt(page, 10) || 1)
         const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+        const resolvedSortBy = resolveMoveSortKey(sortBy)
+        const resolvedEffectState = normalizeEffectStateFilter(effectState)
 
         const query = {}
 
@@ -321,16 +630,66 @@ router.get('/', async (req, res) => {
         }
 
         const skip = (safePage - 1) * safeLimit
+        const effectStateMatch = buildEffectStateMatchStage(resolvedEffectState)
+        const sortStage = resolveMoveSortStage(resolvedSortBy)
 
-        const [moves, total] = await Promise.all([
-            Move.find(query)
-                .sort({ createdAt: -1, _id: -1 })
-                .skip(skip)
-                .limit(safeLimit)
-                .populate('allowedPokemonIds', 'name pokedexNumber')
-                .lean(),
-            Move.countDocuments(query),
+        const aggregationResult = await Move.aggregate([
+            { $match: query },
+            {
+                $addFields: {
+                    effectSpecsSafe: { $ifNull: ['$effectSpecs', []] },
+                },
+            },
+            {
+                $addFields: {
+                    effectSpecCount: { $size: '$effectSpecsSafe' },
+                    implementedEffectCount: {
+                        $size: {
+                            $filter: {
+                                input: '$effectSpecsSafe',
+                                as: 'spec',
+                                cond: {
+                                    $and: [
+                                        { $ne: ['$$spec.op', 'flavor_only'] },
+                                        { $ne: ['$$spec.op', 'no_op'] },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    incompleteEffectCount: {
+                        $max: [
+                            0,
+                            { $subtract: ['$effectSpecCount', '$implementedEffectCount'] },
+                        ],
+                    },
+                    hasImplementedEffects: { $gt: ['$implementedEffectCount', 0] },
+                },
+            },
+            ...(effectStateMatch ? [{ $match: effectStateMatch }] : []),
+            {
+                $facet: {
+                    rows: [
+                        { $sort: sortStage },
+                        { $skip: skip },
+                        { $limit: safeLimit },
+                        {
+                            $project: {
+                                effectSpecsSafe: 0,
+                            },
+                        },
+                    ],
+                    total: [{ $count: 'count' }],
+                },
+            },
         ])
+
+        const moves = aggregationResult?.[0]?.rows || []
+        const total = Number(aggregationResult?.[0]?.total?.[0]?.count || 0)
 
         res.json({
             ok: true,
@@ -346,11 +705,75 @@ router.get('/', async (req, res) => {
                 categories: MOVE_CATEGORIES,
                 rarities: MOVE_RARITIES,
                 learnScopes: MOVE_LEARN_SCOPES,
+                sortOptions: [...MOVE_SORT_OPTIONS],
+                currentSort: resolvedSortBy,
+                effectStateOptions: ['all', 'implemented', 'incomplete', 'none'],
+                currentEffectState: resolvedEffectState,
             },
         })
     } catch (error) {
         console.error('GET /api/admin/moves error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/moves/shop/bulk-apply - Bulk enable shop for implemented-effect moves
+router.post('/shop/bulk-apply', async (req, res) => {
+    try {
+        const parsedShopPrice = Number(req.body?.shopPrice)
+        if (!Number.isFinite(parsedShopPrice) || parsedShopPrice < 0) {
+            return res.status(400).json({ ok: false, message: 'Giá bán phải là số không âm' })
+        }
+
+        const shopPrice = Math.floor(parsedShopPrice)
+        const implementedEffectQuery = {
+            effectSpecs: {
+                $elemMatch: {
+                    op: { $nin: ['flavor_only', 'no_op'] },
+                },
+            },
+        }
+
+        const updatableQuery = {
+            ...implementedEffectQuery,
+            $or: [
+                { isShopEnabled: { $ne: true } },
+                { shopPrice: { $ne: shopPrice } },
+            ],
+        }
+
+        const [eligibleCount, updateResult, sampleMoves] = await Promise.all([
+            Move.countDocuments(implementedEffectQuery),
+            Move.updateMany(updatableQuery, {
+                $set: {
+                    isShopEnabled: true,
+                    shopPrice,
+                },
+            }),
+            Move.find(implementedEffectQuery)
+                .sort({ createdAt: -1, _id: -1 })
+                .limit(10)
+                .select('name shopPrice isShopEnabled')
+                .lean(),
+        ])
+
+        const updatedCount = Number(updateResult?.modifiedCount || 0)
+        const unchangedCount = Math.max(0, Number(eligibleCount || 0) - updatedCount)
+
+        return res.json({
+            ok: true,
+            message: `Đã cập nhật ${updatedCount.toLocaleString('vi-VN')} kỹ năng lên shop (chỉ kỹ năng có effect).`,
+            result: {
+                shopPrice,
+                eligibleCount,
+                updatedCount,
+                unchangedCount,
+                sampleMoves,
+            },
+        })
+    } catch (error) {
+        console.error('POST /api/admin/moves/shop/bulk-apply error:', error)
+        return res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -610,6 +1033,7 @@ router.post('/', async (req, res) => {
             allowedPokemonIds,
             allowedRarities,
             effects,
+            effectSpecs,
         } = req.body
 
         if (!name || !type || !category) {
@@ -657,6 +1081,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
+        const effectChance = Number.isFinite(Number(effects?.effectChance))
+            ? Number(effects.effectChance)
+            : null
+        const parsedEffects = resolveEffectSpecsFromPayload({
+            effectSpecs,
+            description,
+            effectChance,
+        })
+        const baseEffects = effects && typeof effects === 'object' ? { ...effects } : {}
+        if (parsedEffects.parserWarnings.length > 0) {
+            baseEffects.parserWarnings = parsedEffects.parserWarnings.slice(0, 5)
+        }
+        if (Number.isFinite(parsedEffects.parserConfidence)) {
+            baseEffects.parserConfidence = parsedEffects.parserConfidence
+        }
+
         const existing = await Move.findOne({ name })
         if (existing) {
             return res.status(409).json({ ok: false, message: 'Tên kỹ năng đã tồn tại' })
@@ -680,7 +1120,8 @@ router.post('/', async (req, res) => {
             allowedTypes: learnConfig.allowedTypes,
             allowedPokemonIds: learnConfig.allowedPokemonIds,
             allowedRarities: learnConfig.allowedRarities,
-            effects: effects && typeof effects === 'object' ? effects : {},
+            effects: baseEffects,
+            effectSpecs: parsedEffects.effectSpecs,
         })
 
         await move.save()
@@ -714,6 +1155,7 @@ router.put('/:id', async (req, res) => {
             allowedPokemonIds,
             allowedRarities,
             effects,
+            effectSpecs,
         } = req.body
 
         const move = await Move.findById(req.params.id)
@@ -779,6 +1221,35 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
+        const nextDescriptionForParse = description !== undefined ? description : move.description
+        const fallbackEffectChance = Number.isFinite(Number(move?.effects?.effectChance))
+            ? Number(move.effects.effectChance)
+            : null
+        const nextEffectChance = Number.isFinite(Number(effects?.effectChance))
+            ? Number(effects.effectChance)
+            : fallbackEffectChance
+
+        let resolvedEffectSpecs = move.effectSpecs || []
+        let resolvedEffects = move.effects && typeof move.effects === 'object' ? { ...move.effects } : {}
+
+        if (effectSpecs !== undefined || description !== undefined || effects !== undefined) {
+            const parsedEffects = resolveEffectSpecsFromPayload({
+                effectSpecs,
+                description: nextDescriptionForParse,
+                effectChance: nextEffectChance,
+            })
+            resolvedEffectSpecs = parsedEffects.effectSpecs
+            resolvedEffects = {
+                ...(effects && typeof effects === 'object' ? effects : resolvedEffects),
+            }
+            if (parsedEffects.parserWarnings.length > 0) {
+                resolvedEffects.parserWarnings = parsedEffects.parserWarnings.slice(0, 5)
+            }
+            if (Number.isFinite(parsedEffects.parserConfidence)) {
+                resolvedEffects.parserConfidence = parsedEffects.parserConfidence
+            }
+        }
+
         if (name !== undefined) move.name = name
         if (type !== undefined) move.type = String(type).trim().toLowerCase()
         if (category !== undefined) move.category = String(category).trim().toLowerCase()
@@ -798,7 +1269,10 @@ router.put('/:id', async (req, res) => {
             move.allowedPokemonIds = learnConfig.allowedPokemonIds
             move.allowedRarities = learnConfig.allowedRarities
         }
-        if (effects !== undefined) move.effects = effects && typeof effects === 'object' ? effects : {}
+        if (effectSpecs !== undefined || description !== undefined || effects !== undefined) {
+            move.effects = resolvedEffects
+            move.effectSpecs = resolvedEffectSpecs
+        }
 
         await move.save()
 

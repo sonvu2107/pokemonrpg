@@ -35,6 +35,7 @@ const FORM_VARIANTS = [
     { id: 'hyper', name: 'Hyper' },
 ]
 const FORM_VARIANT_NAME_BY_ID = Object.fromEntries(FORM_VARIANTS.map(v => [v.id, v.name]))
+const FORM_VARIANT_MODAL_PAGE_SIZE = 12
 
 const RARITY_ALIASES = {
     superlegendary: 'ss',
@@ -54,6 +55,11 @@ const normalizeRarity = (rarity) => {
 
 const normalizeFormId = (formId) => String(formId || '').trim()
 const normalizeFormName = (formName) => String(formName || '').trim()
+const getVariantDisplayName = (formId = '', fallbackName = '') => {
+    const normalizedId = normalizeFormId(formId).toLowerCase()
+    const normalizedFallbackName = normalizeFormName(fallbackName)
+    return normalizedFallbackName || FORM_VARIANT_NAME_BY_ID[normalizedId] || normalizedId
+}
 
 const inferFormVariantFromFileName = (fileName = '') => {
     const stem = String(fileName || '')
@@ -103,6 +109,14 @@ export default function PokemonFormPage() {
     const [bulkFormUploading, setBulkFormUploading] = useState(false)
     const [bulkFormUploadProgress, setBulkFormUploadProgress] = useState(0)
     const [bulkFormUploadCount, setBulkFormUploadCount] = useState(0)
+    const [customFormVariants, setCustomFormVariants] = useState([])
+    const [showFormVariantModal, setShowFormVariantModal] = useState(false)
+    const [formVariantModalTargetIndex, setFormVariantModalTargetIndex] = useState(null)
+    const [formVariantSearchTerm, setFormVariantSearchTerm] = useState('')
+    const [formVariantPage, setFormVariantPage] = useState(1)
+    const [newFormVariantId, setNewFormVariantId] = useState('')
+    const [newFormVariantName, setNewFormVariantName] = useState('')
+    const [formVariantModalError, setFormVariantModalError] = useState('')
 
     const [defaultFormId, setDefaultFormId] = useState('normal')
     const [forms, setForms] = useState([
@@ -127,6 +141,41 @@ export default function PokemonFormPage() {
         baseExperience: 50,
         growthRate: 'medium_fast',
     })
+
+    const formVariantOptions = [...FORM_VARIANTS, ...customFormVariants].reduce((acc, entry) => {
+        const normalizedId = normalizeFormId(entry?.id).toLowerCase()
+        if (!normalizedId || acc.some((item) => item.id === normalizedId)) return acc
+        return [...acc, { id: normalizedId, name: getVariantDisplayName(normalizedId, entry?.name) }]
+    }, [])
+
+    const normalizedVariantSearchTerm = String(formVariantSearchTerm || '').trim().toLowerCase()
+    const filteredFormVariantOptions = normalizedVariantSearchTerm
+        ? formVariantOptions.filter((entry) => {
+            const id = String(entry?.id || '').toLowerCase()
+            const name = String(entry?.name || '').toLowerCase()
+            return id.includes(normalizedVariantSearchTerm) || name.includes(normalizedVariantSearchTerm)
+        })
+        : formVariantOptions
+
+    const formVariantTotal = filteredFormVariantOptions.length
+    const formVariantTotalPages = Math.max(1, Math.ceil(formVariantTotal / FORM_VARIANT_MODAL_PAGE_SIZE))
+    const resolvedFormVariantPage = Math.min(formVariantPage, formVariantTotalPages)
+    const formVariantPageStartIndex = (resolvedFormVariantPage - 1) * FORM_VARIANT_MODAL_PAGE_SIZE
+    const formVariantPageRows = filteredFormVariantOptions.slice(
+        formVariantPageStartIndex,
+        formVariantPageStartIndex + FORM_VARIANT_MODAL_PAGE_SIZE
+    )
+    const formVariantPageStart = formVariantTotal > 0 ? formVariantPageStartIndex + 1 : 0
+    const formVariantPageEnd = formVariantTotal > 0
+        ? Math.min(formVariantTotal, formVariantPageStartIndex + FORM_VARIANT_MODAL_PAGE_SIZE)
+        : 0
+
+    const selectedFormIndex = Number.isInteger(formVariantModalTargetIndex) ? formVariantModalTargetIndex : -1
+    const usedFormIdsByOtherRows = new Set(
+        forms
+            .map((entry, index) => (index === selectedFormIndex ? '' : normalizeFormId(entry?.formId).toLowerCase()))
+            .filter(Boolean)
+    )
 
     useEffect(() => {
         loadData()
@@ -426,19 +475,86 @@ export default function PokemonFormPage() {
         })
     }
 
-    const applyPresetToForm = (index, presetId) => {
+    const applyPresetToForm = (index, presetId, presetName = '') => {
         const normalizedPresetId = normalizeFormId(presetId).toLowerCase()
         if (!normalizedPresetId) return
-        const presetName = FORM_VARIANT_NAME_BY_ID[normalizedPresetId] || normalizedPresetId
+        const resolvedPresetName = getVariantDisplayName(normalizedPresetId, presetName)
 
         setForms(prev => {
             const next = prev.map((f, i) => {
                 if (i !== index) return f
-                return { ...f, formId: normalizedPresetId, formName: presetName }
+                return { ...f, formId: normalizedPresetId, formName: resolvedPresetName }
             })
             setDefaultFormId((prevDefault) => resolveDefaultFormId(next, prevDefault))
             return next
         })
+    }
+
+    const openFormVariantModal = (targetIndex) => {
+        setFormVariantModalTargetIndex(targetIndex)
+        setFormVariantSearchTerm('')
+        setFormVariantPage(1)
+        setNewFormVariantId('')
+        setNewFormVariantName('')
+        setFormVariantModalError('')
+        setShowFormVariantModal(true)
+    }
+
+    const closeFormVariantModal = () => {
+        setShowFormVariantModal(false)
+        setFormVariantModalTargetIndex(null)
+        setFormVariantSearchTerm('')
+        setFormVariantPage(1)
+        setNewFormVariantId('')
+        setNewFormVariantName('')
+        setFormVariantModalError('')
+    }
+
+    const handleSelectVariantFromModal = (variant) => {
+        if (!variant || selectedFormIndex < 0) return
+        const normalizedVariantId = normalizeFormId(variant.id).toLowerCase()
+        if (!normalizedVariantId) return
+
+        if (usedFormIdsByOtherRows.has(normalizedVariantId)) {
+            setFormVariantModalError(`Dạng "${normalizedVariantId}" đã tồn tại ở form khác`)
+            return
+        }
+
+        applyPresetToForm(selectedFormIndex, normalizedVariantId, variant.name)
+        closeFormVariantModal()
+    }
+
+    const handleAddVariantFromModal = () => {
+        if (selectedFormIndex < 0) return
+
+        const normalizedVariantId = normalizeFormId(newFormVariantId).toLowerCase()
+        const normalizedVariantName = getVariantDisplayName(normalizedVariantId, newFormVariantName)
+
+        if (!normalizedVariantId) {
+            setFormVariantModalError('Vui lòng nhập ID dạng mới')
+            return
+        }
+
+        if (usedFormIdsByOtherRows.has(normalizedVariantId)) {
+            setFormVariantModalError(`Dạng "${normalizedVariantId}" đã tồn tại ở form khác`)
+            return
+        }
+
+        setCustomFormVariants((prev) => {
+            const existingCustomIndex = prev.findIndex((entry) => normalizeFormId(entry?.id).toLowerCase() === normalizedVariantId)
+            if (existingCustomIndex !== -1) {
+                const next = [...prev]
+                next[existingCustomIndex] = { id: normalizedVariantId, name: normalizedVariantName }
+                return next
+            }
+            if (FORM_VARIANTS.some((entry) => normalizeFormId(entry?.id).toLowerCase() === normalizedVariantId)) {
+                return prev
+            }
+            return [...prev, { id: normalizedVariantId, name: normalizedVariantName }]
+        })
+
+        applyPresetToForm(selectedFormIndex, normalizedVariantId, normalizedVariantName)
+        closeFormVariantModal()
     }
 
     const removeForm = (index) => {
@@ -565,21 +681,15 @@ export default function PokemonFormPage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                                             <div>
                                                 <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">ID dạng *</label>
-                                                <select
-                                                    value=""
-                                                    onChange={(e) => {
-                                                        applyPresetToForm(index, e.target.value)
-                                                        e.target.value = ''
-                                                    }}
-                                                    className="w-full mb-2 px-3 py-2 bg-white border border-slate-300 rounded text-xs"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openFormVariantModal(index)}
+                                                    className="w-full mb-2 px-3 py-2 bg-white border border-slate-300 rounded text-xs text-left hover:bg-slate-50"
                                                 >
-                                                    <option value="">Chọn nhanh dạng có sẵn...</option>
-                                                    {FORM_VARIANTS.map((variant) => (
-                                                        <option key={variant.id} value={variant.id}>
-                                                            {variant.name} ({variant.id})
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                    {form.formId
+                                                        ? `Đổi nhanh dạng: ${getVariantDisplayName(form.formId, form.formName)} (${form.formId})`
+                                                        : 'Chọn nhanh dạng có sẵn...'}
+                                                </button>
                                                 <input
                                                     type="text"
                                                     value={form.formId}
@@ -882,6 +992,138 @@ export default function PokemonFormPage() {
                     </div>
                 </form>
             </div>
+
+            {showFormVariantModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+                    onClick={closeFormVariantModal}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-lg font-bold text-slate-800">Chọn nhanh dạng có sẵn</h3>
+                            <button
+                                type="button"
+                                onClick={closeFormVariantModal}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm dạng</label>
+                                <input
+                                    type="text"
+                                    value={formVariantSearchTerm}
+                                    onChange={(event) => {
+                                        setFormVariantSearchTerm(event.target.value)
+                                        setFormVariantPage(1)
+                                        setFormVariantModalError('')
+                                    }}
+                                    placeholder="Nhập tên dạng hoặc formId"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                                />
+                            </div>
+
+                            <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                {formVariantPageRows.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không có dạng phù hợp</div>
+                                ) : (
+                                    formVariantPageRows.map((variant) => {
+                                        const isAlreadyUsed = usedFormIdsByOtherRows.has(variant.id)
+                                        return (
+                                            <button
+                                                key={variant.id}
+                                                type="button"
+                                                onClick={() => handleSelectVariantFromModal(variant)}
+                                                disabled={isAlreadyUsed}
+                                                className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors ${isAlreadyUsed
+                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                    : 'hover:bg-slate-50 text-slate-700'}`}
+                                            >
+                                                <span className="font-semibold">{variant.name} ({variant.id})</span>
+                                                {isAlreadyUsed && <span className="text-[10px] font-bold uppercase">Đã dùng</span>}
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>
+                                    Hiển thị {formVariantPageStart}-{formVariantPageEnd} / {formVariantTotal} dạng
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormVariantPage((prev) => Math.max(1, prev - 1))}
+                                        disabled={resolvedFormVariantPage <= 1}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Trước
+                                    </button>
+                                    <span className="font-semibold text-slate-600">
+                                        Trang {resolvedFormVariantPage}/{formVariantTotalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormVariantPage((prev) => Math.min(formVariantTotalPages, prev + 1))}
+                                        disabled={resolvedFormVariantPage >= formVariantTotalPages}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="rounded border border-cyan-200 bg-cyan-50 p-3">
+                                <div className="text-sm font-bold text-cyan-900 mb-2">Thêm dạng mới</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <input
+                                        type="text"
+                                        value={newFormVariantId}
+                                        onChange={(event) => {
+                                            setNewFormVariantId(event.target.value)
+                                            setFormVariantModalError('')
+                                        }}
+                                        placeholder="formId mới (vd: cosmic)"
+                                        className="w-full px-3 py-2 bg-white border border-cyan-200 rounded text-sm"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={newFormVariantName}
+                                        onChange={(event) => {
+                                            setNewFormVariantName(event.target.value)
+                                            setFormVariantModalError('')
+                                        }}
+                                        placeholder="Tên dạng (vd: Cosmic)"
+                                        className="w-full px-3 py-2 bg-white border border-cyan-200 rounded text-sm"
+                                    />
+                                </div>
+                                <div className="mt-2 flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={handleAddVariantFromModal}
+                                        className="px-3 py-2 bg-white border border-cyan-300 text-cyan-700 rounded text-xs font-bold hover:bg-cyan-100"
+                                    >
+                                        Thêm và áp dụng dạng mới
+                                    </button>
+                                </div>
+                            </div>
+
+                            {formVariantModalError && (
+                                <div className="text-sm font-bold text-red-600">{formVariantModalError}</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="text-center mt-6 p-4">
                 <Link

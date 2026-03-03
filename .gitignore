@@ -34,6 +34,7 @@ tmp/
 temp/
 
 # Scripts
+scripts/
 apps/server/scripts/
 # Documentation & Examples
 *.md

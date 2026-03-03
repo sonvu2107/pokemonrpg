@@ -2,6 +2,48 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
+const effectSpecSchema = new Schema(
+    {
+        op: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+        trigger: {
+            type: String,
+            default: 'on_hit',
+            trim: true,
+        },
+        target: {
+            type: String,
+            default: 'opponent',
+            trim: true,
+        },
+        chance: {
+            type: Number,
+            default: 1,
+            min: 0,
+            max: 1,
+        },
+        params: {
+            type: Schema.Types.Mixed,
+            default: () => ({}),
+        },
+        sourceText: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        parserConfidence: {
+            type: Number,
+            default: 1,
+            min: 0,
+            max: 1,
+        },
+    },
+    { _id: false }
+)
+
 export const MOVE_RARITIES = [
     'common',
     'uncommon',
@@ -151,6 +193,11 @@ const moveSchema = new Schema(
             type: Object,
             default: () => ({}),
             // Can store: { statusEffect: 'burn', chance: 10, statChanges: [...] }
+        },
+
+        effectSpecs: {
+            type: [effectSpecSchema],
+            default: [],
         },
     },
     {

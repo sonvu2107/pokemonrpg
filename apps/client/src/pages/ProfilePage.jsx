@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
+import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
@@ -247,7 +248,13 @@ export default function ProfilePage() {
                                     )
                                 }
                                 const species = p.pokemonId || {}
-                                const sprite = p.isShiny ? (species.sprites?.shiny || species.imageUrl) : (species.imageUrl || species.sprites?.normal)
+                                const { formId, formName } = resolvePokemonForm(species, p.formId)
+                                const sprite = resolvePokemonSprite({
+                                    species,
+                                    formId,
+                                    isShiny: Boolean(p.isShiny),
+                                    fallback: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
+                                })
                                 const name = p.nickname || species.name || 'Unknown'
 
                                 return (
@@ -270,6 +277,9 @@ export default function ProfilePage() {
                                             {p.isShiny && <span className="absolute top-0 right-0 text-[8px] text-amber-500 font-bold">★</span>}
                                         </div>
                                         <span className="text-xs text-amber-600 font-bold mt-1">Lv. {p.level}</span>
+                                        {formId !== 'normal' && (
+                                            <span className="text-[9px] text-sky-700 font-bold">{formName}</span>
+                                        )}
                                     </Link>
                                 )
                             })}

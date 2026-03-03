@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
@@ -22,6 +23,57 @@ const typeColors = {
     dragon: 'bg-indigo-100 text-indigo-800 border-indigo-300',
     poison: 'bg-purple-100 text-purple-800 border-purple-300',
     normal: 'bg-slate-100 text-slate-800 border-slate-300',
+}
+
+const statusLabels = {
+    burn: 'Bỏng',
+    poison: 'Độc',
+    paralyze: 'Tê Liệt',
+    freeze: 'Đóng Băng',
+    sleep: 'Ngủ',
+    confuse: 'Rối Loạn',
+    flinch: 'Choáng',
+}
+
+const getGuardBadgeText = (guards = {}) => {
+    const normalized = guards && typeof guards === 'object' ? guards : {}
+    const physicalTurns = Number(normalized?.physical?.turns || 0)
+    const specialTurns = Number(normalized?.special?.turns || 0)
+    if (physicalTurns > 0 && specialTurns > 0) {
+        return `Lá chắn hỗn hợp (${Math.max(physicalTurns, specialTurns)})`
+    }
+    if (physicalTurns > 0) {
+        return `Chắn vật lý (${physicalTurns})`
+    }
+    if (specialTurns > 0) {
+        return `Chắn đặc biệt (${specialTurns})`
+    }
+    return ''
+}
+
+const getVolatileBadgeText = (volatileState = {}) => {
+    const state = volatileState && typeof volatileState === 'object' ? volatileState : {}
+    const statusShieldTurns = Number(state?.statusShieldTurns || 0)
+    if (statusShieldTurns > 0) {
+        return `Chắn trạng thái (${statusShieldTurns})`
+    }
+    const statDropShieldTurns = Number(state?.statDropShieldTurns || 0)
+    if (statDropShieldTurns > 0) {
+        return `Chắn giảm chỉ số (${statDropShieldTurns})`
+    }
+    const rechargeTurns = Number(state?.rechargeTurns || 0)
+    if (rechargeTurns > 0) {
+        return `Hồi sức (${rechargeTurns})`
+    }
+    const bindTurns = Number(state?.bindTurns || 0)
+    if (bindTurns > 0) {
+        return `Bị trói (${bindTurns})`
+    }
+    const lockedRepeatMoveName = String(state?.lockedRepeatMoveName || '').trim()
+    if (lockedRepeatMoveName) {
+        return `Không lặp: ${lockedRepeatMoveName}`
+    }
+    return ''
 }
 
 const normalizeMoveType = (name = '') => {
@@ -192,7 +244,16 @@ const ActiveBattleView = ({
         hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
         exp: activePokemon.experience,
         maxExp: activePokemon.level * 100,
-        sprite: activePokemon.pokemonId?.sprites?.back_default || activePokemon.pokemonId?.imageUrl || activePokemon.pokemonId?.sprites?.normal || activePokemon.pokemonId?.sprites?.front_default,
+        sprite: resolvePokemonSprite({
+            species: activePokemon.pokemonId || {},
+            formId: activePokemon.formId,
+            isShiny: Boolean(activePokemon.isShiny),
+            preferBack: true,
+        }),
+        status: String(activePokemon?.status || '').trim().toLowerCase(),
+        statusTurns: Number.isFinite(Number(activePokemon?.statusTurns)) ? Math.max(0, Math.floor(Number(activePokemon.statusTurns))) : 0,
+        damageGuards: activePokemon?.damageGuards || {},
+        volatileState: activePokemon?.volatileState || {},
         moves: normalizeMoveList(
             mergeBattleMoveNames(
                 activePokemon.moves || [],
@@ -210,6 +271,10 @@ const ActiveBattleView = ({
         maxHp: activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1,
         hp: activeOpponent.currentHp ?? (activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1),
         sprite: activeOpponent.sprite || '',
+        status: String(activeOpponent?.status || '').trim().toLowerCase(),
+        statusTurns: Number.isFinite(Number(activeOpponent?.statusTurns)) ? Math.max(0, Math.floor(Number(activeOpponent.statusTurns))) : 0,
+        damageGuards: activeOpponent?.damageGuards || {},
+        volatileState: activeOpponent?.volatileState || {},
     } : {
         name: 'Pokemon Hoang Dã',
         owner: 'Hoang Dã',
@@ -217,6 +282,10 @@ const ActiveBattleView = ({
         maxHp: 1,
         hp: 1,
         sprite: '',
+        status: '',
+        statusTurns: 0,
+        damageGuards: {},
+        volatileState: {},
     }
 
     const moves = playerMon?.moves || normalizeMoveList([])
@@ -235,6 +304,22 @@ const ActiveBattleView = ({
                     <h3 className="font-bold text-sm mb-1">
                         {playerMon ? `Của bạn: ${playerMon.name}` : 'Không có Pokemon trong đội'}
                     </h3>
+                    {playerMon?.status && (
+                        <div className="mb-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-0.5">
+                            {statusLabels[playerMon.status] || playerMon.status}
+                            {playerMon.statusTurns > 0 ? ` (${playerMon.statusTurns})` : ''}
+                        </div>
+                    )}
+                    {playerMon && getGuardBadgeText(playerMon.damageGuards) && (
+                        <div className="mb-1 text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded px-2 py-0.5">
+                            {getGuardBadgeText(playerMon.damageGuards)}
+                        </div>
+                    )}
+                    {playerMon && getVolatileBadgeText(playerMon.volatileState) && (
+                        <div className="mb-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                            {getVolatileBadgeText(playerMon.volatileState)}
+                        </div>
+                    )}
 
                     {playerMon && (
                         <div className="w-full grid grid-cols-2 gap-1 mb-2">
@@ -260,6 +345,22 @@ const ActiveBattleView = ({
 
                 <div className="border-2 border-double border-slate-300 rounded p-2 bg-white flex flex-col items-center">
                     <h3 className="font-bold text-sm mb-1">{enemyMon.owner} - {enemyMon.name}</h3>
+                    {enemyMon.status && (
+                        <div className="mb-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-0.5">
+                            {statusLabels[enemyMon.status] || enemyMon.status}
+                            {enemyMon.statusTurns > 0 ? ` (${enemyMon.statusTurns})` : ''}
+                        </div>
+                    )}
+                    {getGuardBadgeText(enemyMon.damageGuards) && (
+                        <div className="mb-1 text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded px-2 py-0.5">
+                            {getGuardBadgeText(enemyMon.damageGuards)}
+                        </div>
+                    )}
+                    {getVolatileBadgeText(enemyMon.volatileState) && (
+                        <div className="mb-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                            {getVolatileBadgeText(enemyMon.volatileState)}
+                        </div>
+                    )}
 
                     {enemyMon.sprite ? (
                         <img src={enemyMon.sprite} className="w-24 h-24 pixelated object-contain mb-2" />
@@ -671,6 +772,11 @@ export function BattlePage() {
         const activePokemon = party[resolvedActiveIndex] || null
         const activeName = activePokemon?.nickname || activePokemon?.pokemonId?.name || 'Pokemon'
         const activeMaxHp = Math.max(1, Number(activePokemon?.stats?.hp) || 1)
+        const activeResultImage = resolvePokemonSprite({
+            species: activePokemon?.pokemonId || {},
+            formId: activePokemon?.formId,
+            isShiny: Boolean(activePokemon?.isShiny),
+        })
         const activeHpState = resolvedPartyState[resolvedActiveIndex] || { currentHp: activeMaxHp, maxHp: activeMaxHp }
         const playerCurrentHpForTurn = clampValue(
             Number.isFinite(Number(activeHpState.currentHp)) ? Number(activeHpState.currentHp) : activeMaxHp,
@@ -697,17 +803,31 @@ export function BattlePage() {
                 move: selectedMove,
                 trainerId: battleOpponent?.trainerId || null,
                 activePokemonId: activePokemon?._id || null,
+                fieldState: battleOpponent?.fieldState || {},
                 opponent: {
+                    name: target.name,
                     level: target.level,
                     currentHp: target.currentHp ?? target.maxHp,
                     maxHp: target.maxHp,
                     baseStats: target.baseStats || {},
+                    status: target.status || '',
+                    statusTurns: Number.isFinite(Number(target.statusTurns)) ? Math.max(0, Math.floor(Number(target.statusTurns))) : 0,
+                    statStages: target.statStages || {},
+                    damageGuards: target.damageGuards || {},
+                    wasDamagedLastTurn: Boolean(target.wasDamagedLastTurn),
+                    volatileState: target.volatileState || {},
                 },
                 player: {
                     level: activePokemon?.level || 1,
                     currentHp: playerCurrentHpForTurn,
                     maxHp: activeMaxHp,
                     baseStats: activePokemon?.stats || activePokemon?.pokemonId?.baseStats || {},
+                    status: activePokemon?.status || '',
+                    statusTurns: Number.isFinite(Number(activePokemon?.statusTurns)) ? Math.max(0, Math.floor(Number(activePokemon.statusTurns))) : 0,
+                    statStages: activePokemon?.statStages || {},
+                    damageGuards: activePokemon?.damageGuards || {},
+                    wasDamagedLastTurn: Boolean(activePokemon?.wasDamagedLastTurn),
+                    volatileState: activePokemon?.volatileState || {},
                 },
             })
 
@@ -721,16 +841,19 @@ export function BattlePage() {
             const moveFallbackReason = String(battle?.move?.fallbackReason || '').trim()
             const moveFallbackFrom = String(battle?.move?.fallbackFrom || '').trim()
             const counterAttack = battle?.counterAttack || null
+            const effectLogs = Array.isArray(battle?.effects?.logs)
+                ? battle.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                : []
 
-            if (battle?.player && Array.isArray(battle.player.movePpState)) {
+            if (battle?.player) {
                 setParty((prevParty) => {
                     const nextParty = Array.isArray(prevParty) ? [...prevParty] : []
                     const targetSlot = nextParty[resolvedActiveIndex]
                     if (!targetSlot) return prevParty
 
-                    const ppState = battle.player.movePpState
+                    const ppState = Array.isArray(battle.player.movePpState) ? battle.player.movePpState : null
                     const moveMap = new Map(
-                        ppState.map((entry) => [
+                        (ppState || []).map((entry) => [
                             String(entry?.moveName || '').trim().toLowerCase(),
                             {
                                 name: String(entry?.moveName || '').trim(),
@@ -757,10 +880,31 @@ export function BattlePage() {
                         }
                     })
 
+                    const nextStatus = String(battle.player?.status || '').trim().toLowerCase()
+                    const nextStatusTurns = Number.isFinite(Number(battle.player?.statusTurns))
+                        ? Math.max(0, Math.floor(Number(battle.player.statusTurns)))
+                        : 0
+                    const nextStatStages = battle.player?.statStages && typeof battle.player.statStages === 'object'
+                        ? battle.player.statStages
+                        : {}
+                    const nextDamageGuards = battle.player?.damageGuards && typeof battle.player.damageGuards === 'object'
+                        ? battle.player.damageGuards
+                        : {}
+                    const nextWasDamagedLastTurn = Boolean(battle.player?.wasDamagedLastTurn)
+                    const nextVolatileState = battle.player?.volatileState && typeof battle.player.volatileState === 'object'
+                        ? battle.player.volatileState
+                        : {}
+
                     nextParty[resolvedActiveIndex] = {
                         ...targetSlot,
                         moves: nextMoves,
-                        movePpState: ppState,
+                        movePpState: ppState || targetSlot.movePpState || [],
+                        status: nextStatus,
+                        statusTurns: nextStatusTurns,
+                        statStages: nextStatStages,
+                        damageGuards: nextDamageGuards,
+                        wasDamagedLastTurn: nextWasDamagedLastTurn,
+                        volatileState: nextVolatileState,
                     }
                     return nextParty
                 })
@@ -771,9 +915,28 @@ export function BattlePage() {
             let nextName = ''
             const currentBattleState = battleOpponent
             const currentBattleIndex = currentBattleState?.currentIndex || 0
+            const targetStatePatch = battle?.targetState || null
             const localResolvedTeam = (currentBattleState?.team || []).map((member, index) => {
                 if (index !== currentBattleIndex) return member
-                return { ...member, currentHp: nextHp }
+                return {
+                    ...member,
+                    currentHp: nextHp,
+                    maxHp: targetStatePatch?.maxHp ?? member?.maxHp ?? 1,
+                    status: String(targetStatePatch?.status || member?.status || '').trim().toLowerCase(),
+                    statusTurns: Number.isFinite(Number(targetStatePatch?.statusTurns))
+                        ? Math.max(0, Math.floor(Number(targetStatePatch.statusTurns)))
+                        : Math.max(0, Math.floor(Number(member?.statusTurns) || 0)),
+                    statStages: targetStatePatch?.statStages && typeof targetStatePatch.statStages === 'object'
+                        ? targetStatePatch.statStages
+                        : (member?.statStages || {}),
+                    damageGuards: targetStatePatch?.damageGuards && typeof targetStatePatch.damageGuards === 'object'
+                        ? targetStatePatch.damageGuards
+                        : (member?.damageGuards || {}),
+                    wasDamagedLastTurn: Boolean(targetStatePatch?.wasDamagedLastTurn ?? member?.wasDamagedLastTurn),
+                    volatileState: targetStatePatch?.volatileState && typeof targetStatePatch.volatileState === 'object'
+                        ? targetStatePatch.volatileState
+                        : (member?.volatileState || {}),
+                }
             })
 
             let nextBattleState = currentBattleState
@@ -787,6 +950,20 @@ export function BattlePage() {
                         ...serverEntry,
                         currentHp: serverEntry.currentHp ?? member?.currentHp ?? member?.maxHp ?? 0,
                         maxHp: serverEntry.maxHp ?? member?.maxHp ?? 1,
+                        status: String(serverEntry.status || member?.status || '').trim().toLowerCase(),
+                        statusTurns: Number.isFinite(Number(serverEntry.statusTurns))
+                            ? Math.max(0, Math.floor(Number(serverEntry.statusTurns)))
+                            : Math.max(0, Math.floor(Number(member?.statusTurns) || 0)),
+                        statStages: serverEntry.statStages && typeof serverEntry.statStages === 'object'
+                            ? serverEntry.statStages
+                            : (member?.statStages || {}),
+                        damageGuards: serverEntry.damageGuards && typeof serverEntry.damageGuards === 'object'
+                            ? serverEntry.damageGuards
+                            : (member?.damageGuards || {}),
+                        wasDamagedLastTurn: Boolean(serverEntry.wasDamagedLastTurn ?? member?.wasDamagedLastTurn),
+                        volatileState: serverEntry.volatileState && typeof serverEntry.volatileState === 'object'
+                            ? serverEntry.volatileState
+                            : (member?.volatileState || {}),
                     }
                 })
                 const serverCurrentIndex = Number.isInteger(serverOpponentState.currentIndex)
@@ -810,6 +987,7 @@ export function BattlePage() {
 
                 nextBattleState = {
                     ...currentBattleState,
+                    ...serverOpponentState,
                     currentIndex: serverCurrentIndex,
                     team: mergedTeam,
                 }
@@ -832,6 +1010,16 @@ export function BattlePage() {
                 } else {
                     nextBattleState = { ...currentBattleState, team: localResolvedTeam }
                 }
+            }
+
+            const nextFieldState = battle?.fieldState && typeof battle.fieldState === 'object'
+                ? battle.fieldState
+                : (nextBattleState?.fieldState && typeof nextBattleState.fieldState === 'object'
+                    ? nextBattleState.fieldState
+                    : {})
+            nextBattleState = {
+                ...nextBattleState,
+                fieldState: nextFieldState,
             }
 
             setBattleOpponent(nextBattleState)
@@ -875,6 +1063,10 @@ export function BattlePage() {
                 logLines.push(`${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
             }
 
+            if (effectLogs.length > 0) {
+                logLines.push(...effectLogs)
+            }
+
             setBattlePartyHpState(nextPartyState)
 
             const nextPlayerHp = clampValue(
@@ -883,16 +1075,16 @@ export function BattlePage() {
                 Number(nextPartyState?.[resolvedActiveIndex]?.maxHp) || activeMaxHp
             )
             if (nextPlayerHp <= 0) {
-                    logLines.push(`${activeName} đã bại trận.`)
+                logLines.push(`${activeName} đã bại trận.`)
 
-                    const switchedIndex = getNextAlivePartyIndex(party, nextPartyState, resolvedActiveIndex)
-                    if (switchedIndex !== -1) {
-                        const switchedPokemon = party[switchedIndex]
-                        setBattlePlayerIndex(switchedIndex)
-                        switchedAfterDefeat = true
-                        logLines.push(`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`)
-                        setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
-                    }
+                const switchedIndex = getNextAlivePartyIndex(party, nextPartyState, resolvedActiveIndex)
+                if (switchedIndex !== -1) {
+                    const switchedPokemon = party[switchedIndex]
+                    setBattlePlayerIndex(switchedIndex)
+                    switchedAfterDefeat = true
+                    logLines.push(`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`)
+                    setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
+                }
             }
             if (nextHp <= 0) {
                 logLines.push(`${target.name || 'Đối thủ'} đã bại trận.`)
@@ -910,10 +1102,7 @@ export function BattlePage() {
                     message: 'Pokemon của bạn đã bại trận. Trận đấu kết thúc.',
                     pokemon: {
                         name: activeName,
-                        imageUrl: activePokemon?.pokemonId?.imageUrl ||
-                            activePokemon?.pokemonId?.sprites?.normal ||
-                            activePokemon?.pokemonId?.sprites?.front_default ||
-                            '',
+                        imageUrl: activeResultImage,
                         level: activePokemon?.level || 1,
                         exp: activePokemon?.experience || 0,
                         expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
@@ -980,10 +1169,7 @@ export function BattlePage() {
                     message: err.message,
                     pokemon: {
                         name: activeName,
-                        imageUrl: activePokemon?.pokemonId?.imageUrl ||
-                            activePokemon?.pokemonId?.sprites?.normal ||
-                            activePokemon?.pokemonId?.sprites?.front_default ||
-                            '',
+                        imageUrl: activeResultImage,
                         level: activePokemon?.level || 1,
                         exp: activePokemon?.experience || 0,
                         expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
@@ -1137,6 +1323,12 @@ export function BattlePage() {
                 pokemon: poke,
                 currentHp: hp,
                 maxHp: hp,
+                status: '',
+                statusTurns: 0,
+                statStages: {},
+                damageGuards: {},
+                wasDamagedLastTurn: false,
+                volatileState: {},
             }
         })
 
@@ -1158,6 +1350,7 @@ export function BattlePage() {
             maxHp: currentEncounter?.maxHp || 1,
             pokemon: currentEncounter?.pokemon || null,
             team,
+            fieldState: {},
         }
     }
 
@@ -1217,6 +1410,18 @@ export function BattlePage() {
         setSelectedMoveIndex(0)
         setActiveTab('fight')
         setBattleOpponent(nextOpponent)
+        setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
+            if (!slot) return slot
+            return {
+                ...slot,
+                status: '',
+                statusTurns: 0,
+                statStages: {},
+                damageGuards: {},
+                wasDamagedLastTurn: false,
+                volatileState: {},
+            }
+        }) : prevParty))
         const initialPartyState = buildBattlePartyState(party)
         setBattlePartyHpState(initialPartyState)
         const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
