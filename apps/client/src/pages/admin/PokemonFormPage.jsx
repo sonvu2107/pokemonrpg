@@ -99,6 +99,7 @@ export default function PokemonFormPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [allPokemon, setAllPokemon] = useState([])
+    const [moveCatalog, setMoveCatalog] = useState([])
     const [bulkFormUploading, setBulkFormUploading] = useState(false)
     const [bulkFormUploadProgress, setBulkFormUploadProgress] = useState(0)
     const [bulkFormUploadCount, setBulkFormUploadCount] = useState(0)
@@ -131,12 +132,24 @@ export default function PokemonFormPage() {
         loadData()
     }, [id])
 
+    const canonicalizeMoveName = (value) => {
+        const normalized = String(value || '').trim()
+        if (!normalized) return ''
+        const key = normalized.toLowerCase()
+        const matched = moveCatalog.find((entry) => String(entry?.nameLower || entry?.name || '').trim().toLowerCase() === key)
+        return matched?.name || normalized
+    }
+
     const loadData = async () => {
         try {
             setLoading(true)
-            // Fetch all pokemon for evolution dropdown
-            const pokemonList = await pokemonApi.list({ limit: 1000 })
+            // Fetch all pokemon for evolution dropdown + move catalog for autocomplete
+            const [pokemonList, moveLookup] = await Promise.all([
+                pokemonApi.list({ limit: 1000 }),
+                pokemonApi.lookupMoves({ limit: 1000 }).catch(() => ({ moves: [] })),
+            ])
             setAllPokemon(pokemonList.pokemon || [])
+            setMoveCatalog(moveLookup.moves || [])
 
             if (isEdit) {
                 const data = await pokemonApi.getById(id)
@@ -235,7 +248,10 @@ export default function PokemonFormPage() {
                 forms: cleanedForms,
                 levelUpMoves: formData.levelUpMoves
                     .filter(m => m.moveName.trim() !== '')
-                    .map(m => ({ level: parseInt(m.level) || 1, moveName: m.moveName })),
+                    .map(m => ({
+                        level: parseInt(m.level) || 1,
+                        moveName: canonicalizeMoveName(m.moveName),
+                    })),
                 evolution: {
                     evolvesTo: formData.evolution.evolvesTo || null,
                     minLevel: formData.evolution.evolvesTo ? (parseInt(formData.evolution.minLevel) || null) : null
@@ -751,6 +767,15 @@ export default function PokemonFormPage() {
                     <div>
                         <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">6. Bộ Chiêu Thức (Theo Cấp)</h3>
                         <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                            <datalist id="pokemon-move-catalog-options">
+                                {moveCatalog.map((move) => (
+                                    <option
+                                        key={move._id}
+                                        value={move.name}
+                                        label={`${move.name} • ${String(move.type || '').toUpperCase()} • ${String(move.category || '').toUpperCase()}`}
+                                    />
+                                ))}
+                            </datalist>
                             <table className="w-full text-sm">
                                 <thead className="bg-slate-100 text-slate-600 text-xs uppercase font-bold">
                                     <tr>
@@ -778,6 +803,8 @@ export default function PokemonFormPage() {
                                                     placeholder="VD: Tackle"
                                                     value={move.moveName}
                                                     onChange={(e) => updateMove(index, 'moveName', e.target.value)}
+                                                    onBlur={(e) => updateMove(index, 'moveName', canonicalizeMoveName(e.target.value))}
+                                                    list="pokemon-move-catalog-options"
                                                     className="w-full px-2 py-1 bg-white border border-slate-300 rounded"
                                                 />
                                             </td>
@@ -797,6 +824,9 @@ export default function PokemonFormPage() {
                                 </tbody>
                             </table>
                             <div className="p-2 bg-slate-100 border-t border-slate-200">
+                                <p className="text-[10px] text-slate-500 mb-2">
+                                    Gợi ý tự động từ kho kỹ năng ({moveCatalog.length.toLocaleString('vi-VN')} kỹ năng).
+                                </p>
                                 <button
                                     type="button"
                                     onClick={addMove}

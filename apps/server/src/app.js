@@ -12,6 +12,7 @@ import pokemonAdminRoutes from './routes/admin/pokemon.js'
 import mapsAdminRoutes from './routes/admin/maps.js'
 import dropRatesAdminRoutes from './routes/admin/dropRates.js'
 import itemAdminRoutes from './routes/admin/items.js'
+import moveAdminRoutes from './routes/admin/moves.js'
 import itemDropRatesAdminRoutes from './routes/admin/itemDropRates.js'
 import userAdminRoutes from './routes/admin/user.js'
 import battleTrainersAdminRoutes from './routes/admin/battleTrainers.js'
@@ -39,10 +40,22 @@ const app = express()
 // Security middleware
 app.use(helmet())
 
-// CORS configuration
+// CORS configuration — supports multiple origins via comma-separated CLIENT_URL
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+
 app.use(
     cors({
-        origin: process.env.CLIENT_URL || 'http://localhost:5173',
+        origin: function (origin, callback) {
+            // Allow requests with no origin (mobile apps, curl, server-to-server)
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true)
+            } else {
+                callback(new Error('Not allowed by CORS'))
+            }
+        },
         credentials: true,
     })
 )
@@ -119,6 +132,7 @@ app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requir
 app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), mapsAdminRoutes)
 app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), dropRatesAdminRoutes)
 app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.ITEMS), itemAdminRoutes)
+app.use('/api/admin/moves', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MOVES), moveAdminRoutes)
 app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), itemDropRatesAdminRoutes)
 app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.USERS), userAdminRoutes)
 app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BATTLE), battleTrainersAdminRoutes)

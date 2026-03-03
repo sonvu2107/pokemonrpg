@@ -6,6 +6,7 @@ const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
     map: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/town-map.png",
     items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/potion.png",
+    moves: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/tm-normal.png",
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
     battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
@@ -53,7 +54,7 @@ export default function AdminDashboard() {
     const groups = [
         {
             title: 'Dữ Liệu Game',
-            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.BATTLE, ADMIN_PERMISSIONS.REWARDS],
+            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.MOVES, ADMIN_PERMISSIONS.BATTLE, ADMIN_PERMISSIONS.REWARDS],
             cards: [
                 {
                     permission: ADMIN_PERMISSIONS.POKEMON,
@@ -70,6 +71,14 @@ export default function AdminDashboard() {
                     to: '/admin/items',
                     icon: ICONS.items,
                     color: 'amber',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.MOVES,
+                    title: 'Quản Lý Kỹ Năng',
+                    description: 'Danh sách kỹ năng, chỉ số và bật bán shop',
+                    to: '/admin/moves',
+                    icon: ICONS.moves,
+                    color: 'sky',
                 },
                 {
                     permission: ADMIN_PERMISSIONS.MAPS,
@@ -132,6 +141,7 @@ export default function AdminDashboard() {
     const quickActions = [
         { permission: ADMIN_PERMISSIONS.POKEMON, to: '/admin/pokemon/create', label: 'Pokémon', className: 'bg-blue-600 hover:bg-blue-700' },
         { permission: ADMIN_PERMISSIONS.ITEMS, to: '/admin/items/create', label: 'Vật phẩm', className: 'bg-amber-500 hover:bg-amber-600' },
+        { permission: ADMIN_PERMISSIONS.MOVES, to: '/admin/moves/create', label: 'Kỹ năng', className: 'bg-sky-600 hover:bg-sky-700' },
         { permission: ADMIN_PERMISSIONS.MAPS, to: '/admin/maps/create', label: 'Bản đồ', className: 'bg-emerald-600 hover:bg-emerald-700' },
     ].filter((action) => canAccessAdminModule(action.permission))
 

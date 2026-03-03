@@ -262,6 +262,33 @@ export const gameApi = {
         return data
     },
 
+    // GET /api/pokemon/:id/skills
+    async getPokemonSkills(id) {
+        const res = await fetch(`${API_URL}/pokemon/${id}/skills`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải kho kỹ năng của Pokemon')
+        }
+        return res.json()
+    },
+
+    // POST /api/pokemon/:id/teach-skill
+    async teachPokemonSkill(id, payload) {
+        const res = await fetch(`${API_URL}/pokemon/${id}/teach-skill`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Dạy kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
     // GET /api/party
     async getParty() {
         const res = await fetch(`${API_URL}/party`, {
@@ -513,6 +540,40 @@ export const gameApi = {
         })
         if (!res.ok) {
             await throwApiError(res, 'Mua vật phẩm thất bại')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/skills
+    async getShopSkills(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/skills${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải cửa hàng kỹ năng')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/skills/:moveId/buy
+    async buyShopSkill(moveId, quantity = 1) {
+        const res = await fetch(`${API_URL}/shop/skills/${moveId}/buy`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ quantity }),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Mua kỹ năng thất bại')
         }
         return res.json()
     },

@@ -67,6 +67,7 @@ export default function RightColumn() {
         { to: '/admin/pokemon', label: 'Quản lý Pokémon', permission: ADMIN_PERMISSIONS.POKEMON },
         { to: '/admin/maps', label: 'Quản lý Bản Đồ', permission: ADMIN_PERMISSIONS.MAPS },
         { to: '/admin/items', label: 'Quản lý Vật Phẩm', permission: ADMIN_PERMISSIONS.ITEMS },
+        { to: '/admin/moves', label: 'Quản lý Kỹ Năng', permission: ADMIN_PERMISSIONS.MOVES },
         { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
         { to: '/admin/battle', label: 'Quản lý Battle', permission: ADMIN_PERMISSIONS.BATTLE },
         { to: '/admin/daily-rewards', label: 'Quản lý Quà Ngày', permission: ADMIN_PERMISSIONS.REWARDS },
@@ -140,6 +141,7 @@ export default function RightColumn() {
                 <SidebarLink to="/shop/buy">Mua Pokémon</SidebarLink>
                 <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>
                 <SidebarLink to="/shop/items">Cửa hàng Vật Phẩm</SidebarLink>
+                <SidebarLink to="/shop/skills">Cửa hàng Kỹ Năng</SidebarLink>
                 <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>
                 <SidebarLink to="/shop/mine">Cửa hàng Hầm Mỏ</SidebarLink>
                 <SidebarLink to="/shop/parrot" isSpecial>Cửa hàng Vẹt</SidebarLink>

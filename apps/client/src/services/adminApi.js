@@ -43,6 +43,16 @@ export const pokemonApi = {
         return res.json()
     },
 
+    // GET /api/admin/pokemon/lookup/moves
+    async lookupMoves(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/pokemon/lookup/moves?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Không thể tải danh sách kỹ năng')
+        return res.json()
+    },
+
     // POST /api/admin/pokemon
     async create(data) {
         const res = await fetch(`${API_URL}/admin/pokemon`, {
@@ -326,6 +336,22 @@ export const itemApi = {
         return res.json()
     },
 
+    async importMoveCsv(moves = []) {
+        const res = await fetch(`${API_URL}/admin/moves/import/csv`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ moves }),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Import kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
     async update(id, data) {
         const res = await fetch(`${API_URL}/admin/items/${id}`, {
             method: 'PUT',
@@ -359,6 +385,79 @@ export const itemApi = {
         if (!res.ok) {
             const err = await res.json().catch(() => ({}))
             throw new Error(err.message || 'Không thể tải lịch sử mua')
+        }
+        return res.json()
+    },
+}
+
+// Move endpoints
+export const moveApi = {
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/moves?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Không thể tải kỹ năng')
+        return res.json()
+    },
+
+    async getById(id) {
+        const res = await fetch(`${API_URL}/admin/moves/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Không thể tải kỹ năng')
+        return res.json()
+    },
+
+    async create(data) {
+        const res = await fetch(`${API_URL}/admin/moves`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Tạo kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
+    async update(id, data) {
+        const res = await fetch(`${API_URL}/admin/moves/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Cập nhật kỹ năng thất bại')
+        }
+        return res.json()
+    },
+
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/moves/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Xóa kỹ năng thất bại')
+        return res.json()
+    },
+
+    async getPurchaseHistory(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/moves/purchase-history?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Không thể tải lịch sử mua kỹ năng')
         }
         return res.json()
     },

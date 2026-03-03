@@ -1,6 +1,8 @@
 import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
+import Move from '../models/Move.js'
+import UserMoveInventory from '../models/UserMoveInventory.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 import { authMiddleware } from '../middleware/auth.js'
 
@@ -10,6 +12,66 @@ const toBoolean = (value) => {
     if (typeof value === 'boolean') return value
     const normalized = String(value || '').trim().toLowerCase()
     return ['1', 'true', 'yes', 'on'].includes(normalized)
+}
+
+const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
+
+const normalizeStringSet = (values) => new Set(
+    (Array.isArray(values) ? values : [])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean)
+)
+
+const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
+    const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
+    const speciesId = String(pokemonSpecies?._id || '').trim()
+    const speciesTypes = normalizeStringSet(pokemonSpecies?.types)
+    const speciesRarity = String(pokemonSpecies?.rarity || '').trim().toLowerCase()
+
+    if (learnScope === 'all') {
+        return { canLearn: true, reason: '' }
+    }
+
+    if (learnScope === 'type') {
+        const allowedTypeSet = normalizeStringSet(move?.allowedTypes)
+        const intersects = [...speciesTypes].some((entry) => allowedTypeSet.has(entry))
+        if (!intersects) {
+            return {
+                canLearn: false,
+                reason: 'Kỹ năng này chỉ học được bởi Pokemon đúng hệ yêu cầu',
+            }
+        }
+        return { canLearn: true, reason: '' }
+    }
+
+    if (learnScope === 'species') {
+        const allowedIds = new Set((Array.isArray(move?.allowedPokemonIds) ? move.allowedPokemonIds : [])
+            .map((entry) => {
+                if (typeof entry === 'object') return String(entry?._id || '').trim()
+                return String(entry || '').trim()
+            })
+            .filter(Boolean))
+        if (!speciesId || !allowedIds.has(speciesId)) {
+            return {
+                canLearn: false,
+                reason: 'Kỹ năng này chỉ dành cho một số Pokemon đặc biệt',
+            }
+        }
+        return { canLearn: true, reason: '' }
+    }
+
+    if (learnScope === 'rarity') {
+        const allowedRarities = normalizeStringSet(move?.allowedRarities)
+        if (!speciesRarity || !allowedRarities.has(speciesRarity)) {
+            return {
+                canLearn: false,
+                reason: 'Kỹ năng này chỉ học được bởi Pokemon huyền thoại/thần thoại',
+            }
+        }
+        return { canLearn: true, reason: '' }
+    }
+
+    return { canLearn: true, reason: '' }
 }
 
 const buildMovesForLevel = (pokemon, level) => {
@@ -300,6 +362,243 @@ router.get('/:id', async (req, res) => {
 
     } catch (error) {
         console.error('Get Pokemon Detail Error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/pokemon/:id/skills (protected) - Skills available from user inventory
+router.get('/:id/skills', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+            .select('moves pokemonId')
+            .populate('pokemonId', 'types rarity')
+            .lean()
+
+        if (!userPokemon) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
+        }
+
+        const knownMoves = Array.isArray(userPokemon.moves)
+            ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : []
+        const knownMoveSet = new Set(knownMoves.map((entry) => normalizeMoveName(entry)))
+
+        const inventoryEntries = await UserMoveInventory.find({
+            userId,
+            quantity: { $gt: 0 },
+        })
+            .populate('moveId', 'name type category power accuracy pp priority description imageUrl rarity isActive learnScope allowedTypes allowedPokemonIds allowedRarities')
+            .sort({ updatedAt: -1, _id: -1 })
+            .lean()
+
+        const skills = inventoryEntries
+            .map((entry) => {
+                const move = entry.moveId
+                if (!move || move.isActive === false) return null
+                const moveName = String(move.name || '').trim()
+                const moveKey = normalizeMoveName(moveName)
+                const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId)
+
+                let canLearn = Boolean(moveName) && !knownMoveSet.has(moveKey)
+                let reason = canLearn ? '' : 'Pokemon đã biết kỹ năng này'
+
+                if (canLearn && !restrictionResult.canLearn) {
+                    canLearn = false
+                    reason = restrictionResult.reason
+                }
+
+                return {
+                    _id: entry._id,
+                    moveId: move._id,
+                    quantity: Number(entry.quantity || 0),
+                    canLearn,
+                    reason,
+                    move: {
+                        _id: move._id,
+                        name: moveName,
+                        type: move.type,
+                        category: move.category,
+                        power: move.power,
+                        accuracy: move.accuracy,
+                        pp: move.pp,
+                        priority: move.priority,
+                        description: move.description || '',
+                        imageUrl: move.imageUrl || '',
+                        rarity: move.rarity || 'common',
+                        learnScope: move.learnScope || 'all',
+                        allowedTypes: Array.isArray(move.allowedTypes) ? move.allowedTypes : [],
+                        allowedPokemonIds: Array.isArray(move.allowedPokemonIds)
+                            ? move.allowedPokemonIds.map((entry) => {
+                                if (typeof entry === 'object') return String(entry?._id || '').trim()
+                                return String(entry || '').trim()
+                            }).filter(Boolean)
+                            : [],
+                        allowedRarities: Array.isArray(move.allowedRarities) ? move.allowedRarities : [],
+                    },
+                }
+            })
+            .filter(Boolean)
+            .sort((a, b) => {
+                const nameA = String(a?.move?.name || '').toLowerCase()
+                const nameB = String(b?.move?.name || '').toLowerCase()
+                if (nameA < nameB) return -1
+                if (nameA > nameB) return 1
+                return String(a.moveId).localeCompare(String(b.moveId))
+            })
+
+        res.json({
+            ok: true,
+            pokemon: {
+                _id: req.params.id,
+                moves: knownMoves,
+            },
+            skills,
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon/:id/skills error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/pokemon/:id/teach-skill (protected)
+router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
+    let consumedSkill = false
+    let consumeIdentity = null
+
+    try {
+        const userId = req.user.userId
+        const moveId = String(req.body?.moveId || '').trim()
+        const rawReplaceMoveIndex = req.body?.replaceMoveIndex
+
+        if (!moveId) {
+            return res.status(400).json({ ok: false, message: 'Thiếu moveId' })
+        }
+
+        const [userPokemon, move] = await Promise.all([
+            UserPokemon.findOne({ _id: req.params.id, userId })
+                .populate('pokemonId', 'types rarity'),
+            Move.findOne({ _id: moveId, isActive: true })
+                .select('name type category power accuracy pp priority learnScope allowedTypes allowedPokemonIds allowedRarities')
+                .lean(),
+        ])
+
+        if (!userPokemon) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
+        }
+        if (!move || !String(move.name || '').trim()) {
+            return res.status(404).json({ ok: false, message: 'Kỹ năng không tồn tại hoặc đã bị vô hiệu hóa' })
+        }
+
+        const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId)
+        if (!restrictionResult.canLearn) {
+            return res.status(400).json({ ok: false, message: restrictionResult.reason })
+        }
+
+        const inventoryEntry = await UserMoveInventory.findOne({
+            userId,
+            moveId,
+            quantity: { $gt: 0 },
+        })
+            .select('quantity')
+            .lean()
+
+        if (!inventoryEntry) {
+            return res.status(400).json({ ok: false, message: 'Bạn không có kỹ năng này trong kho' })
+        }
+
+        const currentMoves = Array.isArray(userPokemon.moves)
+            ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
+            : []
+
+        const moveName = String(move.name || '').trim()
+        const moveKey = normalizeMoveName(moveName)
+        const knownMoveSet = new Set(currentMoves.map((entry) => normalizeMoveName(entry)))
+        if (knownMoveSet.has(moveKey)) {
+            return res.status(400).json({ ok: false, message: 'Pokemon đã biết kỹ năng này' })
+        }
+
+        let replaceMoveIndex = null
+        if (rawReplaceMoveIndex !== undefined && rawReplaceMoveIndex !== null && rawReplaceMoveIndex !== '') {
+            const parsed = parseInt(rawReplaceMoveIndex, 10)
+            replaceMoveIndex = Number.isInteger(parsed) ? parsed : null
+        }
+
+        if (currentMoves.length >= 4 && (replaceMoveIndex === null || replaceMoveIndex < 0 || replaceMoveIndex >= currentMoves.length)) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Pokemon đã đủ 4 kỹ năng, vui lòng chọn kỹ năng cần thay thế',
+            })
+        }
+
+        const consumeFilter = {
+            userId,
+            moveId,
+            quantity: { $gte: 1 },
+        }
+        consumeIdentity = { userId, moveId }
+
+        const consumedEntry = await UserMoveInventory.findOneAndUpdate(
+            consumeFilter,
+            { $inc: { quantity: -1 } },
+            { new: true }
+        )
+
+        if (!consumedEntry) {
+            return res.status(409).json({ ok: false, message: 'Kỹ năng trong kho đã thay đổi, vui lòng thử lại' })
+        }
+        consumedSkill = true
+
+        const nextMoves = [...currentMoves]
+        let replacedMove = null
+        if (nextMoves.length < 4) {
+            nextMoves.push(moveName)
+        } else {
+            replacedMove = nextMoves[replaceMoveIndex]
+            nextMoves[replaceMoveIndex] = moveName
+        }
+
+        userPokemon.moves = nextMoves
+        await userPokemon.save()
+
+        if (consumedEntry.quantity <= 0) {
+            await UserMoveInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
+        }
+
+        return res.json({
+            ok: true,
+            message: replacedMove
+                ? `${userPokemon.nickname || 'Pokemon'} đã học ${moveName} và quên ${replacedMove}`
+                : `${userPokemon.nickname || 'Pokemon'} đã học ${moveName}`,
+            pokemon: {
+                _id: userPokemon._id,
+                moves: nextMoves,
+            },
+            taughtMove: {
+                _id: move._id,
+                name: moveName,
+                type: move.type,
+                category: move.category,
+                power: move.power,
+                accuracy: move.accuracy,
+                pp: move.pp,
+                priority: move.priority,
+            },
+            replacedMove,
+            inventory: {
+                moveId,
+                remainingQuantity: Math.max(0, Number(consumedEntry.quantity || 0)),
+            },
+        })
+    } catch (error) {
+        if (consumedSkill && consumeIdentity) {
+            try {
+                await UserMoveInventory.updateOne(consumeIdentity, { $inc: { quantity: 1 } }, { upsert: true })
+            } catch (rollbackError) {
+                console.error('POST /api/pokemon/:id/teach-skill rollback error:', rollbackError)
+            }
+        }
+        console.error('POST /api/pokemon/:id/teach-skill error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })

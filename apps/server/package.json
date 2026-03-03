@@ -8,6 +8,9 @@
         "start": "node src/index.js",
         "lint": "eslint src --ext js",
         "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js",
+        "migrate:pokemon-move-ids:dry": "node scripts/migratePokemonMoveIds.js",
+        "migrate:pokemon-move-ids": "node scripts/migratePokemonMoveIds.js --apply",
+        "test:skill-shop-teach-flow": "node scripts/testSkillShopTeachFlow.js",
         "chat:setup": "node src/scripts/setupChatDatabase.js",
         "chat:seed": "node src/scripts/seedChatMessages.js"
     },

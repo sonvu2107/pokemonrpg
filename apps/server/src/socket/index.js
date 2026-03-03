@@ -6,10 +6,10 @@ let io = null
 
 // Initialize Socket.io with HTTP server
 export const initSocket = (server) => {
-    const allowedOrigins = [
-        process.env.CLIENT_URL || "http://localhost:5173",
-        "https://vnpet.netlify.app",
-    ];
+    const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
 
     io = new Server(server, {
         cors: {
@@ -22,11 +22,11 @@ export const initSocket = (server) => {
     io.use((socket, next) => {
         try {
             const token = socket.handshake.auth.token
-            console.log('Socket auth attempt:', { 
-                hasToken: !!token, 
-                tokenPreview: token ? token.substring(0, 20) + '...' : 'none' 
+            console.log('Socket auth attempt:', {
+                hasToken: !!token,
+                tokenPreview: token ? token.substring(0, 20) + '...' : 'none'
             })
-            
+
             if (!token) {
                 console.error('Socket auth failed: No token provided')
                 return next(new Error('Authentication error: No token provided'))
@@ -48,7 +48,7 @@ export const initSocket = (server) => {
 
         // Join room based on userId for player state updates
         socket.join(socket.userId.toString())
-        
+
         // Attach chat event handlers (pass io for broadcasting)
         attachChatHandlers(socket, io)
 

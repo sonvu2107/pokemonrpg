@@ -30,6 +30,7 @@ const VALID_TYPES = new Set([
 ])
 
 const VALID_RARITIES = new Set(['sss', 'ss', 's', 'a', 'b', 'c', 'd'])
+const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
 
 const normalizeBaseStats = (stats) => {
     if (!stats || typeof stats !== 'object') return stats
@@ -78,6 +79,63 @@ const normalizeEvolutionTargetId = (value) => {
     }
     const normalized = String(value).trim()
     return normalized || null
+}
+
+const normalizeLevelUpMovesInput = (entries) => {
+    if (!Array.isArray(entries)) return []
+    return entries
+        .map((entry) => {
+            const parsedLevel = Number.parseInt(entry?.level, 10)
+            const moveName = String(entry?.moveName || '').trim()
+            return {
+                level: Number.isFinite(parsedLevel) && parsedLevel > 0 ? parsedLevel : 1,
+                moveName,
+            }
+        })
+        .filter((entry) => entry.moveName)
+}
+
+const resolveLevelUpMovesFromCatalog = async (entries) => {
+    const normalizedEntries = normalizeLevelUpMovesInput(entries)
+    if (normalizedEntries.length === 0) {
+        return { moves: [] }
+    }
+
+    const uniqueMoveKeys = [...new Set(
+        normalizedEntries
+            .map((entry) => normalizeMoveName(entry.moveName))
+            .filter(Boolean)
+    )]
+
+    const Move = (await import('../../models/Move.js')).default
+    const moveDocs = await Move.find({ nameLower: { $in: uniqueMoveKeys } })
+        .select('_id name nameLower')
+        .lean()
+
+    const moveByKey = new Map(
+        moveDocs
+            .map((entry) => [normalizeMoveName(entry?.nameLower || entry?.name || ''), entry])
+            .filter(([key]) => Boolean(key))
+    )
+
+    const missingKeys = uniqueMoveKeys.filter((key) => !moveByKey.has(key))
+    if (missingKeys.length > 0) {
+        return {
+            error: `Không tìm thấy kỹ năng hợp lệ: ${missingKeys.slice(0, 10).join(', ')}`,
+        }
+    }
+
+    const moves = normalizedEntries.map((entry) => {
+        const key = normalizeMoveName(entry.moveName)
+        const doc = moveByKey.get(key)
+        return {
+            level: entry.level,
+            moveName: doc?.name || entry.moveName,
+            moveId: doc?._id || null,
+        }
+    })
+
+    return { moves }
 }
 
 const buildBulkImportEntry = (entry, index) => {
@@ -424,6 +482,39 @@ router.post('/import/csv', async (req, res) => {
     }
 })
 
+// GET /api/admin/pokemon/lookup/moves - Search move catalog for form suggestions
+router.get('/lookup/moves', async (req, res) => {
+    try {
+        const search = String(req.query.search || '').trim()
+        const type = String(req.query.type || '').trim().toLowerCase()
+        const category = String(req.query.category || '').trim().toLowerCase()
+        const limit = toSafePageLimit(req.query.limit, 100)
+
+        const query = {}
+        if (search) {
+            query.nameLower = { $regex: escapeRegExp(search.toLowerCase()), $options: 'i' }
+        }
+        if (type) {
+            query.type = type
+        }
+        if (category) {
+            query.category = category
+        }
+
+        const Move = (await import('../../models/Move.js')).default
+        const moves = await Move.find(query)
+            .sort({ nameLower: 1, _id: 1 })
+            .limit(limit)
+            .select('_id name nameLower type category power accuracy pp priority isActive')
+            .lean()
+
+        res.json({ ok: true, moves })
+    } catch (error) {
+        console.error('GET /api/admin/pokemon/lookup/moves error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
 // GET /api/admin/pokemon/:id - Get single Pokemon
 router.get('/:id', async (req, res) => {
     try {
@@ -446,6 +537,11 @@ router.post('/', async (req, res) => {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = normalizeForms(req.body.forms)
         const resolvedBaseStats = normalizeBaseStats(baseStats || forms[0]?.stats)
+        const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = await resolveLevelUpMovesFromCatalog(levelUpMoves || [])
+
+        if (levelUpMovesError) {
+            return res.status(400).json({ ok: false, message: levelUpMovesError })
+        }
 
         // Validation
         if (!pokedexNumber || !name || !resolvedBaseStats || !types || types.length < 1 || types.length > 2) {
@@ -480,7 +576,7 @@ router.post('/', async (req, res) => {
             defaultFormId: defaultFormId || forms[0]?.formId || 'normal',
             forms,
             evolution,
-            levelUpMoves: levelUpMoves || [],
+            levelUpMoves: resolvedLevelUpMoves,
             catchRate,
             baseExperience,
             growthRate,
@@ -500,6 +596,14 @@ router.put('/:id', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = 'forms' in req.body ? normalizeForms(req.body.forms) : null
+        const shouldUpdateLevelUpMoves = levelUpMoves !== undefined
+        const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = shouldUpdateLevelUpMoves
+            ? await resolveLevelUpMovesFromCatalog(levelUpMoves)
+            : { moves: null, error: null }
+
+        if (levelUpMovesError) {
+            return res.status(400).json({ ok: false, message: levelUpMovesError })
+        }
 
         const pokemon = await Pokemon.findById(req.params.id)
 
@@ -536,7 +640,7 @@ router.put('/:id', async (req, res) => {
 
         // Update game mechanics fields
         if (evolution !== undefined) pokemon.evolution = evolution
-        if (levelUpMoves !== undefined) pokemon.levelUpMoves = levelUpMoves
+        if (shouldUpdateLevelUpMoves) pokemon.levelUpMoves = resolvedLevelUpMoves
         if (catchRate !== undefined) pokemon.catchRate = catchRate
         if (baseExperience !== undefined) pokemon.baseExperience = baseExperience
         if (growthRate !== undefined) pokemon.growthRate = growthRate

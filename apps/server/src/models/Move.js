@@ -2,6 +2,29 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
+export const MOVE_RARITIES = [
+    'common',
+    'uncommon',
+    'rare',
+    'epic',
+    'legendary',
+]
+
+export const POKEMON_TYPES = [
+    'normal', 'fire', 'water', 'grass', 'electric', 'ice',
+    'fighting', 'poison', 'ground', 'flying', 'psychic',
+    'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+]
+
+export const POKEMON_RARITIES = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+
+export const MOVE_LEARN_SCOPES = [
+    'all',
+    'type',
+    'species',
+    'rarity',
+]
+
 const moveSchema = new Schema(
     {
         name: {
@@ -20,11 +43,7 @@ const moveSchema = new Schema(
         type: {
             type: String,
             required: true,
-            enum: [
-                'normal', 'fire', 'water', 'grass', 'electric', 'ice',
-                'fighting', 'poison', 'ground', 'flying', 'psychic',
-                'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
-            ],
+            enum: POKEMON_TYPES,
         },
 
         // Move Category
@@ -74,6 +93,58 @@ const moveSchema = new Schema(
             default: '',
         },
 
+        imageUrl: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+
+        rarity: {
+            type: String,
+            enum: MOVE_RARITIES,
+            default: 'common',
+        },
+
+        shopPrice: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+
+        isShopEnabled: {
+            type: Boolean,
+            default: false,
+        },
+
+        isActive: {
+            type: Boolean,
+            default: true,
+        },
+
+        learnScope: {
+            type: String,
+            enum: MOVE_LEARN_SCOPES,
+            default: 'all',
+        },
+
+        allowedTypes: {
+            type: [String],
+            default: [],
+            enum: POKEMON_TYPES,
+        },
+
+        allowedPokemonIds: {
+            type: [Schema.Types.ObjectId],
+            ref: 'Pokemon',
+            default: [],
+        },
+
+        allowedRarities: {
+            type: [String],
+            default: [],
+            enum: POKEMON_RARITIES,
+        },
+
         // Additional Effects (optional, for future use)
         effects: {
             type: Object,
@@ -89,6 +160,9 @@ const moveSchema = new Schema(
 // Indexes
 moveSchema.index({ type: 1 })
 moveSchema.index({ category: 1 })
+moveSchema.index({ rarity: 1 })
+moveSchema.index({ isShopEnabled: 1, shopPrice: 1 })
+moveSchema.index({ learnScope: 1 })
 
 // Pre-validate: auto-generate nameLower
 moveSchema.pre('validate', function (next) {

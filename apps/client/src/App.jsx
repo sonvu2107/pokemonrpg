@@ -18,6 +18,7 @@ import EvolvePage from './pages/EvolvePage'
 import TradesPage from './pages/TradesPage'
 import ShopSellPage from './pages/ShopSellPage'
 import ItemShopPage from './pages/ItemShopPage'
+import SkillShopPage from './pages/SkillShopPage'
 import DailyStatsPage from './pages/DailyStatsPage'
 import OnlineStatsPage from './pages/OnlineStatsPage'
 import DailyCheckInPage from './pages/DailyCheckInPage'
@@ -31,6 +32,8 @@ import MapFormPage from './pages/admin/MapFormPage'
 import DropRateManagerPage from './pages/admin/DropRateManagerPage'
 import ItemListPage from './pages/admin/ItemListPage'
 import ItemFormPage from './pages/admin/ItemFormPage'
+import MoveListPage from './pages/admin/MoveListPage'
+import MoveFormPage from './pages/admin/MoveFormPage'
 import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
@@ -67,6 +70,7 @@ export default function App() {
                 <Route path="/shop/buy" element={<TradesPage />} />
                 <Route path="/shop/sell" element={<ShopSellPage />} />
                 <Route path="/shop/items" element={<ItemShopPage />} />
+                <Route path="/shop/skills" element={<SkillShopPage />} />
                 <Route path="/stats" element={<DailyStatsPage />} />
                 <Route path="/stats/online" element={<OnlineStatsPage />} />
                 <Route path="/daily" element={<DailyCheckInPage />} />
@@ -88,6 +92,9 @@ export default function App() {
                 <Route path="/admin/items" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemListPage /></AdminRouteGuard>} />
                 <Route path="/admin/items/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
                 <Route path="/admin/items/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/moves" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveListPage /></AdminRouteGuard>} />
+                <Route path="/admin/moves/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />
+                <Route path="/admin/moves/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />
                 <Route path="/admin/battle" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BATTLE}><BattleTrainerPage /></AdminRouteGuard>} />
                 <Route path="/admin/daily-rewards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><DailyRewardManagerPage /></AdminRouteGuard>} />
             </Route>

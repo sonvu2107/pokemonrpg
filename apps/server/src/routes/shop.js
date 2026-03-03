@@ -8,6 +8,9 @@ import User from '../models/User.js'
 import Item from '../models/Item.js'
 import UserInventory from '../models/UserInventory.js'
 import ItemPurchaseLog from '../models/ItemPurchaseLog.js'
+import Move from '../models/Move.js'
+import UserMoveInventory from '../models/UserMoveInventory.js'
+import MovePurchaseLog from '../models/MovePurchaseLog.js'
 
 const router = express.Router()
 
@@ -163,6 +166,158 @@ router.post('/items/:itemId/buy', async (req, res) => {
         }
         console.error('POST /api/shop/items/:itemId/buy error:', error)
         res.status(500).json({ ok: false, message: 'Mua vật phẩm thất bại' })
+    }
+})
+
+// GET /api/shop/skills
+router.get('/skills', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const page = toSafePage(req.query.page)
+        const limit = toSafeLimit(req.query.limit)
+        const skip = (page - 1) * limit
+
+        const type = String(req.query.type || '').trim().toLowerCase()
+        const category = String(req.query.category || '').trim().toLowerCase()
+        const rarity = String(req.query.rarity || '').trim().toLowerCase()
+
+        const query = {
+            isShopEnabled: true,
+            isActive: true,
+            shopPrice: { $gt: 0 },
+        }
+        if (type) {
+            query.type = type
+        }
+        if (category) {
+            query.category = category
+        }
+        if (rarity) {
+            query.rarity = rarity
+        }
+
+        const [playerState, skills, total] = await Promise.all([
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            Move.find(query)
+                .select('name type category power accuracy pp priority description imageUrl rarity shopPrice learnScope allowedTypes allowedRarities')
+                .sort({ shopPrice: 1, nameLower: 1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Move.countDocuments(query),
+        ])
+
+        res.json({
+            ok: true,
+            wallet: {
+                gold: Number(playerState?.gold || 0),
+                moonPoints: Number(playerState?.moonPoints || 0),
+            },
+            skills,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / limit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/skills error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu cửa hàng kỹ năng' })
+    }
+})
+
+// POST /api/shop/skills/:moveId/buy
+router.post('/skills/:moveId/buy', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const moveId = String(req.params.moveId || '').trim()
+        const quantity = toSafeQuantity(req.body?.quantity)
+
+        if (!mongoose.Types.ObjectId.isValid(moveId)) {
+            return res.status(400).json({ ok: false, message: 'moveId không hợp lệ' })
+        }
+
+        const move = await Move.findOne({
+            _id: moveId,
+            isShopEnabled: true,
+            isActive: true,
+            shopPrice: { $gt: 0 },
+        })
+            .select('name shopPrice')
+            .lean()
+
+        if (!move) {
+            return res.status(404).json({ ok: false, message: 'Kỹ năng không tồn tại hoặc không bán trong cửa hàng' })
+        }
+
+        const totalCost = Number(move.shopPrice || 0) * quantity
+        if (!Number.isFinite(totalCost) || totalCost <= 0) {
+            return res.status(400).json({ ok: false, message: 'Giá mua không hợp lệ' })
+        }
+
+        const playerState = await PlayerState.findOneAndUpdate(
+            {
+                userId,
+                gold: { $gte: totalCost },
+            },
+            {
+                $inc: { gold: -totalCost },
+            },
+            { new: true }
+        )
+
+        if (!playerState) {
+            return res.status(400).json({ ok: false, message: 'Không đủ Xu Bạch Kim để mua kỹ năng này' })
+        }
+
+        const moveInventoryEntry = await UserMoveInventory.findOneAndUpdate(
+            {
+                userId,
+                moveId,
+            },
+            {
+                $setOnInsert: { userId, moveId },
+                $inc: { quantity },
+            },
+            { new: true, upsert: true }
+        )
+
+        await MovePurchaseLog.create({
+            buyerId: userId,
+            moveId,
+            moveName: move.name || '',
+            quantity,
+            unitPrice: Number(move.shopPrice || 0),
+            totalCost,
+            walletGoldBefore: Number(playerState.gold || 0) + totalCost,
+            walletGoldAfter: Number(playerState.gold || 0),
+        })
+
+        res.json({
+            ok: true,
+            message: `Mua thành công ${quantity} kỹ năng ${move.name}`,
+            purchase: {
+                moveId,
+                quantity,
+                unitPrice: move.shopPrice,
+                totalCost,
+            },
+            wallet: {
+                gold: Number(playerState.gold || 0),
+                moonPoints: Number(playerState.moonPoints || 0),
+            },
+            inventory: {
+                moveId,
+                quantity: Number(moveInventoryEntry?.quantity || 0),
+            },
+        })
+    } catch (error) {
+        if (Number(error?.code) === 11000) {
+            return res.status(409).json({ ok: false, message: 'Xung đột dữ liệu kho kỹ năng, vui lòng thử lại' })
+        }
+        console.error('POST /api/shop/skills/:moveId/buy error:', error)
+        res.status(500).json({ ok: false, message: 'Mua kỹ năng thất bại' })
     }
 })
 

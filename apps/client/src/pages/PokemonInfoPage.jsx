@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import { useAuth } from '../context/AuthContext'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
@@ -50,10 +51,18 @@ const StatRow = ({ label, value, label2, value2 }) => (
 
 export default function PokemonInfoPage() {
     const { id } = useParams()
+    const { user } = useAuth()
     const [pokemon, setPokemon] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [featureNotice, setFeatureNotice] = useState('')
+    const [skillModalOpen, setSkillModalOpen] = useState(false)
+    const [skillInventory, setSkillInventory] = useState([])
+    const [skillLoading, setSkillLoading] = useState(false)
+    const [skillError, setSkillError] = useState('')
+    const [selectedSkillId, setSelectedSkillId] = useState('')
+    const [replaceMoveIndex, setReplaceMoveIndex] = useState(-1)
+    const [teachingSkill, setTeachingSkill] = useState(false)
 
     useEffect(() => {
         loadPokemon()
@@ -71,6 +80,81 @@ export default function PokemonInfoPage() {
             setError('Không tìm thấy thông tin Pokemon hoặc có lỗi xảy ra.')
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadSkillInventory = async () => {
+        try {
+            setSkillLoading(true)
+            setSkillError('')
+            const data = await gameApi.getPokemonSkills(id)
+            const skills = Array.isArray(data?.skills) ? data.skills : []
+            setSkillInventory(skills)
+            if (skills.length > 0) {
+                const firstLearnable = skills.find((entry) => entry.canLearn)
+                setSelectedSkillId(firstLearnable ? String(firstLearnable.moveId) : String(skills[0].moveId))
+            } else {
+                setSelectedSkillId('')
+            }
+        } catch (err) {
+            setSkillError(err.message || 'Không thể tải kho kỹ năng')
+            setSkillInventory([])
+            setSelectedSkillId('')
+        } finally {
+            setSkillLoading(false)
+        }
+    }
+
+    const openSkillModal = async () => {
+        setSkillModalOpen(true)
+        setReplaceMoveIndex(-1)
+        await loadSkillInventory()
+    }
+
+    const handleTeachSkill = async () => {
+        const selectedSkill = skillInventory.find((entry) => String(entry.moveId) === String(selectedSkillId))
+        if (!selectedSkill) {
+            setFeatureNotice('Vui lòng chọn một kỹ năng để học.')
+            return
+        }
+        if (!selectedSkill.canLearn) {
+            setFeatureNotice(selectedSkill.reason || 'Pokemon này đã biết kỹ năng đã chọn.')
+            return
+        }
+
+        const currentMoves = Array.isArray(pokemon?.moves)
+            ? pokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : []
+
+        const payload = {
+            moveId: selectedSkill.moveId,
+        }
+
+        if (currentMoves.length >= 4) {
+            if (replaceMoveIndex < 0 || replaceMoveIndex >= currentMoves.length) {
+                setFeatureNotice('Pokemon đã đủ 4 kỹ năng. Hãy chọn kỹ năng cần thay thế.')
+                return
+            }
+            payload.replaceMoveIndex = replaceMoveIndex
+        }
+
+        try {
+            setTeachingSkill(true)
+            const data = await gameApi.teachPokemonSkill(id, payload)
+            setPokemon((prev) => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    moves: Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves,
+                }
+            })
+            setFeatureNotice(data?.message || 'Pokemon đã học kỹ năng mới.')
+            setReplaceMoveIndex(-1)
+            await loadSkillInventory()
+        } catch (err) {
+            setFeatureNotice(err.message || 'Dạy kỹ năng thất bại.')
+        } finally {
+            setTeachingSkill(false)
         }
     }
 
@@ -93,6 +177,12 @@ export default function PokemonInfoPage() {
     }
 
     const base = pokemon.pokemonId
+    const currentMoves = Array.isArray(pokemon.moves)
+        ? pokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : []
+    const viewerId = String(user?.id || user?._id || '').trim()
+    const ownerId = String(pokemon?.userId?._id || '').trim()
+    const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
     const forms = Array.isArray(base?.forms) ? base.forms : []
     const resolvedFormId = normalizeFormId(pokemon.formId || base?.defaultFormId || 'normal')
     const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === resolvedFormId) || null
@@ -239,25 +329,37 @@ export default function PokemonInfoPage() {
 
                         {/* Moves */}
                         <div className="flex border-b border-blue-200 last:border-0 text-xs text-center">
-                            {(pokemon.moves || []).length > 0 ? (
+                            {currentMoves.length > 0 ? (
                                 <>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {pokemon.moves[0] || '-'}
+                                        {currentMoves[0] || '-'}
                                     </div>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {pokemon.moves[1] || '-'}
+                                        {currentMoves[1] || '-'}
                                     </div>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {pokemon.moves[2] || '-'}
+                                        {currentMoves[2] || '-'}
                                     </div>
                                     <div className="w-1/4 p-2 font-bold text-slate-700">
-                                        {pokemon.moves[3] || '-'}
+                                        {currentMoves[3] || '-'}
                                     </div>
                                 </>
                             ) : (
                                 <div className="w-full p-2 italic text-slate-400">Chưa học kỹ năng nào</div>
                             )}
                         </div>
+
+                        {isOwnerViewing && (
+                            <div className="p-2 bg-slate-50 border-t border-blue-200 text-center">
+                                <button
+                                    type="button"
+                                    onClick={openSkillModal}
+                                    className="px-3 py-1.5 text-xs font-bold rounded bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                                >
+                                    Học Kỹ Năng Từ Kho
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Origin Section */}
@@ -331,6 +433,110 @@ export default function PokemonInfoPage() {
                     className="mt-2"
                     message={featureNotice}
                 />
+            )}
+
+            {skillModalOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/70 p-4 flex items-center justify-center">
+                    <div className="w-full max-w-2xl bg-white border border-blue-300 rounded-lg shadow-xl overflow-hidden">
+                        <div className="bg-gradient-to-t from-blue-600 to-cyan-500 px-4 py-2 flex items-center justify-between border-b border-blue-600">
+                            <h3 className="text-sm sm:text-base font-bold text-white uppercase">Dạy Kỹ Năng Cho Pokemon</h3>
+                            <button
+                                type="button"
+                                onClick={() => setSkillModalOpen(false)}
+                                className="text-white text-xs font-bold px-2 py-1 rounded hover:bg-white/20"
+                            >
+                                Đóng
+                            </button>
+                        </div>
+
+                        <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto">
+                            {skillLoading ? (
+                                <div className="text-center text-slate-500 py-8">Đang tải kho kỹ năng...</div>
+                            ) : skillError ? (
+                                <div className="text-center text-red-600 py-6 font-bold">{skillError}</div>
+                            ) : skillInventory.length === 0 ? (
+                                <div className="text-center text-slate-500 py-6">
+                                    Bạn chưa có kỹ năng nào trong kho. Hãy mua ở Cửa Hàng Kỹ Năng.
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="space-y-2">
+                                        {skillInventory.map((entry) => {
+                                            const selected = String(selectedSkillId) === String(entry.moveId)
+                                            return (
+                                                <label
+                                                    key={String(entry.moveId)}
+                                                    className={`block border rounded p-3 cursor-pointer transition ${selected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'} ${entry.canLearn ? '' : 'opacity-60'}`}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <input
+                                                            type="radio"
+                                                            name="teachSkill"
+                                                            checked={selected}
+                                                            onChange={() => setSelectedSkillId(String(entry.moveId))}
+                                                            className="mt-1 accent-blue-600"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="font-bold text-blue-900">{entry.move?.name || 'Unknown Skill'}</span>
+                                                                <span className="text-xs font-bold text-slate-600">x{Number(entry.quantity || 0)}</span>
+                                                            </div>
+                                                            <div className="text-xs text-slate-600 mt-1">
+                                                                {String(entry.move?.type || '').toUpperCase()} • {String(entry.move?.category || '').toUpperCase()} • Pow {entry.move?.power ?? '--'} • PP {entry.move?.pp ?? '--'}
+                                                            </div>
+                                                            {!entry.canLearn && (
+                                                                <div className="text-[11px] text-amber-700 font-semibold mt-1">{entry.reason || 'Không thể học kỹ năng này'}</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {currentMoves.length >= 4 && (
+                                        <div className="border border-amber-200 bg-amber-50 rounded p-3">
+                                            <div className="text-xs font-bold text-amber-800 uppercase mb-2">Chọn kỹ năng cần thay thế</div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {currentMoves.map((moveName, index) => (
+                                                    <button
+                                                        key={`${moveName}-${index}`}
+                                                        type="button"
+                                                        onClick={() => setReplaceMoveIndex(index)}
+                                                        className={`px-3 py-2 border rounded text-left text-sm font-semibold transition ${replaceMoveIndex === index
+                                                            ? 'border-amber-500 bg-white text-amber-800'
+                                                            : 'border-amber-200 bg-white text-slate-700 hover:border-amber-400'
+                                                            }`}
+                                                    >
+                                                        Slot {index + 1}: {moveName}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        <div className="border-t border-slate-200 p-3 bg-slate-50 flex gap-2 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setSkillModalOpen(false)}
+                                className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded text-sm font-semibold"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleTeachSkill}
+                                disabled={teachingSkill || skillLoading || skillInventory.length === 0}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded text-sm font-bold"
+                            >
+                                {teachingSkill ? 'Đang dạy...' : 'Xác Nhận Học Kỹ Năng'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
         </div>
