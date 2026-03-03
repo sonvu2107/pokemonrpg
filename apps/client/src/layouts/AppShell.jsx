@@ -130,8 +130,16 @@ export default function AppShell() {
                             {user && (
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
                                     <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold text-xl shadow-md">
-                                            {user.username.charAt(0).toUpperCase()}
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-b from-blue-100 to-white flex items-center justify-center shadow-md overflow-hidden border-2 border-blue-300 shrink-0 p-0.5">
+                                            <img
+                                                src={user.avatar || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'}
+                                                alt="Avatar"
+                                                className="w-full h-full object-contain pixelated"
+                                                onError={(e) => {
+                                                    e.currentTarget.onerror = null
+                                                    e.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+                                                }}
+                                            />
                                         </div>
                                         <div>
                                             <div className="font-bold text-slate-800 text-base">{user.username}</div>

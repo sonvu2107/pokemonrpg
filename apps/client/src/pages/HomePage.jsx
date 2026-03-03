@@ -63,14 +63,14 @@ export default function HomePage() {
                         key={post._id}
                         className="border border-blue-200 rounded overflow-hidden shadow-sm bg-white"
                     >
-                        <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-blue-800 text-lg">{post.title}</h3>
-                                <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
+                        <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 flex justify-between items-start gap-2">
+                            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
+                                <h3 className="font-bold text-blue-800 text-lg break-words">{post.title}</h3>
+                                <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                                     {getTypeLabel(post.type)}
                                 </span>
                             </div>
-                            <span className="text-xs text-slate-500 font-medium">
+                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap shrink-0 mt-1">
                                 {formatDate(post.createdAt)}
                             </span>
                         </div>
