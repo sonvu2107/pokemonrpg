@@ -128,6 +128,7 @@ export default function MoveListPage() {
 
     const [bulkShopPrice, setBulkShopPrice] = useState('5000')
     const [bulkShopApplying, setBulkShopApplying] = useState(false)
+    const [bulkShopHiding, setBulkShopHiding] = useState(false)
     const [bulkShopReport, setBulkShopReport] = useState(null)
 
     useEffect(() => {
@@ -343,7 +344,7 @@ export default function MoveListPage() {
             setBulkShopApplying(true)
             setError('')
             const data = await moveApi.bulkApplyShop({ shopPrice: parsedPrice })
-            setBulkShopReport(data?.result || null)
+            setBulkShopReport({ ...(data?.result || {}), action: 'apply' })
 
             await Promise.all([
                 loadMoves(),
@@ -354,6 +355,25 @@ export default function MoveListPage() {
             setError(err.message)
         } finally {
             setBulkShopApplying(false)
+        }
+    }
+
+    const handleBulkHideShop = async () => {
+        try {
+            setBulkShopHiding(true)
+            setError('')
+            const data = await moveApi.bulkHideShop({ onlyImplemented: true })
+            setBulkShopReport({ ...(data?.result || {}), action: 'hide' })
+
+            await Promise.all([
+                loadMoves(),
+                loadAllMoves(),
+                loadPurchaseHistory(),
+            ])
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setBulkShopHiding(false)
         }
     }
 
@@ -537,10 +557,18 @@ export default function MoveListPage() {
                             <button
                                 type="button"
                                 onClick={handleBulkApplyShop}
-                                disabled={bulkShopApplying || eligibleImplementedMovesCount <= 0}
+                                disabled={bulkShopApplying || bulkShopHiding || eligibleImplementedMovesCount <= 0}
                                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
                             >
                                 {bulkShopApplying ? 'Đang áp dụng...' : 'Up shop nhanh'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleBulkHideShop}
+                                disabled={bulkShopApplying || bulkShopHiding || eligibleImplementedMovesCount <= 0}
+                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-xs font-bold"
+                            >
+                                {bulkShopHiding ? 'Đang ẩn...' : 'Ẩn khỏi shop hàng loạt'}
                             </button>
                         </div>
                     </div>
@@ -552,7 +580,8 @@ export default function MoveListPage() {
                     {bulkShopReport && (
                         <div className="mt-2 text-xs text-indigo-900 bg-white border border-indigo-200 rounded p-2">
                             <div className="font-semibold">
-                                Giá áp dụng: {Number(bulkShopReport.shopPrice || 0).toLocaleString('vi-VN')} •
+                                Thao tác: {bulkShopReport.action === 'hide' ? 'Ẩn khỏi shop' : 'Up shop nhanh'} •
+                                {bulkShopReport.action !== 'hide' ? `Giá áp dụng: ${Number(bulkShopReport.shopPrice || 0).toLocaleString('vi-VN')} • ` : ''}
                                 Đủ điều kiện: {Number(bulkShopReport.eligibleCount || 0).toLocaleString('vi-VN')} •
                                 Đã cập nhật: {Number(bulkShopReport.updatedCount || 0).toLocaleString('vi-VN')} •
                                 Không đổi: {Number(bulkShopReport.unchangedCount || 0).toLocaleString('vi-VN')}

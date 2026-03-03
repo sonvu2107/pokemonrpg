@@ -499,6 +499,22 @@ export const moveApi = {
         }
         return res.json()
     },
+
+    async bulkHideShop(data = {}) {
+        const res = await fetch(`${API_URL}/admin/moves/shop/bulk-hide`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Không thể ẩn hàng loạt kỹ năng khỏi shop')
+        }
+        return res.json()
+    },
 }
 
 // Battle trainer endpoints

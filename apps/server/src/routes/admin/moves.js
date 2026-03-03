@@ -777,6 +777,56 @@ router.post('/shop/bulk-apply', async (req, res) => {
     }
 })
 
+// POST /api/admin/moves/shop/bulk-hide - Bulk hide moves from shop
+router.post('/shop/bulk-hide', async (req, res) => {
+    try {
+        const onlyImplemented = toBoolean(req.body?.onlyImplemented, true)
+
+        const baseQuery = onlyImplemented
+            ? {
+                isShopEnabled: true,
+                effectSpecs: {
+                    $elemMatch: {
+                        op: { $nin: ['flavor_only', 'no_op'] },
+                    },
+                },
+            }
+            : { isShopEnabled: true }
+
+        const [eligibleCount, updateResult, sampleMoves] = await Promise.all([
+            Move.countDocuments(baseQuery),
+            Move.updateMany(baseQuery, {
+                $set: {
+                    isShopEnabled: false,
+                },
+            }),
+            Move.find(baseQuery)
+                .sort({ createdAt: -1, _id: -1 })
+                .limit(10)
+                .select('name shopPrice isShopEnabled')
+                .lean(),
+        ])
+
+        const updatedCount = Number(updateResult?.modifiedCount || 0)
+        const unchangedCount = Math.max(0, Number(eligibleCount || 0) - updatedCount)
+
+        return res.json({
+            ok: true,
+            message: `Đã ẩn ${updatedCount.toLocaleString('vi-VN')} kỹ năng khỏi shop.`,
+            result: {
+                onlyImplemented,
+                eligibleCount,
+                updatedCount,
+                unchangedCount,
+                sampleMoves,
+            },
+        })
+    } catch (error) {
+        console.error('POST /api/admin/moves/shop/bulk-hide error:', error)
+        return res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
 // GET /api/admin/moves/purchase-history - Purchase audit logs
 router.get('/purchase-history', async (req, res) => {
     try {
