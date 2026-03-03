@@ -2,6 +2,15 @@ import mongoose from 'mongoose'
 
 const { Schema } = mongoose
 
+const MovePpStateSchema = new Schema(
+    {
+        moveName: { type: String, required: true, trim: true },
+        currentPp: { type: Number, default: 10, min: 0 },
+        maxPp: { type: Number, default: 10, min: 1 },
+    },
+    { _id: false }
+)
+
 const UserPokemonSchema = new Schema(
     {
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -45,6 +54,12 @@ const UserPokemonSchema = new Schema(
 
         // Moves (Array of Move IDs or strings for now if Move model not fully linked)
         moves: [{ type: String }],
+
+        // PP state per move
+        movePpState: {
+            type: [MovePpStateSchema],
+            default: [],
+        },
 
         // Status
         friendship: { type: Number, default: 70, min: 0, max: 255 },

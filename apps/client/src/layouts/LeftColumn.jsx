@@ -189,7 +189,6 @@ export default function LeftColumn() {
             {/* EXPLORE */}
             <SidebarSection title="Khám Phá" iconId={138}> {/* Omanyte/Omastar for exploration */}
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
-                <SidebarLink to="/legendary">Khu Vực Săn Bắt</SidebarLink>
                 <SidebarLink to="/mines">Hầm Mỏ</SidebarLink>
                 <SidebarLink to="/center">Trung Tâm Pokemon</SidebarLink>
                 <SidebarLink to="/minigames">Minigame</SidebarLink>

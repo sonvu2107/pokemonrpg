@@ -2,46 +2,11 @@ import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
+import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
 
 const router = express.Router()
 
 router.use(authMiddleware)
-
-const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
-
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map((entry) => entry.moveName || '')
-        .filter(Boolean)
-    return learned.slice(-4)
-}
-
-const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
-    const explicitMoves = (Array.isArray(moves) ? moves : [])
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-
-    if (explicitMoves.length >= 4) {
-        return explicitMoves.slice(0, 4)
-    }
-
-    const merged = [...explicitMoves]
-    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
-    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
-
-    for (const fallbackMove of fallbackMoves) {
-        const key = normalizeMoveName(fallbackMove)
-        if (!key || knownSet.has(key)) continue
-        merged.push(fallbackMove)
-        knownSet.add(key)
-        if (merged.length >= 4) break
-    }
-
-    return merged.slice(0, 4)
-}
 
 // GET /api/party
 // Return list of 6 slots found in party
@@ -54,6 +19,11 @@ router.get('/', async (req, res) => {
             .populate('pokemonId')
             .sort({ partyIndex: 1 })
 
+        const allMoveNames = party
+            .map((entry) => mergeKnownMovesWithFallback(entry.moves, entry.pokemonId, entry.level))
+            .flat()
+        const moveLookupMap = await buildMoveLookupByName(allMoveNames)
+
         // Ensure we always return 6 slots, even if empty
         const slots = Array(6).fill(null)
         party.forEach(p => {
@@ -65,7 +35,19 @@ router.get('/', async (req, res) => {
                 // Return a plain object with stats injected
                 const po = p.toObject()
                 po.stats = stats
-                po.moves = mergeKnownMovesWithFallback(po.moves, base, p.level)
+                const mergedMoveNames = mergeKnownMovesWithFallback(po.moves, base, p.level)
+                const movePpState = buildMovePpStateFromMoves({
+                    moveNames: mergedMoveNames,
+                    movePpState: po.movePpState,
+                    moveLookupMap,
+                })
+                po.moves = movePpState.map((entry) => ({
+                    name: entry.moveName,
+                    currentPp: entry.currentPp,
+                    maxPp: entry.maxPp,
+                    pp: entry.currentPp,
+                }))
+                po.movePpState = movePpState
 
                 slots[p.partyIndex] = po
             } else {
@@ -76,7 +58,19 @@ router.get('/', async (req, res) => {
                     const stats = calcStatsForLevel(base.baseStats, p.level, base.rarity)
                     const po = p.toObject()
                     po.stats = stats
-                    po.moves = mergeKnownMovesWithFallback(po.moves, base, p.level)
+                    const mergedMoveNames = mergeKnownMovesWithFallback(po.moves, base, p.level)
+                    const movePpState = buildMovePpStateFromMoves({
+                        moveNames: mergedMoveNames,
+                        movePpState: po.movePpState,
+                        moveLookupMap,
+                    })
+                    po.moves = movePpState.map((entry) => ({
+                        name: entry.moveName,
+                        currentPp: entry.currentPp,
+                        maxPp: entry.maxPp,
+                        pp: entry.currentPp,
+                    }))
+                    po.movePpState = movePpState
                     slots[firstEmpty] = po
                 }
             }

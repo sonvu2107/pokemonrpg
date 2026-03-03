@@ -1212,73 +1212,60 @@ export default function PokemonListPage() {
                         </div>
 
                         {/* Pagination */}
-                        {pagination.pages > 1 && (
-                            <div className="flex justify-between items-center mt-4 text-slate-600 text-xs font-medium">
-                                <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
-                                    Tổng <span className="font-bold">{pagination.total}</span> bản ghi &bull; Trang <span className="font-bold text-blue-700">{page}</span>/{pagination.pages}
-                                </div>
-                                <div className="flex gap-1">
-                                    <button
-                                        disabled={page === 1}
-                                        onClick={() => setPage(page - 1)}
-                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
-                                    >
-                                        &laquo;
-                                    </button>
-
-                                    {(() => {
-                                        const totalPages = pagination.pages
-                                        const delta = 2
-                                        const range = []
-                                        const rangeWithDots = []
-                                        let l
-
-                                        for (let i = 1; i <= totalPages; i++) {
-                                            if (i === 1 || i === totalPages || (i >= page - delta && i <= page + delta)) {
-                                                range.push(i)
-                                            }
-                                        }
-
-                                        for (let i of range) {
-                                            if (l) {
-                                                if (i - l === 2) {
-                                                    rangeWithDots.push(l + 1)
-                                                } else if (i - l !== 1) {
-                                                    rangeWithDots.push('...')
-                                                }
-                                            }
-                                            rangeWithDots.push(i)
-                                            l = i
-                                        }
-
-                                        return rangeWithDots.map((pageNum, index) => (
-                                            pageNum === '...' ? (
-                                                <span key={`dots-${index}`} className="px-2 py-1 text-slate-400">...</span>
+                        {pagination.pages > 1 && (() => {
+                            const totalPages = pagination.pages
+                            const SIBLING = 2
+                            const pagesArr = []
+                            const addPage = (n) => { if (n >= 1 && n <= totalPages && !pagesArr.includes(n)) pagesArr.push(n) }
+                            addPage(1)
+                            for (let i = page - SIBLING; i <= page + SIBLING; i++) addPage(i)
+                            addPage(totalPages)
+                            pagesArr.sort((a, b) => a - b)
+                            const items = []
+                            for (let i = 0; i < pagesArr.length; i++) {
+                                if (i > 0 && pagesArr[i] - pagesArr[i - 1] > 1) items.push('...' + i)
+                                items.push(pagesArr[i])
+                            }
+                            return (
+                                <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-3 text-slate-600 text-xs font-medium">
+                                    <div className="bg-slate-100 px-3 py-1 rounded border border-slate-200">
+                                        Tổng <span className="font-bold">{pagination.total}</span> bản ghi &bull; Trang <span className="font-bold text-blue-700">{page}</span>/{totalPages}
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-1">
+                                        <button
+                                            disabled={page === 1}
+                                            onClick={() => setPage(page - 1)}
+                                            className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
+                                        >
+                                            &laquo;
+                                        </button>
+                                        {items.map((item) =>
+                                            typeof item === 'string' ? (
+                                                <span key={item} className="px-1 py-1 text-slate-400 select-none">…</span>
                                             ) : (
                                                 <button
-                                                    key={pageNum}
-                                                    onClick={() => setPage(pageNum)}
-                                                    className={`min-w-[32px] px-2 py-1 border rounded text-xs font-bold transition-colors shadow-sm ${page === pageNum
+                                                    key={item}
+                                                    onClick={() => setPage(item)}
+                                                    className={`min-w-[32px] px-2 py-1 border rounded text-xs font-bold transition-colors shadow-sm ${page === item
                                                         ? 'bg-blue-600 border-blue-600 text-white'
                                                         : 'bg-white border-slate-300 hover:bg-slate-50 text-slate-700'
                                                         }`}
                                                 >
-                                                    {pageNum}
+                                                    {item}
                                                 </button>
                                             )
-                                        ))
-                                    })()}
-
-                                    <button
-                                        disabled={page >= pagination.pages}
-                                        onClick={() => setPage(page + 1)}
-                                        className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
-                                    >
-                                        &raquo;
-                                    </button>
+                                        )}
+                                        <button
+                                            disabled={page >= totalPages}
+                                            onClick={() => setPage(page + 1)}
+                                            className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-slate-700 font-bold shadow-sm"
+                                        >
+                                            &raquo;
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        })()}
                     </>
                 )}
             </div>

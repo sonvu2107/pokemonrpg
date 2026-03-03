@@ -110,8 +110,6 @@ export default function ProfilePage() {
     const maxStamina = playerState?.maxStamina || 100
     const hp = playerState?.hp || 0
     const maxHp = playerState?.maxHp || 100
-    const mp = playerState?.mp || 0
-    const maxMp = playerState?.maxMp || 50
     const wins = playerState?.wins || 0
     const losses = playerState?.losses || 0
     const totalBattles = wins + losses
@@ -287,7 +285,7 @@ export default function ProfilePage() {
                             <InfoRow label="Nhóm" value={user?.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
                             <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={true} />
                             <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (Thiếu ${expToNext(level).toLocaleString()} EXP để lên cấp)`} isOdd={false} />
-                            <InfoRow label="HP / MP" value={`${hp}/${maxHp} HP - ${mp}/${maxMp} MP`} isOdd={true} />
+                            <InfoRow label="HP" value={`${hp}/${maxHp} HP`} isOdd={true} />
                             <InfoRow label="Thể Lực" value={`${stamina}/${maxStamina} AP`} isOdd={false} />
                             <InfoRow label="Xu Bạch Kim" value={`${coins.toLocaleString()} Xu`} isOdd={true} />
                             <InfoRow label="Điểm Nguyệt Các" value={`${moonPoints.toLocaleString()} Điểm`} isOdd={false} />

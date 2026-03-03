@@ -4,6 +4,14 @@ import Pokemon from '../models/Pokemon.js'
 import Move from '../models/Move.js'
 import UserMoveInventory from '../models/UserMoveInventory.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
+import {
+    buildMovesForLevel,
+    buildMoveLookupByName,
+    buildMovePpStateFromMoves,
+    mergeKnownMovesWithFallback,
+    normalizeMoveName,
+    syncUserPokemonMovesAndPp,
+} from '../utils/movePpUtils.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -13,8 +21,6 @@ const toBoolean = (value) => {
     const normalized = String(value || '').trim().toLowerCase()
     return ['1', 'true', 'yes', 'on'].includes(normalized)
 }
-
-const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
 
 const normalizeStringSet = (values) => new Set(
     (Array.isArray(values) ? values : [])
@@ -72,48 +78,6 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
     }
 
     return { canLearn: true, reason: '' }
-}
-
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map((entry) => entry.moveName || '')
-        .filter(Boolean)
-    return learned.slice(-4)
-}
-
-const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
-    const explicitMoves = (Array.isArray(moves) ? moves : [])
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-
-    if (explicitMoves.length >= 4) {
-        return explicitMoves.slice(0, 4)
-    }
-
-    const merged = [...explicitMoves]
-    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
-    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
-
-    for (const fallbackMove of fallbackMoves) {
-        const key = normalizeMoveName(fallbackMove)
-        if (!key || knownSet.has(key)) continue
-        merged.push(fallbackMove)
-        knownSet.add(key)
-        if (merged.length >= 4) break
-    }
-
-    return merged.slice(0, 4)
-}
-
-const areMoveListsEqual = (left = [], right = []) => {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
-    for (let index = 0; index < left.length; index += 1) {
-        if (String(left[index] || '') !== String(right[index] || '')) return false
-    }
-    return true
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
@@ -294,6 +258,13 @@ router.get('/:id', async (req, res) => {
         // Calculate actual stats based on level, rarity, (and potentially IVs/EVs in future)
         const level = userPokemon.level || 1
         const rarity = basePokemon.rarity
+        const mergedMoves = mergeKnownMovesWithFallback(userPokemon.moves, basePokemon, level)
+        const moveLookupMap = await buildMoveLookupByName(mergedMoves)
+        const movePpState = buildMovePpStateFromMoves({
+            moveNames: mergedMoves,
+            movePpState: userPokemon.movePpState,
+            moveLookupMap,
+        })
 
         // Base stats from species
         const stats = calcStatsForLevel(basePokemon.baseStats, level, rarity)
@@ -302,6 +273,8 @@ router.get('/:id', async (req, res) => {
         // Enhance response with calculated stats
         const responseData = {
             ...userPokemon,
+            moves: mergedMoves,
+            movePpState,
             stats: {
                 ...stats,
                 maxHp,
@@ -541,19 +514,13 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Bạn không có kỹ năng này trong kho' })
         }
 
-        const storedMoves = Array.isArray(userPokemon.moves)
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: userPokemon.pokemonId,
+            level: userPokemon.level,
+        })
+        const currentMoves = Array.isArray(userPokemon.moves)
             ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
             : []
-        const currentMoves = mergeKnownMovesWithFallback(
-            storedMoves,
-            userPokemon.pokemonId,
-            Number(userPokemon.level) || 1
-        )
-
-        if (!areMoveListsEqual(storedMoves, currentMoves)) {
-            userPokemon.moves = currentMoves
-            await userPokemon.save()
-        }
 
         const moveName = String(move.name || '').trim()
         const moveKey = normalizeMoveName(moveName)
@@ -603,6 +570,10 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
         }
 
         userPokemon.moves = nextMoves
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: userPokemon.pokemonId,
+            level: userPokemon.level,
+        })
         await userPokemon.save()
 
         if (consumedEntry.quantity <= 0) {
@@ -616,7 +587,8 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
                 : `${userPokemon.nickname || 'Pokemon'} đã học ${moveName}`,
             pokemon: {
                 _id: userPokemon._id,
-                moves: nextMoves,
+                moves: userPokemon.moves,
+                movePpState: userPokemon.movePpState,
             },
             taughtMove: {
                 _id: move._id,
@@ -691,6 +663,10 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         userPokemon.pokemonId = targetSpecies._id
         userPokemon.formId = nextFormId
         userPokemon.moves = buildMovesForLevel(targetSpecies, userPokemon.level)
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: targetSpecies,
+            level: userPokemon.level,
+        })
         await userPokemon.save()
         await userPokemon.populate('pokemonId')
 

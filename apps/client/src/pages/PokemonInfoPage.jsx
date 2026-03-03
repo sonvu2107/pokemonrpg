@@ -63,37 +63,10 @@ export default function PokemonInfoPage() {
     const [selectedSkillId, setSelectedSkillId] = useState('')
     const [replaceMoveIndex, setReplaceMoveIndex] = useState(-1)
     const [teachingSkill, setTeachingSkill] = useState(false)
-    const [playerState, setPlayerState] = useState(null)
 
     useEffect(() => {
         loadPokemon()
     }, [id])
-
-    useEffect(() => {
-        let cancelled = false
-
-        const loadPlayerState = async () => {
-            if (!user) {
-                setPlayerState(null)
-                return
-            }
-            try {
-                const profile = await gameApi.getProfile()
-                if (!cancelled) {
-                    setPlayerState(profile?.playerState || null)
-                }
-            } catch (_err) {
-                if (!cancelled) {
-                    setPlayerState(null)
-                }
-            }
-        }
-
-        loadPlayerState()
-        return () => {
-            cancelled = true
-        }
-    }, [user?.id, user?._id])
 
     const loadPokemon = async () => {
         try {
@@ -173,6 +146,7 @@ export default function PokemonInfoPage() {
                 return {
                     ...prev,
                     moves: Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves,
+                    movePpState: Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState,
                 }
             })
             setFeatureNotice(data?.message || 'Pokemon đã học kỹ năng mới.')
@@ -207,6 +181,16 @@ export default function PokemonInfoPage() {
     const currentMoves = Array.isArray(pokemon.moves)
         ? pokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
         : []
+    const movePpMap = new Map(
+        (Array.isArray(pokemon.movePpState) ? pokemon.movePpState : [])
+            .map((entry) => [
+                String(entry?.moveName || '').trim().toLowerCase(),
+                {
+                    currentPp: Math.max(0, Number(entry?.currentPp || 0)),
+                    maxPp: Math.max(1, Number(entry?.maxPp || 1)),
+                },
+            ])
+    )
     const viewerId = String(user?.id || user?._id || '').trim()
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
@@ -319,29 +303,6 @@ export default function PokemonInfoPage() {
                         </div>
                     </div>
 
-                    {isOwnerViewing && (
-                        <div className="border border-blue-300 rounded mb-4 overflow-hidden">
-                            <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
-                                Năng Lượng Battle (MP Dùng Chung)
-                            </div>
-                            <div className="p-3">
-                                <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1">
-                                    <span>MP hiện tại</span>
-                                    <span>{Math.max(0, Number(playerState?.mp || 0)).toLocaleString('vi-VN')} / {Math.max(1, Number(playerState?.maxMp || 50)).toLocaleString('vi-VN')}</span>
-                                </div>
-                                <div className="h-2.5 w-full bg-slate-200 rounded-full border border-slate-300 overflow-hidden">
-                                    <div
-                                        className="h-full bg-blue-500 transition-all duration-300"
-                                        style={{ width: `${Math.min(100, Math.max(0, ((Number(playerState?.mp || 0) / Math.max(1, Number(playerState?.maxMp || 50))) * 100)))}%` }}
-                                    />
-                                </div>
-                                <p className="text-[11px] text-slate-500 mt-2">
-                                    MP hiện đang là tài nguyên dùng chung cho chiến đấu, không tách riêng theo từng Pokemon.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Stats Table */}
                     <div className="border border-blue-300 rounded overflow-hidden mb-4">
                         <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
@@ -383,15 +344,47 @@ export default function PokemonInfoPage() {
                                 <>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
                                         {currentMoves[0] || '-'}
+                                        {currentMoves[0] && (
+                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                {(() => {
+                                                    const state = movePpMap.get(String(currentMoves[0] || '').toLowerCase())
+                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
                                         {currentMoves[1] || '-'}
+                                        {currentMoves[1] && (
+                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                {(() => {
+                                                    const state = movePpMap.get(String(currentMoves[1] || '').toLowerCase())
+                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
                                         {currentMoves[2] || '-'}
+                                        {currentMoves[2] && (
+                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                {(() => {
+                                                    const state = movePpMap.get(String(currentMoves[2] || '').toLowerCase())
+                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="w-1/4 p-2 font-bold text-slate-700">
                                         {currentMoves[3] || '-'}
+                                        {currentMoves[3] && (
+                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                {(() => {
+                                                    const state = movePpMap.get(String(currentMoves[3] || '').toLowerCase())
+                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             ) : (

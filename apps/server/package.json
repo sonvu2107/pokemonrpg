@@ -12,7 +12,8 @@
         "migrate:pokemon-move-ids": "node scripts/migratePokemonMoveIds.js --apply",
         "test:skill-shop-teach-flow": "node scripts/testSkillShopTeachFlow.js",
         "chat:setup": "node src/scripts/setupChatDatabase.js",
-        "chat:seed": "node src/scripts/seedChatMessages.js"
+        "chat:seed": "node src/scripts/seedChatMessages.js",
+        "set:kanto:max-progress": "node src/scripts/setKantoMaxMapProgress.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",

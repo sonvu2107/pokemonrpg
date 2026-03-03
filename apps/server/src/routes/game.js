@@ -24,6 +24,7 @@ import {
 } from '../utils/gameUtils.js'
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
+import { syncUserPokemonMovesAndPp } from '../utils/movePpUtils.js'
 
 
 
@@ -266,6 +267,10 @@ const applyLevelEvolution = async (userPokemon) => {
         userPokemon.pokemonId = nextSpecies._id
         userPokemon.formId = nextFormId
         userPokemon.moves = buildMovesForLevel(nextSpecies, userPokemon.level)
+        await syncUserPokemonMovesAndPp(userPokemon, {
+            pokemonSpecies: nextSpecies,
+            level: userPokemon.level,
+        })
 
         evolutions.push({
             fromPokemonId: currentSpecies._id,
@@ -1389,16 +1394,22 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             }
 
             const moves = buildMovesForLevel(pokemon, encounter.level)
-            await UserPokemon.create({
+            const caughtPokemon = await UserPokemon.create({
                 userId,
                 pokemonId: encounter.pokemonId,
                 level: encounter.level,
                 experience: 0,
                 moves,
+                movePpState: [],
                 formId: encounter.formId || 'normal',
                 isShiny: encounter.isShiny,
                 location: 'box',
             })
+            await syncUserPokemonMovesAndPp(caughtPokemon, {
+                pokemonSpecies: pokemon,
+                level: encounter.level,
+            })
+            await caughtPokemon.save()
 
             return res.json({
                 ok: true,
@@ -1460,7 +1471,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
         const party = await UserPokemon.find({ userId, location: 'party' })
-            .select('pokemonId level moves nickname formId partyIndex')
+            .select('pokemonId level moves movePpState nickname formId partyIndex')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
 
@@ -1473,6 +1484,10 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
         const attackerSpecies = activePokemon?.pokemonId || {}
+        await syncUserPokemonMovesAndPp(activePokemon, {
+            pokemonSpecies: attackerSpecies,
+            level: attackerLevel,
+        })
         const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves, attackerSpecies, attackerLevel)
         const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
 
@@ -1505,56 +1520,43 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let movePriority = resolveMovePriority(moveDoc, move)
         let moveCriticalChance = resolveMoveCriticalChance(moveDoc, move)
 
-        let mpCost = Number(move?.mp)
-        if (!Number.isFinite(mpCost) || mpCost < 0) {
-            const fromPp = Number(moveDoc?.pp)
-            mpCost = Number.isFinite(fromPp) && fromPp > 0
-                ? clamp(Math.floor(fromPp / 2), 1, 20)
-                : clamp(Math.floor(resolvedPower / 15), 1, 20)
-        }
-        if (normalizeMoveName(selectedMoveName) === 'struggle') {
-            mpCost = 0
-        }
+        const movePpState = Array.isArray(activePokemon.movePpState)
+            ? activePokemon.movePpState.map((entry) => ({
+                moveName: String(entry?.moveName || '').trim(),
+                currentPp: Math.max(0, Math.floor(Number(entry?.currentPp) || 0)),
+                maxPp: Math.max(1, Math.floor(Number(entry?.maxPp) || 1)),
+            }))
+            : []
 
-        let playerState = await PlayerState.findOneAndUpdate(
-            { userId },
-            { $setOnInsert: { userId } },
-            { new: true, upsert: true }
-        )
+        const selectedMovePpIndex = movePpState.findIndex((entry) => normalizeMoveName(entry.moveName) === normalizeMoveName(selectedMoveName))
+        const isStruggleMove = normalizeMoveName(selectedMoveName) === 'struggle'
+        let consumedMovePp = 0
 
-        if (mpCost > 0) {
-            const mpUpdatedState = await PlayerState.findOneAndUpdate(
-                {
-                    userId,
-                    mp: { $gte: mpCost },
-                },
-                {
-                    $inc: { mp: -mpCost },
-                },
-                { new: true }
-            )
+        if (!isStruggleMove) {
+            const selectedMovePpEntry = selectedMovePpIndex >= 0 ? movePpState[selectedMovePpIndex] : null
+            const currentPp = Number(selectedMovePpEntry?.currentPp || 0)
 
-            if (mpUpdatedState) {
-                playerState = mpUpdatedState
-                emitPlayerState(userId.toString(), playerState)
-            } else {
-                moveFallbackReason = 'INSUFFICIENT_MP'
+            if (currentPp <= 0) {
+                moveFallbackReason = 'OUT_OF_PP'
                 moveFallbackFrom = requestedMoveName
                 selectedMoveName = 'Struggle'
                 resolvedPower = 35
-                mpCost = 0
                 moveType = 'normal'
                 moveCategory = 'physical'
                 moveAccuracy = 100
                 movePriority = 0
                 moveCriticalChance = 0.0625
-                playerState = await PlayerState.findOneAndUpdate(
-                    { userId },
-                    { $setOnInsert: { userId } },
-                    { new: true, upsert: true }
-                )
+            } else {
+                movePpState[selectedMovePpIndex] = {
+                    ...selectedMovePpEntry,
+                    currentPp: currentPp - 1,
+                }
+                consumedMovePp = 1
             }
         }
+
+        activePokemon.movePpState = movePpState
+        await activePokemon.save()
 
         const attackerBaseStats = attackerSpecies.baseStats || {}
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
@@ -1812,7 +1814,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     accuracy: opponentMoveAccuracy,
                     priority: 0,
                     power: opponentMovePower,
-                    mp: 0,
+                    ppCost: 0,
                 },
                 log: didOpponentMoveHit
                     ? `${targetName} retaliated for ${counterDamage} damage. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
@@ -1859,23 +1861,22 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     effectiveness: playerTypeEffectiveness.multiplier,
                     stabMultiplier: playerStabMultiplier,
                     power: resolvedPower,
-                    mp: mpCost,
+                    ppCost: consumedMovePp,
                     fallbackReason: moveFallbackReason,
                     fallbackFrom: moveFallbackFrom,
                 },
                 player: {
                     id: activePokemon._id,
                     name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
-                    mp: playerState.mp,
-                    maxMp: playerState.maxMp,
                     currentHp: resultingPlayerHp,
                     maxHp: playerMaxHp,
+                    movePpState: activePokemon.movePpState,
                 },
                 opponent: trainerState,
                 counterAttack,
                 log: didPlayerMoveHit
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage. ${moveFallbackReason === 'INSUFFICIENT_MP' ? '(Không đủ MP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
-                    : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'INSUFFICIENT_MP' ? ' (Không đủ MP nên tự dùng Struggle.)' : ''}`,
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
+                    : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`,
             },
         })
     } catch (error) {
@@ -2147,17 +2148,23 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 if (!isPokemonRewardLocked) {
                     const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
                     const moves = buildMovesForLevel(prizeData, prizeLevel)
-                    await UserPokemon.create({
+                    const grantedPokemon = await UserPokemon.create({
                         userId,
                         pokemonId: trainerPrizePokemonId,
                         level: prizeLevel,
                         experience: 0,
                         moves,
+                        movePpState: [],
                         formId: resolvedPrizeFormId,
                         isShiny: false,
                         location: 'box',
                         originalTrainer: trainerRewardMarker,
                     })
+                    await syncUserPokemonMovesAndPp(grantedPokemon, {
+                        pokemonSpecies: prizeData,
+                        level: prizeLevel,
+                    })
+                    await grantedPokemon.save()
                 }
 
                 prizePokemon = {

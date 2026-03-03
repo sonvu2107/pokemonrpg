@@ -5,6 +5,7 @@ import Pokemon from '../../models/Pokemon.js'
 import Item from '../../models/Item.js'
 import UserPokemon from '../../models/UserPokemon.js'
 import UserInventory from '../../models/UserInventory.js'
+import { buildMoveLookupByName, buildMovePpStateFromMoves, buildMovesForLevel } from '../../utils/movePpUtils.js'
 import {
     ADMIN_PERMISSIONS,
     ALL_ADMIN_PERMISSIONS,
@@ -32,16 +33,6 @@ const resolvePokemonSprite = (pokemonLike) => {
         pokemonLike.sprites?.normal ||
         pokemonLike.sprites?.icon ||
         ''
-}
-
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map((entry) => String(entry?.moveName || '').trim())
-        .filter(Boolean)
-    return learned.slice(-4)
 }
 
 const buildUserResponse = (user) => {
@@ -234,6 +225,12 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             : (availableForms.has(defaultFormId) ? defaultFormId : 'normal')
 
         const moves = buildMovesForLevel(pokemon, safeLevel)
+        const moveLookupMap = await buildMoveLookupByName(moves)
+        const movePpState = buildMovePpStateFromMoves({
+            moveNames: moves,
+            movePpState: [],
+            moveLookupMap,
+        })
         const docs = Array.from({ length: safeQuantity }, () => ({
             userId: targetUserId,
             pokemonId,
@@ -243,6 +240,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             isShiny: Boolean(isShiny),
             location: 'box',
             moves,
+            movePpState,
             originalTrainer: `admin_grant:${req.user.userId}`,
         }))
 

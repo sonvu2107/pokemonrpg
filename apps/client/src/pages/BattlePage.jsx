@@ -48,15 +48,6 @@ const inferMovePower = (name = '') => {
     return 85
 }
 
-const inferMoveMp = (name = '') => {
-    const normalized = String(name || '').toLowerCase()
-    if (!normalized || normalized === 'struggle') return 0
-    if (normalized.includes('power') || normalized.includes('blast')) return 12
-    if (normalized.includes('leaf')) return 7
-    if (normalized.includes('quick')) return 3
-    return 6
-}
-
 const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
 
 const buildMovesForLevel = (pokemon, level) => {
@@ -104,12 +95,20 @@ const normalizeMoveList = (moves = []) => {
                 : String(entry?.name || entry?.moveName || '').trim()
             if (!name) return null
             const type = normalizeMoveType(name)
+            const currentPpRaw = Number(entry?.currentPp ?? entry?.pp)
+            const maxPpRaw = Number(entry?.maxPp)
+            const defaultPp = Math.max(1, Math.floor(Number(entry?.pp) || 10))
+            const maxPp = Number.isFinite(maxPpRaw) && maxPpRaw > 0 ? Math.floor(maxPpRaw) : defaultPp
+            const currentPp = Number.isFinite(currentPpRaw)
+                ? Math.max(0, Math.min(maxPp, Math.floor(currentPpRaw)))
+                : maxPp
             return {
                 id: `${name}-${index}`,
                 name,
                 type,
                 power: inferMovePower(name),
-                mp: inferMoveMp(name),
+                currentPp,
+                maxPp,
             }
         })
         .filter(Boolean)
@@ -119,7 +118,8 @@ const normalizeMoveList = (moves = []) => {
         name: 'Struggle',
         type: 'normal',
         power: 35,
-        mp: 0,
+        currentPp: 99,
+        maxPp: 99,
     }]
 }
 
@@ -177,8 +177,6 @@ const ActiveBattleView = ({
         level: activePokemon.level,
         maxHp: activeMaxHp,
         hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
-        maxMp: playerState?.maxMp || 0,
-        mp: playerState?.mp || 0,
         exp: activePokemon.experience,
         maxExp: activePokemon.level * 100,
         sprite: activePokemon.pokemonId?.sprites?.back_default || activePokemon.pokemonId?.imageUrl || activePokemon.pokemonId?.sprites?.normal || activePokemon.pokemonId?.sprites?.front_default,
@@ -198,8 +196,6 @@ const ActiveBattleView = ({
         level: activeOpponent.level,
         maxHp: activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1,
         hp: activeOpponent.currentHp ?? (activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1),
-        maxMp: activeOpponent.maxMp || 0,
-        mp: activeOpponent.currentMp || 0,
         sprite: activeOpponent.sprite || '',
     } : {
         name: 'Pokemon Hoang Dã',
@@ -207,8 +203,6 @@ const ActiveBattleView = ({
         level: 1,
         maxHp: 1,
         hp: 1,
-        maxMp: 0,
-        mp: 0,
         sprite: '',
     }
 
@@ -232,9 +226,6 @@ const ActiveBattleView = ({
                     {playerMon && (
                         <div className="w-full grid grid-cols-2 gap-1 mb-2">
                             <ProgressBar current={playerMon.hp} max={playerMon.maxHp} colorClass="bg-green-500" label="HP" />
-                            {playerMon.maxMp > 0 && (
-                                <ProgressBar current={playerMon.mp} max={playerMon.maxMp} colorClass="bg-blue-500" label="MP" />
-                            )}
                         </div>
                     )}
 
@@ -269,9 +260,6 @@ const ActiveBattleView = ({
 
                         <div className="w-full grid grid-cols-2 gap-1">
                             <ProgressBar current={enemyMon.hp} max={enemyMon.maxHp} colorClass="bg-green-500" label="HP" />
-                            {enemyMon.maxMp > 0 && (
-                                <ProgressBar current={enemyMon.mp} max={enemyMon.maxMp} colorClass="bg-blue-500" label="MP" />
-                            )}
                         </div>
                     </div>
                 </div>
@@ -315,18 +303,21 @@ const ActiveBattleView = ({
                     <div className="p-2 grid grid-cols-2 gap-2">
                         {moves.map((move, idx) => {
                             const isSelected = selectedMoveIndex === idx
+                            const isOutOfPp = Number(move.currentPp) <= 0
                             return (
                                 <button
                                     key={move.id}
                                     onClick={() => onSelectMove?.(idx)}
-                                    className={`text-left p-1 border rounded flex justify-between items-center ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'border-slate-200 hover:bg-slate-50'}`}
+                                    className={`text-left p-1 border rounded flex justify-between items-center ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'border-slate-200 hover:bg-slate-50'} ${isOutOfPp ? 'opacity-70' : ''}`}
                                 >
                                     <div>
                                         <span className={`text-[9px] uppercase font-bold px-1 rounded mr-1 ${typeColors[move.type] || 'bg-slate-100'}`}>
                                             {move.type}
                                         </span>
                                         <span className="text-xs font-bold text-slate-800">{move.name}</span>
-                                        <div className="text-[10px] text-slate-500 mt-0.5">{move.mp} MP</div>
+                                        <div className={`text-[10px] mt-0.5 ${isOutOfPp ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
+                                            {move.currentPp}/{move.maxPp} PP
+                                        </div>
                                     </div>
                                     <div className="text-xs font-bold">{move.power}</div>
                                 </button>
@@ -715,11 +706,41 @@ export function BattlePage() {
             const moveFallbackFrom = String(battle?.move?.fallbackFrom || '').trim()
             const counterAttack = battle?.counterAttack || null
 
-            if (battle?.player && Number.isFinite(battle.player.mp)) {
-                setPlayerState((prev) => (prev
-                    ? { ...prev, mp: battle.player.mp, maxMp: battle.player.maxMp ?? prev.maxMp }
-                    : prev
-                ))
+            if (battle?.player && Array.isArray(battle.player.movePpState)) {
+                setParty((prevParty) => {
+                    const nextParty = Array.isArray(prevParty) ? [...prevParty] : []
+                    const targetSlot = nextParty[resolvedActiveIndex]
+                    if (!targetSlot) return prevParty
+
+                    const ppState = battle.player.movePpState
+                    const moveMap = new Map(
+                        ppState.map((entry) => [
+                            String(entry?.moveName || '').trim().toLowerCase(),
+                            {
+                                name: String(entry?.moveName || '').trim(),
+                                currentPp: Math.max(0, Number(entry?.currentPp || 0)),
+                                maxPp: Math.max(1, Number(entry?.maxPp || 1)),
+                                pp: Math.max(0, Number(entry?.currentPp || 0)),
+                            },
+                        ])
+                    )
+
+                    const sourceMoves = Array.isArray(targetSlot.moves) ? targetSlot.moves : []
+                    const nextMoves = sourceMoves.map((entry) => {
+                        const name = typeof entry === 'string'
+                            ? String(entry || '').trim()
+                            : String(entry?.name || entry?.moveName || '').trim()
+                        const key = name.toLowerCase()
+                        return moveMap.get(key) || entry
+                    })
+
+                    nextParty[resolvedActiveIndex] = {
+                        ...targetSlot,
+                        moves: nextMoves,
+                        movePpState: ppState,
+                    }
+                    return nextParty
+                })
             }
 
             let defeatedAll = false
@@ -797,8 +818,8 @@ export function BattlePage() {
                     ? `${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`
                     : `${activeName} của bạn dùng ${moveName} nhưng trượt.`,
             ]
-            if (moveFallbackReason === 'INSUFFICIENT_MP') {
-                logLines.unshift(`Không đủ MP cho ${moveFallbackFrom || 'chiêu đã chọn'}, hệ thống tự chuyển sang Struggle.`)
+            if (moveFallbackReason === 'OUT_OF_PP') {
+                logLines.unshift(`Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`)
             }
             let nextPartyState = resolvedPartyState
             if (battle?.player && Number.isFinite(battle.player.currentHp)) {
@@ -973,11 +994,28 @@ export function BattlePage() {
             return
         }
         try {
-            const res = await gameApi.useItem(entry.item._id, 1, null)
+            const activeSlot = party[battlePlayerIndex] || party.find((slot) => Boolean(slot)) || null
+            const res = await gameApi.useItem(entry.item._id, 1, null, activeSlot?._id || null)
             setActionMessage(res.message || 'Đã dùng vật phẩm.')
             appendBattleLog([res.message || 'Đã dùng vật phẩm.'])
+
+            if (res?.effect?.type === 'healing' && Number(res?.effect?.healedHp) > 0 && res?.effect?.hpContext === 'battle') {
+                setBattlePartyHpState((prev) => {
+                    const next = Array.isArray(prev) ? [...prev] : []
+                    const resolvedIndex = Number.isInteger(battlePlayerIndex) ? battlePlayerIndex : 0
+                    const entryState = next[resolvedIndex] || { currentHp: 0, maxHp: 1 }
+                    next[resolvedIndex] = {
+                        currentHp: Math.max(0, Number(res.effect.hp || entryState.currentHp || 0)),
+                        maxHp: Math.max(1, Number(res.effect.maxHp || entryState.maxHp || 1)),
+                    }
+                    return next
+                })
+            }
+
             const inventoryData = await gameApi.getInventory()
             setInventory(inventoryData?.inventory || [])
+            const refreshedParty = await gameApi.getParty()
+            setParty(refreshedParty)
         } catch (err) {
             setActionMessage(err.message)
         }
@@ -1076,8 +1114,6 @@ export function BattlePage() {
                 pokemon: poke,
                 currentHp: hp,
                 maxHp: hp,
-                currentMp: 10,
-                maxMp: 10,
             }
         })
 
@@ -1188,7 +1224,7 @@ export function BattlePage() {
             <div className="space-y-6 animate-fadeIn max-w-4xl mx-auto font-sans">
                 <div className="text-center space-y-2">
                     <div className="text-slate-600 font-bold text-sm">
-                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các <span className="mx-2">•</span> ⚡ {Math.max(0, Number(playerState?.mp || 0)).toLocaleString('vi-VN')}/{Math.max(1, Number(playerState?.maxMp || 0)).toLocaleString('vi-VN')} MP
+                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
                     </div>
                 </div>
 

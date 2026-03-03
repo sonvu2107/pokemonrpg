@@ -394,14 +394,14 @@ export const gameApi = {
     },
 
     // POST /api/inventory/use
-    async useItem(itemId, quantity = 1, encounterId = null) {
+    async useItem(itemId, quantity = 1, encounterId = null, activePokemonId = null, moveName = '') {
         const res = await fetch(`${API_URL}/inventory/use`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify({ itemId, quantity, encounterId }),
+            body: JSON.stringify({ itemId, quantity, encounterId, activePokemonId, moveName }),
         })
         if (!res.ok) {
             const err = await res.json()

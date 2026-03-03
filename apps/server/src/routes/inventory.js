@@ -3,7 +3,9 @@ import UserInventory from '../models/UserInventory.js'
 import PlayerState from '../models/PlayerState.js'
 import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
+import BattleSession from '../models/BattleSession.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { buildMovesForLevel, syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 
 const router = express.Router()
 
@@ -26,20 +28,10 @@ const getBallMultiplier = (item) => {
 const getHealAmounts = (item) => {
     if (item?.effectType === 'heal' || item?.effectType === 'healAmount') {
         const hpAmount = Number.isFinite(item.effectValue) ? item.effectValue : 0
-        const mpAmount = Number.isFinite(item.effectValueMp) ? item.effectValueMp : 0
-        return { hpAmount, mpAmount }
+        const ppAmount = Number.isFinite(item.effectValueMp) ? item.effectValueMp : 0
+        return { hpAmount, ppAmount }
     }
-    return { hpAmount: 0, mpAmount: 0 }
-}
-
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter(m => Number.isFinite(m.level) && m.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map(m => m.moveName || '')
-        .filter(Boolean)
-    return learned.slice(-4)
+    return { hpAmount: 0, ppAmount: 0 }
 }
 
 // All routes require authentication
@@ -81,7 +73,7 @@ router.get('/', async (req, res) => {
 // POST /api/inventory/use - Use an item (placeholder effect)
 router.post('/use', async (req, res) => {
     try {
-        const { itemId, quantity = 1, encounterId } = req.body
+        const { itemId, quantity = 1, encounterId, activePokemonId = null, moveName = '' } = req.body
         const qty = Number(quantity)
         const userId = req.user.userId
 
@@ -170,16 +162,22 @@ router.post('/use', async (req, res) => {
                 }
 
                 const moves = buildMovesForLevel(pokemon, encounter.level)
-                await UserPokemon.create({
+                const caughtPokemon = await UserPokemon.create({
                     userId,
                     pokemonId: encounter.pokemonId,
                     level: encounter.level,
                     experience: 0,
                     moves,
+                    movePpState: [],
                     formId: encounter.formId || 'normal',
                     isShiny: encounter.isShiny,
                     location: 'box',
                 })
+                await syncUserPokemonMovesAndPp(caughtPokemon, {
+                    pokemonSpecies: pokemon,
+                    level: encounter.level,
+                })
+                await caughtPokemon.save()
 
                 return res.json({
                     ok: true,
@@ -223,25 +221,129 @@ router.post('/use', async (req, res) => {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy trạng thái người chơi' })
             }
 
-            const { hpAmount, mpAmount } = getHealAmounts(item)
-            const beforeHp = playerState.hp
-            const beforeMp = playerState.mp
+            const { hpAmount, ppAmount } = getHealAmounts(item)
             const totalHpHeal = hpAmount * qty
-            const totalMpHeal = mpAmount * qty
-            const nextHp = Math.min(playerState.maxHp, beforeHp + totalHpHeal)
-            const nextMp = Math.min(playerState.maxMp, beforeMp + totalMpHeal)
+            const totalPpHeal = Math.max(0, Math.floor(ppAmount * qty))
 
-            if (nextHp === beforeHp && nextMp === beforeMp) {
-                return res.status(400).json({ ok: false, message: 'HP/MP đã đầy' })
+            let hpContext = 'player'
+            let beforeHp = Math.max(0, Number(playerState.hp || 0))
+            let maxHp = Math.max(1, Number(playerState.maxHp || 1))
+            let nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
+
+            let activeBattleSession = null
+            if (!encounterId && targetPokemon) {
+                activeBattleSession = await BattleSession.findOne({
+                    userId,
+                    playerPokemonId: targetPokemon._id,
+                    expiresAt: { $gt: new Date() },
+                })
             }
 
-            if (hpAmount <= 0 && mpAmount <= 0) {
+            if (activeBattleSession) {
+                hpContext = 'battle'
+                beforeHp = Math.max(0, Number(activeBattleSession.playerCurrentHp || 0))
+                maxHp = Math.max(1, Number(activeBattleSession.playerMaxHp || 1))
+                nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
+            }
+
+            const healedHp = Math.max(0, nextHp - beforeHp)
+
+            let targetPokemon = null
+            if (activePokemonId) {
+                targetPokemon = await UserPokemon.findOne({
+                    _id: activePokemonId,
+                    userId,
+                }).populate('pokemonId', 'levelUpMoves')
+            }
+
+            if (!targetPokemon) {
+                targetPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+                    .sort({ partyIndex: 1 })
+                    .populate('pokemonId', 'levelUpMoves')
+            }
+
+            let healedPp = 0
+            let restoredPpMoves = []
+
+            if (targetPokemon && totalPpHeal > 0) {
+                await syncUserPokemonMovesAndPp(targetPokemon, {
+                    pokemonSpecies: targetPokemon.pokemonId,
+                    level: targetPokemon.level,
+                })
+
+                const normalizedTargetMove = normalizeMoveName(moveName)
+                const nextMovePpState = (Array.isArray(targetPokemon.movePpState) ? targetPokemon.movePpState : [])
+                    .map((entry) => {
+                        const currentPp = Math.max(0, Math.floor(Number(entry?.currentPp) || 0))
+                        const maxPp = Math.max(1, Math.floor(Number(entry?.maxPp) || 1))
+                        const moveLabel = String(entry?.moveName || '').trim()
+                        const moveKey = normalizeMoveName(moveLabel)
+
+                        if (!moveKey) {
+                            return {
+                                moveName: moveLabel,
+                                currentPp,
+                                maxPp,
+                            }
+                        }
+
+                        if (normalizedTargetMove && moveKey !== normalizedTargetMove) {
+                            return {
+                                moveName: moveLabel,
+                                currentPp,
+                                maxPp,
+                            }
+                        }
+
+                        if (currentPp >= maxPp) {
+                            return {
+                                moveName: moveLabel,
+                                currentPp,
+                                maxPp,
+                            }
+                        }
+
+                        const nextCurrentPp = Math.min(maxPp, currentPp + totalPpHeal)
+                        const diff = Math.max(0, nextCurrentPp - currentPp)
+                        if (diff > 0) {
+                            healedPp += diff
+                            restoredPpMoves.push({
+                                moveName: moveLabel,
+                                restored: diff,
+                                currentPp: nextCurrentPp,
+                                maxPp,
+                            })
+                        }
+
+                        return {
+                            moveName: moveLabel,
+                            currentPp: nextCurrentPp,
+                            maxPp,
+                        }
+                    })
+
+                targetPokemon.movePpState = nextMovePpState
+            }
+
+            if (healedHp === 0 && healedPp === 0) {
+                return res.status(400).json({ ok: false, message: 'HP/PP đã đầy' })
+            }
+
+            if (hpAmount <= 0 && ppAmount <= 0) {
                 return res.status(400).json({ ok: false, message: 'Vật phẩm này không có hiệu ứng hồi phục' })
             }
 
-            playerState.hp = nextHp
-            playerState.mp = nextMp
-            await playerState.save()
+            if (hpContext === 'battle' && activeBattleSession) {
+                activeBattleSession.playerCurrentHp = nextHp
+                await activeBattleSession.save()
+            } else {
+                playerState.hp = nextHp
+                await playerState.save()
+            }
+
+            if (targetPokemon) {
+                await targetPokemon.save()
+            }
 
             entry.quantity -= qty
             if (entry.quantity <= 0) {
@@ -252,17 +354,18 @@ router.post('/use', async (req, res) => {
 
             return res.json({
                 ok: true,
-                message: `Đã hồi ${nextHp - beforeHp} HP, ${nextMp - beforeMp} MP`,
+                message: `Đã hồi ${healedHp} HP, ${healedPp} PP`,
                 itemId,
                 quantity: qty,
                 effect: {
                     type: 'healing',
-                    healedHp: nextHp - beforeHp,
-                    healedMp: nextMp - beforeMp,
+                    healedHp,
+                    healedPp,
                     hp: nextHp,
-                    maxHp: playerState.maxHp,
-                    mp: nextMp,
-                    maxMp: playerState.maxMp,
+                    maxHp,
+                    hpContext,
+                    targetPokemonId: targetPokemon?._id || null,
+                    restoredMoves: restoredPpMoves,
                 },
             })
         }

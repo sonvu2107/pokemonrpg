@@ -179,7 +179,7 @@ export default function ItemFormPage() {
                             >
                                 <option value="none">Không có</option>
                                 <option value="catchMultiplier">Tăng tỉ lệ bắt</option>
-                                <option value="heal">Hồi HP/MP</option>
+                                <option value="heal">Hồi HP/PP</option>
                             </select>
                         </div>
                         <div>
@@ -199,7 +199,7 @@ export default function ItemFormPage() {
                     {formData.effectType === 'heal' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị MP</label>
+                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị PP</label>
                                 <input
                                     type="number"
                                     min="0"
