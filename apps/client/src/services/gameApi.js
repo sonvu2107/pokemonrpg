@@ -236,6 +236,22 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/stats/online/challenge/:userId - Get online trainer challenge target
+    async getOnlineChallengeTarget(userId) {
+        const normalizedUserId = String(userId || '').trim()
+        if (!normalizedUserId) {
+            throw new Error('Thiếu userId để khiêu chiến online')
+        }
+
+        const res = await fetch(`${API_URL}/stats/online/challenge/${encodeURIComponent(normalizedUserId)}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải đội hình khiêu chiến online')
+        }
+        return res.json()
+    },
+
     // GET /api/pokemon/:id
     async getPokemonDetail(id) {
         const res = await fetch(`${API_URL}/pokemon/${id}`, {

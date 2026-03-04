@@ -2571,6 +2571,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             fieldState = {},
             trainerId = null,
             activePokemonId = null,
+            resetTrainerSession = false,
         } = req.body || {}
 
         const normalizedTrainerId = String(trainerId || '').trim()
@@ -2687,7 +2688,8 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
         }
 
-        const attackerBaseStats = attackerSpecies.baseStats || {}
+        const { form: attackerForm } = resolvePokemonForm(attackerSpecies, activePokemon?.formId)
+        const attackerBaseStats = attackerForm?.stats || attackerSpecies.baseStats || {}
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
         const attackerTypes = normalizePokemonTypes(attackerSpecies.types)
         const attackerAtk = Math.max(
@@ -2811,6 +2813,24 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
 
             trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer)
+
+            if (Boolean(resetTrainerSession)) {
+                trainerSession.team = buildTrainerBattleTeam(trainer)
+                trainerSession.knockoutCounts = []
+                trainerSession.currentIndex = 0
+                trainerSession.playerPokemonId = activePokemon._id
+                trainerSession.playerMaxHp = playerMaxHp
+                trainerSession.playerCurrentHp = playerMaxHp
+                trainerSession.playerStatus = ''
+                trainerSession.playerStatusTurns = 0
+                trainerSession.playerStatStages = {}
+                trainerSession.playerDamageGuards = {}
+                trainerSession.playerWasDamagedLastTurn = false
+                trainerSession.playerVolatileState = {}
+                trainerSession.fieldState = {}
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
 
             const activePokemonIdString = String(activePokemon._id)
             if (String(trainerSession.playerPokemonId || '') !== activePokemonIdString) {

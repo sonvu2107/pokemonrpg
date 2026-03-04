@@ -165,6 +165,17 @@ const resolvePokemonFormDisplay = (pokemonLike, requestedFormId = null) => {
     }
 }
 
+const resolveFormStats = (pokemonLike, requestedFormId = null) => {
+    const forms = Array.isArray(pokemonLike?.forms) ? pokemonLike.forms : []
+    const defaultFormId = normalizeFormId(pokemonLike?.defaultFormId || 'normal')
+    const normalizedRequestedFormId = normalizeFormId(requestedFormId || defaultFormId)
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === normalizedRequestedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+    return resolvedForm?.stats || pokemonLike?.baseStats || {}
+}
+
 // GET /api/pokemon - Public master list (lightweight)
 router.get('/', async (req, res) => {
     try {
@@ -341,9 +352,12 @@ router.get('/:id', async (req, res) => {
             }
         })
 
-        // Base stats from species
-        const stats = calcStatsForLevel(basePokemon.baseStats, level, rarity)
-        const maxHp = calcMaxHp(basePokemon.baseStats?.hp, level, rarity)
+        const currentFormId = normalizeFormId(userPokemon.formId || basePokemon.defaultFormId || 'normal')
+        const resolvedStatsSource = resolveFormStats(basePokemon, currentFormId)
+
+        // Base stats from species/form
+        const stats = calcStatsForLevel(resolvedStatsSource, level, rarity)
+        const maxHp = calcMaxHp(resolvedStatsSource?.hp, level, rarity)
 
         // Enhance response with calculated stats
         const responseData = {
@@ -358,7 +372,6 @@ router.get('/:id', async (req, res) => {
             },
         }
 
-        const currentFormId = normalizeFormId(userPokemon.formId || basePokemon.defaultFormId || 'normal')
         const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)
         const minLevel = Number.isFinite(evolutionRule?.minLevel) ? evolutionRule.minLevel : null
         const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1

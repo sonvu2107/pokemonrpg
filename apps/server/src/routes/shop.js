@@ -26,6 +26,7 @@ const toSafeLimit = (value) => Math.min(50, Math.max(1, parseInt(value, 10) || 2
 const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const serializeWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
@@ -247,6 +248,7 @@ router.get('/skills', async (req, res) => {
         const category = String(req.query.category || '').trim().toLowerCase()
         const rarity = String(req.query.rarity || '').trim().toLowerCase()
         const sort = String(req.query.sort || '').trim().toLowerCase()
+        const search = String(req.query.search || '').trim()
 
         const sortOptions = {
             price_asc: { shopPrice: 1, nameLower: 1, _id: 1 },
@@ -273,6 +275,13 @@ router.get('/skills', async (req, res) => {
         }
         if (rarity) {
             query.rarity = rarity
+        }
+        if (search) {
+            const escaped = escapeRegExp(search)
+            query.$or = [
+                { name: { $regex: escaped, $options: 'i' } },
+                { description: { $regex: escaped, $options: 'i' } },
+            ]
         }
 
         const [playerState, skills, total] = await Promise.all([

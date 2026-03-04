@@ -11,7 +11,6 @@ export default function EditProfilePage() {
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState('')
     const [message, setMessage] = useState('')
-
     const [formData, setFormData] = useState({
         username: '',
         email: '',
@@ -38,11 +37,8 @@ export default function EditProfilePage() {
 
         try {
             const updatedUser = await api.updateProfile(formData)
-
-            // Update auth context with new user data
             const token = localStorage.getItem('token')
             login(updatedUser.user, token)
-
             setMessage('Cập nhật hồ sơ thành công!')
             setTimeout(() => {
                 navigate('/profile')
@@ -81,7 +77,6 @@ export default function EditProfilePage() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        {/* Avatar */}
                         <div>
                             <ImageUpload
                                 label="Ảnh Đại Diện"
@@ -89,8 +84,6 @@ export default function EditProfilePage() {
                                 onUploadSuccess={(url) => setFormData({ ...formData, avatar: url })}
                             />
                         </div>
-
-                        {/* Username */}
                         <div>
                             <label className="block text-slate-700 text-sm font-bold mb-1.5">Tên hiển thị</label>
                             <input
@@ -101,8 +94,6 @@ export default function EditProfilePage() {
                                 required
                             />
                         </div>
-
-                        {/* Email (Read only) */}
                         <div>
                             <label className="block text-slate-700 text-sm font-bold mb-1.5">Email</label>
                             <input
@@ -113,8 +104,6 @@ export default function EditProfilePage() {
                             />
                             <p className="text-xs text-slate-400 mt-1">Không thể thay đổi email.</p>
                         </div>
-
-                        {/* Signature */}
                         <div>
                             <label className="block text-slate-700 text-sm font-bold mb-1.5">Chữ ký</label>
                             <textarea
@@ -125,8 +114,6 @@ export default function EditProfilePage() {
                                 placeholder="Nhập chữ ký của bạn..."
                             ></textarea>
                         </div>
-
-                        {/* Submit Button */}
                         <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
                             <button
                                 type="button"

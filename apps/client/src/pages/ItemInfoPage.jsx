@@ -123,7 +123,7 @@ export default function ItemInfoPage() {
         <div className="max-w-4xl mx-auto font-sans pb-12 pt-4">
             <div className="text-center mb-4 text-slate-700 text-sm font-bold flex justify-center gap-4">
                 <span className="flex items-center gap-1">🪙 {formatNumber(wallet.platinumCoins)} Xu Bạch Kim</span>
-                <span className="flex items-center gap-1 text-purple-700">🌙 {formatNumber(wallet.moonPoints)} Điểm Nguyệt Các</span>
+                <span className="flex items-center gap-1 text-purple-700">🌑 {formatNumber(wallet.moonPoints)} Điểm Nguyệt Các</span>
             </div>
 
             <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
@@ -165,7 +165,7 @@ export default function ItemInfoPage() {
                         <InfoRow label="Loại" value={typeMeta.label} />
                         <InfoRow label="Độ hiếm" value={rarityMeta.label} />
                         <InfoRow label="Trạng thái shop" value={isOnSale ? 'Đang bán' : 'Không bán'} />
-                        <InfoRow label="Giá shop" value={`${formatNumber(item.shopPrice)} xu`} />
+                        <InfoRow label="Giá shop" value={`${formatNumber(item.shopPrice)} xu Bạch Kim`} />
                         <InfoRow label="Trong túi đồ" value={`${formatNumber(inventoryQuantity)} cái`} />
                         <InfoRow label="Hiệu ứng" value={effectSummary} />
                     </div>

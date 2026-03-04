@@ -29,6 +29,8 @@ const TYPE_LABELS = {
     fairy: 'Fairy',
 }
 
+const TYPE_FILTER_OPTIONS = ['all', ...Object.keys(TYPE_LABELS)]
+
 const CATEGORY_LABELS = {
     physical: 'Physical',
     special: 'Special',
@@ -86,6 +88,7 @@ export default function SkillShopPage() {
     const [typeFilter, setTypeFilter] = useState('all')
     const [categoryFilter, setCategoryFilter] = useState('all')
     const [rarityFilter, setRarityFilter] = useState('all')
+    const [searchKeyword, setSearchKeyword] = useState('')
     const [sortBy, setSortBy] = useState('price_asc')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
@@ -97,13 +100,19 @@ export default function SkillShopPage() {
             type: typeFilter,
             category: categoryFilter,
             rarity: rarityFilter,
+            search: searchKeyword,
             sort: sortBy,
         })
-    }, [typeFilter, categoryFilter, rarityFilter, sortBy])
+    }, [typeFilter, categoryFilter, rarityFilter, searchKeyword, sortBy])
 
     const availableTypes = useMemo(() => {
-        const dynamicTypes = [...new Set(skills.map((skill) => skill.type).filter(Boolean))]
-        return ['all', ...dynamicTypes]
+        const dynamicTypes = [...new Set(
+            skills
+                .map((skill) => String(skill?.type || '').trim().toLowerCase())
+                .filter(Boolean)
+                .filter((entry) => !TYPE_FILTER_OPTIONS.includes(entry))
+        )]
+        return [...TYPE_FILTER_OPTIONS, ...dynamicTypes]
     }, [skills])
 
     const availableCategories = useMemo(() => {
@@ -135,6 +144,9 @@ export default function SkillShopPage() {
             if (filters.rarity && filters.rarity !== 'all') {
                 params.rarity = filters.rarity
             }
+            if (filters.search) {
+                params.search = filters.search
+            }
             if (filters.sort) {
                 params.sort = filters.sort
             }
@@ -163,6 +175,7 @@ export default function SkillShopPage() {
             type: typeFilter,
             category: categoryFilter,
             rarity: rarityFilter,
+            search: searchKeyword,
             sort: sortBy,
         })
     }
@@ -189,88 +202,97 @@ export default function SkillShopPage() {
             <div className="text-center mb-6">
                 <div className="text-slate-700 text-sm font-bold flex justify-center gap-4 mb-1">
                     <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌑 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Cửa Hàng Kỹ Năng</h1>
             </div>
-
             <div className="space-y-4">
                 <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
-                    <SectionHeader title="Skill Shop" />
-
-                    <div className="bg-blue-100/50 border-b border-blue-200 p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-5 gap-3 md:gap-4">
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[64px]">Hệ</label>
-                            <select
-                                value={typeFilter}
-                                onChange={(e) => setTypeFilter(e.target.value)}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
-                            >
-                                {availableTypes.map((type) => (
-                                    <option key={type} value={type}>{type === 'all' ? 'Tất cả hệ' : (TYPE_LABELS[type] || type)}</option>
-                                ))}
-                            </select>
+                    <SectionHeader title="Cửa hàng kỹ năng" />
+                    <div className="bg-blue-100/50 border-b border-blue-200 p-3 md:p-4 flex flex-col gap-3 md:gap-4">
+                        <div className="flex items-center gap-2 w-full">
+                            <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[56px]">Tên</label>
+                            <input
+                                type="text"
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                placeholder="Nhập tên kỹ năng..."
+                                className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
                         </div>
+                        <div className="flex flex-wrap gap-3 md:gap-4 items-center">
+                            <div className="flex items-center gap-2 flex-1 min-w-[120px] sm:min-w-[150px]">
+                                <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0">Hệ</label>
+                                <select
+                                    value={typeFilter}
+                                    onChange={(e) => setTypeFilter(e.target.value)}
+                                    className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm cursor-pointer transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                >
+                                    {availableTypes.map((type) => (
+                                        <option key={type} value={type}>{type === 'all' ? 'Tất cả hệ' : (TYPE_LABELS[type] || type)}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[70px]">Nhóm</label>
-                            <select
-                                value={categoryFilter}
-                                onChange={(e) => setCategoryFilter(e.target.value)}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
-                            >
-                                {availableCategories.map((category) => (
-                                    <option key={category} value={category}>{category === 'all' ? 'Tất cả nhóm' : (CATEGORY_LABELS[category] || category)}</option>
-                                ))}
-                            </select>
-                        </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-[120px] sm:min-w-[150px]">
+                                <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0">Nhóm</label>
+                                <select
+                                    value={categoryFilter}
+                                    onChange={(e) => setCategoryFilter(e.target.value)}
+                                    className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm cursor-pointer transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                >
+                                    {availableCategories.map((category) => (
+                                        <option key={category} value={category}>{category === 'all' ? 'Tất cả nhóm' : (CATEGORY_LABELS[category] || category)}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[70px]">Độ hiếm</label>
-                            <select
-                                value={rarityFilter}
-                                onChange={(e) => setRarityFilter(e.target.value)}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
-                            >
-                                {availableRarities.map((rarity) => (
-                                    <option key={rarity} value={rarity}>{rarity === 'all' ? 'Tất cả độ hiếm' : (RARITY_LABELS[rarity] || rarity)}</option>
-                                ))}
-                            </select>
-                        </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-[120px] sm:min-w-[150px]">
+                                <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0">Độ hiếm</label>
+                                <select
+                                    value={rarityFilter}
+                                    onChange={(e) => setRarityFilter(e.target.value)}
+                                    className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm cursor-pointer transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                >
+                                    {availableRarities.map((rarity) => (
+                                        <option key={rarity} value={rarity}>{rarity === 'all' ? 'Tất cả độ hiếm' : (RARITY_LABELS[rarity] || rarity)}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[70px]">Số lượng</label>
-                            <select
-                                value={buyQuantity}
-                                onChange={(e) => setBuyQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
-                            >
-                                <option value={1}>x1</option>
-                                <option value={5}>x5</option>
-                                <option value={10}>x10</option>
-                                <option value={20}>x20</option>
-                            </select>
-                        </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-[120px] sm:min-w-[150px]">
+                                <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0">Số lượng</label>
+                                <select
+                                    value={buyQuantity}
+                                    onChange={(e) => setBuyQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                    className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm cursor-pointer transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                >
+                                    <option value={1}>x1</option>
+                                    <option value={5}>x5</option>
+                                    <option value={10}>x10</option>
+                                    <option value={20}>x20</option>
+                                </select>
+                            </div>
 
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-blue-800 uppercase whitespace-nowrap flex-shrink-0 w-16 sm:w-auto sm:min-w-[55px]">Sắp xếp</label>
-                            <select
-                                value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value)}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-700 font-medium cursor-pointer"
-                            >
-                                <option value="price_asc">Giá tăng dần</option>
-                                <option value="price_desc">Giá giảm dần</option>
-                                <option value="type_asc">Hệ A-Z</option>
-                                <option value="type_desc">Hệ Z-A</option>
-                                <option value="name_asc">Tên A-Z</option>
-                                <option value="name_desc">Tên Z-A</option>
-                                <option value="rarity_asc">Độ hiếm tăng</option>
-                                <option value="rarity_desc">Độ hiếm giảm</option>
-                            </select>
+                            <div className="flex items-center gap-2 flex-1 min-w-[120px] sm:min-w-[150px]">
+                                <label className="text-xs font-bold text-blue-800 uppercase tracking-wide whitespace-nowrap flex-shrink-0">Sắp xếp</label>
+                                <select
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                    className="flex-1 w-full min-w-0 px-3 py-2 bg-white border border-slate-300 hover:border-blue-400 rounded-md text-sm text-slate-700 font-medium shadow-sm cursor-pointer transition-all outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                >
+                                    <option value="price_asc">Giá tăng</option>
+                                    <option value="price_desc">Giá giảm</option>
+                                    <option value="type_asc">Hệ A-Z</option>
+                                    <option value="type_desc">Hệ Z-A</option>
+                                    <option value="name_asc">Tên A-Z</option>
+                                    <option value="name_desc">Tên Z-A</option>
+                                    <option value="rarity_asc">Mức hiếm ⬆</option>
+                                    <option value="rarity_desc">Mức hiếm ⬇</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
-
                     <div className="overflow-x-hidden p-2 sm:p-0">
                         <table className="w-full">
                             <thead className="hidden sm:table-header-group">
@@ -298,8 +320,6 @@ export default function SkillShopPage() {
                                 ) : (
                                     skills.map((skill) => (
                                         <tr key={skill._id} className="flex flex-col sm:table-row bg-white border border-blue-200 mb-3 sm:mb-0 sm:border-0 sm:border-b sm:border-blue-100 rounded-lg sm:rounded-none overflow-hidden shadow-sm sm:shadow-none">
-
-                                            {/* Mobile: Image + Basic Info Row | Desktop: Separate Cells */}
                                             <td className="sm:table-cell px-3 py-3 sm:border-r border-blue-100 align-middle hidden sm:table-cell text-center">
                                                 <img
                                                     src={skill.imageUrl || getFallbackMoveImage()}
@@ -311,8 +331,6 @@ export default function SkillShopPage() {
                                                     }}
                                                 />
                                             </td>
-
-                                            {/* Info Cell (Merged natively on mobile, separate on PC) */}
                                             <td className="block sm:table-cell p-3 sm:px-3 sm:py-3 sm:border-r border-blue-100 align-middle relative border-b sm:border-b-0 border-slate-100 bg-slate-50/50 sm:bg-transparent text-left sm:text-center">
                                                 <div className="flex sm:hidden gap-3 mb-2 items-center">
                                                     <img

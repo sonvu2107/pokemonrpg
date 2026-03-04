@@ -8,22 +8,19 @@ const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
-
+const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/stats/online'])
 const resolveSafeRankedReturnPath = (value = '') => {
     const normalizedRaw = String(value || '').trim()
     if (!normalizedRaw) return DEFAULT_RANKED_RETURN_PATH
     const normalized = `/${normalizedRaw.replace(/^\/+/, '')}`
-    if (normalized === '/rankings/pokemon') return normalized
+    if (ALLOWED_RANKED_RETURN_PATHS.has(normalized)) return normalized
     return DEFAULT_RANKED_RETURN_PATH
 }
-
-// Helper for the blue gradient header
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm first:rounded-t">
         {title}
     </div>
 )
-
 const typeColors = {
     grass: 'bg-green-100 text-green-800 border-green-300',
     fire: 'bg-red-100 text-red-800 border-red-300',
@@ -34,7 +31,6 @@ const typeColors = {
     poison: 'bg-purple-100 text-purple-800 border-purple-300',
     normal: 'bg-slate-100 text-slate-800 border-slate-300',
 }
-
 const statusLabels = {
     burn: 'Bỏng',
     poison: 'Độc',
@@ -44,7 +40,6 @@ const statusLabels = {
     confuse: 'Rối Loạn',
     flinch: 'Choáng',
 }
-
 const getGuardBadgeText = (guards = {}) => {
     const normalized = guards && typeof guards === 'object' ? guards : {}
     const physicalTurns = Number(normalized?.physical?.turns || 0)
@@ -60,7 +55,6 @@ const getGuardBadgeText = (guards = {}) => {
     }
     return ''
 }
-
 const getVolatileBadgeText = (volatileState = {}) => {
     const state = volatileState && typeof volatileState === 'object' ? volatileState : {}
     const statusShieldTurns = Number(state?.statusShieldTurns || 0)
@@ -85,7 +79,6 @@ const getVolatileBadgeText = (volatileState = {}) => {
     }
     return ''
 }
-
 const normalizeMoveType = (name = '') => {
     const normalized = String(name || '').toLowerCase()
     if (normalized.includes('fire')) return 'fire'
@@ -97,7 +90,6 @@ const normalizeMoveType = (name = '') => {
     if (normalized.includes('poison') || normalized.includes('toxic')) return 'poison'
     return 'normal'
 }
-
 const resolveMovePowerForDisplay = (entry, name = '') => {
     const powerRaw = Number(entry?.power)
     if (Number.isFinite(powerRaw) && powerRaw > 0) {
@@ -105,10 +97,8 @@ const resolveMovePowerForDisplay = (entry, name = '') => {
     }
     return normalizeMoveNameKey(name) === 'struggle' ? 35 : 0
 }
-
 const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
 const getBattlePokemonDisplayName = (pokemon) => pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon'
-
 const buildMovesForLevel = (pokemon, level) => {
     const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
     const learned = pool
@@ -118,7 +108,6 @@ const buildMovesForLevel = (pokemon, level) => {
         .filter(Boolean)
     return learned.slice(-4)
 }
-
 const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
     const explicit = (Array.isArray(moves) ? moves : [])
         .map((entry) => {
@@ -138,11 +127,9 @@ const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
         .filter(Boolean)
 
     if (explicit.length >= 4) return explicit.slice(0, 4)
-
     const merged = [...explicit]
     const knownSet = new Set(explicit.map((entry) => normalizeMoveNameKey(entry?.name || '')))
     const fallback = buildMovesForLevel(pokemon, level)
-
     for (const moveName of fallback) {
         const key = normalizeMoveNameKey(moveName)
         if (!key || knownSet.has(key)) continue
@@ -153,7 +140,6 @@ const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
 
     return merged.slice(0, 4)
 }
-
 const normalizeMoveList = (moves = []) => {
     const struggleMove = {
         id: 'struggle-fallback',
@@ -164,7 +150,6 @@ const normalizeMoveList = (moves = []) => {
         currentPp: 99,
         maxPp: 99,
     }
-
     const list = Array.isArray(moves) ? moves : []
     const mapped = list
         .map((entry, index) => {
@@ -201,7 +186,33 @@ const normalizeMoveList = (moves = []) => {
 
     return [struggleMove]
 }
+const buildRefilledBattleMoves = (pokemonSlot = null) => {
+    const mergedMoves = mergeBattleMoveNames(
+        pokemonSlot?.moves || [],
+        pokemonSlot?.pokemonId,
+        Number(pokemonSlot?.level) || 1
+    )
 
+    const refilledMoves = normalizeMoveList(mergedMoves)
+        .filter((entry) => normalizeMoveNameKey(entry?.name) !== 'struggle')
+        .slice(0, 4)
+        .map((entry) => ({
+            ...entry,
+            currentPp: Math.max(1, Number(entry?.maxPp) || 1),
+            pp: Math.max(1, Number(entry?.maxPp) || 1),
+        }))
+
+    const movePpState = refilledMoves.map((entry) => ({
+        moveName: String(entry?.name || '').trim(),
+        currentPp: Math.max(1, Number(entry?.maxPp) || 1),
+        maxPp: Math.max(1, Number(entry?.maxPp) || 1),
+    }))
+
+    return {
+        moves: refilledMoves,
+        movePpState,
+    }
+}
 const ProgressBar = ({ current, max, colorClass, label }) => {
     const safeMax = max > 0 ? max : 1
     const percent = Math.min(100, Math.max(0, (current / safeMax) * 100))
@@ -220,7 +231,6 @@ const ProgressBar = ({ current, max, colorClass, label }) => {
         </div>
     )
 }
-
 const ActiveBattleView = ({
     party,
     encounter,
@@ -247,9 +257,19 @@ const ActiveBattleView = ({
     const activeHpState = (resolvedActiveIndex >= 0 && Array.isArray(partyHpState))
         ? partyHpState[resolvedActiveIndex]
         : null
-    const activeMaxHp = Math.max(1, Number(activePokemon?.stats?.hp) || 100)
+    const activeMaxHp = Math.max(
+        1,
+        Number(activeHpState?.maxHp)
+        || Number(activePokemon?.battleMaxHp)
+        || Number(activePokemon?.stats?.hp)
+        || 100
+    )
     const activeCurrentHpRaw = Number(activeHpState?.currentHp)
-    const activeCurrentHp = Number.isFinite(activeCurrentHpRaw) ? activeCurrentHpRaw : activeMaxHp
+    const activeCurrentHp = Number.isFinite(activeCurrentHpRaw)
+        ? activeCurrentHpRaw
+        : (Number.isFinite(Number(activePokemon?.battleCurrentHp))
+            ? Number(activePokemon?.battleCurrentHp)
+            : activeMaxHp)
 
     const playerMon = activePokemon ? {
         name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Unknown',
@@ -560,12 +580,15 @@ export function BattlePage() {
     const navigate = useNavigate()
     const challengeSearchParams = new URLSearchParams(location.search)
     const rankedChallengePokemonId = String(challengeSearchParams.get('challengePokemonId') || '').trim()
+    const onlineChallengeUserId = String(challengeSearchParams.get('challengeUserId') || '').trim()
     const rankedChallengeReturnTo = resolveSafeRankedReturnPath(challengeSearchParams.get('returnTo'))
     const isRankedChallengeRequested = Boolean(rankedChallengePokemonId)
+    const isOnlineChallengeRequested = Boolean(onlineChallengeUserId)
+    const isExternalChallengeRequested = isRankedChallengeRequested || isOnlineChallengeRequested
     const [maps, setMaps] = useState([])
     const [party, setParty] = useState([])
     const [loading, setLoading] = useState(true)
-    const [view, setView] = useState(isRankedChallengeRequested ? 'battle' : 'lobby') // 'lobby' | 'battle'
+    const [view, setView] = useState(isExternalChallengeRequested ? 'battle' : 'lobby')
     const [encounter, setEncounter] = useState(null)
     const [playerState, setPlayerState] = useState(null)
     const [opponent, setOpponent] = useState(null)
@@ -590,7 +613,10 @@ export function BattlePage() {
     const [duelReturnPath, setDuelReturnPath] = useState(DEFAULT_RANKED_RETURN_PATH)
     const [duelResultModal, setDuelResultModal] = useState(null)
     const [isStartingRankedDuel, setIsStartingRankedDuel] = useState(false)
+    const [isStartingOnlineChallenge, setIsStartingOnlineChallenge] = useState(false)
+    const [shouldResetTrainerSession, setShouldResetTrainerSession] = useState(false)
     const rankedChallengeLockRef = useRef('')
+    const didInitLoadRef = useRef(false)
 
     const completedSlides = []
     for (let index = 0; index < completedEntries.length; index += completedEntriesPerView) {
@@ -630,8 +656,12 @@ export function BattlePage() {
     const buildBattlePartyState = (partySlots = []) => {
         return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
             if (!slot) return null
-            const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-            return { currentHp: maxHp, maxHp }
+            const maxHp = Math.max(1, Number(slot?.battleMaxHp) || Number(slot?.stats?.hp) || 1)
+            const currentHpRaw = Number(slot?.battleCurrentHp)
+            const currentHp = Number.isFinite(currentHpRaw)
+                ? Math.max(0, Math.min(maxHp, currentHpRaw))
+                : maxHp
+            return { currentHp, maxHp }
         })
     }
 
@@ -713,6 +743,8 @@ export function BattlePage() {
     }
 
     useEffect(() => {
+        if (didInitLoadRef.current) return
+        didInitLoadRef.current = true
         loadData()
     }, [])
 
@@ -763,9 +795,50 @@ export function BattlePage() {
             })
     }, [rankedChallengePokemonId, rankedChallengeReturnTo, loading, isStartingRankedDuel, partyCandidates.length, activeBattleMode, view])
 
+    useEffect(() => {
+        if (!onlineChallengeUserId) return
+        if (loading || isStartingOnlineChallenge) return
+        if (activeBattleMode === 'online' && view === 'battle') return
+
+        setDuelReturnPath(rankedChallengeReturnTo)
+        if (partyCandidates.length === 0) {
+            setActionMessage('Bạn cần có Pokemon trong đội hình để khiêu chiến online.')
+            navigate(rankedChallengeReturnTo, { replace: true })
+            return
+        }
+
+        const challengeKey = `${onlineChallengeUserId}:online:${rankedChallengeReturnTo}`
+        if (rankedChallengeLockRef.current === challengeKey) return
+
+        if (view !== 'battle') {
+            setView('battle')
+        }
+
+        rankedChallengeLockRef.current = challengeKey
+        setIsStartingOnlineChallenge(true)
+        startOnlineTrainerChallenge(onlineChallengeUserId)
+            .finally(() => {
+                rankedChallengeLockRef.current = ''
+                setIsStartingOnlineChallenge(false)
+                navigate('/battle', { replace: true })
+            })
+    }, [onlineChallengeUserId, rankedChallengeReturnTo, loading, isStartingOnlineChallenge, partyCandidates.length, activeBattleMode, view])
+
     const loadData = async () => {
         try {
-            if (isRankedChallengeRequested) {
+            const hydratePartyWithBattleHp = (partySlots = []) => {
+                return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
+                    if (!slot) return slot
+                    const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                    return {
+                        ...slot,
+                        battleCurrentHp: maxHp,
+                        battleMaxHp: maxHp,
+                    }
+                })
+            }
+
+            if (isExternalChallengeRequested) {
                 const [allMaps, partyData, encounterData, profileData, inventoryData] = await Promise.all([
                     gameApi.getMaps(),
                     gameApi.getParty(),
@@ -775,7 +848,7 @@ export function BattlePage() {
                 ])
 
                 setMaps(allMaps)
-                setParty(partyData)
+                setParty(hydratePartyWithBattleHp(partyData))
                 setEncounter(encounterData?.encounter || null)
                 setPlayerState(profileData?.playerState || null)
                 setInventory(inventoryData?.inventory || [])
@@ -802,7 +875,7 @@ export function BattlePage() {
                 gameApi.getInventory(),
             ])
             setMaps(allMaps)
-            setParty(partyData)
+            setParty(hydratePartyWithBattleHp(partyData))
             setEncounter(encounterData?.encounter || null)
             setPlayerState(profileData?.playerState || null)
             const trainerList = trainerData?.trainers || []
@@ -894,15 +967,22 @@ export function BattlePage() {
 
         const activePokemon = party[resolvedActiveIndex] || null
         const activeName = activePokemon?.nickname || activePokemon?.pokemonId?.name || 'Pokemon'
-        const activeMaxHp = Math.max(1, Number(activePokemon?.stats?.hp) || 1)
+        const activeHpState = resolvedPartyState[resolvedActiveIndex] || null
+        const activeMaxHp = Math.max(
+            1,
+            Number(activeHpState?.maxHp)
+            || Number(activePokemon?.battleMaxHp)
+            || Number(activePokemon?.stats?.hp)
+            || 1
+        )
         const activeResultImage = resolvePokemonSprite({
             species: activePokemon?.pokemonId || {},
             formId: activePokemon?.formId,
             isShiny: Boolean(activePokemon?.isShiny),
         })
-        const activeHpState = resolvedPartyState[resolvedActiveIndex] || { currentHp: activeMaxHp, maxHp: activeMaxHp }
+        const resolvedActiveHpState = activeHpState || { currentHp: activeMaxHp, maxHp: activeMaxHp }
         const playerCurrentHpForTurn = clampValue(
-            Number.isFinite(Number(activeHpState.currentHp)) ? Number(activeHpState.currentHp) : activeMaxHp,
+            Number.isFinite(Number(resolvedActiveHpState.currentHp)) ? Number(resolvedActiveHpState.currentHp) : activeMaxHp,
             0,
             activeMaxHp
         )
@@ -921,7 +1001,7 @@ export function BattlePage() {
 
         setIsAttacking(true)
         try {
-            const duelTurnPayload = activeBattleMode === 'duel'
+            const duelTurnPayload = (activeBattleMode === 'duel' || activeBattleMode === 'online')
                 ? {
                     opponentMoveMode: 'smart',
                     opponentMoveCursor: duelOpponentMoveCursor,
@@ -960,8 +1040,13 @@ export function BattlePage() {
                     wasDamagedLastTurn: Boolean(activePokemon?.wasDamagedLastTurn),
                     volatileState: activePokemon?.volatileState || {},
                 },
+                resetTrainerSession: activeBattleMode === 'trainer' && shouldResetTrainerSession,
                 ...duelTurnPayload,
             })
+
+            if (activeBattleMode === 'trainer' && shouldResetTrainerSession) {
+                setShouldResetTrainerSession(false)
+            }
 
             const battle = res?.battle || {}
             const damage = Number.isFinite(battle.damage) ? battle.damage : 1
@@ -980,7 +1065,7 @@ export function BattlePage() {
                 ? battle.opponentMoveState
                 : null
 
-            if (activeBattleMode === 'duel' && opponentMoveState) {
+            if ((activeBattleMode === 'duel' || activeBattleMode === 'online') && opponentMoveState) {
                 const nextCursorRaw = Number(opponentMoveState?.cursor)
                 const nextCursor = Number.isFinite(nextCursorRaw) ? Math.max(0, Math.floor(nextCursorRaw)) : 0
                 const nextMoves = Array.isArray(opponentMoveState?.moves)
@@ -1053,6 +1138,16 @@ export function BattlePage() {
                         damageGuards: nextDamageGuards,
                         wasDamagedLastTurn: nextWasDamagedLastTurn,
                         volatileState: nextVolatileState,
+                        battleCurrentHp: Number.isFinite(Number(battle.player?.currentHp))
+                            ? Math.max(0, Number(battle.player.currentHp))
+                            : Number(targetSlot?.battleCurrentHp || targetSlot?.stats?.hp || 0),
+                        battleMaxHp: Math.max(
+                            1,
+                            Number(battle.player?.maxHp)
+                            || Number(targetSlot?.battleMaxHp)
+                            || Number(targetSlot?.stats?.hp)
+                            || 1
+                        ),
                     }
                     return nextParty
                 })
@@ -1090,9 +1185,9 @@ export function BattlePage() {
             let nextBattleState = currentBattleState
             const serverOpponentState = battle?.opponent
             if (serverOpponentState && Array.isArray(serverOpponentState.team)) {
-                const mergedTeam = (currentBattleState?.team || []).map((member, index) => {
-                    const serverEntry = serverOpponentState.team[index]
-                    if (!serverEntry) return member
+                const localTeam = Array.isArray(currentBattleState?.team) ? currentBattleState.team : []
+                const mergedTeam = serverOpponentState.team.map((serverEntry, index) => {
+                    const member = localTeam[index] || {}
                     return {
                         ...member,
                         ...serverEntry,
@@ -1195,10 +1290,8 @@ export function BattlePage() {
                 const nextPlayerHpFromCounter = Number.isFinite(counterAttack.currentHp)
                     ? Math.max(0, counterAttack.currentHp)
                     : Math.max(0, playerCurrentHpForTurn - counterDamage)
-                authoritativePlayerMaxHp = Math.max(1, Number(counterAttack?.maxHp) || authoritativePlayerMaxHp || activeMaxHp)
-                if (Number.isFinite(authoritativePlayerHp)) {
-                    authoritativePlayerHp = Math.min(authoritativePlayerHp, clampValue(nextPlayerHpFromCounter, 0, authoritativePlayerMaxHp))
-                } else {
+                if (!Number.isFinite(authoritativePlayerHp)) {
+                    authoritativePlayerMaxHp = Math.max(1, Number(counterAttack?.maxHp) || authoritativePlayerMaxHp || activeMaxHp)
                     authoritativePlayerHp = clampValue(nextPlayerHpFromCounter, 0, authoritativePlayerMaxHp)
                 }
                 logLines.push(`${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
@@ -1247,13 +1340,15 @@ export function BattlePage() {
             }
 
             if (nextPlayerHp <= 0) {
-                if (activeBattleMode === 'duel') {
-                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || 'Đối thủ BXH'
+                if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
+                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || (activeBattleMode === 'online' ? 'đối thủ online' : 'Đối thủ BXH')
                     setActionMessage('Pokemon của bạn đã bại trận.')
                     showRankedDuelResultModal({
                         resultType: 'defeat',
-                        title: 'Thua Khiêu Chiến BXH',
-                        message: `Bạn đã thua trước ${defeatedTargetName}.`,
+                        title: activeBattleMode === 'online' ? 'Thua Khiêu Chiến Online' : 'Thua Khiêu Chiến BXH',
+                        message: activeBattleMode === 'online'
+                            ? `Bạn đã thua trước đội hình của ${battleOpponent?.trainerName || defeatedTargetName}.`
+                            : `Bạn đã thua trước ${defeatedTargetName}.`,
                     })
                     return
                 }
@@ -1286,13 +1381,15 @@ export function BattlePage() {
             }
 
             if (defeatedAll) {
-                if (activeBattleMode === 'duel') {
-                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || 'Đối thủ BXH'
-                    setActionMessage('Bạn đã chiến thắng trận khiêu chiến BXH.')
+                if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
+                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || (activeBattleMode === 'online' ? 'đối thủ online' : 'Đối thủ BXH')
+                    setActionMessage(activeBattleMode === 'online' ? 'Bạn đã chiến thắng trận khiêu chiến online.' : 'Bạn đã chiến thắng trận khiêu chiến BXH.')
                     showRankedDuelResultModal({
                         resultType: 'win',
-                        title: 'Thắng Khiêu Chiến BXH',
-                        message: `Bạn đã đánh bại ${defeatedTargetName}.`,
+                        title: activeBattleMode === 'online' ? 'Thắng Khiêu Chiến Online' : 'Thắng Khiêu Chiến BXH',
+                        message: activeBattleMode === 'online'
+                            ? `Bạn đã đánh bại đội hình của ${battleOpponent?.trainerName || defeatedTargetName}.`
+                            : `Bạn đã đánh bại ${defeatedTargetName}.`,
                     })
                     return
                 }
@@ -1335,10 +1432,10 @@ export function BattlePage() {
         } catch (err) {
             setActionMessage(err.message)
             if (String(err?.message || '').toLowerCase().includes('bại trận')) {
-                if (activeBattleMode === 'duel') {
+                if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
                     showRankedDuelResultModal({
                         resultType: 'defeat',
-                        title: 'Thua Khiêu Chiến BXH',
+                        title: activeBattleMode === 'online' ? 'Thua Khiêu Chiến Online' : 'Thua Khiêu Chiến BXH',
                         message: err.message || 'Pokemon của bạn đã bại trận.',
                     })
                     return
@@ -1403,14 +1500,29 @@ export function BattlePage() {
             const inventoryData = await gameApi.getInventory()
             setInventory(inventoryData?.inventory || [])
             const refreshedParty = await gameApi.getParty()
-            setParty(refreshedParty)
+            const mergedBattleParty = (Array.isArray(refreshedParty) ? refreshedParty : []).map((slot, idx) => {
+                if (!slot) return slot
+                const fallbackMaxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                const hpState = Array.isArray(battlePartyHpState) ? battlePartyHpState[idx] : null
+                const mergedMaxHp = Math.max(1, Number(hpState?.maxHp) || Number(slot?.battleMaxHp) || fallbackMaxHp)
+                const mergedCurrentHpRaw = Number(hpState?.currentHp)
+                const mergedCurrentHp = Number.isFinite(mergedCurrentHpRaw)
+                    ? Math.max(0, Math.min(mergedMaxHp, mergedCurrentHpRaw))
+                    : mergedMaxHp
+                return {
+                    ...slot,
+                    battleCurrentHp: mergedCurrentHp,
+                    battleMaxHp: mergedMaxHp,
+                }
+            })
+            setParty(mergedBattleParty)
         } catch (err) {
             setActionMessage(err.message)
         }
     }
 
     const handleRun = async () => {
-        if (activeBattleMode === 'duel') {
+        if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
             navigateBackToRankingsAfterDuel()
             return
         }
@@ -1593,12 +1705,14 @@ export function BattlePage() {
         setSelectedMoveIndex(0)
         setActiveTab('fight')
         setActiveBattleMode('trainer')
+        setShouldResetTrainerSession(true)
         setDuelOpponentMoves([])
         setDuelOpponentMoveCursor(0)
         setDuelResultModal(null)
         setBattleOpponent(nextOpponent)
         setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
             if (!slot) return slot
+            const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
             return {
                 ...slot,
                 status: '',
@@ -1607,9 +1721,15 @@ export function BattlePage() {
                 damageGuards: {},
                 wasDamagedLastTurn: false,
                 volatileState: {},
+                battleCurrentHp: maxHp,
+                battleMaxHp: maxHp,
             }
         }) : prevParty))
-        const initialPartyState = buildBattlePartyState(party)
+        const initialPartyState = (Array.isArray(party) ? party : []).map((slot) => {
+            if (!slot) return null
+            const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+            return { currentHp: maxHp, maxHp }
+        })
         setBattlePartyHpState(initialPartyState)
         const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
         setBattlePlayerIndex(Math.max(0, initialIndex))
@@ -1706,27 +1826,44 @@ export function BattlePage() {
             }
 
             setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot, index) => {
-                if (!slot || index !== attackerCandidate.index) return slot
+                if (!slot) return slot
+                const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                if (index !== attackerCandidate.index) {
+                    return {
+                        ...slot,
+                        battleCurrentHp: 0,
+                        battleMaxHp: maxHp,
+                    }
+                }
+                const refilledMoveData = buildRefilledBattleMoves(slot)
                 return {
                     ...slot,
+                    moves: refilledMoveData.moves,
+                    movePpState: refilledMoveData.movePpState,
                     status: '',
                     statusTurns: 0,
                     statStages: {},
                     damageGuards: {},
                     wasDamagedLastTurn: false,
                     volatileState: {},
+                    battleCurrentHp: maxHp,
+                    battleMaxHp: maxHp,
                 }
             }) : prevParty))
 
-            const initialPartyState = buildBattlePartyState(party).map((entry, index) => {
-                if (!entry) return entry
+            const initialPartyState = (Array.isArray(party) ? party : []).map((slot, index) => {
+                if (!slot) return null
+                const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
                 if (index !== attackerCandidate.index) {
                     return {
-                        ...entry,
+                        maxHp,
                         currentHp: 0,
                     }
                 }
-                return entry
+                return {
+                    maxHp,
+                    currentHp: maxHp,
+                }
             })
 
             setBattleResults(null)
@@ -1735,6 +1872,7 @@ export function BattlePage() {
             setSelectedMoveIndex(0)
             setActiveTab('fight')
             setActiveBattleMode('duel')
+            setShouldResetTrainerSession(false)
             setDuelResultModal(null)
             setOpponent(duelOpponent)
             setBattleOpponent(duelOpponent)
@@ -1745,6 +1883,137 @@ export function BattlePage() {
             setView('battle')
         } catch (error) {
             setActionMessage(error?.message || 'Không thể bắt đầu trận khiêu chiến từ BXH.')
+        }
+    }
+
+    const startOnlineTrainerChallenge = async (targetUserId) => {
+        const normalizedTargetUserId = String(targetUserId || '').trim()
+        if (!normalizedTargetUserId) {
+            setActionMessage('Thiếu huấn luyện viên mục tiêu để khiêu chiến online.')
+            return
+        }
+
+        if (partyCandidates.length === 0) {
+            setActionMessage('Bạn chưa có Pokemon trong đội hình để khiêu chiến online.')
+            return
+        }
+
+        try {
+            const challengeData = await gameApi.getOnlineChallengeTarget(normalizedTargetUserId)
+            const trainer = challengeData?.trainer || {}
+            const trainerName = String(trainer?.username || '').trim() || 'Huấn luyện viên online'
+            const trainerParty = (Array.isArray(trainer?.party) ? trainer.party : []).filter(Boolean)
+
+            if (trainerParty.length === 0) {
+                setActionMessage(`${trainerName} chưa có Pokemon trong đội hình để khiêu chiến.`)
+                return
+            }
+
+            const duelTeam = trainerParty.map((entry, index) => {
+                const level = Math.max(1, Number(entry?.level || 1))
+                const resolvedEntry = resolveTrainerTeamEntry({
+                    pokemonId: entry?.pokemonId,
+                    formId: entry?.formId,
+                    level,
+                })
+                const poke = resolvedEntry.poke || entry?.pokemonId || {}
+                const baseStats = resolvedEntry.baseStats || resolveBattleStats(poke?.baseStats || {}, {})
+                const hp = Math.max(1, (baseStats.hp || 1) + (level - 1))
+
+                return {
+                    id: entry?._id || `${normalizedTargetUserId}-${index}`,
+                    name: String(entry?.nickname || poke?.name || `Pokemon ${index + 1}`).trim() || `Pokemon ${index + 1}`,
+                    level,
+                    sprite: resolvedEntry.sprite || resolvePokemonSprite({
+                        species: poke,
+                        formId: entry?.formId,
+                        isShiny: Boolean(entry?.isShiny),
+                    }),
+                    formId: resolvedEntry.formId || String(entry?.formId || 'normal').trim() || 'normal',
+                    formName: resolvedEntry.formName || String(entry?.formId || 'normal').trim() || 'normal',
+                    baseStats,
+                    pokemon: poke,
+                    types: Array.isArray(poke?.types) ? poke.types : [],
+                    currentHp: hp,
+                    maxHp: hp,
+                    status: '',
+                    statusTurns: 0,
+                    statStages: {},
+                    damageGuards: {},
+                    wasDamagedLastTurn: false,
+                    volatileState: {},
+                }
+            })
+
+            if (duelTeam.length === 0) {
+                setActionMessage(`${trainerName} chưa có Pokemon hợp lệ để khiêu chiến.`)
+                return
+            }
+
+            const leadPokemon = duelTeam[0]
+            const onlineOpponent = {
+                trainerId: null,
+                trainerOrder: 0,
+                trainerName,
+                trainerImage: String(trainer?.avatar || '').trim() || '/assets/08_trainer_female.png',
+                trainerQuote: String(trainer?.signature || '').trim() || 'Auto chọn kỹ năng thông minh',
+                trainerPrize: 'Không có',
+                trainerPrizeItem: 'Không có',
+                trainerPrizeItemQuantity: 1,
+                trainerCoinsReward: 0,
+                trainerExpReward: 0,
+                trainerMoonPointsReward: 0,
+                currentIndex: 0,
+                level: leadPokemon.level,
+                hp: leadPokemon.maxHp,
+                maxHp: leadPokemon.maxHp,
+                pokemon: leadPokemon.pokemon,
+                team: duelTeam,
+                fieldState: {},
+            }
+
+            setParty((prevParty) => (Array.isArray(prevParty)
+                ? prevParty.map((slot) => {
+                    if (!slot) return slot
+                    const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                    return {
+                        ...slot,
+                        status: '',
+                        statusTurns: 0,
+                        statStages: {},
+                        damageGuards: {},
+                        wasDamagedLastTurn: false,
+                        volatileState: {},
+                        battleCurrentHp: maxHp,
+                        battleMaxHp: maxHp,
+                    }
+                })
+                : prevParty))
+
+            const initialPartyState = (Array.isArray(party) ? party : []).map((slot) => {
+                if (!slot) return null
+                const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                return { currentHp: maxHp, maxHp }
+            })
+            const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
+
+            setBattleResults(null)
+            setBattleLog([])
+            setActionMessage(`Bạn khiêu chiến đội hình của ${trainerName}.`)
+            setSelectedMoveIndex(0)
+            setActiveTab('fight')
+            setActiveBattleMode('online')
+            setShouldResetTrainerSession(false)
+            setDuelResultModal(null)
+            setOpponent(onlineOpponent)
+            setBattleOpponent(onlineOpponent)
+            setBattlePlayerIndex(Math.max(0, initialIndex))
+            setBattlePartyHpState(initialPartyState)
+            setDuelOpponentMoves([])
+            setDuelOpponentMoveCursor(0)
+            setView('battle')
+        } catch (error) {
+            setActionMessage(error?.message || 'Không thể bắt đầu trận khiêu chiến online.')
         }
     }
 
@@ -1766,11 +2035,17 @@ export function BattlePage() {
         startBattleWithOpponent(rematchOpponent)
     }
 
-    if (isRankedChallengeRequested && (loading || isStartingRankedDuel || activeBattleMode !== 'duel')) {
+    const challengeModeReady = isRankedChallengeRequested
+        ? activeBattleMode === 'duel'
+        : (isOnlineChallengeRequested ? activeBattleMode === 'online' : true)
+
+    if (isExternalChallengeRequested && (loading || isStartingRankedDuel || isStartingOnlineChallenge || !challengeModeReady)) {
         return (
             <div className="max-w-4xl mx-auto py-12">
                 <div className="text-center text-slate-500 font-bold animate-pulse">
-                    Đang vào trận khiêu chiến Pokemon từ BXH...
+                    {isOnlineChallengeRequested
+                        ? 'Đang vào trận khiêu chiến đội hình online...'
+                        : 'Đang vào trận khiêu chiến Pokemon từ BXH...'}
                 </div>
             </div>
         )
@@ -1784,7 +2059,9 @@ export function BattlePage() {
                         🪙 {playerState?.platinumCoins ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
                     </div>
                     <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                        {activeBattleMode === 'duel' ? 'Chế độ: Khiêu chiến BXH' : 'Chế độ: Battle Trainer'}
+                        {activeBattleMode === 'duel'
+                            ? 'Chế độ: Khiêu chiến BXH'
+                            : (activeBattleMode === 'online' ? 'Chế độ: Khiêu chiến online theo đội hình' : 'Chế độ: Battle Trainer')}
                     </div>
                 </div>
 
@@ -1807,7 +2084,7 @@ export function BattlePage() {
                     activePartyIndex={battlePlayerIndex}
                     partyHpState={battlePartyHpState}
                 />
-                {activeBattleMode === 'duel' && duelResultModal && (
+                {(activeBattleMode === 'duel' || activeBattleMode === 'online') && duelResultModal && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                         <div className="bg-white border-2 border-slate-300 rounded w-[440px] max-w-[90%] shadow-lg">
                             <div className="text-center font-bold text-sm border-b border-slate-200 py-2">
@@ -1824,7 +2101,7 @@ export function BattlePage() {
                                     onClick={closeRankedDuelResultModal}
                                     className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
                                 >
-                                    Quay về BXH Pokémon
+                                    {duelReturnPath === '/stats/online' ? 'Quay về danh sách online' : 'Quay về BXH Pokémon'}
                                 </button>
                             </div>
                         </div>

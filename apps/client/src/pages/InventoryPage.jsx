@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 
-// Helper component for section headers with the blue gradient style
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
         {title}
@@ -57,8 +56,6 @@ export default function InventoryPage() {
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
-
-            {/* Header Title Area */}
             <div className="text-center mb-6">
                 <div className="text-slate-600 text-sm font-bold flex justify-center gap-4 mb-2">
                     <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
@@ -66,18 +63,13 @@ export default function InventoryPage() {
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm tracking-tight">Túi Đồ Của Bạn</h1>
             </div>
-
-            {/* Inventory Container */}
             <div className="rounded-t-lg overflow-hidden border border-blue-500 shadow-lg bg-slate-800">
                 <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
                     Kho Đồ
                 </div>
                 <div className="bg-white p-2 sm:p-4 space-y-4">
-
-                    {/* Toggle Item Views */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title="Phân Loại Vật Phẩm" />
-                        {/* Desktop: Buttons */}
                         <div className="hidden sm:block bg-blue-50/50 p-3 text-center">
                             <div className="flex flex-wrap justify-center gap-2 text-xs font-bold text-blue-700">
                                 {['Tất Cả', 'Vật Phẩm Chiến Đấu', 'Vật Phẩm Khác', 'Vật Phẩm Quan Trọng'].map((tab) => (
@@ -91,7 +83,6 @@ export default function InventoryPage() {
                                 ))}
                             </div>
                         </div>
-                        {/* Mobile: Dropdown */}
                         <div className="sm:hidden bg-blue-50/50 p-3">
                             <select
                                 value={activeTab}
@@ -104,12 +95,9 @@ export default function InventoryPage() {
                             </select>
                         </div>
                     </div>
-
-                    {/* Result / Items Grid */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm min-h-[200px] flex flex-col bg-white">
                         <SectionHeader title="Danh Sách" />
                         <div className="p-1">
-                            {/* Mobile: max-height viewport relative, Desktop: fixed height */}
                             <div className="overflow-y-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] p-3 overscroll-contain touch-pan-y">
                                 {error && (
                                     <div className="text-center text-red-500 font-bold py-4">
@@ -122,7 +110,6 @@ export default function InventoryPage() {
                                     </div>
                                 ) : (
                                     <>
-                                        {/* Mobile: 3 cols, Tablet: 5 cols, Desktop: 8 cols */}
                                         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4">
                                             {filteredItems.map(item => (
                                                 <div key={item.inventoryEntryId || item.id || item.name} className="flex flex-col items-center justify-center group">

@@ -1,7 +1,9 @@
 import express from 'express'
+import mongoose from 'mongoose'
 import User from '../models/User.js'
 import DailyActivity from '../models/DailyActivity.js'
 import PlayerState from '../models/PlayerState.js'
+import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -59,6 +61,36 @@ const formatPlayTime = (createdAt, nowDate = new Date()) => {
     const days = Math.floor(totalHours / 24)
     const hours = totalHours % 24
     return `${days} ngày ${hours} giờ`
+}
+
+const toSafeIsoDate = (value) => {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const createEmptyPartySlots = () => Array.from({ length: 6 }, () => null)
+
+const serializePartyPokemon = (entry) => {
+    if (!entry?._id || !entry?.pokemonId) return null
+    const species = entry.pokemonId
+    return {
+        _id: String(entry._id),
+        nickname: String(entry?.nickname || '').trim(),
+        level: Math.max(1, Number(entry?.level || 1)),
+        formId: String(entry?.formId || 'normal').trim() || 'normal',
+        isShiny: Boolean(entry?.isShiny),
+        partyIndex: Number.isFinite(Number(entry?.partyIndex)) ? Number(entry.partyIndex) : null,
+        pokemonId: {
+            _id: String(species?._id || ''),
+            name: String(species?.name || '').trim(),
+            types: Array.isArray(species?.types) ? species.types : [],
+            baseStats: species?.baseStats && typeof species.baseStats === 'object' ? species.baseStats : {},
+            imageUrl: String(species?.imageUrl || '').trim(),
+            sprites: species?.sprites && typeof species.sprites === 'object' ? species.sprites : {},
+            defaultFormId: String(species?.defaultFormId || 'normal').trim() || 'normal',
+            forms: Array.isArray(species?.forms) ? species.forms : [],
+        },
+    }
 }
 
 // GET /api/stats - Public endpoint for server statistics
@@ -214,6 +246,100 @@ router.get('/daily', authMiddleware, async (req, res) => {
     }
 })
 
+// GET /api/stats/online/challenge/:userId - Online trainer challenge data
+router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
+    try {
+        const targetUserId = String(req.params.userId || '').trim()
+        if (!mongoose.isValidObjectId(targetUserId)) {
+            return res.status(400).json({ ok: false, message: 'userId không hợp lệ' })
+        }
+
+        const [user, playerState, partyRows] = await Promise.all([
+            User.findById(targetUserId)
+                .select('username avatar signature createdAt lastActive role isOnline')
+                .lean(),
+            PlayerState.findOne({ userId: targetUserId })
+                .select('level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
+                .lean(),
+            UserPokemon.find({
+                userId: targetUserId,
+                location: 'party',
+            })
+                .select('_id userId pokemonId nickname level formId isShiny partyIndex')
+                .populate({
+                    path: 'pokemonId',
+                    select: 'name types baseStats imageUrl sprites defaultFormId forms',
+                })
+                .sort({ partyIndex: 1, _id: 1 })
+                .lean(),
+        ])
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên online' })
+        }
+
+        if (!user.isOnline) {
+            return res.status(400).json({ ok: false, message: 'Huấn luyện viên này hiện không còn trực tuyến' })
+        }
+
+        const slots = createEmptyPartySlots()
+        partyRows.forEach((entry) => {
+            const snapshot = serializePartyPokemon(entry)
+            if (!snapshot) return
+
+            const slotIndex = Number(entry?.partyIndex)
+            if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < slots.length && !slots[slotIndex]) {
+                slots[slotIndex] = snapshot
+                return
+            }
+
+            const firstEmpty = slots.findIndex((slot) => slot === null)
+            if (firstEmpty !== -1) {
+                slots[firstEmpty] = snapshot
+            }
+        })
+
+        const profile = {
+            level: Math.max(1, Number(playerState?.level || 1)),
+            experience: Number(playerState?.experience || 0),
+            moonPoints: Number(playerState?.moonPoints || 0),
+            wins: Number(playerState?.wins || 0),
+            losses: Number(playerState?.losses || 0),
+            platinumCoins: Number(playerState?.gold || 0),
+            hp: Number(playerState?.hp || 100),
+            maxHp: Number(playerState?.maxHp || 100),
+            stamina: Number(playerState?.stamina || 100),
+            maxStamina: Number(playerState?.maxStamina || 100),
+        }
+
+        const now = new Date()
+
+        res.json({
+            ok: true,
+            trainer: {
+                userId: String(user?._id || ''),
+                userIdLabel: `#${String(user?._id || '').slice(-7).toUpperCase()}`,
+                username: String(user?.username || '').trim() || 'Huấn Luyện Viên',
+                avatar: String(user?.avatar || '').trim(),
+                signature: String(user?.signature || '').trim(),
+                createdAt: toSafeIsoDate(user?.createdAt),
+                lastActive: toSafeIsoDate(user?.lastActive),
+                role: String(user?.role || 'user'),
+                isOnline: Boolean(user?.isOnline),
+                playTime: formatPlayTime(user?.createdAt, now),
+                profile,
+                party: slots,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/stats/online/challenge/:userId error:', error)
+        res.status(500).json({
+            ok: false,
+            message: 'Không thể tải dữ liệu khiêu chiến online',
+        })
+    }
+})
+
 // GET /api/stats/online - Online trainers list
 router.get('/online', authMiddleware, async (req, res) => {
     try {
@@ -224,7 +350,7 @@ router.get('/online', authMiddleware, async (req, res) => {
         const [totalOnline, users] = await Promise.all([
             User.countDocuments({ isOnline: true }),
             User.find({ isOnline: true })
-                .select('username createdAt')
+                .select('username avatar signature createdAt lastActive role isOnline')
                 .sort({ createdAt: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -232,11 +358,96 @@ router.get('/online', authMiddleware, async (req, res) => {
         ])
 
         const now = new Date()
+        const userIds = users.map((entry) => entry?._id).filter(Boolean)
+        const playerStates = userIds.length === 0
+            ? []
+            : await PlayerState.find({ userId: { $in: userIds } })
+                .select('userId level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
+                .lean()
+
+        const playerStateMap = new Map(
+            playerStates.map((entry) => [
+                String(entry?.userId || ''),
+                {
+                    level: Math.max(1, Number(entry?.level || 1)),
+                    experience: Number(entry?.experience || 0),
+                    moonPoints: Number(entry?.moonPoints || 0),
+                    wins: Number(entry?.wins || 0),
+                    losses: Number(entry?.losses || 0),
+                    platinumCoins: Number(entry?.gold || 0),
+                    hp: Number(entry?.hp || 100),
+                    maxHp: Number(entry?.maxHp || 100),
+                    stamina: Number(entry?.stamina || 100),
+                    maxStamina: Number(entry?.maxStamina || 100),
+                },
+            ])
+        )
+
+        const partyRows = userIds.length === 0
+            ? []
+            : await UserPokemon.find({
+                userId: { $in: userIds },
+                location: 'party',
+            })
+                .select('_id userId pokemonId nickname level formId isShiny partyIndex')
+                .populate({
+                    path: 'pokemonId',
+                    select: 'name types baseStats imageUrl sprites defaultFormId forms',
+                })
+                .sort({ userId: 1, partyIndex: 1, _id: 1 })
+                .lean()
+
+        const partyMap = new Map(userIds.map((id) => [String(id), createEmptyPartySlots()]))
+
+        partyRows.forEach((entry) => {
+            const normalizedUserId = String(entry?.userId || '')
+            if (!normalizedUserId) return
+
+            if (!partyMap.has(normalizedUserId)) {
+                partyMap.set(normalizedUserId, createEmptyPartySlots())
+            }
+
+            const slots = partyMap.get(normalizedUserId)
+            const snapshot = serializePartyPokemon(entry)
+            if (!snapshot || !Array.isArray(slots)) return
+
+            const slotIndex = Number(entry?.partyIndex)
+            if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < slots.length && !slots[slotIndex]) {
+                slots[slotIndex] = snapshot
+                return
+            }
+
+            const firstEmpty = slots.findIndex((slot) => slot === null)
+            if (firstEmpty !== -1) {
+                slots[firstEmpty] = snapshot
+            }
+        })
+
         const onlineTrainers = users.map((entry, index) => ({
+            party: partyMap.get(String(entry?._id || '')) || createEmptyPartySlots(),
+            userId: String(entry?._id || ''),
             rank: skip + index + 1,
             userIdLabel: `#${skip + index + 1}`,
             username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
             playTime: formatPlayTime(entry?.createdAt, now),
+            avatar: String(entry?.avatar || '').trim(),
+            signature: String(entry?.signature || '').trim(),
+            createdAt: toSafeIsoDate(entry?.createdAt),
+            lastActive: toSafeIsoDate(entry?.lastActive),
+            role: String(entry?.role || 'user'),
+            isOnline: Boolean(entry?.isOnline),
+            profile: playerStateMap.get(String(entry?._id || '')) || {
+                level: 1,
+                experience: 0,
+                moonPoints: 0,
+                wins: 0,
+                losses: 0,
+                platinumCoins: 0,
+                hp: 100,
+                maxHp: 100,
+                stamina: 100,
+                maxStamina: 100,
+            },
         }))
 
         res.json({
