@@ -77,6 +77,7 @@ const UserPokemonSchema = new Schema(
 UserPokemonSchema.index({ userId: 1, location: 1, partyIndex: 1 })
 UserPokemonSchema.index({ userId: 1, location: 1, updatedAt: -1, _id: -1 })
 UserPokemonSchema.index({ userId: 1, originalTrainer: 1, pokemonId: 1 })
+UserPokemonSchema.index({ userId: 1, pokemonId: 1 })
 UserPokemonSchema.index({ level: -1, experience: -1, _id: -1 })
 UserPokemonSchema.index({ experience: -1, level: -1, _id: -1 })
 UserPokemonSchema.index({ obtainedAt: -1, _id: -1 })

@@ -71,6 +71,8 @@ const messageSchema = new mongoose.Schema({
 // Compound index for efficient queries
 messageSchema.index({ room: 1, timestamp: -1 })
 messageSchema.index({ 'sender._id': 1, timestamp: -1 })
+messageSchema.index({ room: 1, 'sender._id': 1, timestamp: -1 })
+messageSchema.index({ isDeleted: 1, timestamp: -1 })
 
 // TTL Index - Auto-delete messages after 7 days
 // MongoDB will automatically remove documents where timestamp is older than 7 days

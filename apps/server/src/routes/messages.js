@@ -61,10 +61,10 @@ router.post('/global', auth, async (req, res) => {
     }
 
     // Rate limiting check (basic - in production use Redis)
-    const recentMessages = await Message.find({
+    const recentMessages = await Message.countDocuments({
       'sender._id': req.user._id,
       timestamp: { $gte: new Date(Date.now() - 60000) } // Last 1 minute
-    }).countDocuments()
+    })
 
     if (recentMessages >= 10) {
       return res.status(429).json({
@@ -169,12 +169,18 @@ router.get('/stats', auth, async (req, res) => {
     const last24h = new Date(now - 24 * 60 * 60 * 1000)
     const last7d = new Date(now - 7 * 24 * 60 * 60 * 1000)
 
-    const [totalMessages, messages24h, messages7d, uniqueSenders24h] = await Promise.all([
+    const [totalMessages, messages24h, messages7d, uniqueSenders24hRows] = await Promise.all([
       Message.countDocuments({ isDeleted: false }),
       Message.countDocuments({ isDeleted: false, timestamp: { $gte: last24h } }),
       Message.countDocuments({ isDeleted: false, timestamp: { $gte: last7d } }),
-      Message.distinct('sender._id', { isDeleted: false, timestamp: { $gte: last24h } })
+      Message.aggregate([
+        { $match: { isDeleted: false, timestamp: { $gte: last24h } } },
+        { $group: { _id: '$sender._id' } },
+        { $count: 'count' },
+      ]),
     ])
+
+    const uniqueSenders24h = Number(uniqueSenders24hRows?.[0]?.count || 0)
 
     res.json({
       ok: true,
@@ -182,7 +188,7 @@ router.get('/stats', auth, async (req, res) => {
         totalMessages,
         messages24h,
         messages7d,
-        uniqueSenders24h: uniqueSenders24h.length
+        uniqueSenders24h
       }
     })
   } catch (error) {

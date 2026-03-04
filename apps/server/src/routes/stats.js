@@ -40,6 +40,32 @@ const buildDateKeys = ({ days = 31, endDate = new Date() }) => {
 
 const toSafePage = (value) => Math.max(1, Number.parseInt(value, 10) || 1)
 const toSafeLimit = (value) => Math.min(100, Math.max(1, Number.parseInt(value, 10) || 35))
+const STATS_CACHE_TTL_MS = 15 * 1000
+
+let serverStatsCache = {
+    value: null,
+    expiresAt: 0,
+}
+
+const getServerStatsCached = async () => {
+    const now = Date.now()
+    if (serverStatsCache.value && serverStatsCache.expiresAt > now) {
+        return serverStatsCache.value
+    }
+
+    const [totalUsers, onlineUsers] = await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ isOnline: true }),
+    ])
+
+    const value = { totalUsers, onlineUsers }
+    serverStatsCache = {
+        value,
+        expiresAt: now + STATS_CACHE_TTL_MS,
+    }
+
+    return value
+}
 
 const serializeWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
@@ -96,11 +122,7 @@ const serializePartyPokemon = (entry) => {
 // GET /api/stats - Public endpoint for server statistics
 router.get('/', async (req, res) => {
     try {
-        // Count total users in database
-        const totalUsers = await User.countDocuments()
-
-        // Count users currently online
-        const onlineUsers = await User.countDocuments({ isOnline: true })
+        const { totalUsers, onlineUsers } = await getServerStatsCached()
 
         res.json({
             ok: true,

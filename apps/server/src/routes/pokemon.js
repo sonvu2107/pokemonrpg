@@ -176,6 +176,77 @@ const resolveFormStats = (pokemonLike, requestedFormId = null) => {
     return resolvedForm?.stats || pokemonLike?.baseStats || {}
 }
 
+const POKEMON_SERVER_STATS_CACHE_TTL_MS = 30 * 1000
+
+let pokemonServerStatsCache = {
+    byPokemonId: new Map(),
+    totalPokemon: 0,
+    trackedSpecies: 0,
+    expiresAt: 0,
+}
+
+const loadPokemonServerStatsCache = async () => {
+    const now = Date.now()
+    if (pokemonServerStatsCache.expiresAt > now) {
+        return pokemonServerStatsCache
+    }
+
+    const [totalRows, speciesRows] = await Promise.all([
+        UserPokemon.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                },
+            },
+        ]).allowDiskUse(true),
+        UserPokemon.aggregate([
+            {
+                $group: {
+                    _id: '$pokemonId',
+                    count: { $sum: 1 },
+                },
+            },
+        ]).allowDiskUse(true),
+    ])
+
+    const byPokemonId = new Map()
+    for (const row of speciesRows || []) {
+        const key = String(row?._id || '').trim()
+        if (!key) continue
+        byPokemonId.set(key, Math.max(0, Number(row?.count || 0)))
+    }
+
+    pokemonServerStatsCache = {
+        byPokemonId,
+        totalPokemon: Math.max(0, Number(totalRows?.[0]?.total || 0)),
+        trackedSpecies: byPokemonId.size,
+        expiresAt: now + POKEMON_SERVER_STATS_CACHE_TTL_MS,
+    }
+
+    return pokemonServerStatsCache
+}
+
+const getPokemonServerStats = async (pokemonId) => {
+    const cache = await loadPokemonServerStatsCache()
+    const speciesKey = String(pokemonId || '').trim()
+    const speciesTotal = Math.max(0, Number(cache.byPokemonId.get(speciesKey) || 0))
+
+    let higherRankedSpeciesCount = 0
+    for (const count of cache.byPokemonId.values()) {
+        if (count > speciesTotal) {
+            higherRankedSpeciesCount += 1
+        }
+    }
+
+    return {
+        speciesTotal,
+        speciesRank: speciesTotal > 0 ? higherRankedSpeciesCount + 1 : null,
+        totalPokemon: cache.totalPokemon,
+        trackedSpecies: cache.trackedSpecies,
+    }
+}
+
 // GET /api/pokemon - Public master list (lightweight)
 router.get('/', async (req, res) => {
     try {
@@ -242,7 +313,7 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
             }
         }
 
-        const [pokemon, total, totalSpecies, ownedCount] = await Promise.all([
+        const [pokemon, total, totalSpecies] = await Promise.all([
             Pokemon.find(query)
                 .sort({ pokedexNumber: 1 })
                 .skip(skip)
@@ -251,8 +322,9 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
                 .lean(),
             Pokemon.countDocuments(query),
             Pokemon.countDocuments(),
-            Pokemon.countDocuments({ _id: { $in: ownedPokemonIds } }),
         ])
+
+        const ownedCount = ownedPokemonIds.length
 
         const rows = pokemon.map((entry) => ({
             _id: entry._id,
@@ -418,29 +490,7 @@ router.get('/:id', async (req, res) => {
             }
         }
 
-        const speciesTotalInServer = await UserPokemon.countDocuments({ pokemonId: basePokemon._id })
-        const [totalPokemonInServer, trackedSpeciesInServer, higherRankedSpecies] = await Promise.all([
-            UserPokemon.countDocuments({}),
-            UserPokemon.distinct('pokemonId').then((ids) => ids.length),
-            UserPokemon.aggregate([
-                {
-                    $group: {
-                        _id: '$pokemonId',
-                        count: { $sum: 1 },
-                    },
-                },
-                {
-                    $match: {
-                        count: { $gt: speciesTotalInServer },
-                    },
-                },
-                { $count: 'total' },
-            ]).allowDiskUse(true),
-        ])
-
-        const speciesRank = speciesTotalInServer > 0
-            ? (Number(higherRankedSpecies?.[0]?.total) || 0) + 1
-            : null
+        const serverStats = await getPokemonServerStats(basePokemon._id)
 
         responseData.evolution = {
             canEvolve: Boolean(targetPokemon) && level >= minLevel,
@@ -450,10 +500,10 @@ router.get('/:id', async (req, res) => {
         }
 
         responseData.serverStats = {
-            speciesTotal: speciesTotalInServer,
-            speciesRank,
-            totalPokemon: totalPokemonInServer,
-            trackedSpecies: trackedSpeciesInServer,
+            speciesTotal: serverStats.speciesTotal,
+            speciesRank: serverStats.speciesRank,
+            totalPokemon: serverStats.totalPokemon,
+            trackedSpecies: serverStats.trackedSpecies,
         }
 
         res.json({

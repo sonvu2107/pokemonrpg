@@ -1,8 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from './AuthContext'
 import { io } from 'socket.io-client'
 
 const ChatContext = createContext()
+const MAX_MESSAGES = 200
+const TYPING_TIMEOUT_MS = 3000
 
 export const useChat = () => {
   const context = useContext(ChatContext)
@@ -22,6 +24,7 @@ export function ChatProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const typingTimeoutsRef = useRef(new Map())
 
   // Initialize socket connection
   useEffect(() => {
@@ -60,6 +63,21 @@ export function ChatProvider({ children }) {
       reconnectionDelay: 1000,
     })
 
+    const clearTypingTimeout = (username) => {
+      const timeout = typingTimeoutsRef.current.get(username)
+      if (timeout) {
+        clearTimeout(timeout)
+        typingTimeoutsRef.current.delete(username)
+      }
+    }
+
+    const clearAllTypingTimeouts = () => {
+      for (const timeout of typingTimeoutsRef.current.values()) {
+        clearTimeout(timeout)
+      }
+      typingTimeoutsRef.current.clear()
+    }
+
     // Connection events
     newSocket.on('connect', () => {
       console.log('ChatContext: Socket connected!', newSocket.id)
@@ -84,18 +102,24 @@ export function ChatProvider({ children }) {
 
     // Chat events
     newSocket.on('chat:new_message', (message) => {
-      setMessages((prev) => [...prev, message])
+      setMessages((prev) => {
+        const next = [...prev, message]
+        return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next
+      })
       
       // Increment unread count if chat is not open
       // (This will be managed by GlobalChatPopup component)
     })
 
     newSocket.on('chat:message_history', (history) => {
-      setMessages(history)
+      const list = Array.isArray(history) ? history : []
+      setMessages(list.length > MAX_MESSAGES ? list.slice(list.length - MAX_MESSAGES) : list)
       setLoading(false)
     })
 
     newSocket.on('chat:user_typing', ({ username }) => {
+      clearTypingTimeout(username)
+
       setTypingUsers((prev) => {
         if (!prev.includes(username)) {
           return [...prev, username]
@@ -104,9 +128,12 @@ export function ChatProvider({ children }) {
       })
 
       // Remove after 3 seconds
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         setTypingUsers((prev) => prev.filter((u) => u !== username))
-      }, 3000)
+        typingTimeoutsRef.current.delete(username)
+      }, TYPING_TIMEOUT_MS)
+
+      typingTimeoutsRef.current.set(username, timeout)
     })
 
     newSocket.on('chat:online_count', (count) => {
@@ -121,6 +148,7 @@ export function ChatProvider({ children }) {
 
     // Cleanup on unmount
     return () => {
+      clearAllTypingTimeouts()
       newSocket.disconnect()
     }
   }, [user, token])

@@ -142,6 +142,9 @@ const mapSchema = new mongoose.Schema(
     }
 )
 
+mapSchema.index({ isLegendary: 1, createdAt: 1, _id: 1 })
+mapSchema.index({ levelMin: 1, _id: 1 })
+
 // Pre-validate: auto-generate slug from name before validation runs
 mapSchema.pre('validate', function (next) {
     if (this.isNew || this.isModified('name')) {

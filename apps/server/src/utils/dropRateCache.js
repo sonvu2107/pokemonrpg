@@ -2,13 +2,31 @@ import DropRate from '../models/DropRate.js'
 import ItemDropRate from '../models/ItemDropRate.js'
 
 const DROP_CACHE_TTL_MS = 30 * 1000
+const DROP_CACHE_MAX_ENTRIES = 200
 
 const pokemonDropCache = new Map()
 const itemDropCache = new Map()
 
 const getMapKey = (mapId) => String(mapId || '').trim()
 
+const pruneCache = (cache) => {
+    const now = Date.now()
+
+    for (const [key, cached] of cache.entries()) {
+        if (!cached || cached.expiresAt <= now) {
+            cache.delete(key)
+        }
+    }
+
+    while (cache.size > DROP_CACHE_MAX_ENTRIES) {
+        const oldestKey = cache.keys().next().value
+        if (!oldestKey) break
+        cache.delete(oldestKey)
+    }
+}
+
 const readCachedValue = (cache, key) => {
+    pruneCache(cache)
     const cached = cache.get(key)
     if (!cached) return null
     if (cached.expiresAt <= Date.now()) {
@@ -19,6 +37,7 @@ const readCachedValue = (cache, key) => {
 }
 
 const writeCachedValue = (cache, key, value) => {
+    pruneCache(cache)
     cache.set(key, {
         value,
         expiresAt: Date.now() + DROP_CACHE_TTL_MS,

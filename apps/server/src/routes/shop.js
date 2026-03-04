@@ -831,7 +831,7 @@ router.get('/buy', async (req, res) => {
             postLookupMatch['pokemon.name'] = pokemonName
         }
 
-        const [result] = await MarketListing.aggregate([
+        const listingsPromise = MarketListing.aggregate([
             { $match: baseMatch },
             {
                 $lookup: {
@@ -858,37 +858,36 @@ router.get('/buy', async (req, res) => {
             },
             ...(Object.keys(postLookupMatch).length > 0 ? [{ $match: postLookupMatch }] : []),
             {
+                $project: {
+                    nickname: 1,
+                    formId: 1,
+                    level: 1,
+                    price: 1,
+                    otName: 1,
+                    listedAt: 1,
+                    status: 1,
+                    reservedForUserId: 1,
+                    pokemon: {
+                        _id: '$pokemon._id',
+                        name: '$pokemon.name',
+                        types: '$pokemon.types',
+                        imageUrl: '$pokemon.imageUrl',
+                        sprites: '$pokemon.sprites',
+                        forms: '$pokemon.forms',
+                        defaultFormId: '$pokemon.defaultFormId',
+                    },
+                    seller: {
+                        _id: '$seller._id',
+                        username: '$seller.username',
+                    },
+                },
+            },
+            {
                 $facet: {
                     rows: [
                         { $sort: sortStage },
                         { $skip: skip },
                         { $limit: limit },
-                        {
-                            $project: {
-                                _id: 1,
-                                nickname: 1,
-                                formId: 1,
-                                level: 1,
-                                price: 1,
-                                otName: 1,
-                                listedAt: 1,
-                                status: 1,
-                                reservedForUserId: 1,
-                                pokemon: {
-                                    _id: '$pokemon._id',
-                                    name: '$pokemon.name',
-                                    types: '$pokemon.types',
-                                    imageUrl: '$pokemon.imageUrl',
-                                    sprites: '$pokemon.sprites',
-                                    forms: '$pokemon.forms',
-                                    defaultFormId: '$pokemon.defaultFormId',
-                                },
-                                seller: {
-                                    _id: '$seller._id',
-                                    username: '$seller.username',
-                                },
-                            },
-                        },
                     ],
                     total: [{ $count: 'count' }],
                     options: [
@@ -904,13 +903,18 @@ router.get('/buy', async (req, res) => {
             },
         ]).allowDiskUse(true)
 
+        const [listingResultRows, playerState] = await Promise.all([
+            listingsPromise,
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+        ])
+
+        const result = listingResultRows?.[0] || {}
+
         const rows = result?.rows || []
         const total = result?.total?.[0]?.count || 0
         const optionTypesNested = result?.options?.[0]?.types || []
         const typeOptions = ['all', ...new Set(optionTypesNested.flat().map((entry) => String(entry || '').toLowerCase()).filter(Boolean))]
         const pokemonNameOptions = ['all', ...new Set((result?.options?.[0]?.pokemonNames || []).filter(Boolean).sort((a, b) => a.localeCompare(b)))]
-
-        const playerState = await PlayerState.findOne({ userId }).select('gold moonPoints').lean()
 
         const listings = rows.map((row) => {
             const resolvedForm = resolvePokemonForm(row?.pokemon, row?.formId)

@@ -1,7 +1,73 @@
 import express from 'express'
-import Map from '../models/Map.js'
+import MapModel from '../models/Map.js'
+import DropRate from '../models/DropRate.js'
 
 const router = express.Router()
+const MAPS_CACHE_TTL_MS = 30 * 1000
+const MAP_DETAIL_CACHE_MAX_ENTRIES = 200
+
+let legendaryMapsCache = {
+    value: null,
+    expiresAt: 0,
+}
+
+let allMapsCache = {
+    value: null,
+    expiresAt: 0,
+}
+
+const mapDetailCache = new globalThis.Map()
+
+const pruneMapDetailCache = () => {
+    const now = Date.now()
+    for (const [key, cached] of mapDetailCache.entries()) {
+        if (!cached || cached.expiresAt <= now) {
+            mapDetailCache.delete(key)
+        }
+    }
+
+    while (mapDetailCache.size > MAP_DETAIL_CACHE_MAX_ENTRIES) {
+        const oldestKey = mapDetailCache.keys().next().value
+        if (!oldestKey) break
+        mapDetailCache.delete(oldestKey)
+    }
+}
+
+const readCachedResponse = (cacheState) => {
+    const now = Date.now()
+    if (!cacheState.value || cacheState.expiresAt <= now) {
+        return null
+    }
+    return cacheState.value
+}
+
+const writeCachedResponse = (cacheState, value) => {
+    cacheState.value = value
+    cacheState.expiresAt = Date.now() + MAPS_CACHE_TTL_MS
+}
+
+const readMapDetailCached = (slug) => {
+    pruneMapDetailCache()
+    const key = String(slug || '').trim().toLowerCase()
+    if (!key) return null
+    const cached = mapDetailCache.get(key)
+    if (!cached) return null
+    if (cached.expiresAt <= Date.now()) {
+        mapDetailCache.delete(key)
+        return null
+    }
+    return cached.value
+}
+
+const writeMapDetailCached = (slug, value) => {
+    pruneMapDetailCache()
+    const key = String(slug || '').trim().toLowerCase()
+    if (!key) return
+    mapDetailCache.set(key, {
+        value,
+        expiresAt: Date.now() + MAPS_CACHE_TTL_MS,
+    })
+}
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 
@@ -60,7 +126,12 @@ const resolveFormForDrop = (pokemon, formId) => {
 // GET /api/maps/legendary - Get all legendary maps (public endpoint)
 router.get('/legendary', async (req, res) => {
     try {
-        const legendaryMaps = await Map.find({ isLegendary: true })
+        const cached = readCachedResponse(legendaryMapsCache)
+        if (cached) {
+            return res.json(cached)
+        }
+
+        const legendaryMaps = await MapModel.find({ isLegendary: true })
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .select('name slug iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
@@ -72,7 +143,9 @@ router.get('/legendary', async (req, res) => {
             specialPokemons: resolveSpecialPokemonsForMap(map),
         }))
 
-        res.json({ ok: true, maps })
+        const response = { ok: true, maps }
+        writeCachedResponse(legendaryMapsCache, response)
+        res.json(response)
     } catch (error) {
         console.error('GET /api/maps/legendary error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
@@ -82,7 +155,12 @@ router.get('/legendary', async (req, res) => {
 // GET /api/maps - Get all maps (public endpoint, maybe filtered?)
 router.get('/', async (req, res) => {
     try {
-        const maps = await Map.find({})
+        const cached = readCachedResponse(allMapsCache)
+        if (cached) {
+            return res.json(cached)
+        }
+
+        const maps = await MapModel.find({})
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .select('name slug levelMin levelMax isLegendary iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
@@ -93,7 +171,10 @@ router.get('/', async (req, res) => {
             ...map,
             specialPokemons: resolveSpecialPokemonsForMap(map),
         }))
-        res.json({ ok: true, maps: resolvedMaps })
+
+        const response = { ok: true, maps: resolvedMaps }
+        writeCachedResponse(allMapsCache, response)
+        res.json(response)
     } catch (error) {
         console.error('GET /api/maps error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
@@ -104,7 +185,12 @@ router.get('/', async (req, res) => {
 router.get('/:slug', async (req, res) => {
     try {
         const { slug } = req.params
-        const map = await Map.findOne({ slug })
+        const cached = readMapDetailCached(slug)
+        if (cached) {
+            return res.json(cached)
+        }
+
+        const map = await MapModel.findOne({ slug })
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .lean()
@@ -112,8 +198,6 @@ router.get('/:slug', async (req, res) => {
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
         }
-
-        const DropRate = (await import('../models/DropRate.js')).default
 
         const dropRates = await DropRate.find({ mapId: map._id })
             .populate('pokemonId', 'name pokedexNumber sprites imageUrl types rarity forms defaultFormId')
@@ -138,7 +222,9 @@ router.get('/:slug', async (req, res) => {
             }
         })
 
-        res.json({ ok: true, map: resolvedMap, dropRates: resolvedDropRates })
+        const response = { ok: true, map: resolvedMap, dropRates: resolvedDropRates }
+        writeMapDetailCached(slug, response)
+        res.json(response)
     } catch (error) {
         console.error(`GET /api/maps/${req.params.slug} error:`, error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
