@@ -19,7 +19,9 @@ import battleTrainersAdminRoutes from './routes/admin/battleTrainers.js'
 import battleTrainersRoutes from './routes/battleTrainers.js'
 import dailyCheckinRoutes from './routes/dailyCheckin.js'
 import dailyRewardsAdminRoutes from './routes/admin/dailyRewards.js'
+import promoCodesAdminRoutes from './routes/admin/promoCodes.js'
 import messagesRoutes from './routes/messages.js'
+import promoCodeRoutes from './routes/promoCodes.js'
 import { authMiddleware, requireAdmin, requireAdminPermission } from './middleware/auth.js'
 import { apiLogger } from './middleware/apiLogger.js'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions.js'
@@ -126,6 +128,7 @@ app.use('/api/inventory', inventoryRoutes)
 app.use('/api/shop', shopRoutes)
 app.use('/api/daily-checkin', dailyCheckinRoutes)
 app.use('/api/messages', messagesRoutes)
+app.use('/api/promo-codes', promoCodeRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.POKEMON), pokemonAdminRoutes)
@@ -137,6 +140,7 @@ app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin
 app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.USERS), userAdminRoutes)
 app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BATTLE), battleTrainersAdminRoutes)
 app.use('/api/admin/daily-rewards', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.REWARDS), dailyRewardsAdminRoutes)
+app.use('/api/admin/promo-codes', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.CODES), promoCodesAdminRoutes)
 
 // Error handlers
 app.use(notFound)

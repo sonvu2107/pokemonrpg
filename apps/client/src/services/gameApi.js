@@ -217,6 +217,34 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/promo-codes/history - Get redeem history
+    async getPromoCodeHistory(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/promo-codes/history${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải lịch sử nhập code')
+        }
+        return res.json()
+    },
+
+    // POST /api/promo-codes/redeem - Redeem promo code
+    async redeemPromoCode(code) {
+        const res = await fetch(`${API_URL}/promo-codes/redeem`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ code }),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Nhập code thất bại')
+        }
+        return res.json()
+    },
+
     // GET /api/stats/online - Get online trainers list
     async getOnlineStats(params = {}) {
         const searchParams = new URLSearchParams()

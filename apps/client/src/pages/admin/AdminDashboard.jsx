@@ -11,6 +11,7 @@ const ICONS = {
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
     battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
     rewards: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/lucky-egg.png",
+    codes: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/mystery-egg.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
 }
 
@@ -108,7 +109,7 @@ export default function AdminDashboard() {
         },
         {
             title: 'Vận Hành & Cộng Đồng',
-            permissions: [ADMIN_PERMISSIONS.USERS, ADMIN_PERMISSIONS.NEWS],
+            permissions: [ADMIN_PERMISSIONS.USERS, ADMIN_PERMISSIONS.NEWS, ADMIN_PERMISSIONS.CODES],
             cards: [
                 {
                     permission: ADMIN_PERMISSIONS.USERS,
@@ -133,6 +134,14 @@ export default function AdminDashboard() {
                     to: '/admin/events',
                     icon: ICONS.news,
                     color: 'cyan',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.CODES,
+                    title: 'Mã Quà Tặng',
+                    description: 'Tạo và quản lý gift code cho người chơi',
+                    to: '/admin/promo-codes',
+                    icon: ICONS.codes,
+                    color: 'lime',
                 },
             ]
         }

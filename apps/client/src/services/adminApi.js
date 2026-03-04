@@ -663,6 +663,57 @@ export const dailyRewardApi = {
     },
 }
 
+// Promo code endpoints
+export const promoCodeApi = {
+    // GET /api/admin/promo-codes
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/promo-codes${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách mã code')
+        return res.json()
+    },
+
+    // POST /api/admin/promo-codes
+    async create(payload) {
+        const res = await fetch(`${API_URL}/admin/promo-codes`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Tạo mã code thất bại')
+        return res.json()
+    },
+
+    // PUT /api/admin/promo-codes/:id
+    async update(id, payload) {
+        const res = await fetch(`${API_URL}/admin/promo-codes/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật mã code thất bại')
+        return res.json()
+    },
+
+    // DELETE /api/admin/promo-codes/:id
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/promo-codes/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Xóa mã code thất bại')
+        return res.json()
+    },
+}
+
 // User endpoints
 export const userApi = {
     // GET /api/admin/users?search=&page=&limit=

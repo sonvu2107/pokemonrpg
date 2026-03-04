@@ -71,6 +71,7 @@ export default function RightColumn() {
         { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
         { to: '/admin/battle', label: 'Quản lý Battle', permission: ADMIN_PERMISSIONS.BATTLE },
         { to: '/admin/daily-rewards', label: 'Quản lý Quà Ngày', permission: ADMIN_PERMISSIONS.REWARDS },
+        { to: '/admin/promo-codes', label: 'Quản lý Mã Code', permission: ADMIN_PERMISSIONS.CODES },
     ].filter((link) => !link.permission || canAccessAdminModule(link.permission))
 
     const [serverStats, setServerStats] = useState({ totalUsers: null, onlineUsers: null })
