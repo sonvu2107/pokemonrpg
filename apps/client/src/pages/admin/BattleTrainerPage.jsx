@@ -45,7 +45,6 @@ export default function BattleTrainerPage() {
     const [autoLevelStep, setAutoLevelStep] = useState(10)
     const [autoCoinsReward, setAutoCoinsReward] = useState('')
     const [autoExpReward, setAutoExpReward] = useState('')
-    const [autoMoonPointsReward, setAutoMoonPointsReward] = useState('')
     const [autoTrainerImageUrl, setAutoTrainerImageUrl] = useState('')
     const [autoTrainerImageUrls, setAutoTrainerImageUrls] = useState([])
     const [autoGenerating, setAutoGenerating] = useState(false)
@@ -266,16 +265,12 @@ export default function BattleTrainerPage() {
 
             const normalizedCoinsReward = String(autoCoinsReward || '').trim()
             const normalizedExpReward = String(autoExpReward || '').trim()
-            const normalizedMoonPointsReward = String(autoMoonPointsReward || '').trim()
 
             if (normalizedCoinsReward !== '') {
                 payload.platinumCoinsReward = Math.max(0, Number.parseInt(normalizedCoinsReward, 10) || 0)
             }
             if (normalizedExpReward !== '') {
                 payload.expReward = Math.max(0, Number.parseInt(normalizedExpReward, 10) || 0)
-            }
-            if (normalizedMoonPointsReward !== '') {
-                payload.moonPointsReward = Math.max(0, Number.parseInt(normalizedMoonPointsReward, 10) || 0)
             }
 
             await battleTrainerApi.autoGenerate(payload)
@@ -459,7 +454,7 @@ export default function BattleTrainerPage() {
                             />
                         </div>
                     </div>
-                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🪙 Xu nhận được</label>
                             <input
@@ -482,20 +477,9 @@ export default function BattleTrainerPage() {
                                 placeholder="Để trống = Lv x 10"
                             />
                         </div>
-                        <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🌑 Điểm nhận được</label>
-                            <input
-                                type="number"
-                                min="0"
-                                value={autoMoonPointsReward}
-                                onChange={(e) => setAutoMoonPointsReward(e.target.value)}
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                placeholder="Để trống = Lv x 10"
-                            />
-                        </div>
                     </div>
                     <p className="mt-2 text-[11px] text-emerald-800">
-                        Nếu để trống phần thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu, EXP và Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó.
+                        Nếu để trống phần thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó.
                     </p>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4 border border-slate-200 rounded p-4 bg-slate-50">
