@@ -210,7 +210,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
-        const safeLevel = clamp(parseInt(level, 10) || 5, 1, 100)
+        const safeLevel = clamp(parseInt(level, 10) || 5, 1, 1000)
         const safeQuantity = clamp(parseInt(quantity, 10) || 1, 1, 100)
 
         const normalizedRequestedFormId = normalizeFormId(formId)

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 const { Schema } = mongoose
+const USER_POKEMON_MAX_LEVEL = 1000
 
 const MovePpStateSchema = new Schema(
     {
@@ -20,7 +21,7 @@ const UserPokemonSchema = new Schema(
         nickname: { type: String, default: null, trim: true, maxlength: 20 },
 
         // Progression
-        level: { type: Number, default: 5, min: 1 },
+        level: { type: Number, default: 5, min: 1, max: USER_POKEMON_MAX_LEVEL },
         experience: { type: Number, default: 0, min: 0 },
 
         // Genetics / Stats
@@ -81,6 +82,24 @@ UserPokemonSchema.index({ userId: 1, pokemonId: 1 })
 UserPokemonSchema.index({ level: -1, experience: -1, _id: -1 })
 UserPokemonSchema.index({ experience: -1, level: -1, _id: -1 })
 UserPokemonSchema.index({ obtainedAt: -1, _id: -1 })
+
+UserPokemonSchema.pre('validate', function (next) {
+    const level = Number.parseInt(this.level, 10)
+    if (!Number.isFinite(level) || level < 1) {
+        this.level = 1
+    } else if (level > USER_POKEMON_MAX_LEVEL) {
+        this.level = USER_POKEMON_MAX_LEVEL
+    }
+
+    const experience = Number.parseInt(this.experience, 10)
+    this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
+
+    if (this.level >= USER_POKEMON_MAX_LEVEL) {
+        this.experience = 0
+    }
+
+    next()
+})
 
 const UserPokemon = mongoose.model('UserPokemon', UserPokemonSchema)
 

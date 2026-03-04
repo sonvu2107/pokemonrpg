@@ -214,7 +214,7 @@ const serializeClaimHistory = (entry) => {
                     : null,
                 pokemonConfig: {
                     formId: normalizedFormId,
-                    level: clamp(Number.parseInt(promo?.pokemonLevel, 10) || 5, 1, 100),
+                    level: clamp(Number.parseInt(promo?.pokemonLevel, 10) || 5, 1, 1000),
                     isShiny: Boolean(promo?.isShiny),
                 },
             }
@@ -442,7 +442,7 @@ router.post('/redeem', async (req, res) => {
                 }
 
                 const safeQuantity = clamp(pokemonRewardQuantity, 1, 100)
-                const safeLevel = clamp(Number.parseInt(promo.pokemonLevel, 10) || 5, 1, 100)
+                const safeLevel = clamp(Number.parseInt(promo.pokemonLevel, 10) || 5, 1, 1000)
                 const requestedFormId = normalizeFormId(promo.formId || pokemonDoc.defaultFormId || 'normal')
                 const availableForms = new Set(
                     (Array.isArray(pokemonDoc.forms) ? pokemonDoc.forms : [])

@@ -527,7 +527,7 @@ export default function UserManagementPage() {
                                             <input
                                                 type="number"
                                                 min="1"
-                                                max="100"
+                                                max="1000"
                                                 value={pokemonForm.level}
                                                 onChange={(e) => setPokemonForm((prev) => ({ ...prev, level: e.target.value }))}
                                                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"

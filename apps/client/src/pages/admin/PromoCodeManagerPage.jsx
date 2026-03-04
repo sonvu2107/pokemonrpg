@@ -348,7 +348,7 @@ export default function PromoCodeManagerPage() {
                 pokemonQuantity: normalizedPokemonQuantity,
                 formId: normalizedPokemonQuantity > 0 ? normalizeFormId(form.formId || 'normal') : 'normal',
                 pokemonLevel: normalizedPokemonQuantity > 0
-                    ? Math.max(1, Math.min(100, Number.parseInt(form.pokemonLevel, 10) || 5))
+                    ? Math.max(1, Math.min(1000, Number.parseInt(form.pokemonLevel, 10) || 5))
                     : 5,
                 isShiny: normalizedPokemonQuantity > 0 ? Boolean(form.isShiny) : false,
                 perUserLimit: Number.parseInt(form.perUserLimit, 10),
@@ -668,7 +668,7 @@ export default function PromoCodeManagerPage() {
                                 <input
                                     type="number"
                                     min="1"
-                                    max="100"
+                                    max="1000"
                                     value={form.pokemonLevel}
                                     onChange={(e) => updateForm({ pokemonLevel: e.target.value })}
                                     className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

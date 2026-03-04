@@ -42,6 +42,7 @@ const WILD_REWARD_PLATINUM_COINS_CAP = 20
 const WILD_REWARD_HALF_RATE_AFTER = 100
 const WILD_REWARD_REDUCED_RATE_AFTER = 200
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
+const USER_POKEMON_MAX_LEVEL = 1000
 const WILD_COUNTER_MOVE = {
     name: 'Tackle',
     type: 'normal',
@@ -4046,12 +4047,26 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             const expMultiplier = getRarityExpMultiplier(pokemonRarity)
             const finalExp = Math.floor(expParticipant.baseExp * expMultiplier)
 
-            participantPokemon.experience += finalExp
             let levelsGained = 0
-            while (participantPokemon.experience >= participantPokemon.level * 100) {
-                participantPokemon.experience -= participantPokemon.level * 100
-                participantPokemon.level += 1
-                levelsGained += 1
+
+            if (participantPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                participantPokemon.level = USER_POKEMON_MAX_LEVEL
+                participantPokemon.experience = 0
+            } else {
+                participantPokemon.experience += finalExp
+                while (
+                    participantPokemon.level < USER_POKEMON_MAX_LEVEL
+                    && participantPokemon.experience >= participantPokemon.level * 100
+                ) {
+                    participantPokemon.experience -= participantPokemon.level * 100
+                    participantPokemon.level += 1
+                    levelsGained += 1
+                }
+
+                if (participantPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                    participantPokemon.level = USER_POKEMON_MAX_LEVEL
+                    participantPokemon.experience = 0
+                }
             }
 
             participantPokemon.friendship = Math.min(255, (participantPokemon.friendship || 0) + happinessAwarded)
@@ -4078,7 +4093,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 ),
                 level: participantPokemon.level,
                 exp: participantPokemon.experience,
-                expToNext: participantPokemon.level * 100,
+                expToNext: participantPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : participantPokemon.level * 100,
                 levelsGained,
                 happiness: participantPokemon.friendship,
                 happinessGained: happinessAwarded,
@@ -4098,7 +4113,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 ),
                 level: activePokemon.level,
                 exp: activePokemon.experience,
-                expToNext: activePokemon.level * 100,
+                expToNext: activePokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : activePokemon.level * 100,
                 levelsGained: 0,
                 happiness: activePokemon.friendship,
                 happinessGained: 0,
