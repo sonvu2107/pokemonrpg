@@ -88,16 +88,12 @@ const normalizeMoveType = (name = '') => {
     return 'normal'
 }
 
-const inferMovePower = (name = '') => {
-    const normalized = String(name || '').toLowerCase()
-    if (!normalized) return 35
-    if (normalized === 'struggle') return 35
-    if (normalized.includes('quick')) return 70
-    if (normalized.includes('tackle')) return 80
-    if (normalized.includes('leaf')) return 90
-    if (normalized.includes('power') || normalized.includes('beam')) return 110
-    if (normalized.includes('blast')) return 120
-    return 85
+const resolveMovePowerForDisplay = (entry, name = '') => {
+    const powerRaw = Number(entry?.power)
+    if (Number.isFinite(powerRaw) && powerRaw > 0) {
+        return Math.floor(powerRaw)
+    }
+    return normalizeMoveNameKey(name) === 'struggle' ? 35 : 0
 }
 
 const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
@@ -148,6 +144,16 @@ const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
 }
 
 const normalizeMoveList = (moves = []) => {
+    const struggleMove = {
+        id: 'struggle-fallback',
+        name: 'Struggle',
+        type: 'normal',
+        power: 35,
+        category: 'physical',
+        currentPp: 99,
+        maxPp: 99,
+    }
+
     const list = Array.isArray(moves) ? moves : []
     const mapped = list
         .map((entry, index) => {
@@ -156,10 +162,7 @@ const normalizeMoveList = (moves = []) => {
                 : String(entry?.name || entry?.moveName || '').trim()
             if (!name) return null
             const type = String(entry?.type || '').trim().toLowerCase() || normalizeMoveType(name)
-            const powerRaw = Number(entry?.power)
-            const power = Number.isFinite(powerRaw) && powerRaw > 0
-                ? Math.floor(powerRaw)
-                : inferMovePower(name)
+            const power = resolveMovePowerForDisplay(entry, name)
             const currentPpRaw = Number(entry?.currentPp ?? entry?.pp)
             const maxPpRaw = Number(entry?.maxPp)
             const defaultPp = Math.max(1, Math.floor(Number(entry?.pp) || 10))
@@ -172,20 +175,20 @@ const normalizeMoveList = (moves = []) => {
                 name,
                 type,
                 power,
+                category: String(entry?.category || '').trim().toLowerCase(),
                 currentPp,
                 maxPp,
             }
         })
         .filter(Boolean)
-    if (mapped.length > 0) return mapped.slice(0, 4)
-    return [{
-        id: 'struggle',
-        name: 'Struggle',
-        type: 'normal',
-        power: 35,
-        currentPp: 99,
-        maxPp: 99,
-    }]
+
+    if (mapped.length > 0) {
+        const limited = mapped.slice(0, 4)
+        const hasStruggle = limited.some((entry) => normalizeMoveNameKey(entry?.name) === 'struggle')
+        return hasStruggle ? limited : [...limited, struggleMove]
+    }
+
+    return [struggleMove]
 }
 
 const ProgressBar = ({ current, max, colorClass, label }) => {
@@ -435,7 +438,7 @@ const ActiveBattleView = ({
                                     </div>
                                     <div className="text-[11px] font-bold text-right leading-tight">
                                         <div className="text-slate-500 uppercase">Pow</div>
-                                        <div>{move.power}</div>
+                                        <div>{Number(move.power) > 0 ? move.power : '--'}</div>
                                     </div>
                                 </button>
                             )
@@ -1836,9 +1839,6 @@ export function ExplorePage() {
         </div>
     )
 }
-
-
-
 
 
 

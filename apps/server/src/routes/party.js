@@ -53,10 +53,7 @@ router.get('/', async (req, res) => {
                     moveNames: mergedMoveNames,
                     movePpState: po.movePpState,
                     moveLookupMap,
-                }).map((entry) => ({
-                    ...entry,
-                    currentPp: entry.maxPp,
-                }))
+                })
                 po.moves = movePpState.map((entry) => ({
                     ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
                     name: entry.moveName,
@@ -80,10 +77,7 @@ router.get('/', async (req, res) => {
                         moveNames: mergedMoveNames,
                         movePpState: po.movePpState,
                         moveLookupMap,
-                    }).map((entry) => ({
-                        ...entry,
-                        currentPp: entry.maxPp,
-                    }))
+                    })
                     po.moves = movePpState.map((entry) => ({
                         ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
                         name: entry.moveName,

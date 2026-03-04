@@ -680,6 +680,53 @@ const effectSpecsByTrigger = (effectSpecs = [], trigger = '') => {
         .filter((entry) => String(entry?.trigger || '').trim() === normalizedTrigger)
 }
 
+const normalizeMovePpEntry = (entry = {}) => {
+    const moveName = String(entry?.moveName || entry?.name || '').trim()
+    if (!moveName) return null
+    const maxPp = Math.max(1, Math.floor(Number(entry?.maxPp) || 1))
+    const currentPp = Math.max(0, Math.min(maxPp, Math.floor(Number(entry?.currentPp ?? entry?.pp) || 0)))
+    return {
+        moveName,
+        currentPp,
+        maxPp,
+    }
+}
+
+const mergeMovePpStateEntries = (base = [], patches = []) => {
+    const merged = []
+    const indexByKey = new Map()
+    const pushOrReplace = (entry) => {
+        const normalized = normalizeMovePpEntry(entry)
+        if (!normalized) return
+        const key = normalizeMoveName(normalized.moveName)
+        if (!key) return
+        if (indexByKey.has(key)) {
+            merged[indexByKey.get(key)] = normalized
+            return
+        }
+        indexByKey.set(key, merged.length)
+        merged.push(normalized)
+    }
+
+    ;(Array.isArray(base) ? base : []).forEach(pushOrReplace)
+    ;(Array.isArray(patches) ? patches : []).forEach(pushOrReplace)
+    return merged
+}
+
+const isMovePpStateEqual = (left = [], right = []) => {
+    const normalizedLeft = mergeMovePpStateEntries([], left)
+    const normalizedRight = mergeMovePpStateEntries([], right)
+    if (normalizedLeft.length !== normalizedRight.length) return false
+    for (let index = 0; index < normalizedLeft.length; index += 1) {
+        const l = normalizedLeft[index]
+        const r = normalizedRight[index]
+        if (normalizeMoveName(l.moveName) !== normalizeMoveName(r.moveName)) return false
+        if (Number(l.currentPp) !== Number(r.currentPp)) return false
+        if (Number(l.maxPp) !== Number(r.maxPp)) return false
+    }
+    return true
+}
+
 const mergeEffectStatePatches = (base = {}, nextPatch = {}) => ({
     ...base,
     ...nextPatch,
@@ -2093,7 +2140,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let moveFallbackFrom = ''
 
         const selectedMoveKey = normalizeMoveName(selectedMoveName)
-        if (knownMoves.length > 0 && !normalizedKnownMoves.has(selectedMoveKey)) {
+        if (knownMoves.length > 0 && selectedMoveKey !== 'struggle' && !normalizedKnownMoves.has(selectedMoveKey)) {
             selectedMoveName = knownMoves[0]
         }
 
@@ -2111,6 +2158,9 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         let moveType = normalizeTypeToken(moveDoc?.type || move?.type || inferMoveType(selectedMoveName)) || 'normal'
         let moveCategory = resolveMoveCategory(moveDoc, move, resolvedPower)
+        if (moveCategory === 'status') {
+            resolvedPower = 0
+        }
         let moveAccuracy = resolveMoveAccuracy(moveDoc, move)
         let movePriority = resolveMovePriority(moveDoc, move)
         const baseMovePriority = movePriority
@@ -3138,6 +3188,13 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
 
         if (trainerSessionDirty && trainerSession) {
             await trainerSession.save()
+        }
+
+        const currentMovePpState = Array.isArray(activePokemon.movePpState) ? activePokemon.movePpState : []
+        const mergedMovePpState = mergeMovePpStateEntries(currentMovePpState, playerMovePpStatePayload)
+        if (!isMovePpStateEqual(currentMovePpState, mergedMovePpState)) {
+            activePokemon.movePpState = mergedMovePpState
+            await activePokemon.save()
         }
 
         const trainerState = normalizedTrainerId && trainerSession

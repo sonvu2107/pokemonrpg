@@ -190,7 +190,7 @@ const handlers = {
         if (Number.isFinite(Number(effect?.params?.turns))) {
             result.statePatches[target].statusTurns = clampPositiveInt(effect?.params?.turns, 0)
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị ${status}.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${status}.`)
         return result
     },
 
@@ -203,7 +203,7 @@ const handlers = {
         result.statePatches[target].clearStatus = true
         result.statePatches[target].status = ''
         result.statePatches[target].statusTurns = 0
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} được giải trạng thái bất lợi.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được giải trạng thái bất lợi.`)
         return result
     },
 
@@ -236,7 +236,7 @@ const handlers = {
         if (Number.isFinite(Number(effect?.params?.turns))) {
             result.statePatches[target].statusTurns = clampPositiveInt(effect?.params?.turns, 0)
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị ${status} bởi điều kiện hiệu ứng.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${status} bởi điều kiện hiệu ứng.`)
         return result
     },
 
@@ -253,7 +253,7 @@ const handlers = {
         result.statePatches[target].statStages = {
             [stat]: delta,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ${stat} ${Math.abs(delta)} bậc.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ${stat} ${Math.abs(delta)} bậc.`)
         return result
     },
 
@@ -277,7 +277,7 @@ const handlers = {
         result.statePatches[target].statStages = {
             [stat]: delta,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ${stat} ${Math.abs(delta)} bậc bởi điều kiện hiệu ứng.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ${stat} ${Math.abs(delta)} bậc bởi điều kiện hiệu ứng.`)
         return result
     },
 
@@ -294,7 +294,7 @@ const handlers = {
         result.statePatches[target].setStatStages = {
             [stat]: stage,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} đặt ${stat} về bậc ${stage}.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} đặt ${stat} về bậc ${stage}.`)
         return result
     },
 
@@ -317,7 +317,7 @@ const handlers = {
         result.statePatches[target].statStages = {
             [chosenStat]: delta,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ngẫu nhiên ${chosenStat} ${Math.abs(delta)} bậc.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} ${delta > 0 ? 'tăng' : 'giảm'} ngẫu nhiên ${chosenStat} ${Math.abs(delta)} bậc.`)
         return result
     },
 
@@ -330,7 +330,7 @@ const handlers = {
         result.statePatches[target].clearStatStages = true
         result.statePatches[target].statStages = {}
         result.statePatches[target].setStatStages = {}
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị xóa toàn bộ biến đổi chỉ số.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị xóa toàn bộ biến đổi chỉ số.`)
         return result
     },
 
@@ -345,7 +345,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].replaceStatStages = sourceStages
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} sao chép thay đổi chỉ số từ đối thủ.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} sao chép thay đổi chỉ số từ đối thủ.`)
         return result
     },
 
@@ -362,7 +362,7 @@ const handlers = {
             atk: nextAtk,
             def: nextDef,
         }
-        appendEffectLog(result, 'Người dùng hoán đổi bậc Attack và Defense.')
+        appendEffectLog(result, 'Pokemon của bạn hoán đổi bậc Attack và Defense.')
         return result
     },
 
@@ -441,7 +441,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].setStatStages = inverted
-        appendEffectLog(result, `${target === 'self' ? 'Nguoi dung' : 'Muc tieu'} bi dao nguoc bien doi chi so.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Muc tieu'} bi dao nguoc bien doi chi so.`)
         return result
     },
 
@@ -458,7 +458,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches.self.healHp = healedHp
-        appendEffectLog(result, `Người dùng hồi ${healedHp} HP.`)
+        appendEffectLog(result, `Pokemon của bạn hồi ${healedHp} HP.`)
         return result
     },
 
@@ -478,7 +478,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].healHp = healedHp
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} hồi ${healedHp} HP.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} hồi ${healedHp} HP.`)
         return result
     },
 
@@ -502,7 +502,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].healHp = healedHp
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} hồi ${healedHp} HP bởi điều kiện hiệu ứng.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} hồi ${healedHp} HP bởi điều kiện hiệu ứng.`)
         return result
     },
 
@@ -519,7 +519,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches.self.recoilHp = recoilHp
-        appendEffectLog(result, `Người dùng chịu ${recoilHp} sát thương phản lực.`)
+        appendEffectLog(result, `Pokemon của bạn chịu ${recoilHp} sát thương phản lực.`)
         return result
     },
 
@@ -534,7 +534,7 @@ const handlers = {
         const hpCost = Math.max(1, Math.floor(userMaxHp * fraction))
         result.applied = true
         result.statePatches.self.selfHpCost = hpCost
-        appendEffectLog(result, `Người dùng tiêu hao ${hpCost} HP để thi triển chiêu.`)
+        appendEffectLog(result, `Pokemon của bạn tiêu hao ${hpCost} HP để thi triển chiêu.`)
         return result
     },
 
@@ -543,7 +543,7 @@ const handlers = {
         if (!shouldProc(effect?.chance, context?.random?.())) return result
         result.applied = true
         result.statePatches.self.selfFaint = true
-        appendEffectLog(result, 'Người dùng bị ngất sau khi dùng chiêu.')
+        appendEffectLog(result, 'Pokemon của bạn bị ngất sau khi dùng chiêu.')
         return result
     },
 
@@ -599,7 +599,7 @@ const handlers = {
         result.statePatches.self.clearStatus = true
         result.statePatches.self.status = ''
         result.statePatches.self.statusTurns = 0
-        appendEffectLog(result, 'Người dùng truyền trạng thái sang mục tiêu.')
+        appendEffectLog(result, 'Pokemon của bạn truyền trạng thái sang mục tiêu.')
         return result
     },
 
@@ -636,7 +636,7 @@ const handlers = {
         result.applied = true
         result.statePatches[target].clearDamageGuards = true
         result.statePatches[target].damageGuards = {}
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị phá lá chắn phòng thủ.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị phá lá chắn phòng thủ.`)
         return result
     },
 
@@ -682,7 +682,7 @@ const handlers = {
         result.statePatches[target].volatileState = {
             statusShieldTurns: turns,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} được chắn trạng thái ${turns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được chắn trạng thái ${turns} lượt.`)
         return result
     },
 
@@ -696,7 +696,7 @@ const handlers = {
         result.statePatches[target].volatileState = {
             statDropShieldTurns: turns,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} được chắn giảm chỉ số ${turns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được chắn giảm chỉ số ${turns} lượt.`)
         return result
     },
 
@@ -732,7 +732,7 @@ const handlers = {
         result.statePatches[target].volatileState = {
             healBlockTurns: turns,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị chặn hồi máu trong ${turns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị chặn hồi máu trong ${turns} lượt.`)
         return result
     },
 
@@ -746,7 +746,7 @@ const handlers = {
         result.statePatches[target].volatileState = {
             critBlockTurns: turns,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} được chặn chí mạng trong ${turns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được chặn chí mạng trong ${turns} lượt.`)
         return result
     },
 
@@ -827,7 +827,7 @@ const handlers = {
             bindTurns: rolledTurns,
             bindFraction,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị trói trong ${rolledTurns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị trói trong ${rolledTurns} lượt.`)
         return result
     },
 
@@ -840,7 +840,7 @@ const handlers = {
         result.statePatches.self.volatileState = {
             rechargeTurns: turns,
         }
-        appendEffectLog(result, `Người dùng cần hồi sức ${turns} lượt.`)
+        appendEffectLog(result, `Pokemon của bạn cần hồi sức ${turns} lượt.`)
         return result
     },
 
@@ -854,7 +854,7 @@ const handlers = {
         result.statePatches[target].volatileState = {
             statusMoveBlockTurns: turns,
         }
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} bị hạn chế dùng chiêu trạng thái trong ${turns} lượt.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị hạn chế dùng chiêu trạng thái trong ${turns} lượt.`)
         return result
     },
 
@@ -877,7 +877,7 @@ const handlers = {
         result.applied = true
         result.statePatches.self.setStatStages = nextUserStages
         result.statePatches.opponent.setStatStages = nextTargetStages
-        appendEffectLog(result, 'Nguoi dung cuop cac bac chi so duong cua muc tieu.')
+        appendEffectLog(result, 'Pokemon của bạn cuop cac bac chi so duong cua muc tieu.')
         return result
     },
 
@@ -916,7 +916,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].damageGuards = guards
-        appendEffectLog(result, `${target === 'self' ? 'Người dùng' : 'Mục tiêu'} dựng lá chắn giảm sát thương.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} dựng lá chắn giảm sát thương.`)
         return result
     },
 
