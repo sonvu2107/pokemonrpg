@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
+import { useToast } from '../context/ToastContext'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -21,8 +22,9 @@ const formatDate = (value) => {
 const SELL_POKEMON_MODAL_PAGE_SIZE = 24
 
 export default function ShopSellPage() {
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [availablePokemon, setAvailablePokemon] = useState([])
+    const toast = useToast()
     const [activeListings, setActiveListings] = useState([])
     const [soldListings, setSoldListings] = useState([])
     const [pagination, setPagination] = useState({
@@ -98,7 +100,7 @@ export default function ShopSellPage() {
             })
 
             setWallet({
-                gold: Number(data?.wallet?.gold || 0),
+                platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
                 moonPoints: Number(data?.wallet?.moonPoints || 0),
             })
             if (Array.isArray(data.availablePokemon)) {
@@ -125,11 +127,11 @@ export default function ShopSellPage() {
     const handleCreateListing = async () => {
         const numericPrice = parseInt(price, 10)
         if (!selectedPokemonId) {
-            window.alert('Vui lòng chọn Pokemon để đăng bán.')
+            toast.showWarning('Vui lòng chọn Pokemon để đăng bán.')
             return
         }
         if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
-            window.alert('Giá bán không hợp lệ.')
+            toast.showWarning('Giá bán không hợp lệ.')
             return
         }
 
@@ -142,8 +144,9 @@ export default function ShopSellPage() {
             setSelectedPokemonId('')
             setPrice('')
             await loadSellData(1, soldPage, { includeAvailable: true })
+            toast.showSuccess('Đăng bán Pokemon thành công')
         } catch (err) {
-            window.alert(err.message || 'Đăng bán thất bại')
+            toast.showError(err.message || 'Đăng bán thất bại')
         } finally {
             setSubmitting(false)
         }
@@ -154,8 +157,9 @@ export default function ShopSellPage() {
             setCancellingId(listingId)
             await gameApi.cancelShopListing(listingId)
             await loadSellData(activePage, soldPage, { includeAvailable: true })
+            toast.showSuccess('Hủy tin đăng thành công')
         } catch (err) {
-            window.alert(err.message || 'Hủy tin đăng thất bại')
+            toast.showError(err.message || 'Hủy tin đăng thất bại')
         } finally {
             setCancellingId('')
         }
@@ -208,8 +212,8 @@ export default function ShopSellPage() {
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
                 <div className="text-slate-700 text-sm font-bold flex justify-center gap-4 mb-1">
-                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Bán Pokemon</h1>
             </div>

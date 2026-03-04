@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
+import { useToast } from '../context/ToastContext'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -29,17 +30,17 @@ const TYPE_LABELS = {
 }
 
 const CATEGORY_LABELS = {
-    physical: 'Vật lý',
-    special: 'Đặc biệt',
-    status: 'Trạng thái',
+    physical: 'Physical',
+    special: 'Special',
+    status: 'Status',
 }
 
 const RARITY_LABELS = {
-    common: 'Phổ biến',
-    uncommon: 'Ít gặp',
-    rare: 'Hiếm',
-    epic: 'Sử thi',
-    legendary: 'Huyền thoại',
+    common: 'Common',
+    uncommon: 'Uncommon',
+    rare: 'Rare',
+    epic: 'Epic',
+    legendary: 'Legendary',
 }
 
 const POKEMON_RARITY_LABELS = {
@@ -79,7 +80,8 @@ const getFallbackMoveImage = () => 'https://raw.githubusercontent.com/PokeAPI/sp
 
 export default function SkillShopPage() {
     const [skills, setSkills] = useState([])
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
+    const toast = useToast()
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1, limit: 20, total: 0 })
     const [typeFilter, setTypeFilter] = useState('all')
     const [categoryFilter, setCategoryFilter] = useState('all')
@@ -140,7 +142,7 @@ export default function SkillShopPage() {
             const data = await gameApi.getShopSkills(params)
             setSkills(data.skills || [])
             setWallet({
-                gold: Number(data?.wallet?.gold || 0),
+                platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
                 moonPoints: Number(data?.wallet?.moonPoints || 0),
             })
             setPagination((prev) => ({
@@ -171,12 +173,12 @@ export default function SkillShopPage() {
             setBuyingMoveId(skill._id)
             const result = await gameApi.buyShopSkill(skill._id, quantity)
             setWallet({
-                gold: Number(result?.wallet?.gold || wallet.gold),
+                platinumCoins: Number(result?.wallet?.platinumCoins ?? wallet.platinumCoins),
                 moonPoints: Number(result?.wallet?.moonPoints || wallet.moonPoints),
             })
-            window.alert(result?.message || 'Mua kỹ năng thành công')
+            toast.showSuccess(result?.message || 'Mua kỹ năng thành công')
         } catch (err) {
-            window.alert(err.message || 'Mua kỹ năng thất bại')
+            toast.showError(err.message || 'Mua kỹ năng thất bại')
         } finally {
             setBuyingMoveId('')
         }
@@ -186,8 +188,8 @@ export default function SkillShopPage() {
         <div className="max-w-5xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
                 <div className="text-slate-700 text-sm font-bold flex justify-center gap-4 mb-1">
-                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Cửa Hàng Kỹ Năng</h1>
             </div>
@@ -269,15 +271,15 @@ export default function SkillShopPage() {
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[980px]">
-                            <thead>
+                    <div className="overflow-x-hidden p-2 sm:p-0">
+                        <table className="w-full">
+                            <thead className="hidden sm:table-header-group">
                                 <tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-sm font-bold">
-                                    <th className="px-3 py-2 text-center border-r border-blue-200 w-24">Hình</th>
-                                    <th className="px-3 py-2 text-center border-r border-blue-200">Kỹ năng</th>
-                                    <th className="px-3 py-2 text-center border-r border-blue-200 w-64">Thông số</th>
-                                    <th className="px-3 py-2 text-center border-r border-blue-200 w-52">Giá</th>
-                                    <th className="px-3 py-2 text-center w-28">Mua</th>
+                                    <th className="px-3 py-3 text-center border-r border-blue-200 w-24">Hình</th>
+                                    <th className="px-3 py-3 text-center border-r border-blue-200">Kỹ năng</th>
+                                    <th className="px-3 py-3 text-center border-r border-blue-200 w-64">Thông số</th>
+                                    <th className="px-3 py-3 text-center border-r border-blue-200 w-40">Giá</th>
+                                    <th className="px-3 py-3 text-center w-28">Thao tác</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -295,47 +297,101 @@ export default function SkillShopPage() {
                                     </tr>
                                 ) : (
                                     skills.map((skill) => (
-                                        <tr key={skill._id} className="border-b border-blue-100 hover:bg-blue-50/40">
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
+                                        <tr key={skill._id} className="flex flex-col sm:table-row bg-white border border-blue-200 mb-3 sm:mb-0 sm:border-0 sm:border-b sm:border-blue-100 rounded-lg sm:rounded-none overflow-hidden shadow-sm sm:shadow-none">
+
+                                            {/* Mobile: Image + Basic Info Row | Desktop: Separate Cells */}
+                                            <td className="sm:table-cell px-3 py-3 sm:border-r border-blue-100 align-middle hidden sm:table-cell text-center">
                                                 <img
                                                     src={skill.imageUrl || getFallbackMoveImage()}
                                                     alt={skill.name}
-                                                    className="w-10 h-10 object-contain mx-auto pixelated"
+                                                    className="w-16 h-16 sm:w-12 sm:h-12 object-contain mx-auto pixelated drop-shadow-sm"
                                                     onError={(event) => {
                                                         event.currentTarget.onerror = null
                                                         event.currentTarget.src = getFallbackMoveImage()
                                                     }}
                                                 />
                                             </td>
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
-                                                <div className="font-bold text-slate-800 text-lg">{skill.name}</div>
-                                                <div className="text-xs text-slate-500 mt-1">
-                                                    <span className="font-semibold">{TYPE_LABELS[skill.type] || skill.type}</span>
-                                                    {' • '}
-                                                    <span>{CATEGORY_LABELS[skill.category] || skill.category}</span>
-                                                    {' • '}
-                                                    <span>{RARITY_LABELS[skill.rarity] || skill.rarity}</span>
+
+                                            {/* Info Cell (Merged natively on mobile, separate on PC) */}
+                                            <td className="block sm:table-cell p-3 sm:px-3 sm:py-3 sm:border-r border-blue-100 align-middle relative border-b sm:border-b-0 border-slate-100 bg-slate-50/50 sm:bg-transparent text-left sm:text-center">
+                                                <div className="flex sm:hidden gap-3 mb-2 items-center">
+                                                    <img
+                                                        src={skill.imageUrl || getFallbackMoveImage()}
+                                                        alt={skill.name}
+                                                        className="w-12 h-12 object-contain pixelated drop-shadow-sm"
+                                                        onError={(event) => {
+                                                            event.currentTarget.onerror = null
+                                                            event.currentTarget.src = getFallbackMoveImage()
+                                                        }}
+                                                    />
+                                                    <div>
+                                                        <div className="font-bold text-blue-900 text-lg sm:text-lg leading-tight">{skill.name}</div>
+                                                        <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium flex flex-wrap gap-1 items-center">
+                                                            <span className="px-1.5 py-0.5 bg-slate-200 rounded text-slate-700">{TYPE_LABELS[skill.type] || skill.type}</span>
+                                                            <span className="px-1.5 py-0.5 bg-slate-200 rounded text-slate-700">{CATEGORY_LABELS[skill.category] || skill.category}</span>
+                                                            <span className="px-1.5 py-0.5 bg-slate-200 rounded text-slate-700">{RARITY_LABELS[skill.rarity] || skill.rarity}</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-sm italic text-slate-600 mt-1">{skill.description || 'Không có mô tả.'}</div>
-                                                <div className="text-xs text-amber-700 font-semibold mt-1">{describeLearnScope(skill)}</div>
+
+                                                <div className="hidden sm:block">
+                                                    <div className="font-bold text-slate-800 text-lg leading-tight">{skill.name}</div>
+                                                    <div className="text-xs text-slate-500 mt-1 font-medium">
+                                                        <span>{TYPE_LABELS[skill.type] || skill.type}</span>
+                                                        <span className="mx-1">•</span>
+                                                        <span>{CATEGORY_LABELS[skill.category] || skill.category}</span>
+                                                        <span className="mx-1">•</span>
+                                                        <span>{RARITY_LABELS[skill.rarity] || skill.rarity}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">{skill.description || 'Không có mô tả.'}</div>
+                                                <div className="text-[11px] sm:text-xs text-amber-700 font-bold mt-1.5 bg-amber-50 inline-block px-2 py-0.5 rounded border border-amber-200">{describeLearnScope(skill)}</div>
                                             </td>
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center text-sm">
-                                                <div className="grid grid-cols-2 gap-2 text-slate-700">
-                                                    <div className="bg-slate-100 rounded px-2 py-1">Power: <strong>{skill.power ?? '--'}</strong></div>
-                                                    <div className="bg-slate-100 rounded px-2 py-1">Acc: <strong>{skill.accuracy ?? '--'}</strong></div>
-                                                    <div className="bg-slate-100 rounded px-2 py-1">PP: <strong>{skill.pp ?? '--'}</strong></div>
-                                                    <div className="bg-slate-100 rounded px-2 py-1">Priority: <strong>{skill.priority ?? 0}</strong></div>
+
+                                            <td className="block sm:table-cell px-3 py-3 sm:border-r border-blue-100 align-middle">
+                                                <div className="grid grid-cols-4 sm:grid-cols-2 gap-2 text-slate-700 text-xs sm:text-sm text-center">
+                                                    <div className="bg-slate-100 rounded px-1 py-1.5 flex flex-col justify-center">
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Power</span>
+                                                        <strong className="text-blue-700 text-sm sm:text-base">{skill.power ?? '--'}</strong>
+                                                    </div>
+                                                    <div className="bg-slate-100 rounded px-1 py-1.5 flex flex-col justify-center">
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Acc</span>
+                                                        <strong className="text-emerald-600 text-sm sm:text-base">{skill.accuracy ?? '--'}</strong>
+                                                    </div>
+                                                    <div className="bg-slate-100 rounded px-1 py-1.5 flex flex-col justify-center">
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">PP</span>
+                                                        <strong className="text-purple-700 text-sm sm:text-base">{skill.pp ?? '--'}</strong>
+                                                    </div>
+                                                    <div className="bg-slate-100 rounded px-1 py-1.5 flex flex-col justify-center">
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Priority</span>
+                                                        <strong className="text-slate-800 text-sm sm:text-base">{skill.priority ?? 0}</strong>
+                                                    </div>
                                                 </div>
                                             </td>
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
-                                                <div className="font-bold text-xl text-slate-900">{Number(skill.shopPrice || 0).toLocaleString('vi-VN')} xu</div>
-                                                <div className="text-sm text-slate-500">Xu Bạch Kim</div>
+
+                                            <td className="flex justify-between items-center sm:table-cell p-3 sm:py-3 sm:border-r border-blue-100 bg-blue-50/50 sm:bg-transparent border-t sm:border-t-0 align-middle text-center">
+                                                <div className="text-left sm:text-center">
+                                                    <div className="font-bold text-lg sm:text-xl text-amber-600 drop-shadow-sm">{Number(skill.shopPrice || 0).toLocaleString('vi-VN')} </div>
+                                                    <div className="text-[10px] sm:text-xs text-slate-500 uppercase font-bold tracking-wide">Xu Bạch Kim</div>
+                                                </div>
+
+                                                <div className="sm:hidden">
+                                                    <button
+                                                        onClick={() => handleBuy(skill)}
+                                                        disabled={buyingMoveId === skill._id}
+                                                        className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-500 border border-blue-700 text-white font-bold rounded-md shadow-sm active:translate-y-px hover:from-blue-700 hover:to-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase text-xs tracking-wider"
+                                                    >
+                                                        {buyingMoveId === skill._id ? 'Đang mua...' : 'Mua'}
+                                                    </button>
+                                                </div>
                                             </td>
-                                            <td className="px-3 py-3 text-center">
+
+                                            <td className="hidden sm:table-cell px-3 py-3 text-center align-middle">
                                                 <button
                                                     onClick={() => handleBuy(skill)}
                                                     disabled={buyingMoveId === skill._id}
-                                                    className="px-3 py-1.5 bg-white border border-blue-400 text-blue-800 font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    className="w-full px-3 py-2 bg-white border-2 border-blue-500 text-blue-700 font-bold rounded-md hover:bg-blue-50 hover:text-blue-800 transition-colors shadow-sm active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                                 >
                                                     {buyingMoveId === skill._id ? 'Đang mua...' : 'Mua'}
                                                 </button>

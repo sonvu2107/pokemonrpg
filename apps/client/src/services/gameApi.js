@@ -544,6 +544,17 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/shop/items/:itemId
+    async getItemDetail(itemId) {
+        const res = await fetch(`${API_URL}/shop/items/${itemId}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải chi tiết vật phẩm')
+        }
+        return res.json()
+    },
+
     // POST /api/shop/items/:itemId/buy
     async buyShopItem(itemId, quantity = 1) {
         const res = await fetch(`${API_URL}/shop/items/${itemId}/buy`, {

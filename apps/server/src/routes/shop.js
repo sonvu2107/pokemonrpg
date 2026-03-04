@@ -27,6 +27,14 @@ const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
+const serializeWallet = (playerState) => {
+    const platinumCoins = Number(playerState?.gold || 0)
+    return {
+        platinumCoins,
+        moonPoints: Number(playerState?.moonPoints || 0),
+    }
+}
+
 const resolvePokemonForm = (pokemon = null, formId = null) => {
     const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
     const defaultFormId = normalizeFormId(pokemon?.defaultFormId || 'normal')
@@ -86,10 +94,7 @@ router.get('/items', async (req, res) => {
 
         res.json({
             ok: true,
-            wallet: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             items,
             pagination: {
                 page,
@@ -101,6 +106,42 @@ router.get('/items', async (req, res) => {
     } catch (error) {
         console.error('GET /api/shop/items error:', error)
         res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu cửa hàng vật phẩm' })
+    }
+})
+
+// GET /api/shop/items/:itemId
+router.get('/items/:itemId', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const itemId = String(req.params.itemId || '').trim()
+
+        if (!mongoose.Types.ObjectId.isValid(itemId)) {
+            return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
+        }
+
+        const [item, playerState, inventoryEntry] = await Promise.all([
+            Item.findById(itemId)
+                .select('name type rarity imageUrl description shopPrice isShopEnabled effectType effectValue effectValueMp')
+                .lean(),
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
+        ])
+
+        if (!item) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
+        }
+
+        res.json({
+            ok: true,
+            item,
+            wallet: serializeWallet(playerState),
+            inventory: {
+                quantity: Number(inventoryEntry?.quantity || 0),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/items/:itemId error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải chi tiết vật phẩm' })
     }
 })
 
@@ -179,10 +220,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
                 unitPrice: item.shopPrice,
                 totalCost,
             },
-            wallet: {
-                gold: Number(playerState.gold || 0),
-                moonPoints: Number(playerState.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             inventory: {
                 itemId,
                 quantity: Number(inventoryEntry?.quantity || 0),
@@ -250,10 +288,7 @@ router.get('/skills', async (req, res) => {
 
         res.json({
             ok: true,
-            wallet: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             skills,
             pagination: {
                 page,
@@ -344,10 +379,7 @@ router.post('/skills/:moveId/buy', async (req, res) => {
                 unitPrice: move.shopPrice,
                 totalCost,
             },
-            wallet: {
-                gold: Number(playerState.gold || 0),
-                moonPoints: Number(playerState.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             inventory: {
                 moveId,
                 quantity: Number(moveInventoryEntry?.quantity || 0),
@@ -633,10 +665,7 @@ router.get('/sell', async (req, res) => {
 
         res.json({
             ok: true,
-            wallet: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             availablePokemon,
             activeListings: activeRows.map(mapListing),
             soldListings: soldRows.map(mapListing),
@@ -901,10 +930,7 @@ router.get('/buy', async (req, res) => {
         res.json({
             ok: true,
             listings,
-            wallet: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             filters: {
                 typeOptions,
                 pokemonNameOptions,

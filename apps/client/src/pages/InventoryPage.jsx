@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 
 // Helper component for section headers with the blue gradient style
@@ -11,7 +12,7 @@ const SectionHeader = ({ title }) => (
 export default function InventoryPage() {
     const [activeTab, setActiveTab] = useState('All Items')
     const [inventory, setInventory] = useState([])
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
 
@@ -22,7 +23,7 @@ export default function InventoryPage() {
                 const data = await gameApi.getInventory()
                 setInventory(data.inventory || [])
                 setWallet({
-                    gold: Number(data?.playerState?.gold || 0),
+                    platinumCoins: Number(data?.playerState?.platinumCoins ?? 0),
                     moonPoints: Number(data?.playerState?.moonPoints || 0),
                 })
             } catch (err) {
@@ -37,7 +38,8 @@ export default function InventoryPage() {
 
     const items = useMemo(() => {
         return inventory.map((entry) => ({
-            id: entry.item?._id || entry._id,
+            id: entry.item?._id || '',
+            inventoryEntryId: entry._id,
             name: entry.item?.name || 'Unknown Item',
             image: entry.item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png',
             type: entry.item?.type || 'misc',
@@ -59,7 +61,7 @@ export default function InventoryPage() {
             {/* Header Title Area */}
             <div className="text-center mb-6">
                 <div className="text-slate-600 text-sm font-bold flex justify-center gap-4 mb-2">
-                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
                     <span className="flex items-center gap-1 text-purple-700">🌑 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm tracking-tight">Túi Đồ Của Bạn</h1>
@@ -123,13 +125,26 @@ export default function InventoryPage() {
                                         {/* Mobile: 3 cols, Tablet: 5 cols, Desktop: 8 cols */}
                                         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4">
                                             {filteredItems.map(item => (
-                                                <div key={item.id} className="flex flex-col items-center justify-center group">
-                                                    <div className="w-14 h-14 sm:w-12 sm:h-12 flex items-center justify-center transition-transform group-hover:scale-110">
-                                                        <img src={item.image} alt={item.name} className="w-12 h-12 sm:w-10 sm:h-10 pixelated rendering-pixelated" />
-                                                    </div>
-                                                    <div className="mt-1 text-xs sm:text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight">
-                                                        {item.name}
-                                                    </div>
+                                                <div key={item.inventoryEntryId || item.id || item.name} className="flex flex-col items-center justify-center group">
+                                                    {item.id ? (
+                                                        <Link to={`/items/${item.id}`} className="flex flex-col items-center justify-center">
+                                                            <div className="w-14 h-14 sm:w-12 sm:h-12 flex items-center justify-center transition-transform group-hover:scale-110">
+                                                                <img src={item.image} alt={item.name} className="w-12 h-12 sm:w-10 sm:h-10 pixelated rendering-pixelated" />
+                                                            </div>
+                                                            <div className="mt-1 text-xs sm:text-[10px] font-bold text-slate-600 group-hover:text-blue-600 text-center leading-tight hover:underline">
+                                                                {item.name}
+                                                            </div>
+                                                        </Link>
+                                                    ) : (
+                                                        <>
+                                                            <div className="w-14 h-14 sm:w-12 sm:h-12 flex items-center justify-center transition-transform group-hover:scale-110">
+                                                                <img src={item.image} alt={item.name} className="w-12 h-12 sm:w-10 sm:h-10 pixelated rendering-pixelated" />
+                                                            </div>
+                                                            <div className="mt-1 text-xs sm:text-[10px] font-bold text-slate-600 text-center leading-tight">
+                                                                {item.name}
+                                                            </div>
+                                                        </>
+                                                    )}
                                                     <div className="text-xs sm:text-[10px] text-slate-500">x{item.quantity}</div>
                                                 </div>
                                             ))}

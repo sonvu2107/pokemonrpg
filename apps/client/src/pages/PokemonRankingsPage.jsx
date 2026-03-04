@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
-
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
         {title}
@@ -12,6 +11,7 @@ const SectionHeader = ({ title }) => (
 )
 
 export default function PokemonRankingsPage() {
+    const navigate = useNavigate()
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -36,19 +36,12 @@ export default function PokemonRankingsPage() {
             setLoading(false)
         }
     }
-
     const renderPagination = () => {
         if (!pagination) return null
-
         const { currentPage, totalPages } = pagination
         if (!totalPages || totalPages <= 1) return null
-
         const pages = []
-
-        // Show first page
         pages.push(1)
-
-        // Show pages around current
         const start = Math.max(2, currentPage - 2)
         const end = Math.min(totalPages - 1, currentPage + 2)
 
@@ -57,8 +50,6 @@ export default function PokemonRankingsPage() {
             pages.push(i)
         }
         if (end < totalPages - 1) pages.push('...')
-
-        // Show last page
         if (totalPages > 1) pages.push(totalPages)
 
         return (
@@ -84,7 +75,6 @@ export default function PokemonRankingsPage() {
         )
     }
 
-    // Username colors (cycling pattern like in RankingsPage)
     const getUsernameColor = (rank) => {
         const colors = [
             'text-blue-800',
@@ -97,7 +87,6 @@ export default function PokemonRankingsPage() {
         return colors[(rank - 1) % colors.length] || 'text-blue-700'
     }
 
-    // Determine "Master" title color based on Pokemon type or default
     const getMasterTitleColor = (pokemon) => {
         if (!pokemon || !pokemon.types || pokemon.types.length === 0) return 'text-slate-500';
 
@@ -112,10 +101,19 @@ export default function PokemonRankingsPage() {
             dark: 'text-slate-800',
             steel: 'text-slate-500',
             fairy: 'text-pink-400',
-            // Add more as needed
         }
 
         return typeColors[pokemon.types[0].toLowerCase()] || 'text-slate-500';
+    }
+
+    const handleChallengeFromRanking = (userPokemonId) => {
+        const normalizedId = String(userPokemonId || '').trim()
+        if (!normalizedId) {
+            setFeatureNotice('Không tìm thấy ID Pokemon để khiêu chiến.')
+            return
+        }
+
+        navigate(`/battle?challengePokemonId=${encodeURIComponent(normalizedId)}&returnTo=${encodeURIComponent('rankings/pokemon')}`)
     }
 
     if (loading && rankings.length === 0) {
@@ -140,7 +138,6 @@ export default function PokemonRankingsPage() {
 
     return (
         <div className="max-w-4xl mx-auto pb-12 font-sans">
-            {/* Header with links */}
             <div className="text-center mb-6">
                 <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">Bảng Xếp Hạng Pokémon</h1>
                 <div className="flex items-center justify-center gap-2 text-sm font-bold">
@@ -158,19 +155,14 @@ export default function PokemonRankingsPage() {
                 />
             )}
 
-            {/* Main Rankings Table */}
             <div className="border-2 border-slate-800 bg-white shadow-lg">
                 <SectionHeader title="Bảng Xếp Hạng Pokémon Chung" />
-
-                {/* Table Header */}
                 <div className="grid grid-cols-12 bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold text-sm py-2">
-                    <div className="col-span-2 sm:col-span-1 text-center border-r border-slate-400 flex items-center justify-center">Hạng</div>
+                    <div className="col-span-3 sm:col-span-2 text-center border-r border-slate-400 flex items-center justify-center">Hạng</div>
                     <div className="col-span-3 sm:col-span-2 text-center border-r border-slate-400 flex items-center justify-center">Hình Ảnh</div>
-                    <div className="col-span-4 sm:col-span-5 text-center border-r border-slate-400 flex items-center justify-center">Pokémon</div>
+                    <div className="col-span-3 sm:col-span-4 text-center border-r border-slate-400 flex items-center justify-center">Pokémon</div>
                     <div className="col-span-3 sm:col-span-4 text-center flex items-center justify-center">Người Chơi</div>
                 </div>
-
-                {/* Table Body */}
                 <div className="divide-y divide-slate-400">
                     {rankings.length === 0 ? (
                         <div className="py-8 text-center text-slate-400 italic">
@@ -183,18 +175,14 @@ export default function PokemonRankingsPage() {
                             const level = entry.level || entry.pokemon?.level || 1
                             const exp = entry.experience || entry.pokemon?.experience || 0
                             const sprite = entry.sprite || entry.pokemon?.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-
                             return (
                                 <div
                                     key={detailId}
                                     className="grid grid-cols-12 items-center min-h-[120px] bg-white hover:bg-blue-50 transition-colors"
                                 >
-                                    {/* Rank */}
-                                    <div className="col-span-2 sm:col-span-1 text-center text-2xl font-extrabold text-slate-800 h-full flex items-center justify-center border-r border-slate-300">
-                                        #{entry.rank}
+                                    <div className="col-span-3 sm:col-span-2 text-center text-base sm:text-lg md:text-xl font-extrabold text-slate-800 h-full flex items-center justify-center border-r border-slate-300 px-1 overflow-hidden">
+                                        {entry.rank}
                                     </div>
-
-                                    {/* Sprite */}
                                     <div className="col-span-3 sm:col-span-2 flex justify-center h-full items-center border-r border-slate-300 p-2">
                                         <Link to={`/pokemon/${detailId}`}>
                                             <img
@@ -209,39 +197,31 @@ export default function PokemonRankingsPage() {
                                             />
                                         </Link>
                                     </div>
-
-                                    {/* Pokemon Info */}
-                                    <div className="col-span-4 sm:col-span-5 h-full flex flex-col justify-center items-center border-r border-slate-300 p-2 gap-2">
+                                    <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center border-r border-slate-300 p-2 gap-2">
                                         <div className="text-center">
                                             <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 text-sm sm:text-base hover:underline flex items-center gap-1 justify-center flex-wrap">
                                                 {entry.nickname || pokemonName}
-                                                {/* Gender Symbol Placeholder */}
-                                                {/* <span className={isFemale ? "text-pink-500" : "text-blue-500"}>{isFemale ? '♀' : '♂'}</span> */}
                                                 {entry.isShiny && <span className="text-yellow-500 text-xs" title="Shiny">✨</span>}
                                             </Link>
                                             <div className="text-xs sm:text-sm text-slate-600 font-medium">
                                                 Lv. {level.toLocaleString()}
                                             </div>
                                         </div>
-
-                                        {/* Buttons */}
-                                        <div className="flex gap-2">
+                                        <div className="flex flex-wrap justify-center gap-1 sm:gap-2 w-full mt-1">
                                             <button
-                                                className="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold py-1 px-3 border border-slate-400 rounded shadow-sm disabled:opacity-50"
-                                                onClick={() => setFeatureNotice('Tính năng khiêu chiến chưa được cập nhật.')}
+                                                className="bg-white hover:bg-slate-100 text-slate-800 text-[10px] sm:text-xs font-bold py-1 px-1.5 sm:px-3 border border-slate-400 rounded shadow-sm disabled:opacity-50 whitespace-nowrap"
+                                                onClick={() => handleChallengeFromRanking(detailId)}
                                             >
                                                 Khiêu Chiến
                                             </button>
                                             <Link
                                                 to={`/pokemon/${detailId}`}
-                                                className="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold py-1 px-3 border border-slate-400 rounded shadow-sm inline-block"
+                                                className="bg-white hover:bg-slate-100 text-slate-800 text-[10px] sm:text-xs font-bold py-1 px-1.5 sm:px-3 border border-slate-400 rounded shadow-sm inline-block whitespace-nowrap"
                                             >
                                                 Chỉ Số
                                             </Link>
                                         </div>
                                     </div>
-
-                                    {/* Player Info */}
                                     <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center p-2 gap-1">
                                         <div className="w-10 h-10 rounded overflow-hidden mb-1">
                                             <img
@@ -266,8 +246,6 @@ export default function PokemonRankingsPage() {
                         })
                     )}
                 </div>
-
-                {/* Pagination */}
                 {pagination && pagination.totalPages > 1 && (
                     <div className="bg-slate-100 border-t-2 border-slate-800 p-2">
                         {renderPagination()}

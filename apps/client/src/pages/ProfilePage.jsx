@@ -6,7 +6,6 @@ import { gameApi } from '../services/gameApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
-
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
         {title}
@@ -100,7 +99,7 @@ export default function ProfilePage() {
     const username = user?.username || 'Huấn Luyện Viên'
     const joinDate = formatDate(user?.createdAt)
     const lastActive = formatDate(user?.lastActive, true)
-    const coins = playerState?.gold || 0
+    const coins = playerState?.platinumCoins ?? 0
     const moonPoints = playerState?.moonPoints || 0
     const level = playerState?.level || 1
     const exp = playerState?.experience || 0
@@ -114,7 +113,6 @@ export default function ProfilePage() {
     const winRate = totalBattles > 0 ? `${Math.round((wins / totalBattles) * 100)}%` : '0%'
     const avatarSrc = String(user?.avatar || '').trim() || DEFAULT_AVATAR
     const signature = String(user?.signature || '').trim()
-
     const profileTabs = [
         { label: 'Cá Nhân', to: '/profile', enabled: true },
         { label: 'Đội Hình', to: '/party', enabled: true },
@@ -125,7 +123,6 @@ export default function ProfilePage() {
         { label: 'Hầm Mỏ', to: '', enabled: false },
         { label: 'Danh Hiệu', to: '', enabled: false },
     ]
-
     const quickActions = [
         { label: 'Chỉnh Sửa', to: '/profile/edit' },
         { label: 'Kho Pokémon', to: '/box' },
@@ -135,7 +132,6 @@ export default function ProfilePage() {
         { label: 'Mua Pokémon', to: '/shop/buy' },
         { label: 'Bán Pokémon', to: '/shop/sell' },
     ]
-
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
             <div className="text-center mb-6">
@@ -149,7 +145,6 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
-
             <div className="rounded-t-lg overflow-hidden border border-blue-500 shadow-lg bg-slate-800">
                 <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
                     Menu Hồ Sơ
@@ -167,7 +162,6 @@ export default function ProfilePage() {
                         )
                     ))}
                 </div>
-
                 <div className="bg-white p-2 sm:p-4 space-y-6">
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title={`Hồ sơ của ${username}`} />
@@ -187,7 +181,6 @@ export default function ProfilePage() {
                                         }}
                                     />
                                 </div>
-
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                                     Hành Động
                                 </div>
@@ -202,8 +195,6 @@ export default function ProfilePage() {
                                         {refreshing && <span className="ml-1 animate-spin inline-block">↻</span>}
                                     </button>
                                 </div>
-
-                                {/* Sub-header: Online Status */}
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                                     Trạng Thái
                                 </div>
@@ -219,19 +210,17 @@ export default function ProfilePage() {
                             </div>
                         </div>
                     </div>
-
-                    {/* PARTY SECTION */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title="Đội Hình" />
-                        <div className="bg-slate-100 min-h-[100px] flex items-stretch divide-x divide-gray-300 border-b border-gray-300 overflow-x-auto">
-                            {/* Party Members */}
+                        <div className="bg-slate-100 min-h-[160px] flex items-stretch divide-x divide-blue-200 border-b border-blue-200 overflow-x-auto">
                             {party.map((p, i) => {
                                 if (!p) {
                                     return (
-                                        <div key={i} className="min-w-[16.66%] flex-1 bg-slate-100 flex items-center justify-center p-2">
-                                            <div className="w-8 h-8 rounded-full bg-slate-200/50 flex items-center justify-center text-slate-300 text-xs">
+                                        <div key={i} className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center gap-2 p-3 bg-slate-50">
+                                            <div className="w-14 h-14 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-300 text-lg font-bold">
                                                 {i + 1}
                                             </div>
+                                            <span className="text-[10px] text-slate-400 font-medium">Trống</span>
                                         </div>
                                     )
                                 }
@@ -249,32 +238,42 @@ export default function ProfilePage() {
                                     <Link
                                         to={`/pokemon/${p._id}`}
                                         key={p._id}
-                                        className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center p-2 bg-slate-50 hover:bg-white transition-colors group"
+                                        className="min-w-[16.66%] flex-1 flex flex-col items-center justify-between py-3 px-2 bg-white hover:bg-blue-50 transition-colors group border-t-2 border-t-transparent hover:border-t-blue-400"
                                     >
-                                        <span className="text-[10px] text-slate-500 mb-1 uppercase tracking-tighter">{species.name}</span>
-                                        <span className="font-bold text-blue-900 text-xs mb-1 truncate max-w-[80px] text-center group-hover:text-blue-600">{name}</span>
-                                        <div className="relative w-12 h-12 flex items-center justify-center">
+                                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold truncate max-w-full text-center">
+                                            {species.name || '???'}
+                                        </span>
+                                        {p.nickname && p.nickname !== species.name ? (
+                                            <span className="font-bold text-blue-900 text-xs truncate max-w-[80px] text-center group-hover:text-blue-600 transition-colors">
+                                                {p.nickname}
+                                            </span>
+                                        ) : (
+                                            <span className="invisible text-xs">-</span>
+                                        )}
+                                        <div className="relative w-20 h-20 flex items-center justify-center my-1">
                                             <img
                                                 src={sprite || '/placeholder.png'}
-                                                className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform"
+                                                className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
                                                 onError={(e) => {
                                                     e.target.onerror = null;
                                                     e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
                                                 }}
                                             />
-                                            {p.isShiny && <span className="absolute top-0 right-0 text-[8px] text-amber-500 font-bold">★</span>}
+                                            {p.isShiny && (
+                                                <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">★</span>
+                                            )}
                                         </div>
-                                        <span className="text-xs text-amber-600 font-bold mt-1">Lv. {p.level}</span>
+                                        <span className="text-xs text-amber-600 font-bold">Lv. {p.level}</span>
                                         {formId !== 'normal' && (
-                                            <span className="text-[9px] text-sky-700 font-bold">{formName}</span>
+                                            <span className="text-[9px] bg-sky-100 text-sky-700 font-bold px-1.5 py-0.5 rounded-full border border-sky-200">
+                                                {formName}
+                                            </span>
                                         )}
                                     </Link>
                                 )
                             })}
                         </div>
                     </div>
-
-                    {/* USER INFO TABLE */}
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
                         <SectionHeader title="Thông Tin Người Chơi" />
                         <div className="bg-white">

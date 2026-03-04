@@ -11,6 +11,14 @@ const router = express.Router()
 
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
 
+const serializePlayerWallet = (playerState) => {
+    const platinumCoins = Number(playerState?.gold || 0)
+    return {
+        platinumCoins,
+        moonPoints: Number(playerState?.moonPoints || 0),
+    }
+}
+
 const calcCatchChance = ({ catchRate, hp, maxHp }) => {
     const rate = Math.min(255, Math.max(1, catchRate || 45))
     const hpFactor = (3 * maxHp - 2 * hp) / (3 * maxHp)
@@ -59,10 +67,7 @@ router.get('/', async (req, res) => {
         res.json({
             ok: true,
             inventory,
-            playerState: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            playerState: serializePlayerWallet(playerState),
         })
     } catch (error) {
         console.error('GET /api/inventory error:', error)

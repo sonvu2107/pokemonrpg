@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
-const formatCurrency = (value) => `$${formatNumber(value)}`
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -11,7 +10,7 @@ const SectionHeader = ({ title }) => (
 )
 
 export default function OnlineStatsPage() {
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [onlineCount, setOnlineCount] = useState(0)
     const [onlineTrainers, setOnlineTrainers] = useState([])
     const [loading, setLoading] = useState(true)
@@ -27,11 +26,11 @@ export default function OnlineStatsPage() {
         try {
             const data = await gameApi.getProfile()
             setWallet({
-                gold: Number(data?.playerState?.gold || 0),
+                platinumCoins: Number(data?.playerState?.platinumCoins ?? 0),
                 moonPoints: Number(data?.playerState?.moonPoints || 0),
             })
         } catch (_err) {
-            setWallet({ gold: 0, moonPoints: 0 })
+            setWallet({ platinumCoins: 0, moonPoints: 0 })
         }
     }
 
@@ -71,8 +70,8 @@ export default function OnlineStatsPage() {
             <div className="border border-blue-500 rounded overflow-hidden shadow-lg bg-white">
                 <SectionHeader title="Danh sách đang online" />
                 <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm font-bold text-slate-700 flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
-                    <span>Xu Bạch Kim: <span className="text-blue-900">{formatCurrency(wallet.gold)}</span></span>
-                    <span>Điểm Nguyệt: <span className="text-blue-900">{formatNumber(wallet.moonPoints)}</span></span>
+                    <span>Xu Bạch Kim: <span className="text-blue-900">{formatNumber(wallet.platinumCoins)}</span></span>
+                    <span>Điểm Nguyệt Các: <span className="text-blue-900">{formatNumber(wallet.moonPoints)}</span></span>
                 </div>
 
                 <div className="overflow-x-auto">

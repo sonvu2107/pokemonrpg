@@ -29,6 +29,11 @@ const parsePositiveInt = (value, fallback = 1) => {
     return parsed
 }
 
+const parseOptionalPrizeLevel = (value) => {
+    if (value === undefined || value === null || value === '') return 0
+    return clampNumber(value, 1, 1000)
+}
+
 const normalizeTeam = (team) => {
     if (!Array.isArray(team)) return []
     return team
@@ -167,6 +172,7 @@ router.post('/', async (req, res) => {
             team,
             prizePokemonId,
             prizePokemonFormId,
+            prizePokemonLevel,
             prizeItemId,
             prizeItemQuantity,
             platinumCoinsReward,
@@ -205,6 +211,9 @@ router.post('/', async (req, res) => {
             team: normalizedTeam,
             prizePokemonId: resolvedPrizeSelection.prizePokemonId,
             prizePokemonFormId: resolvedPrizeSelection.prizePokemonFormId,
+            prizePokemonLevel: resolvedPrizeSelection.prizePokemonId
+                ? parseOptionalPrizeLevel(prizePokemonLevel)
+                : 0,
             prizeItemId: resolvedPrizeItemSelection.prizeItemId,
             prizeItemQuantity: resolvedPrizeItemSelection.prizeItemQuantity,
             platinumCoinsReward: parseRewardNumber(platinumCoinsReward, 0),
@@ -235,6 +244,7 @@ router.put('/:id', async (req, res) => {
             team,
             prizePokemonId,
             prizePokemonFormId,
+            prizePokemonLevel,
             prizeItemId,
             prizeItemQuantity,
             platinumCoinsReward,
@@ -274,6 +284,16 @@ router.put('/:id', async (req, res) => {
             }
             trainer.prizePokemonId = resolvedPrizeSelection.prizePokemonId
             trainer.prizePokemonFormId = resolvedPrizeSelection.prizePokemonFormId
+
+            if (!resolvedPrizeSelection.prizePokemonId) {
+                trainer.prizePokemonLevel = 0
+            } else if (prizePokemonLevel !== undefined) {
+                trainer.prizePokemonLevel = parseOptionalPrizeLevel(prizePokemonLevel)
+            }
+        } else if (prizePokemonLevel !== undefined) {
+            trainer.prizePokemonLevel = trainer.prizePokemonId
+                ? parseOptionalPrizeLevel(prizePokemonLevel)
+                : 0
         }
 
         if (prizeItemId !== undefined || prizeItemQuantity !== undefined) {
@@ -353,6 +373,7 @@ router.post('/auto-generate', async (req, res) => {
                     team,
                     prizePokemonId: null,
                     prizePokemonFormId: 'normal',
+                    prizePokemonLevel: 0,
                     prizeItemId: null,
                     prizeItemQuantity: 1,
                     platinumCoinsReward,

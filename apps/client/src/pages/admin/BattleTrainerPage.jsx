@@ -13,6 +13,7 @@ const emptyTrainer = {
     team: [],
     prizePokemonId: '',
     prizePokemonFormId: 'normal',
+    prizePokemonLevel: 0,
     prizeItemId: '',
     prizeItemQuantity: 1,
     platinumCoinsReward: 0,
@@ -166,6 +167,9 @@ export default function BattleTrainerPage() {
                 prizePokemonFormId: form.prizePokemonId
                     ? (String(form.prizePokemonFormId || '').trim().toLowerCase() || 'normal')
                     : null,
+                prizePokemonLevel: form.prizePokemonId
+                    ? Math.max(0, Number.parseInt(form.prizePokemonLevel, 10) || 0)
+                    : 0,
                 prizeItemId: form.prizeItemId || null,
                 prizeItemQuantity: form.prizeItemId
                     ? Math.max(1, Number.parseInt(form.prizeItemQuantity, 10) || 1)
@@ -199,6 +203,7 @@ export default function BattleTrainerPage() {
             })),
             prizePokemonId: trainer.prizePokemonId?._id || trainer.prizePokemonId || '',
             prizePokemonFormId: String(trainer.prizePokemonFormId || trainer.prizePokemonId?.defaultFormId || 'normal').trim().toLowerCase() || 'normal',
+            prizePokemonLevel: Math.max(0, Number(trainer.prizePokemonLevel) || 0),
             prizeItemId: trainer.prizeItemId?._id || trainer.prizeItemId || '',
             prizeItemQuantity: Math.max(1, Number(trainer.prizeItemQuantity) || 1),
             platinumCoinsReward: trainer.platinumCoinsReward || 0,
@@ -303,6 +308,7 @@ export default function BattleTrainerPage() {
             ...prev,
             prizePokemonId: '',
             prizePokemonFormId: 'normal',
+            prizePokemonLevel: 0,
         }))
     }
 
@@ -590,6 +596,23 @@ export default function BattleTrainerPage() {
                                         </button>
                                     </div>
                                 )}
+                                <div>
+                                    <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                                        Cấp Pokémon thưởng (0 = auto Lv 5)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={form.prizePokemonLevel}
+                                        onChange={(e) => setForm((prev) => ({
+                                            ...prev,
+                                            prizePokemonLevel: Math.max(0, Number.parseInt(e.target.value, 10) || 0),
+                                        }))}
+                                        disabled={!form.prizePokemonId}
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                                        placeholder="0"
+                                    />
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -787,6 +810,11 @@ export default function BattleTrainerPage() {
                                                     Pokémon thưởng: {trainer.prizePokemonId?.name
                                                         ? `${trainer.prizePokemonId.name}${trainer.prizePokemonFormId && trainer.prizePokemonFormId !== 'normal' ? ` (${trainer.prizePokemonFormId})` : ''}`
                                                         : 'Không có'}
+                                                </div>
+                                                <div>
+                                                    Cấp Pokémon thưởng: {Math.max(0, Number(trainer.prizePokemonLevel) || 0) > 0
+                                                        ? `Lv ${Math.max(1, Number(trainer.prizePokemonLevel) || 1)}`
+                                                        : 'Auto Lv 5'}
                                                 </div>
                                                 <div>
                                                     Item thưởng: {trainer.prizeItemId?.name

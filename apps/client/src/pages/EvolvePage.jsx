@@ -15,6 +15,7 @@ export default function EvolvePage() {
     const [pokemon, setPokemon] = useState(null)
     const [evolved, setEvolved] = useState(false)
     const [evolutionMessage, setEvolutionMessage] = useState('')
+    const [evolutionResult, setEvolutionResult] = useState(null)
     const [noEligiblePokemon, setNoEligiblePokemon] = useState(false)
 
     const resolveEvolutionRule = (species = {}, currentFormId = 'normal') => {
@@ -98,6 +99,7 @@ export default function EvolvePage() {
     useEffect(() => {
         setEvolved(false)
         setEvolutionMessage('')
+        setEvolutionResult(null)
         loadPokemon()
     }, [id])
 
@@ -106,8 +108,30 @@ export default function EvolvePage() {
 
         setEvolving(true)
         try {
+            const currentSnapshot = pokemon
+            const snapshotTargetPokemon = currentSnapshot?.evolution?.targetPokemon || null
+            const snapshotFromName = currentSnapshot?.nickname || currentSnapshot?.pokemonId?.name || 'Pokemon'
+            const snapshotFromSprite = resolvePokemonSprite({
+                species: currentSnapshot?.pokemonId || {},
+                formId: currentSnapshot?.formId,
+                isShiny: Boolean(currentSnapshot?.isShiny),
+            })
+            const snapshotToName = snapshotTargetPokemon?.name || 'Pokemon'
+            const snapshotToSprite = resolvePokemonSprite({
+                species: snapshotTargetPokemon || {},
+                formId: currentSnapshot?.formId,
+                isShiny: false,
+                fallback: snapshotTargetPokemon?.sprites?.normal || '',
+            })
+
             const res = await gameApi.evolvePokemon(id)
             setEvolutionMessage(res.message || '')
+            setEvolutionResult({
+                fromName: res?.evolution?.from || snapshotFromName,
+                toName: res?.evolution?.to || snapshotToName,
+                fromSprite: snapshotFromSprite,
+                toSprite: snapshotToSprite,
+            })
             await loadPokemon()
             setEvolved(true)
 
@@ -168,6 +192,10 @@ export default function EvolvePage() {
     })
     const evolutionLevel = pokemon.evolution?.evolutionLevel || null
     const canEvolve = Boolean(pokemon.evolution?.canEvolve)
+    const displayFromName = evolved ? (evolutionResult?.fromName || currentName) : currentName
+    const displayToName = evolved ? (evolutionResult?.toName || targetName) : targetName
+    const displayFromSprite = evolved ? (evolutionResult?.fromSprite || currentSprite) : currentSprite
+    const displayToSprite = evolved ? (evolutionResult?.toSprite || targetSprite) : targetSprite
 
     return (
         <div className="max-w-4xl mx-auto p-4 animate-fade-in">
@@ -188,13 +216,13 @@ export default function EvolvePage() {
                             <div className="relative">
                                 <div className="w-24 h-24 md:w-32 md:h-32 bg-slate-100 rounded-full flex items-center justify-center shadow-inner border-4 border-white ring-2 ring-slate-100">
                                     <img
-                                        src={currentSprite}
-                                        alt={currentName}
+                                        src={displayFromSprite}
+                                        alt={displayFromName}
                                         className="w-20 h-20 md:w-24 md:h-24 pixelated object-contain"
                                     />
                                 </div>
                             </div>
-                            {!evolved && <span className="font-bold text-slate-600">{currentName}</span>}
+                            {!evolved && <span className="font-bold text-slate-600">{displayFromName}</span>}
                         </div>
 
                         {!evolved && (
@@ -209,17 +237,17 @@ export default function EvolvePage() {
 
                         <div className="flex flex-col items-center gap-3">
                             <div className={`w-24 h-24 md:w-32 md:h-32 rounded-full flex items-center justify-center border-4 border-white ring-2 shadow-inner transition-all duration-500 ${evolved ? 'bg-yellow-50 ring-yellow-400 scale-110' : 'bg-slate-100 ring-slate-100'}`}>
-                                {targetSprite ? (
+                                {displayToSprite ? (
                                     <img
-                                        src={targetSprite}
-                                        alt={targetName}
+                                        src={displayToSprite}
+                                        alt={displayToName}
                                         className={`w-20 h-20 md:w-24 md:h-24 pixelated object-contain transition-all duration-500 ${evolved ? 'animate-bounce' : 'opacity-40 grayscale'}`}
                                     />
                                 ) : (
                                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-slate-200 border border-slate-300" />
                                 )}
                             </div>
-                            {!evolved && <span className="font-bold text-slate-800">{targetName}</span>}
+                            {!evolved && <span className="font-bold text-slate-800">{displayToName}</span>}
                         </div>
                     </div>
 
@@ -249,7 +277,7 @@ export default function EvolvePage() {
                     ) : (
                         <div className="space-y-6 animate-fade-in-up">
                             <p className="text-slate-800 font-medium text-xl">
-                                <span className="font-bold">{currentName}</span> đã tiến hóa thành <span className="font-bold text-blue-600">{targetName}</span>!
+                                <span className="font-bold">{displayFromName}</span> đã tiến hóa thành <span className="font-bold text-blue-600">{displayToName}</span>!
                             </p>
                             <button
                                 onClick={() => navigate('/box')}

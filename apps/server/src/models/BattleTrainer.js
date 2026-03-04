@@ -58,6 +58,11 @@ const battleTrainerSchema = new mongoose.Schema(
             default: 'normal',
             trim: true,
         },
+        prizePokemonLevel: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         prizeItemId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Item',

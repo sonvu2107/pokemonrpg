@@ -4,17 +4,9 @@ import Pokemon from '../models/Pokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const router = express.Router()
-
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-// All routes require authentication
 router.use(authMiddleware)
-
-/**
- * @route   GET /api/box
- * @desc    Get user's pokemon box
- * @access  Private
- */
 router.get('/', async (req, res) => {
     try {
         let {
@@ -28,11 +20,7 @@ router.get('/', async (req, res) => {
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1)
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 28))
-
-        // Build query
         const query = { userId: req.user.userId }
-
-        // Search by nickname or species name
         if (search) {
             const searchRegex = new RegExp(escapeRegExp(search), 'i')
             const species = await Pokemon.find({ name: searchRegex }).select('_id')
@@ -56,7 +44,6 @@ router.get('/', async (req, res) => {
             }
         }
 
-        // Sorting
         let sortOptions = {}
         switch (sort) {
             case 'level':
@@ -151,7 +138,7 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         console.error('Box Error:', error)
-        res.status(500).json({ message: 'Không thể tải hộp Pokemon' })
+        res.status(500).json({ message: 'Không thể tải kho Pokemon' })
     }
 })
 

@@ -18,6 +18,7 @@ import EvolvePage from './pages/EvolvePage'
 import TradesPage from './pages/TradesPage'
 import ShopSellPage from './pages/ShopSellPage'
 import ItemShopPage from './pages/ItemShopPage'
+import ItemInfoPage from './pages/ItemInfoPage'
 import SkillShopPage from './pages/SkillShopPage'
 import DailyStatsPage from './pages/DailyStatsPage'
 import OnlineStatsPage from './pages/OnlineStatsPage'
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="/box" element={<PokemonBoxPage />} />
                 <Route path="/pokedex" element={<PokedexPage />} />
                 <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
+                <Route path="/items/:id" element={<ItemInfoPage />} />
                 <Route path="/pokemon/:id/evolve" element={<EvolvePage />} />
                 <Route path="/evolve" element={<EvolvePage />} />
                 <Route path="/party" element={<ChangePartyPage />} />

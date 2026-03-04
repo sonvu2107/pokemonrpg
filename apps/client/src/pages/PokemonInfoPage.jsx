@@ -207,6 +207,19 @@ export default function PokemonInfoPage() {
     const currentMoves = Array.isArray(pokemon.moves)
         ? pokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
         : []
+    const defaultLevelMoves = (Array.isArray(base?.levelUpMoves) ? base.levelUpMoves : [])
+        .filter((entry) => Number.isFinite(Number(entry?.level)) && Number(entry.level) <= Number(pokemon?.level || 1))
+        .sort((a, b) => Number(a.level) - Number(b.level))
+        .map((entry) => String(entry?.moveName || '').trim())
+        .filter(Boolean)
+        .slice(-4)
+    const protectedMoveKeySet = new Set([
+        ...defaultLevelMoves.map((entry) => String(entry || '').trim().toLowerCase()),
+        'struggle',
+    ])
+    const isProtectedMoveName = (value = '') => protectedMoveKeySet.has(String(value || '').trim().toLowerCase())
+    const hasProtectedMoveVisible = currentMoves.some((entry) => protectedMoveKeySet.has(String(entry || '').trim().toLowerCase()))
+    const virtualDefaultMoveName = hasProtectedMoveVisible ? '' : 'Struggle'
     const movePpMap = new Map(
         (Array.isArray(pokemon.movePpState) ? pokemon.movePpState : [])
             .map((entry) => [
@@ -217,6 +230,69 @@ export default function PokemonInfoPage() {
                 },
             ])
     )
+    const currentMoveDetails = (() => {
+        const rawMoveDetails = Array.isArray(pokemon?.moveDetails) ? pokemon.moveDetails : []
+        if (rawMoveDetails.length > 0) {
+            return rawMoveDetails
+                .map((entry) => {
+                    const name = String(entry?.name || '').trim()
+                    if (!name) return null
+                    const key = name.toLowerCase()
+                    const ppState = movePpMap.get(key)
+                    return {
+                        name,
+                        type: String(entry?.type || '').trim().toLowerCase(),
+                        category: String(entry?.category || '').trim().toLowerCase(),
+                        power: Number.isFinite(Number(entry?.power)) ? Number(entry.power) : null,
+                        accuracy: Number.isFinite(Number(entry?.accuracy)) ? Number(entry.accuracy) : null,
+                        currentPp: Number.isFinite(Number(ppState?.currentPp)) ? Number(ppState.currentPp) : Math.max(0, Number(entry?.currentPp || 0)),
+                        maxPp: Number.isFinite(Number(ppState?.maxPp)) ? Number(ppState.maxPp) : Math.max(1, Number(entry?.maxPp || 1)),
+                    }
+                })
+                .filter(Boolean)
+        }
+
+        return currentMoves.map((moveName) => {
+            const key = String(moveName || '').trim().toLowerCase()
+            const ppState = movePpMap.get(key)
+            return {
+                name: moveName,
+                type: '',
+                category: '',
+                power: null,
+                accuracy: null,
+                currentPp: Number.isFinite(Number(ppState?.currentPp)) ? Number(ppState.currentPp) : 0,
+                maxPp: Number.isFinite(Number(ppState?.maxPp)) ? Number(ppState.maxPp) : 1,
+            }
+        })
+    })()
+    const moveDetailsWithDefault = [...currentMoveDetails]
+    if (virtualDefaultMoveName && !moveDetailsWithDefault.some((entry) => String(entry?.name || '').trim().toLowerCase() === 'struggle')) {
+        moveDetailsWithDefault.unshift({
+            name: virtualDefaultMoveName,
+            type: 'normal',
+            category: 'physical',
+            power: 35,
+            accuracy: 100,
+            currentPp: 99,
+            maxPp: 99,
+        })
+    }
+    const orderedMoveDetails = [...moveDetailsWithDefault].sort((left, right) => {
+        const leftProtected = isProtectedMoveName(left?.name)
+        const rightProtected = isProtectedMoveName(right?.name)
+        if (leftProtected && !rightProtected) return -1
+        if (!leftProtected && rightProtected) return 1
+        return 0
+    })
+    const orderedCurrentMoves = [...currentMoves].sort((left, right) => {
+        const leftProtected = isProtectedMoveName(left)
+        const rightProtected = isProtectedMoveName(right)
+        if (leftProtected && !rightProtected) return -1
+        if (!leftProtected && rightProtected) return 1
+        return 0
+    })
+    const moveDisplaySlots = Array.from({ length: 4 }, (_, index) => orderedMoveDetails[index] || null)
     const viewerId = String(user?.id || user?._id || '').trim()
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
@@ -231,6 +307,24 @@ export default function PokemonInfoPage() {
     const previousPokemon = pokemon.evolution?.previousPokemon || null
     const previousSprite = previousPokemon?.sprites?.normal || ''
     const ownerAvatar = String(pokemon.userId?.avatar || '').trim() || DEFAULT_AVATAR
+    const normalizeTrainerLabel = (value = '') => {
+        const raw = String(value || '').trim()
+        if (!raw) return ''
+        const [prefix] = raw.split(':')
+        const token = String(prefix || '').trim().toLowerCase()
+        if (!token) return ''
+        if (token === 'admin_grant' || token === 'system_grant') return 'Hệ thống cấp'
+        return token
+            .split(/[_\-\s]+/)
+            .filter(Boolean)
+            .map((entry) => entry.slice(0, 1).toUpperCase() + entry.slice(1))
+            .join(' ')
+    }
+    const originalTrainerRaw = String(pokemon.originalTrainer || '').trim()
+    const originalTrainerDisplay = normalizeTrainerLabel(originalTrainerRaw) || pokemon.userId?.username || 'Unknown'
+    const obtainedLabel = originalTrainerRaw
+        ? (String(originalTrainerRaw).toLowerCase().startsWith('admin_grant') ? 'Nhận từ hệ thống' : 'Trao đổi')
+        : 'Bắt hoang dã'
     const serverStats = pokemon.serverStats || {}
     const hasServerStats = Object.prototype.hasOwnProperty.call(serverStats, 'speciesTotal')
     const speciesTotal = Number(serverStats.speciesTotal) || 0
@@ -403,56 +497,33 @@ export default function PokemonInfoPage() {
 
                         {/* Moves */}
                         <div className="flex border-b border-blue-200 last:border-0 text-xs text-center">
-                            {currentMoves.length > 0 ? (
-                                <>
-                                    <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {currentMoves[0] || '-'}
-                                        {currentMoves[0] && (
-                                            <div className="text-[10px] text-slate-500 mt-0.5">
-                                                {(() => {
-                                                    const state = movePpMap.get(String(currentMoves[0] || '').toLowerCase())
-                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
-                                                })()}
-                                            </div>
+                            {moveDisplaySlots.map((slot, index) => {
+                                const isLast = index === moveDisplaySlots.length - 1
+                                return (
+                                    <div
+                                        key={`move-slot-${index}`}
+                                        className={`w-1/4 p-2 font-bold text-slate-700 ${isLast ? '' : 'border-r border-blue-200'}`}
+                                    >
+                                        {slot ? (
+                                            <>
+                                                <div>{slot.name}</div>
+                                                <div className="text-[10px] text-slate-500 mt-0.5">{slot.currentPp}/{slot.maxPp} PP</div>
+                                                <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                                                    {slot.type ? String(slot.type).toUpperCase() : '--'}
+                                                    {' • '}
+                                                    {slot.category ? String(slot.category).toUpperCase() : '--'}
+                                                    {' • Pow '}
+                                                    {Number.isFinite(Number(slot.power)) ? Number(slot.power) : '--'}
+                                                    {' • Acc '}
+                                                    {Number.isFinite(Number(slot.accuracy)) ? Number(slot.accuracy) : '--'}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="italic text-slate-400">-</div>
                                         )}
                                     </div>
-                                    <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {currentMoves[1] || '-'}
-                                        {currentMoves[1] && (
-                                            <div className="text-[10px] text-slate-500 mt-0.5">
-                                                {(() => {
-                                                    const state = movePpMap.get(String(currentMoves[1] || '').toLowerCase())
-                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
-                                                })()}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="w-1/4 p-2 border-r border-blue-200 font-bold text-slate-700">
-                                        {currentMoves[2] || '-'}
-                                        {currentMoves[2] && (
-                                            <div className="text-[10px] text-slate-500 mt-0.5">
-                                                {(() => {
-                                                    const state = movePpMap.get(String(currentMoves[2] || '').toLowerCase())
-                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
-                                                })()}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="w-1/4 p-2 font-bold text-slate-700">
-                                        {currentMoves[3] || '-'}
-                                        {currentMoves[3] && (
-                                            <div className="text-[10px] text-slate-500 mt-0.5">
-                                                {(() => {
-                                                    const state = movePpMap.get(String(currentMoves[3] || '').toLowerCase())
-                                                    return state ? `${state.currentPp}/${state.maxPp} PP` : '--/-- PP'
-                                                })()}
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="w-full p-2 italic text-slate-400">Chưa học kỹ năng nào</div>
-                            )}
+                                )
+                            })}
                         </div>
 
                         {isOwnerViewing && (
@@ -466,17 +537,37 @@ export default function PokemonInfoPage() {
                                 </button>
                                 {currentMoves.length > 0 && (
                                     <div className="flex flex-wrap justify-center gap-1">
-                                        {currentMoves.map((moveName, index) => (
+                                        {orderedCurrentMoves.map((moveName, index) => (
+                                            (() => {
+                                                const isProtectedMove = isProtectedMoveName(moveName)
+                                                return (
                                             <button
                                                 key={`${moveName}-${index}-remove`}
                                                 type="button"
                                                 onClick={() => handleRemoveSkill(moveName)}
-                                                disabled={removingSkillName === moveName}
-                                                className="px-2 py-1 text-[11px] font-bold rounded bg-white border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                disabled={removingSkillName === moveName || isProtectedMove}
+                                                className={`px-2 py-1 text-[11px] font-bold rounded border ${isProtectedMove
+                                                    ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed'
+                                                    : 'bg-white border-red-300 text-red-700 hover:bg-red-50'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                                                title={isProtectedMove ? 'Kỹ năng mặc định không thể gỡ' : ''}
                                             >
-                                                {removingSkillName === moveName ? 'Đang gỡ...' : `Gỡ ${moveName}`}
+                                                {isProtectedMove
+                                                    ? `${moveName} (mặc định)`
+                                                    : (removingSkillName === moveName ? 'Đang gỡ...' : `Gỡ ${moveName}`)}
                                             </button>
+                                                )
+                                            })()
                                         ))}
+                                        {virtualDefaultMoveName && (
+                                            <button
+                                                type="button"
+                                                disabled
+                                                className="px-2 py-1 text-[11px] font-bold rounded border bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed"
+                                                title="Kỹ năng mặc định luôn được giữ lại"
+                                            >
+                                                {virtualDefaultMoveName} (mặc định)
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -495,10 +586,10 @@ export default function PokemonInfoPage() {
                         </div>
                         <div className="flex text-xs text-center text-slate-700 font-bold">
                             <div className="w-1/2 p-2 border-r border-blue-200">
-                                {pokemon.originalTrainer || pokemon.userId?.username || 'Unknown'}
+                                {originalTrainerDisplay}
                             </div>
                             <div className="w-1/2 p-2">
-                                {pokemon.originalTrainer ? 'Trao đổi' : 'Bắt hoang dã'}
+                                {obtainedLabel}
                                 {/* logic for place obtained is vague in schema, using fallback */}
                             </div>
                         </div>
@@ -613,6 +704,10 @@ export default function PokemonInfoPage() {
                                                 </label>
                                             )
                                         })}
+                                    </div>
+
+                                    <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                                        Kỹ năng mặc định: <span className="font-bold text-slate-700">{virtualDefaultMoveName || 'Đã có trong bộ kỹ năng hiện tại'}</span>
                                     </div>
 
                                     {currentMoves.length >= 4 && (

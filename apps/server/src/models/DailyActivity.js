@@ -47,6 +47,11 @@ const dailyActivitySchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        wildDefeats: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         mines: {
             type: Number,
             default: 0,

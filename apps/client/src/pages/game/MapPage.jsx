@@ -14,17 +14,16 @@ export default function MapPage() {
     const [unlockInfo, setUnlockInfo] = useState(null)
     const [isLocked, setIsLocked] = useState(false)
     const [featureNotice, setFeatureNotice] = useState('')
-
-    // Game State
     const [searching, setSearching] = useState(false)
-    const [lastResult, setLastResult] = useState(null) // { encountered: bool, pokemon?: obj, message?: string }
-    const [encounter, setEncounter] = useState(null) // { id, pokemon, level, hp, maxHp }
+    const [lastResult, setLastResult] = useState(null)
+    const [encounter, setEncounter] = useState(null)
     const [actionLoading, setActionLoading] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
     const [inventory, setInventory] = useState([])
     const [selectedBallId, setSelectedBallId] = useState('')
+    const [playerBattle, setPlayerBattle] = useState(null)
     const [playerState, setPlayerState] = useState({
-        gold: 0,
+        platinumCoins: 0,
         moonPoints: 0,
         level: 1,
     })
@@ -34,7 +33,7 @@ export default function MapPage() {
         expToNext: 250,
         totalSearches: 0,
     })
-    const formattedGold = Number(playerState.gold || 0).toLocaleString('vi-VN')
+    const formattedGold = Number(playerState.platinumCoins || 0).toLocaleString('vi-VN')
     const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
     const requiredSearches = Math.max(
@@ -62,6 +61,7 @@ export default function MapPage() {
         loadMapData()
         setLastResult(null)
         setEncounter(null)
+        setPlayerBattle(null)
         setActionMessage('')
         setFeatureNotice('')
     }, [slug])
@@ -81,7 +81,7 @@ export default function MapPage() {
             }
             if (stateData?.playerState) {
                 setPlayerState({
-                    gold: stateData.playerState.gold || 0,
+                    platinumCoins: stateData.playerState.platinumCoins ?? 0,
                     moonPoints: stateData.playerState.moonPoints || 0,
                     level: Math.max(1, Number(stateData.playerState.level) || 1),
                 })
@@ -120,9 +120,6 @@ export default function MapPage() {
         }
         try {
             setSearching(true)
-            setLastResult(null)
-            setEncounter(null)
-            setActionMessage('')
 
             const res = await gameApi.searchMap(slug)
             if (res?.locked) {
@@ -134,9 +131,6 @@ export default function MapPage() {
 
             setIsLocked(false)
 
-            // Artificial delay to mimic "Searching..." feel of old RPGs
-            await new Promise(r => setTimeout(r, 600))
-
             setLastResult(res)
             if (res.encountered) {
                 setEncounter({
@@ -146,9 +140,16 @@ export default function MapPage() {
                     hp: res.hp,
                     maxHp: res.maxHp,
                 })
+                setPlayerBattle(res.playerBattle || null)
                 await loadInventory()
                 if (res.itemDrop) {
                     setActionMessage(`Nhặt được: ${res.itemDrop.name}`)
+                }
+            } else {
+                setEncounter(null)
+                setPlayerBattle(null)
+                if (!res.itemDrop) {
+                    setActionMessage('')
                 }
             }
             if (res.mapProgress) {
@@ -171,9 +172,19 @@ export default function MapPage() {
             setActionLoading(true)
             const res = await gameApi.attackEncounter(encounter.id)
             setEncounter(prev => prev ? { ...prev, hp: res.hp, maxHp: res.maxHp } : prev)
+            setPlayerBattle(res?.playerBattle || null)
+            if (res?.playerState) {
+                setPlayerState((prev) => ({
+                    ...prev,
+                    platinumCoins: Number(res.playerState.platinumCoins ?? prev.platinumCoins ?? 0),
+                    moonPoints: Number(res.playerState.moonPoints ?? prev.moonPoints ?? 0),
+                    level: Math.max(1, Number(res.playerState.level ?? prev.level) || 1),
+                }))
+            }
             setActionMessage(res.message || 'Đã tấn công!')
-            if (res.defeated) {
+            if (res.defeated || res.playerDefeated) {
                 setEncounter(null)
+                setPlayerBattle(null)
             }
         } catch (err) {
             setActionMessage(err.message)
@@ -190,6 +201,7 @@ export default function MapPage() {
             setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : 'Bắt thất bại!'))
             if (res.caught) {
                 setEncounter(null)
+                setPlayerBattle(null)
             }
         } catch (err) {
             setActionMessage(err.message)
@@ -207,6 +219,7 @@ export default function MapPage() {
             await loadInventory()
             if (res.caught) {
                 setEncounter(null)
+                setPlayerBattle(null)
             }
         } catch (err) {
             setActionMessage(err.message)
@@ -236,6 +249,7 @@ export default function MapPage() {
             const res = await gameApi.runEncounter(encounter.id)
             setActionMessage(res.message || 'Bạn đã bỏ chạy.')
             setEncounter(null)
+            setPlayerBattle(null)
         } catch (err) {
             setActionMessage(err.message)
         } finally {
@@ -249,6 +263,12 @@ export default function MapPage() {
     if (!map) return null
 
     const specialPokemons = Array.isArray(map.specialPokemons) ? map.specialPokemons : []
+    const enemyHpPercent = encounter
+        ? Math.max(5, Math.round((encounter.hp / Math.max(1, encounter.maxHp)) * 100))
+        : 0
+    const playerHpPercent = playerBattle
+        ? Math.max(0, Math.round((playerBattle.currentHp / Math.max(1, playerBattle.maxHp)) * 100))
+        : 0
 
     if (isLocked) {
         return (
@@ -257,11 +277,11 @@ export default function MapPage() {
                     <div className="text-center py-3 bg-gradient-to-b from-white to-blue-50 border-b-2 border-slate-300 shadow-sm">
                         <div className="flex flex-col items-center justify-center gap-0.5">
                             <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
-                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png" className="w-4 h-4" alt="Coins" />
+                                <span>🪙</span>
                                 <span>${formattedGold} Xu Bạch Kim</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
-                                <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png" className="w-4 h-4" alt="Points" />
+                                <span>🌑</span>
                                 <span>{formattedMoonPoints} Điểm Nguyệt Các</span>
                             </div>
                         </div>
@@ -284,18 +304,15 @@ export default function MapPage() {
 
     return (
         <div className="max-w-3xl mx-auto font-sans text-sm animate-fadeIn">
-            {/* Main Blue Border Container */}
             <div className="border-[3px] border-blue-700 rounded-lg bg-white overflow-hidden shadow-lg">
-
-                {/* Header Section (Jirachi's Park style) */}
                 <div className="text-center py-2 bg-gradient-to-b from-white to-blue-50 border-b border-blue-200">
                     <div className="flex flex-col items-center justify-center gap-0.5">
                         <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
-                            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png" className="w-4 h-4" alt="Coins" />
+                            <span>🪙</span>
                             <span>${formattedGold} Xu Bạch Kim</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
-                            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png" className="w-4 h-4" alt="Points" />
+                            <span>🌑</span>
                             <span>{formattedMoonPoints} Điểm Nguyệt Các</span>
                         </div>
                     </div>
@@ -426,7 +443,6 @@ export default function MapPage() {
                                             className="absolute top-0 left-0 h-full bg-gradient-to-b from-cyan-300 to-cyan-600"
                                             style={{ width: `${mapProgressPercent}%` }}
                                         ></div>
-                                        {/* Shine effect */}
                                         <div className="absolute top-0 left-0 w-full h-[50%] bg-white/30"></div>
                                     </div>
                                 </td>
@@ -479,8 +495,8 @@ export default function MapPage() {
                         />
 
                         {/* Encounter Overlay */}
-                        {encounter && (
-                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center animate-fadeIn z-20">
+                        <div className={`absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-20 transition-opacity duration-150 ${encounter ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                            {encounter && (
                                 <img
                                     src={encounter.pokemon.resolvedImageUrl
                                         || encounter.pokemon.form?.imageUrl
@@ -491,32 +507,45 @@ export default function MapPage() {
                                     alt={encounter.pokemon.name}
                                     className="w-32 h-32 animate-bounce drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]"
                                 />
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
 
-                    {encounter && (
-                        <div className="w-full max-w-[300px] text-xs">
+                    <div className="w-full max-w-[300px] text-xs min-h-[56px]">
+                        <div className={`transition-opacity ${encounter ? 'opacity-100' : 'opacity-0'}`}>
                             <div className="flex justify-between text-slate-700 font-bold mb-1">
                                 <span>HP</span>
-                                <span>{encounter.hp}/{encounter.maxHp}</span>
+                                <span>{encounter ? `${encounter.hp}/${encounter.maxHp}` : '0/0'}</span>
                             </div>
                             <div className="w-full h-2 bg-slate-200 rounded overflow-hidden">
                                 <div
                                     className="h-2 bg-green-500"
-                                    style={{ width: `${Math.max(5, Math.round((encounter.hp / encounter.maxHp) * 100))}%` }}
+                                    style={{ width: `${enemyHpPercent}%` }}
                                 />
                             </div>
                         </div>
-                    )}
+
+                        <div className={`mt-3 transition-opacity ${playerBattle ? 'opacity-100' : 'opacity-0'}`}>
+                            <div className="flex justify-between text-blue-800 font-bold mb-1">
+                                <span>{playerBattle?.name || 'Pokemon của bạn'}</span>
+                                <span>{playerBattle ? `${playerBattle.currentHp}/${playerBattle.maxHp}` : '0/0'}</span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-200 rounded overflow-hidden">
+                                <div
+                                    className="h-2 bg-blue-500"
+                                    style={{ width: `${playerHpPercent}%` }}
+                                />
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Search Button */}
                     <button
                         onClick={handleSearch}
                         disabled={searching || Boolean(encounter) || isLocked} // If found, force decision? Or just re-search as user requested simple loop
-                        className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded disabled:opacity-50 touch-manipulation"
+                        className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded touch-manipulation"
                     >
-                        {searching ? 'Đang tìm...' : 'Tìm kiếm'}
+                        Tìm kiếm{searching ? '...' : ''}
                     </button>
                 </div>
 
@@ -528,7 +557,7 @@ export default function MapPage() {
                             <div className="mt-2 text-xs font-normal text-slate-600">
                                 [ <button
                                     onClick={handleAttack}
-                                    disabled={actionLoading}
+                                    disabled={actionLoading || !playerBattle}
                                     className="text-blue-600 hover:underline font-bold disabled:opacity-50 px-2 py-1"
                                 >Chiến đấu</button> ]
                                 {' - '}
@@ -538,6 +567,11 @@ export default function MapPage() {
                                     className="text-slate-600 hover:underline font-bold disabled:opacity-50 px-2 py-1"
                                 >Bỏ chạy</button> ]
                             </div>
+                            {!playerBattle && (
+                                <div className="mt-2 text-[11px] font-bold text-amber-600">
+                                    Cần có Pokemon trong đội hình để chiến đấu.
+                                </div>
+                            )}
                             <div className="mt-2 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs w-full">
                                 <select
                                     value={selectedBallId}

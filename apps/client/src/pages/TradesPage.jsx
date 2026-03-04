@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
+import { useToast } from '../context/ToastContext'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -60,7 +61,8 @@ const formatDate = (value) => {
 
 export default function TradesPage() {
     const [listings, setListings] = useState([])
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
+    const toast = useToast()
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 20 })
     const [typeOptions, setTypeOptions] = useState(['all'])
     const [pokemonNameOptions, setPokemonNameOptions] = useState(['all'])
@@ -109,7 +111,7 @@ export default function TradesPage() {
 
             setListings(data.listings || [])
             setWallet({
-                gold: Number(data?.wallet?.gold || 0),
+                platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
                 moonPoints: Number(data?.wallet?.moonPoints || 0),
             })
             setPagination((prev) => ({
@@ -155,8 +157,9 @@ export default function TradesPage() {
             setBuyingId(listing.id)
             await gameApi.buyPokemon(listing.id)
             await loadListings(pagination.page || 1, filters)
+            toast.showSuccess('Mua Pokemon thành công!')
         } catch (err) {
-            window.alert(err.message || 'Mua Pokemon thất bại')
+            toast.showError(err.message || 'Mua Pokemon thất bại')
         } finally {
             setBuyingId('')
         }
@@ -166,8 +169,8 @@ export default function TradesPage() {
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
                 <div className="text-slate-700 text-sm font-bold flex justify-center gap-4 mb-1">
-                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Mua Pokemon</h1>
             </div>

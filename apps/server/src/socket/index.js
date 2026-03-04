@@ -64,10 +64,12 @@ export const initSocket = (server) => {
 // Helper to emit player state to specific user
 export const emitPlayerState = (userId, playerState) => {
     if (io) {
+        const platinumCoins = Number(playerState?.gold || 0)
         io.to(userId).emit('playerState', {
             hp: playerState.hp,
             maxHp: playerState.maxHp,
-            gold: playerState.gold,
+            platinumCoins,
+            moonPoints: Number(playerState?.moonPoints || 0),
             clicks: playerState.clicks,
         })
     }

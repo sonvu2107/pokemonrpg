@@ -7,6 +7,24 @@ import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 
 const router = express.Router()
 
+const serializePlayerState = (playerStateLike = null) => {
+    const playerState = playerStateLike?.toObject ? playerStateLike.toObject() : (playerStateLike || {})
+    const platinumCoins = Number(playerState?.gold || 0)
+    return {
+        hp: Number(playerState?.hp || 100),
+        maxHp: Number(playerState?.maxHp || 100),
+        platinumCoins,
+        clicks: Number(playerState?.clicks || 0),
+        level: Math.max(1, Number(playerState?.level) || 1),
+        experience: Number(playerState?.experience || 0),
+        stamina: Number(playerState?.stamina || 100),
+        maxStamina: Number(playerState?.maxStamina || 100),
+        moonPoints: Number(playerState?.moonPoints || 0),
+        wins: Number(playerState?.wins || 0),
+        losses: Number(playerState?.losses || 0),
+    }
+}
+
 // POST /api/auth/register
 router.post('/register', async (req, res, next) => {
     try {
@@ -191,11 +209,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 completedBattleTrainers: user.completedBattleTrainers || [],
                 createdAt: user.createdAt,
             },
-            playerState: playerState || {
-                hp: 100, maxHp: 100, gold: 0, clicks: 0,
-                level: 1, experience: 0, stamina: 100, maxStamina: 100,
-                moonPoints: 0, wins: 0, losses: 0
-            },
+            playerState: serializePlayerState(playerState),
         })
     } catch (error) {
         next(error)

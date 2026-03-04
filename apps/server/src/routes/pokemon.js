@@ -317,6 +317,29 @@ router.get('/:id', async (req, res) => {
             movePpState: userPokemon.movePpState,
             moveLookupMap,
         })
+        const movePpMap = new Map(
+            movePpState.map((entry) => [
+                normalizeMoveName(entry?.moveName),
+                {
+                    currentPp: Math.max(0, Number(entry?.currentPp || 0)),
+                    maxPp: Math.max(1, Number(entry?.maxPp || 1)),
+                },
+            ])
+        )
+        const moveDetails = mergedMoves.map((moveName) => {
+            const moveKey = normalizeMoveName(moveName)
+            const moveMeta = moveLookupMap.get(moveKey) || {}
+            const ppState = movePpMap.get(moveKey) || { currentPp: 0, maxPp: Math.max(1, Number(moveMeta?.pp) || 1) }
+            return {
+                name: String(moveMeta?.name || moveName || '').trim(),
+                type: String(moveMeta?.type || '').trim().toLowerCase(),
+                category: String(moveMeta?.category || '').trim().toLowerCase(),
+                power: Number.isFinite(Number(moveMeta?.power)) ? Number(moveMeta.power) : null,
+                accuracy: Number.isFinite(Number(moveMeta?.accuracy)) ? Number(moveMeta.accuracy) : null,
+                currentPp: ppState.currentPp,
+                maxPp: ppState.maxPp,
+            }
+        })
 
         // Base stats from species
         const stats = calcStatsForLevel(basePokemon.baseStats, level, rarity)
@@ -326,6 +349,7 @@ router.get('/:id', async (req, res) => {
         const responseData = {
             ...userPokemon,
             moves: mergedMoves,
+            moveDetails,
             movePpState: toDisplayMovePpState(movePpState),
             stats: {
                 ...stats,
@@ -701,10 +725,6 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
             ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
             : []
 
-        if (currentMoves.length <= 1) {
-            return res.status(400).json({ ok: false, message: 'Pokemon phải giữ lại ít nhất 1 kỹ năng' })
-        }
-
         let moveIndex = -1
         if (rawMoveName) {
             const targetKey = normalizeMoveName(rawMoveName)
@@ -723,15 +743,25 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
         const moveName = currentMoves[moveIndex]
         const levelLearnedMoves = buildMovesForLevel(userPokemon.pokemonId, userPokemon.level)
         const defaultMoveSet = new Set(levelLearnedMoves.map((entry) => normalizeMoveName(entry)))
+        defaultMoveSet.add('struggle')
 
         if (defaultMoveSet.has(normalizeMoveName(moveName))) {
-            return res.status(400).json({ ok: false, message: 'Không thể gỡ kỹ năng học theo cấp độ mặc định' })
+            return res.status(400).json({ ok: false, message: 'Không thể gỡ kỹ năng mặc định của Pokemon' })
         }
 
-        const nextMoves = currentMoves.filter((_, index) => index !== moveIndex)
+        let nextMoves = currentMoves.filter((_, index) => index !== moveIndex)
+        if (nextMoves.length === 0) {
+            const fallbackMoves = mergeKnownMovesWithFallback([], userPokemon.pokemonId, userPokemon.level)
+            nextMoves = fallbackMoves.length > 0 ? fallbackMoves : ['Struggle']
+        }
         const removeKey = normalizeMoveName(moveName)
-        const nextMovePpState = (Array.isArray(userPokemon.movePpState) ? userPokemon.movePpState : [])
+        let nextMovePpState = (Array.isArray(userPokemon.movePpState) ? userPokemon.movePpState : [])
             .filter((entry) => normalizeMoveName(entry?.moveName) !== removeKey)
+
+        if (nextMoves.length > 0) {
+            const nextMoveKeySet = new Set(nextMoves.map((entry) => normalizeMoveName(entry)))
+            nextMovePpState = nextMovePpState.filter((entry) => nextMoveKeySet.has(normalizeMoveName(entry?.moveName)))
+        }
 
         userPokemon.moves = nextMoves
         userPokemon.movePpState = nextMovePpState

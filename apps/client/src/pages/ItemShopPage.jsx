@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import { useToast } from '../context/ToastContext'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -21,13 +23,14 @@ const getFallbackItemImage = () => 'https://raw.githubusercontent.com/PokeAPI/sp
 
 export default function ItemShopPage() {
     const [items, setItems] = useState([])
-    const [wallet, setWallet] = useState({ gold: 0, moonPoints: 0 })
+    const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1, limit: 20, total: 0 })
     const [typeFilter, setTypeFilter] = useState('all')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [buyingItemId, setBuyingItemId] = useState('')
     const [buyQuantity, setBuyQuantity] = useState(1)
+    const toast = useToast()
 
     useEffect(() => {
         loadItems(1, typeFilter)
@@ -54,7 +57,7 @@ export default function ItemShopPage() {
             const data = await gameApi.getShopItems(params)
             setItems(data.items || [])
             setWallet({
-                gold: Number(data?.wallet?.gold || 0),
+                platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
                 moonPoints: Number(data?.wallet?.moonPoints || 0),
             })
             setPagination((prev) => ({
@@ -80,12 +83,12 @@ export default function ItemShopPage() {
             setBuyingItemId(item._id)
             const result = await gameApi.buyShopItem(item._id, quantity)
             setWallet({
-                gold: Number(result?.wallet?.gold || wallet.gold),
+                platinumCoins: Number(result?.wallet?.platinumCoins ?? wallet.platinumCoins),
                 moonPoints: Number(result?.wallet?.moonPoints || wallet.moonPoints),
             })
-            window.alert(result?.message || 'Mua vật phẩm thành công')
+            toast.showSuccess(result?.message || 'Mua vật phẩm thành công')
         } catch (err) {
-            window.alert(err.message || 'Mua vật phẩm thất bại')
+            toast.showError(err.message || 'Mua vật phẩm thất bại')
         } finally {
             setBuyingItemId('')
         }
@@ -95,8 +98,8 @@ export default function ItemShopPage() {
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
                 <div className="text-slate-700 text-sm font-bold flex justify-center gap-4 mb-1">
-                    <span className="flex items-center gap-1">🪙 {wallet.gold.toLocaleString('vi-VN')} Xu Bạch Kim</span>
-                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt</span>
+                    <span className="flex items-center gap-1">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
+                    <span className="flex items-center gap-1 text-purple-700">🌙 {wallet.moonPoints.toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Cửa Hàng Vật Phẩm</h1>
             </div>
@@ -135,8 +138,8 @@ export default function ItemShopPage() {
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[760px]">
-                            <thead>
+                        <table className="w-full">
+                            <thead className="hidden sm:table-header-group">
                                 <tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-sm font-bold">
                                     <th className="px-3 py-2 text-center border-r border-blue-200 w-24">Hình</th>
                                     <th className="px-3 py-2 text-center border-r border-blue-200">Vật phẩm</th>
@@ -159,31 +162,54 @@ export default function ItemShopPage() {
                                     </tr>
                                 ) : (
                                     items.map((item) => (
-                                        <tr key={item._id} className="border-b border-blue-100 hover:bg-blue-50/40">
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
-                                                <img
-                                                    src={item.imageUrl || getFallbackItemImage()}
-                                                    alt={item.name}
-                                                    className="w-10 h-10 object-contain mx-auto pixelated"
-                                                    onError={(event) => {
-                                                        event.currentTarget.onerror = null
-                                                        event.currentTarget.src = getFallbackItemImage()
-                                                    }}
-                                                />
+                                        <tr key={item._id} className="border-b border-blue-100 hover:bg-blue-50/40 flex flex-col sm:table-row p-4 sm:p-0 gap-3 sm:gap-0">
+                                            <td className="px-4 py-3 border-blue-100 border-b sm:border-b-0 sm:border-r flex items-center gap-4 sm:table-cell w-full align-middle">
+                                                <Link to={`/items/${item._id}`} className="flex items-center gap-4 w-full sm:w-auto sm:mx-auto group">
+                                                    <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 bg-blue-50 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center border border-blue-100 sm:border-none sm:mx-auto">
+                                                        <img
+                                                            src={item.imageUrl || getFallbackItemImage()}
+                                                            alt={item.name}
+                                                            className="w-12 h-12 sm:w-16 sm:h-16 object-contain pixelated"
+                                                            onError={(event) => {
+                                                                event.currentTarget.onerror = null
+                                                                event.currentTarget.src = getFallbackItemImage()
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1 sm:hidden">
+                                                        <div className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-700">{item.name}</div>
+                                                        <div className="text-xs italic text-slate-500 mt-1 line-clamp-2">{item.description || 'Không có mô tả.'}</div>
+                                                    </div>
+                                                </Link>
                                             </td>
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
-                                                <div className="font-bold text-slate-800 text-lg">{item.name}</div>
-                                                <div className="text-sm italic text-slate-600 mt-1">{item.description || 'Không có mô tả.'}</div>
+
+                                            <td className="hidden sm:table-cell px-4 py-3 border-r border-blue-100 text-center align-middle">
+                                                <Link to={`/items/${item._id}`} className="block hover:underline">
+                                                    <div className="font-bold text-slate-800 text-lg hover:text-blue-700">{item.name}</div>
+                                                    <div className="text-sm italic text-slate-600 mt-1">{item.description || 'Không có mô tả.'}</div>
+                                                </Link>
                                             </td>
-                                            <td className="px-3 py-3 border-r border-blue-100 text-center">
-                                                <div className="font-bold text-xl text-slate-900">{Number(item.shopPrice || 0).toLocaleString('vi-VN')} xu</div>
-                                                <div className="text-sm text-slate-500">Xu Bạch Kim</div>
+                                            <td className="px-4 py-3 border-blue-100 flex items-center justify-between sm:table-cell w-full sm:border-r align-middle">
+                                                <div className="sm:text-center text-left">
+                                                    <div className="font-bold text-xl text-blue-700 sm:text-slate-900">{Number(item.shopPrice || 0).toLocaleString('vi-VN')} <span className="text-sm sm:text-lg font-normal sm:font-bold">xu</span></div>
+                                                    <div className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider font-bold sm:font-normal sm:normal-case sm:tracking-normal w-max sm:mx-auto">bạch kim</div>
+                                                </div>
+
+                                                <div className="sm:hidden">
+                                                    <button
+                                                        onClick={() => handleBuy(item)}
+                                                        disabled={buyingItemId === item._id}
+                                                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                                                    >
+                                                        {buyingItemId === item._id ? 'Đang mua...' : 'Mua'}
+                                                    </button>
+                                                </div>
                                             </td>
-                                            <td className="px-3 py-3 text-center">
+                                            <td className="hidden sm:table-cell px-4 py-3 text-center align-middle">
                                                 <button
                                                     onClick={() => handleBuy(item)}
                                                     disabled={buyingItemId === item._id}
-                                                    className="px-3 py-1.5 bg-white border border-blue-400 text-blue-800 font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    className="w-full sm:w-auto px-6 py-2 bg-white border border-blue-400 text-blue-800 font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed rounded shadow-sm"
                                                 >
                                                     {buyingItemId === item._id ? 'Đang mua...' : 'Mua'}
                                                 </button>

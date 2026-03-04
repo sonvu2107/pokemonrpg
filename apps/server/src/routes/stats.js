@@ -39,6 +39,14 @@ const buildDateKeys = ({ days = 31, endDate = new Date() }) => {
 const toSafePage = (value) => Math.max(1, Number.parseInt(value, 10) || 1)
 const toSafeLimit = (value) => Math.min(100, Math.max(1, Number.parseInt(value, 10) || 35))
 
+const serializeWallet = (playerState) => {
+    const platinumCoins = Number(playerState?.gold || 0)
+    return {
+        platinumCoins,
+        moonPoints: Number(playerState?.moonPoints || 0),
+    }
+}
+
 const formatPlayTime = (createdAt, nowDate = new Date()) => {
     const created = new Date(createdAt)
     const now = new Date(nowDate)
@@ -194,10 +202,7 @@ router.get('/daily', authMiddleware, async (req, res) => {
                 id: user?._id || userId,
                 username: user?.username || 'Huấn Luyện Viên',
             },
-            wallet: {
-                gold: Number(playerState?.gold || 0),
-                moonPoints: Number(playerState?.moonPoints || 0),
-            },
+            wallet: serializeWallet(playerState),
             stats,
         })
     } catch (error) {

@@ -25,6 +25,14 @@ const calcRewardDayByStreak = (streak) => {
     return ((safeStreak - 1) % DAILY_REWARD_CYCLE_DAYS) + 1
 }
 
+const serializeWallet = (playerState) => {
+    const platinumCoins = Number(playerState?.gold || 0)
+    return {
+        platinumCoins,
+        moonPoints: Number(playerState?.moonPoints || 0),
+    }
+}
+
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -159,7 +167,7 @@ router.post('/claim', async (req, res) => {
         let claimResult = null
         let rewardedAmount = amount
 
-        if (rewardType === 'platinumCoins' || rewardType === 'gold' || rewardType === 'moonPoints') {
+        if (rewardType === 'platinumCoins' || rewardType === 'moonPoints') {
             const walletField = rewardType === 'moonPoints' ? 'moonPoints' : 'gold'
             const playerState = await PlayerState.findOneAndUpdate(
                 { userId },
@@ -173,12 +181,9 @@ router.post('/claim', async (req, res) => {
             emitPlayerState(String(userId), playerState)
 
             claimResult = {
-                rewardType: walletField === 'gold' ? 'platinumCoins' : rewardType,
+                rewardType,
                 amount,
-                wallet: {
-                    gold: Number(playerState?.gold || 0),
-                    moonPoints: Number(playerState?.moonPoints || 0),
-                },
+                wallet: serializeWallet(playerState),
             }
         } else if (rewardType === 'item') {
             const itemId = reward?.item?._id

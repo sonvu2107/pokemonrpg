@@ -36,6 +36,118 @@ const rollDamage = (level) => {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const WILD_REWARD_BASE_PLATINUM_COINS = 3
+const WILD_REWARD_LEVEL_DIVISOR = 4
+const WILD_REWARD_PLATINUM_COINS_CAP = 20
+const WILD_REWARD_HALF_RATE_AFTER = 100
+const WILD_REWARD_REDUCED_RATE_AFTER = 200
+const DEFAULT_TRAINER_PRIZE_LEVEL = 5
+const WILD_COUNTER_MOVE = {
+    name: 'Tackle',
+    type: 'normal',
+    category: 'physical',
+    power: 40,
+    accuracy: 95,
+    criticalChance: 0.0625,
+}
+
+const calcWildRewardBasePlatinumCoins = (level = 1) => {
+    const normalizedLevel = Math.max(1, Number(level) || 1)
+    const scaled = WILD_REWARD_BASE_PLATINUM_COINS + Math.floor(normalizedLevel / WILD_REWARD_LEVEL_DIVISOR)
+    return Math.max(1, Math.min(WILD_REWARD_PLATINUM_COINS_CAP, scaled))
+}
+
+const resolveWildRewardMultiplier = (wildDefeatsToday = 0) => {
+    const normalized = Math.max(0, Math.floor(Number(wildDefeatsToday) || 0))
+    if (normalized > WILD_REWARD_REDUCED_RATE_AFTER) return 0.2
+    if (normalized > WILD_REWARD_HALF_RATE_AFTER) return 0.5
+    return 1
+}
+
+const calcWildRewardPlatinumCoins = ({ level = 1, wildDefeatsToday = 0 } = {}) => {
+    const basePlatinumCoins = calcWildRewardBasePlatinumCoins(level)
+    const multiplier = resolveWildRewardMultiplier(wildDefeatsToday)
+    if (multiplier >= 1) {
+        return {
+            basePlatinumCoins,
+            multiplier,
+            platinumCoins: basePlatinumCoins,
+        }
+    }
+
+    return {
+        basePlatinumCoins,
+        multiplier,
+        platinumCoins: Math.max(1, Math.floor(basePlatinumCoins * multiplier)),
+    }
+}
+
+const resolveWildPlayerBattleSnapshot = async (userId) => {
+    const leadPartyPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+        .sort({ partyIndex: 1, _id: 1 })
+        .populate('pokemonId', 'name types rarity baseStats forms defaultFormId sprites imageUrl')
+        .lean()
+
+    if (!leadPartyPokemon?.pokemonId) {
+        return null
+    }
+
+    const species = leadPartyPokemon.pokemonId
+    const level = Math.max(1, Number(leadPartyPokemon.level) || 1)
+    const { form: resolvedForm } = resolvePokemonForm(species, leadPartyPokemon.formId)
+    const formStats = resolvedForm?.stats || null
+    const formSprites = resolvedForm?.sprites || null
+    const formImageUrl = resolvedForm?.imageUrl || ''
+    const baseStats = formStats || species.baseStats || {}
+    const scaledStats = calcStatsForLevel(baseStats, level, species.rarity)
+    const maxHp = Math.max(1, calcMaxHp(baseStats?.hp, level, species.rarity))
+    const defense = Math.max(
+        1,
+        Number(scaledStats?.def) ||
+        getSpecialDefenseStat(scaledStats) ||
+        (20 + level * 2)
+    )
+
+    return {
+        playerPokemonId: species._id,
+        playerPokemonName: String(species.name || '').trim() || 'Pokemon của bạn',
+        playerPokemonImageUrl: formSprites?.normal || formSprites?.icon || formImageUrl || species.imageUrl || species.sprites?.normal || species.sprites?.front_default || '',
+        playerPokemonLevel: level,
+        playerDefense: defense,
+        playerTypes: normalizePokemonTypes(species.types),
+        playerCurrentHp: maxHp,
+        playerMaxHp: maxHp,
+    }
+}
+
+const formatWildPlayerBattleState = (encounterLike = {}) => {
+    const maxHp = Math.max(0, Number(encounterLike?.playerMaxHp) || 0)
+    if (maxHp <= 0) return null
+    const currentHp = clamp(
+        Math.floor(Number.isFinite(Number(encounterLike?.playerCurrentHp)) ? Number(encounterLike?.playerCurrentHp) : maxHp),
+        0,
+        maxHp
+    )
+
+    return {
+        pokemonId: encounterLike?.playerPokemonId || null,
+        name: String(encounterLike?.playerPokemonName || '').trim() || 'Pokemon của bạn',
+        imageUrl: encounterLike?.playerPokemonImageUrl || '',
+        level: Math.max(1, Number(encounterLike?.playerPokemonLevel) || 1),
+        currentHp,
+        maxHp,
+        defeated: currentHp <= 0,
+    }
+}
+
+const serializePlayerWallet = (playerStateLike) => {
+    const platinumCoins = Number(playerStateLike?.gold || 0)
+    return {
+        platinumCoins,
+        moonPoints: Number(playerStateLike?.moonPoints || 0),
+    }
+}
+
 const normalizeMoveName = (value) => String(value || '').trim().toLowerCase()
 
 const inferMoveType = (name = '') => {
@@ -812,6 +924,178 @@ const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 
     return merged.slice(0, 4)
 }
 
+const normalizeCounterMoveEntry = (entry = null, fallbackIndex = -1) => {
+    if (!entry || typeof entry !== 'object') return null
+
+    const name = String(entry?.name || entry?.moveName || '').trim()
+    if (!name) return null
+
+    const normalizedName = normalizeMoveName(name)
+    const fallbackPower = normalizedName === 'struggle' ? 35 : 0
+    const powerRaw = Number(entry?.power)
+    const resolvedPower = Number.isFinite(powerRaw) && powerRaw > 0
+        ? Math.floor(powerRaw)
+        : fallbackPower
+
+    const categoryRaw = normalizeTypeToken(entry?.category)
+    const resolvedCategory = categoryRaw === 'physical' || categoryRaw === 'special' || categoryRaw === 'status'
+        ? categoryRaw
+        : (resolvedPower > 0 ? 'physical' : 'status')
+
+    const type = normalizeTypeToken(entry?.type || inferMoveType(name)) || 'normal'
+    const priorityRaw = Number(entry?.priority)
+    const priority = Number.isFinite(priorityRaw) ? clamp(Math.floor(priorityRaw), -7, 7) : 0
+    const accuracyRaw = Number(entry?.accuracy)
+    const accuracy = Number.isFinite(accuracyRaw) && accuracyRaw > 0
+        ? clamp(Math.floor(accuracyRaw), 1, 100)
+        : 100
+
+    const maxPpRaw = Number(entry?.maxPp ?? entry?.pp)
+    const maxPp = Number.isFinite(maxPpRaw) && maxPpRaw > 0
+        ? Math.max(1, Math.floor(maxPpRaw))
+        : (normalizedName === 'struggle' ? 99 : 10)
+    const currentPpRaw = Number(entry?.currentPp ?? entry?.pp)
+    const currentPp = Number.isFinite(currentPpRaw)
+        ? clamp(Math.floor(currentPpRaw), 0, maxPp)
+        : maxPp
+
+    return {
+        ...entry,
+        __index: Number.isInteger(entry?.__index) ? entry.__index : fallbackIndex,
+        name,
+        type,
+        power: resolvedPower,
+        category: resolvedCategory,
+        accuracy,
+        priority,
+        maxPp,
+        currentPp,
+    }
+}
+
+const resolveCounterMoveSelection = ({
+    moves = [],
+    mode = 'ordered',
+    cursor = 0,
+    defenderTypes = [],
+} = {}) => {
+    const normalizedMoves = (Array.isArray(moves) ? moves : [])
+        .map((entry, index) => normalizeCounterMoveEntry({ ...(entry || {}), __index: index }, index))
+        .filter(Boolean)
+
+    const fallbackMove = {
+        __index: -1,
+        name: 'Struggle',
+        type: 'normal',
+        power: 35,
+        category: 'physical',
+        accuracy: 100,
+        priority: 0,
+        maxPp: 99,
+        currentPp: 99,
+    }
+
+    if (normalizedMoves.length === 0) {
+        return {
+            selectedMove: fallbackMove,
+            selectedIndex: -1,
+            nextCursor: 0,
+            normalizedMoves,
+        }
+    }
+
+    const usableMoves = normalizedMoves
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => {
+            const key = normalizeMoveName(entry?.name)
+            if (key === 'struggle') return true
+            return Number(entry?.currentPp) > 0
+        })
+
+    if (usableMoves.length === 0) {
+        return {
+            selectedMove: fallbackMove,
+            selectedIndex: -1,
+            nextCursor: Number.isFinite(Number(cursor)) ? Math.max(0, Math.floor(Number(cursor))) : 0,
+            normalizedMoves,
+        }
+    }
+
+    const normalizedMode = String(mode || '').trim().toLowerCase()
+    const resolvedCursorBase = Number.isFinite(Number(cursor)) ? Math.max(0, Math.floor(Number(cursor))) : 0
+    const resolvedCursor = normalizedMoves.length > 0 ? (resolvedCursorBase % normalizedMoves.length) : 0
+
+    if (normalizedMode === 'smart') {
+        let bestChoice = usableMoves[0]
+        let bestScore = Number.NEGATIVE_INFINITY
+
+        for (const candidate of usableMoves) {
+            const move = candidate.entry
+            const normalizedName = normalizeMoveName(move?.name)
+            const effectiveness = resolveTypeEffectiveness(move?.type || 'normal', defenderTypes).multiplier
+            const powerBase = move?.category === 'status'
+                ? 18
+                : Math.max(1, Number(move?.power) || (normalizedName === 'struggle' ? 35 : 30))
+            const accuracyFactor = Math.max(0.4, Math.min(1, (Number(move?.accuracy) || 100) / 100))
+            const priorityBonus = (Number(move?.priority) || 0) * 10
+            const remainingPpBonus = Math.min(6, Number(move?.currentPp) || 0)
+            const score = (powerBase * Math.max(0.2, effectiveness) * accuracyFactor) + priorityBonus + remainingPpBonus
+
+            if (score > bestScore) {
+                bestScore = score
+                bestChoice = candidate
+            }
+        }
+
+        return {
+            selectedMove: bestChoice.entry,
+            selectedIndex: bestChoice.index,
+            nextCursor: normalizedMoves.length > 0 ? ((bestChoice.index + 1) % normalizedMoves.length) : 0,
+            normalizedMoves,
+        }
+    }
+
+    for (let step = 0; step < normalizedMoves.length; step += 1) {
+        const index = (resolvedCursor + step) % normalizedMoves.length
+        const candidate = normalizedMoves[index]
+        if (!candidate) continue
+        const normalizedName = normalizeMoveName(candidate.name)
+        if (normalizedName !== 'struggle' && Number(candidate.currentPp) <= 0) {
+            continue
+        }
+        return {
+            selectedMove: candidate,
+            selectedIndex: index,
+            nextCursor: (index + 1) % normalizedMoves.length,
+            normalizedMoves,
+        }
+    }
+
+    return {
+        selectedMove: fallbackMove,
+        selectedIndex: -1,
+        nextCursor: resolvedCursor,
+        normalizedMoves,
+    }
+}
+
+const applyCounterMovePpConsumption = ({ moves = [], selectedIndex = -1, shouldConsume = false } = {}) => {
+    const normalizedMoves = (Array.isArray(moves) ? moves : []).map((entry, index) => normalizeCounterMoveEntry(entry, index)).filter(Boolean)
+    if (!shouldConsume || selectedIndex < 0 || selectedIndex >= normalizedMoves.length) {
+        return normalizedMoves
+    }
+
+    return normalizedMoves.map((entry, index) => {
+        if (index !== selectedIndex) return entry
+        const normalizedName = normalizeMoveName(entry?.name)
+        if (normalizedName === 'struggle') return entry
+        return {
+            ...entry,
+            currentPp: Math.max(0, Number(entry.currentPp) - 1),
+        }
+    })
+}
+
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
 const resolvePokemonForm = (pokemon, formId) => {
@@ -1508,7 +1792,7 @@ router.post('/click', authMiddleware, async (req, res, next) => {
             playerState: {
                 hp: playerState.hp,
                 maxHp: playerState.maxHp,
-                gold: playerState.gold,
+                ...serializePlayerWallet(playerState),
                 clicks: playerState.clicks,
             },
         })
@@ -1780,6 +2064,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
         const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
         const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
         const hp = maxHp
+        const playerBattleSnapshot = await resolveWildPlayerBattleSnapshot(userId)
 
         const encounter = await Encounter.create({
             userId,
@@ -1790,6 +2075,14 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             maxHp,
             isShiny: false,
             formId,
+            playerPokemonId: playerBattleSnapshot?.playerPokemonId || null,
+            playerPokemonName: playerBattleSnapshot?.playerPokemonName || '',
+            playerPokemonImageUrl: playerBattleSnapshot?.playerPokemonImageUrl || '',
+            playerPokemonLevel: Math.max(1, Number(playerBattleSnapshot?.playerPokemonLevel) || 1),
+            playerDefense: Math.max(1, Number(playerBattleSnapshot?.playerDefense) || 1),
+            playerTypes: Array.isArray(playerBattleSnapshot?.playerTypes) ? playerBattleSnapshot.playerTypes : [],
+            playerCurrentHp: Math.max(0, Number(playerBattleSnapshot?.playerCurrentHp) || 0),
+            playerMaxHp: Math.max(0, Number(playerBattleSnapshot?.playerMaxHp) || 0),
         })
 
         // 5. Update Player State (consume energy? currently free)
@@ -1812,6 +2105,7 @@ router.post('/search', authMiddleware, async (req, res, next) => {
             level,
             hp,
             maxHp,
+            playerBattle: formatWildPlayerBattleState(encounter),
             itemDrop: droppedItem,
             mapProgress: formatMapProgress(mapProgress),
             playerLevel: {
@@ -1893,8 +2187,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             .lean()
         const currentPlayerLevel = Math.max(1, Number(playerState?.level) || 1)
         const playerCurrencyState = {
-            gold: playerState?.gold || 0,
-            moonPoints: playerState?.moonPoints || 0,
+            ...serializePlayerWallet(playerState),
             level: currentPlayerLevel,
         }
         const map = await MapModel.findOne({ slug: req.params.slug })
@@ -1945,8 +2238,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             ok: true,
             mapProgress: formatMapProgress(progress),
             playerState: {
-                gold: currentPlayerState.gold || 0,
-                moonPoints: currentPlayerState.moonPoints || 0,
+                ...serializePlayerWallet(currentPlayerState),
                 level: Math.max(1, Number(currentPlayerState.level) || 1),
             },
             unlock: {
@@ -1975,15 +2267,169 @@ router.post('/encounter/:id/attack', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy cuộc chạm trán hoặc đã kết thúc' })
         }
 
-        const damage = rollDamage(encounter.level)
-        encounter.hp = Math.max(0, encounter.hp - damage)
+        let playerBattleBefore = formatWildPlayerBattleState(encounter)
+        if (!playerBattleBefore) {
+            const fallbackPlayerBattle = await resolveWildPlayerBattleSnapshot(userId)
+            if (!fallbackPlayerBattle) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Bạn cần có Pokemon trong đội hình để chiến đấu ở map.',
+                })
+            }
 
-        if (encounter.hp <= 0) {
+            encounter.playerPokemonId = fallbackPlayerBattle.playerPokemonId
+            encounter.playerPokemonName = fallbackPlayerBattle.playerPokemonName
+            encounter.playerPokemonImageUrl = fallbackPlayerBattle.playerPokemonImageUrl
+            encounter.playerPokemonLevel = fallbackPlayerBattle.playerPokemonLevel
+            encounter.playerDefense = fallbackPlayerBattle.playerDefense
+            encounter.playerTypes = fallbackPlayerBattle.playerTypes
+            encounter.playerCurrentHp = fallbackPlayerBattle.playerCurrentHp
+            encounter.playerMaxHp = fallbackPlayerBattle.playerMaxHp
+            playerBattleBefore = formatWildPlayerBattleState(encounter)
+        }
+
+        if (playerBattleBefore.currentHp <= 0) {
             encounter.isActive = false
             encounter.endedAt = new Date()
+            await encounter.save()
+            return res.status(400).json({
+                ok: false,
+                defeated: false,
+                playerDefeated: true,
+                message: 'Pokemon trong đội của bạn đã kiệt sức. Hãy rút lui và chuẩn bị lại đội hình.',
+                playerBattle: formatWildPlayerBattleState(encounter),
+            })
+        }
+
+        const damage = rollDamage(encounter.level)
+        encounter.hp = Math.max(0, encounter.hp - damage)
+        const defeatedWild = encounter.hp <= 0
+
+        let reward = null
+        let counterAttack = null
+        let playerDefeated = false
+        let playerState = null
+
+        if (defeatedWild) {
+            encounter.isActive = false
+            encounter.endedAt = new Date()
+        } else {
+            const wildPokemon = await Pokemon.findById(encounter.pokemonId)
+                .select('name types rarity baseStats forms defaultFormId')
+                .lean()
+
+            const defenderTypes = Array.isArray(encounter.playerTypes) && encounter.playerTypes.length > 0
+                ? encounter.playerTypes
+                : ['normal']
+            const defenderDefense = Math.max(1, Number(encounter.playerDefense) || (20 + playerBattleBefore.level * 2))
+
+            let wildName = 'Pokemon hoang dã'
+            let wildTypes = ['normal']
+            let wildAttack = Math.max(1, 20 + encounter.level * 2)
+
+            if (wildPokemon) {
+                wildName = String(wildPokemon?.name || '').trim() || wildName
+                const { form: wildForm } = resolvePokemonForm(wildPokemon, encounter.formId)
+                const wildBaseStats = wildForm?.stats || wildPokemon.baseStats || {}
+                const wildScaledStats = calcStatsForLevel(wildBaseStats, encounter.level, wildPokemon.rarity)
+                wildAttack = Math.max(
+                    1,
+                    Number(wildScaledStats?.atk) ||
+                    Number(wildScaledStats?.spatk) ||
+                    (20 + encounter.level * 2)
+                )
+                wildTypes = normalizePokemonTypes(wildPokemon.types)
+            }
+
+            const didCounterMoveHit = (Math.random() * 100) <= WILD_COUNTER_MOVE.accuracy
+            const counterEffectiveness = resolveTypeEffectiveness(WILD_COUNTER_MOVE.type, defenderTypes)
+            const didCounterCritical = didCounterMoveHit && Math.random() < WILD_COUNTER_MOVE.criticalChance
+            const counterModifier = (wildTypes.includes(WILD_COUNTER_MOVE.type) ? 1.5 : 1)
+                * counterEffectiveness.multiplier
+                * (didCounterCritical ? 1.5 : 1)
+            const counterDamage = (!didCounterMoveHit || counterEffectiveness.multiplier <= 0)
+                ? 0
+                : calcBattleDamage({
+                    attackerLevel: encounter.level,
+                    movePower: WILD_COUNTER_MOVE.power,
+                    attackStat: wildAttack,
+                    defenseStat: defenderDefense,
+                    modifier: counterModifier,
+                })
+
+            const nextPlayerHp = Math.max(0, playerBattleBefore.currentHp - counterDamage)
+            encounter.playerCurrentHp = nextPlayerHp
+
+            counterAttack = {
+                damage: counterDamage,
+                currentHp: nextPlayerHp,
+                maxHp: playerBattleBefore.maxHp,
+                defeatedPlayer: nextPlayerHp <= 0,
+                hit: didCounterMoveHit,
+                effectiveness: counterEffectiveness.multiplier,
+                critical: didCounterCritical,
+                move: {
+                    name: WILD_COUNTER_MOVE.name,
+                    type: WILD_COUNTER_MOVE.type,
+                    category: WILD_COUNTER_MOVE.category,
+                    accuracy: WILD_COUNTER_MOVE.accuracy,
+                    power: WILD_COUNTER_MOVE.power,
+                },
+                log: !didCounterMoveHit
+                    ? `${wildName} dùng ${WILD_COUNTER_MOVE.name} nhưng trượt.`
+                    : `${wildName} dùng ${WILD_COUNTER_MOVE.name}! Gây ${counterDamage} sát thương. ${resolveEffectivenessText(counterEffectiveness.multiplier)}`.trim(),
+            }
+
+            if (nextPlayerHp <= 0) {
+                playerDefeated = true
+                encounter.isActive = false
+                encounter.endedAt = new Date()
+            }
         }
 
         await encounter.save()
+
+        if (defeatedWild) {
+            const date = toDailyDateKey()
+            const dailyActivity = await DailyActivity.findOneAndUpdate(
+                { userId, date },
+                {
+                    $setOnInsert: { userId, date },
+                    $inc: { wildDefeats: 1 },
+                },
+                { new: true, upsert: true }
+            )
+
+            const wildDefeatsToday = Math.max(1, Math.floor(Number(dailyActivity?.wildDefeats) || 1))
+            reward = calcWildRewardPlatinumCoins({
+                level: encounter.level,
+                wildDefeatsToday,
+            })
+
+            if (reward.platinumCoins > 0) {
+                playerState = await PlayerState.findOneAndUpdate(
+                    { userId },
+                    {
+                        $setOnInsert: { userId },
+                        $inc: { gold: reward.platinumCoins },
+                    },
+                    { new: true, upsert: true }
+                )
+
+                emitPlayerState(String(userId), playerState)
+                await trackDailyActivity(userId, { platinumCoins: reward.platinumCoins })
+            }
+
+            reward.wildDefeatsToday = wildDefeatsToday
+        }
+
+        const finalPlayerState = playerState?.toObject ? playerState.toObject() : playerState
+        const playerBattle = formatWildPlayerBattleState(encounter)
+        const message = defeatedWild
+            ? `Pokemon hoang dã đã bị hạ! +${Number(reward?.platinumCoins || 0).toLocaleString('vi-VN')} Xu Bạch Kim`
+            : (playerDefeated
+                ? `Gây ${damage} sát thương! ${counterAttack?.log || ''} Bạn đã kiệt sức và phải rút lui.`.trim()
+                : `Gây ${damage} sát thương! ${counterAttack?.log || ''}`.trim())
 
         res.json({
             ok: true,
@@ -1991,8 +2437,18 @@ router.post('/encounter/:id/attack', authMiddleware, async (req, res, next) => {
             damage,
             hp: encounter.hp,
             maxHp: encounter.maxHp,
-            defeated: !encounter.isActive,
-            message: encounter.isActive ? `Gây ${damage} sát thương!` : 'Pokemon hoang dã đã bị hạ!'
+            defeated: defeatedWild,
+            playerDefeated,
+            message,
+            reward,
+            counterAttack,
+            playerBattle,
+            playerState: finalPlayerState
+                ? {
+                    ...serializePlayerWallet(finalPlayerState),
+                    level: Math.max(1, Number(finalPlayerState?.level) || 1),
+                }
+                : null,
         })
     } catch (error) {
         next(error)
@@ -2107,6 +2563,10 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             moveName = '',
             move = null,
             opponent = {},
+            opponentMove = null,
+            opponentMoves = [],
+            opponentMoveMode = 'ordered',
+            opponentMoveCursor = 0,
             player = {},
             fieldState = {},
             trainerId = null,
@@ -2314,6 +2774,32 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         let opponentDamageGuards = normalizeDamageGuards(opponent?.damageGuards)
         let opponentWasDamagedLastTurn = Boolean(opponent?.wasDamagedLastTurn)
         let opponentVolatileState = normalizeVolatileState(opponent?.volatileState)
+
+        const hasCounterMoveList = Array.isArray(opponentMoves) && opponentMoves.length > 0
+        const parsedOpponentMoveCursor = Number.isFinite(Number(opponentMoveCursor))
+            ? Math.max(0, Math.floor(Number(opponentMoveCursor)))
+            : 0
+        const counterMoveSelection = hasCounterMoveList
+            ? resolveCounterMoveSelection({
+                moves: opponentMoves,
+                mode: opponentMoveMode,
+                cursor: parsedOpponentMoveCursor,
+                defenderTypes: attackerTypes,
+            })
+            : {
+                selectedMove: null,
+                selectedIndex: -1,
+                nextCursor: parsedOpponentMoveCursor,
+                normalizedMoves: [],
+            }
+        let selectedCounterMoveInput = normalizeCounterMoveEntry(opponentMove)
+        if (!selectedCounterMoveInput && hasCounterMoveList) {
+            selectedCounterMoveInput = counterMoveSelection.selectedMove
+        }
+        let selectedCounterMoveIndex = hasCounterMoveList ? counterMoveSelection.selectedIndex : -1
+        let nextCounterMoveCursor = parsedOpponentMoveCursor
+        let counterMoveState = hasCounterMoveList ? counterMoveSelection.normalizedMoves : []
+        let counterMovePpCost = 0
 
         if (normalizedTrainerId) {
             const trainer = await BattleTrainer.findById(normalizedTrainerId)
@@ -2934,13 +3420,65 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 battleExtraLogs.push(`${targetName}: ${opponentTurnStatusCheck.log}`)
             }
 
-            const opponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
-            let opponentMoveType = targetTypes[0] || 'normal'
+            const defaultOpponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
+            let selectedOpponentMove = selectedCounterMoveInput
+            let selectedOpponentMoveName = String(selectedOpponentMove?.name || '').trim()
+            let selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
+            let opponentMoveDoc = null
+
+            if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle') {
+                opponentMoveDoc = await Move.findOne({ nameLower: selectedOpponentMoveKey }).lean()
+            }
+
+            if (!selectedOpponentMoveName) {
+                selectedOpponentMoveName = 'Counter Strike'
+                selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
+            }
+
+            let opponentMovePower = Number(opponentMoveDoc?.power)
+            if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
+                opponentMovePower = Number(selectedOpponentMove?.power)
+            }
+            if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
+                opponentMovePower = selectedOpponentMoveKey === 'struggle' ? 35 : defaultOpponentMovePower
+            }
+            opponentMovePower = clamp(Math.floor(opponentMovePower), 1, 250)
+
+            let opponentMoveType = normalizeTypeToken(opponentMoveDoc?.type || selectedOpponentMove?.type || inferMoveType(selectedOpponentMoveName)) || (targetTypes[0] || 'normal')
             if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && opponentMoveType === 'normal') {
                 opponentMoveType = 'electric'
             }
-            const opponentMoveCategory = targetSpAtk > targetAtk ? 'special' : 'physical'
-            const opponentMoveAccuracy = 95
+
+            let opponentMoveCategory = resolveMoveCategory(opponentMoveDoc, selectedOpponentMove, opponentMovePower)
+            if (opponentMoveCategory === 'status') {
+                opponentMovePower = 0
+            }
+
+            let opponentMoveAccuracy = resolveMoveAccuracy(opponentMoveDoc, selectedOpponentMove)
+            let opponentMovePriority = resolveMovePriority(opponentMoveDoc, selectedOpponentMove)
+            let opponentMoveCriticalChance = resolveMoveCriticalChance(opponentMoveDoc, selectedOpponentMove)
+
+            const selectedOpponentCurrentPp = Number(selectedOpponentMove?.currentPp ?? selectedOpponentMove?.pp)
+            if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle' && Number.isFinite(selectedOpponentCurrentPp) && selectedOpponentCurrentPp <= 0) {
+                selectedOpponentMove = {
+                    name: 'Struggle',
+                    type: 'normal',
+                    power: 35,
+                    category: 'physical',
+                    accuracy: 100,
+                    priority: 0,
+                }
+                selectedOpponentMoveName = 'Struggle'
+                selectedOpponentMoveKey = 'struggle'
+                opponentMovePower = 35
+                opponentMoveType = 'normal'
+                opponentMoveCategory = 'physical'
+                opponentMoveAccuracy = 100
+                opponentMovePriority = 0
+                opponentMoveCriticalChance = 0.0625
+                selectedCounterMoveIndex = -1
+            }
+
             const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
             const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
             const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
@@ -2948,7 +3486,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             const didOpponentCritical = canOpponentAct
                 && didOpponentMoveHit
                 && playerCritBlockTurns <= 0
-                && Math.random() < 0.0625
+                && Math.random() < opponentMoveCriticalChance
             if (canOpponentAct && didOpponentMoveHit && playerCritBlockTurns > 0) {
                 battleExtraLogs.push('Pokemon của bạn được bảo vệ khỏi đòn chí mạng.')
             }
@@ -2963,7 +3501,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 opponentMoveCategory === 'special' ? playerSpDef : playerDef,
                 playerDefenseStage
             )
-            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentTypeEffectiveness.multiplier <= 0)
+            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentMoveCategory === 'status' || opponentTypeEffectiveness.multiplier <= 0)
                 ? 0
                 : calcBattleDamage({
                     attackerLevel: targetLevel,
@@ -2985,6 +3523,17 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 trainerSessionDirty = true
             }
 
+            const shouldConsumeCounterMovePp = canOpponentAct && selectedCounterMoveIndex >= 0 && selectedOpponentMoveKey !== 'struggle'
+            counterMovePpCost = shouldConsumeCounterMovePp ? 1 : 0
+            if (hasCounterMoveList && canOpponentAct) {
+                nextCounterMoveCursor = counterMoveSelection.nextCursor
+            }
+            counterMoveState = applyCounterMovePpConsumption({
+                moves: counterMoveState,
+                selectedIndex: selectedCounterMoveIndex,
+                shouldConsume: shouldConsumeCounterMovePp,
+            })
+
             counterAttack = {
                 damage: counterDamage,
                 currentHp: nextPlayerHp,
@@ -2994,20 +3543,20 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                 effectiveness: opponentTypeEffectiveness.multiplier,
                 critical: didOpponentCritical,
                 move: {
-                    name: 'Counter Strike',
+                    name: selectedOpponentMoveName,
                     type: opponentMoveType,
                     category: opponentMoveCategory,
                     accuracy: opponentMoveAccuracy,
-                    priority: 0,
+                    priority: opponentMovePriority,
                     power: opponentMovePower,
-                    ppCost: 0,
+                    ppCost: counterMovePpCost,
                     canAct: canOpponentAct,
                 },
                 log: !canOpponentAct
                     ? `${targetName} không thể hành động.`
                     : (didOpponentMoveHit
-                    ? `${targetName} retaliated for ${counterDamage} damage. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
-                    : `${targetName} retaliated but missed.`),
+                    ? `${targetName} dùng ${selectedOpponentMoveName}! Gây ${counterDamage} sát thương. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
+                    : `${targetName} dùng ${selectedOpponentMoveName} nhưng trượt.`),
             }
         }
 
@@ -3227,6 +3776,23 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
             }
             : null
 
+        const opponentMoveStatePayload = hasCounterMoveList
+            ? {
+                mode: String(opponentMoveMode || '').trim().toLowerCase() === 'smart' ? 'smart' : 'ordered',
+                cursor: nextCounterMoveCursor,
+                moves: counterMoveState.map((entry) => ({
+                    name: entry.name,
+                    type: entry.type,
+                    power: entry.power,
+                    category: entry.category,
+                    accuracy: entry.accuracy,
+                    priority: entry.priority,
+                    currentPp: entry.currentPp,
+                    maxPp: entry.maxPp,
+                })),
+            }
+            : null
+
         res.json({
             ok: true,
             battle: {
@@ -3279,6 +3845,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
                     volatileState: opponentVolatileState,
                 },
                 counterAttack,
+                opponentMoveState: opponentMoveStatePayload,
                 effects: {
                     logs: [...combinedEffectResult.logs, ...battleExtraLogs],
                     appliedOps: combinedEffectResult.appliedEffects.map((entry) => String(entry?.op || '').trim()).filter(Boolean),
@@ -3316,6 +3883,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         let trainerMoonPointsReward = 0
         let trainerPrizePokemonId = null
         let trainerPrizePokemonFormId = 'normal'
+        let trainerPrizePokemonLevel = 0
         let trainerPrizeItem = null
         let trainerPrizeItemQuantity = 0
         let trainerRewardMarker = ''
@@ -3364,6 +3932,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             trainerMoonPointsReward = Math.max(0, Number(trainer.moonPointsReward) || 0)
             trainerPrizePokemonId = trainer.prizePokemonId?._id || null
             trainerPrizePokemonFormId = String(trainer.prizePokemonFormId || 'normal').trim().toLowerCase() || 'normal'
+            trainerPrizePokemonLevel = Math.max(0, Math.floor(Number(trainer.prizePokemonLevel) || 0))
             trainerPrizeItem = trainer.prizeItemId || null
             trainerPrizeItemQuantity = Math.max(1, Number(trainer.prizeItemQuantity) || 1)
             trainerRewardMarker = `battle_trainer_reward:${trainer._id}`
@@ -3546,6 +4115,9 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 .lean()
 
             if (prizeData) {
+                const prizeLevel = trainerPrizePokemonLevel > 0
+                    ? Math.max(1, Math.floor(trainerPrizePokemonLevel))
+                    : DEFAULT_TRAINER_PRIZE_LEVEL
                 const { form: resolvedPrizeForm, formId: resolvedPrizeFormId } = resolveTrainerBattleForm(prizeData, trainerPrizePokemonFormId)
                 const prizeImageUrl = resolvedPrizeForm?.imageUrl
                     || resolvedPrizeForm?.sprites?.normal
@@ -3563,7 +4135,6 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 const isPokemonRewardLocked = Boolean(alreadyClaimedPrize || blockedByCompletion)
 
                 if (!isPokemonRewardLocked) {
-                    const prizeLevel = Math.max(5, Math.floor(totalLevel / Math.max(1, sourceTeam.length)))
                     const moves = buildMovesForLevel(prizeData, prizeLevel)
                     const grantedPokemon = await UserPokemon.create({
                         userId,
@@ -3587,6 +4158,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 prizePokemon = {
                     id: trainerPrizePokemonId,
                     name: prizeData.name,
+                    level: prizeLevel,
                     formId: resolvedPrizeFormId,
                     formName: resolvedPrizeForm?.formName || resolvedPrizeFormId,
                     imageUrl: prizeImageUrl,
@@ -3682,6 +4254,7 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
                 mapId: encounter.mapId,
+                playerBattle: formatWildPlayerBattleState(encounter),
                 pokemon: {
                     ...pokemon,
                     formId,

@@ -111,6 +111,11 @@ export const getYesterdayDateKey = (date = new Date()) => {
 }
 
 export const ensureDailyRewardsSeeded = async () => {
+    await DailyReward.updateMany(
+        { rewardType: 'gold' },
+        { $set: { rewardType: 'platinumCoins' } }
+    )
+
     const existing = await DailyReward.find({})
         .select('day')
         .lean()
@@ -144,8 +149,7 @@ export const ensureDailyRewardsSeeded = async () => {
 }
 
 export const serializeDailyReward = (entry) => {
-    const rawRewardType = String(entry?.rewardType || 'platinumCoins')
-    const rewardType = rawRewardType === 'gold' ? 'platinumCoins' : rawRewardType
+    const rewardType = String(entry?.rewardType || 'platinumCoins')
     const amount = Math.max(1, Number.parseInt(entry?.amount, 10) || 1)
     const item = entry?.itemId
         ? {

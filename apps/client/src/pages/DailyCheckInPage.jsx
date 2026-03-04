@@ -5,7 +5,7 @@ const toDayLabel = (day) => `Ngày ${day}`
 
 const formatRewardText = (reward) => {
     const amount = Number(reward?.amount || 0)
-    if (reward?.rewardType === 'platinumCoins' || reward?.rewardType === 'gold') {
+    if (reward?.rewardType === 'platinumCoins') {
         return `${amount.toLocaleString('vi-VN')} Xu Bạch Kim`
     }
     if (reward?.rewardType === 'moonPoints') {

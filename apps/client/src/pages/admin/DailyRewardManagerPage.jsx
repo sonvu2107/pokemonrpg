@@ -33,9 +33,7 @@ const normalizeRewards = (rows, cycleDays) => {
     return Array.from({ length: safeCycleDays }, (_, index) => {
         const day = index + 1
         const reward = byDay.get(day)
-        const rewardType = reward?.rewardType === 'gold'
-            ? 'platinumCoins'
-            : (reward?.rewardType || 'platinumCoins')
+        const rewardType = reward?.rewardType || 'platinumCoins'
         return {
             day,
             rewardType,

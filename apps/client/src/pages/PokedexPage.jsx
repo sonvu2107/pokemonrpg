@@ -23,7 +23,7 @@ export default function PokedexPage() {
     const [pokemon, setPokemon] = useState([])
     const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 50 })
     const [completion, setCompletion] = useState({ owned: 0, total: 0, percent: 0 })
-    const [currency, setCurrency] = useState({ gold: 0, moonPoints: 0 })
+    const [currency, setCurrency] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
 
@@ -39,11 +39,11 @@ export default function PokedexPage() {
         try {
             const data = await gameApi.getProfile()
             setCurrency({
-                gold: data?.playerState?.gold || 0,
+                platinumCoins: data?.playerState?.platinumCoins ?? 0,
                 moonPoints: data?.playerState?.moonPoints || 0,
             })
         } catch (_err) {
-            setCurrency({ gold: 0, moonPoints: 0 })
+            setCurrency({ platinumCoins: 0, moonPoints: 0 })
         }
     }
 
@@ -129,12 +129,12 @@ export default function PokedexPage() {
                 <div className="text-slate-800 font-bold text-xl mb-1">Pokédex</div>
                 <div className="text-sm font-bold text-slate-700 flex flex-col items-center gap-0.5">
                     <div className="flex items-center gap-1">
-                        <img src={COIN_ICON} alt="Coins" className="w-4 h-4" />
-                        <span>{Number(currency.gold || 0).toLocaleString('vi-VN')} Platinum Coins</span>
+                        <img src={COIN_ICON} alt="Xu Bạch Kim" className="w-4 h-4" />
+                        <span>{Number(currency.platinumCoins || 0).toLocaleString('vi-VN')} Xu Bạch Kim</span>
                     </div>
                     <div className="flex items-center gap-1">
-                        <img src={MOON_ICON} alt="Moon Points" className="w-4 h-4" />
-                        <span>{Number(currency.moonPoints || 0).toLocaleString('vi-VN')} Moon Points</span>
+                        <img src={MOON_ICON} alt="Điểm Nguyệt Các" className="w-4 h-4" />
+                        <span>{Number(currency.moonPoints || 0).toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                     </div>
                 </div>
             </div>

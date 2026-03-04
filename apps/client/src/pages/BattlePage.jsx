@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
@@ -6,6 +7,15 @@ import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
+const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
+
+const resolveSafeRankedReturnPath = (value = '') => {
+    const normalizedRaw = String(value || '').trim()
+    if (!normalizedRaw) return DEFAULT_RANKED_RETURN_PATH
+    const normalized = `/${normalizedRaw.replace(/^\/+/, '')}`
+    if (normalized === '/rankings/pokemon') return normalized
+    return DEFAULT_RANKED_RETURN_PATH
+}
 
 // Helper for the blue gradient header
 const SectionHeader = ({ title }) => (
@@ -97,6 +107,7 @@ const resolveMovePowerForDisplay = (entry, name = '') => {
 }
 
 const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
+const getBattlePokemonDisplayName = (pokemon) => pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon'
 
 const buildMovesForLevel = (pokemon, level) => {
     const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
@@ -545,10 +556,16 @@ const ActiveBattleView = ({
     )
 }
 export function BattlePage() {
+    const location = useLocation()
+    const navigate = useNavigate()
+    const challengeSearchParams = new URLSearchParams(location.search)
+    const rankedChallengePokemonId = String(challengeSearchParams.get('challengePokemonId') || '').trim()
+    const rankedChallengeReturnTo = resolveSafeRankedReturnPath(challengeSearchParams.get('returnTo'))
+    const isRankedChallengeRequested = Boolean(rankedChallengePokemonId)
     const [maps, setMaps] = useState([])
     const [party, setParty] = useState([])
     const [loading, setLoading] = useState(true)
-    const [view, setView] = useState('lobby') // 'lobby' | 'battle'
+    const [view, setView] = useState(isRankedChallengeRequested ? 'battle' : 'lobby') // 'lobby' | 'battle'
     const [encounter, setEncounter] = useState(null)
     const [playerState, setPlayerState] = useState(null)
     const [opponent, setOpponent] = useState(null)
@@ -567,6 +584,13 @@ export function BattlePage() {
     const [isAttacking, setIsAttacking] = useState(false)
     const [battlePlayerIndex, setBattlePlayerIndex] = useState(0)
     const [battlePartyHpState, setBattlePartyHpState] = useState([])
+    const [activeBattleMode, setActiveBattleMode] = useState('trainer')
+    const [duelOpponentMoves, setDuelOpponentMoves] = useState([])
+    const [duelOpponentMoveCursor, setDuelOpponentMoveCursor] = useState(0)
+    const [duelReturnPath, setDuelReturnPath] = useState(DEFAULT_RANKED_RETURN_PATH)
+    const [duelResultModal, setDuelResultModal] = useState(null)
+    const [isStartingRankedDuel, setIsStartingRankedDuel] = useState(false)
+    const rankedChallengeLockRef = useRef('')
 
     const completedSlides = []
     for (let index = 0; index < completedEntries.length; index += completedEntriesPerView) {
@@ -576,6 +600,18 @@ export function BattlePage() {
         completedSlides.push([])
     }
     const completedSlideCount = completedSlides.length
+
+    const partyCandidates = party
+        .map((slot, index) => {
+            if (!slot?._id) return null
+            return {
+                id: String(slot._id),
+                index,
+                name: getBattlePokemonDisplayName(slot),
+                level: Number(slot.level) || 1,
+            }
+        })
+        .filter(Boolean)
 
     const markTrainerCompleted = async (trainerId) => {
         const normalizedId = String(trainerId || '').trim()
@@ -698,8 +734,65 @@ export function BattlePage() {
         setCompletedCarouselIndex((prev) => Math.min(prev, lastSlide))
     }, [completedSlideCount])
 
+    useEffect(() => {
+        if (!rankedChallengePokemonId) return
+        if (loading || isStartingRankedDuel) return
+        if (activeBattleMode === 'duel' && view === 'battle') return
+
+        setDuelReturnPath(rankedChallengeReturnTo)
+        if (partyCandidates.length === 0) {
+            setActionMessage('Bạn cần có Pokemon trong đội hình để khiêu chiến BXH.')
+            navigate(rankedChallengeReturnTo, { replace: true })
+            return
+        }
+
+        const challengeKey = `${rankedChallengePokemonId}:smart:${rankedChallengeReturnTo}`
+        if (rankedChallengeLockRef.current === challengeKey) return
+
+        if (view !== 'battle') {
+            setView('battle')
+        }
+
+        rankedChallengeLockRef.current = challengeKey
+        setIsStartingRankedDuel(true)
+        startRankedPokemonDuel(rankedChallengePokemonId)
+            .finally(() => {
+                rankedChallengeLockRef.current = ''
+                setIsStartingRankedDuel(false)
+                navigate('/battle', { replace: true })
+            })
+    }, [rankedChallengePokemonId, rankedChallengeReturnTo, loading, isStartingRankedDuel, partyCandidates.length, activeBattleMode, view])
+
     const loadData = async () => {
         try {
+            if (isRankedChallengeRequested) {
+                const [allMaps, partyData, encounterData, profileData, inventoryData] = await Promise.all([
+                    gameApi.getMaps(),
+                    gameApi.getParty(),
+                    gameApi.getActiveEncounter(),
+                    gameApi.getProfile(),
+                    gameApi.getInventory(),
+                ])
+
+                setMaps(allMaps)
+                setParty(partyData)
+                setEncounter(encounterData?.encounter || null)
+                setPlayerState(profileData?.playerState || null)
+                setInventory(inventoryData?.inventory || [])
+                setMasterPokemon([])
+                setCompletedEntries([])
+                setCompletedCarouselIndex(0)
+                setOpponent(null)
+                setBattleOpponent(null)
+                setBattlePlayerIndex(0)
+                setBattlePartyHpState([])
+                setActiveBattleMode('trainer')
+                setDuelOpponentMoves([])
+                setDuelOpponentMoveCursor(0)
+                setDuelResultModal(null)
+                return
+            }
+
             const [allMaps, partyData, encounterData, profileData, trainerData, inventoryData] = await Promise.all([
                 gameApi.getMaps(),
                 gameApi.getParty(),
@@ -737,6 +830,10 @@ export function BattlePage() {
             setBattleOpponent(builtOpponent)
             setBattlePlayerIndex(0)
             setBattlePartyHpState([])
+            setActiveBattleMode('trainer')
+            setDuelOpponentMoves([])
+            setDuelOpponentMoveCursor(0)
+            setDuelResultModal(null)
 
         } catch (error) {
             console.error('Tải dữ liệu thất bại', error)
@@ -751,12 +848,35 @@ export function BattlePage() {
         setBattleLog((prev) => [...normalized, ...prev].slice(0, 8))
     }
 
+    const navigateBackToRankingsAfterDuel = () => {
+        navigate(duelReturnPath || DEFAULT_RANKED_RETURN_PATH)
+    }
+
+    const showRankedDuelResultModal = ({ resultType, title, message }) => {
+        setDuelResultModal({
+            resultType: resultType === 'defeat' ? 'defeat' : 'win',
+            title: String(title || '').trim() || 'Kết quả khiêu chiến BXH',
+            message: String(message || '').trim() || 'Trận đấu đã kết thúc.',
+        })
+    }
+
+    const closeRankedDuelResultModal = () => {
+        setDuelResultModal(null)
+        navigateBackToRankingsAfterDuel()
+    }
+
     const handleAttack = async (selectedMove) => {
-        if (isAttacking || !battleOpponent?.team?.length) return
+        if (isAttacking || duelResultModal || !battleOpponent?.team?.length) return
 
         const currentIndex = battleOpponent.currentIndex || 0
         const target = battleOpponent.team[currentIndex]
         if (!target) return
+        if (Number(target.currentHp ?? target.maxHp ?? 0) <= 0) {
+            if (activeBattleMode === 'duel') {
+                setActionMessage('Trận đấu 1v1 đã kết thúc. Hãy thoát ra để bắt đầu trận mới.')
+            }
+            return
+        }
 
         const resolvedPartyState = Array.isArray(battlePartyHpState) && battlePartyHpState.length === party.length
             ? battlePartyHpState
@@ -801,6 +921,14 @@ export function BattlePage() {
 
         setIsAttacking(true)
         try {
+            const duelTurnPayload = activeBattleMode === 'duel'
+                ? {
+                    opponentMoveMode: 'smart',
+                    opponentMoveCursor: duelOpponentMoveCursor,
+                    opponentMoves: duelOpponentMoves,
+                }
+                : {}
+
             const res = await gameApi.battleAttack({
                 moveName: selectedMove?.name,
                 move: selectedMove,
@@ -832,6 +960,7 @@ export function BattlePage() {
                     wasDamagedLastTurn: Boolean(activePokemon?.wasDamagedLastTurn),
                     volatileState: activePokemon?.volatileState || {},
                 },
+                ...duelTurnPayload,
             })
 
             const battle = res?.battle || {}
@@ -847,6 +976,22 @@ export function BattlePage() {
             const effectLogs = Array.isArray(battle?.effects?.logs)
                 ? battle.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
                 : []
+            const opponentMoveState = battle?.opponentMoveState && typeof battle.opponentMoveState === 'object'
+                ? battle.opponentMoveState
+                : null
+
+            if (activeBattleMode === 'duel' && opponentMoveState) {
+                const nextCursorRaw = Number(opponentMoveState?.cursor)
+                const nextCursor = Number.isFinite(nextCursorRaw) ? Math.max(0, Math.floor(nextCursorRaw)) : 0
+                const nextMoves = Array.isArray(opponentMoveState?.moves)
+                    ? opponentMoveState.moves.map((entry, idx) => ({
+                        ...entry,
+                        id: `duel-op-${idx}-${String(entry?.name || '').trim() || 'move'}`,
+                    }))
+                    : []
+                setDuelOpponentMoveCursor(nextCursor)
+                setDuelOpponentMoves(nextMoves)
+            }
 
             if (battle?.player) {
                 setParty((prevParty) => {
@@ -1036,15 +1181,11 @@ export function BattlePage() {
                 logLines.unshift(`Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`)
             }
             let nextPartyState = resolvedPartyState
+            let authoritativePlayerHp = null
+            let authoritativePlayerMaxHp = activeMaxHp
             if (battle?.player && Number.isFinite(battle.player.currentHp)) {
-                const authoritativeMaxHp = Math.max(1, Number(battle.player.maxHp) || activeMaxHp)
-                nextPartyState = resolvedPartyState.map((entry, idx) => {
-                    if (idx !== resolvedActiveIndex) return entry
-                    return {
-                        currentHp: clampValue(Number(battle.player.currentHp) || 0, 0, authoritativeMaxHp),
-                        maxHp: authoritativeMaxHp,
-                    }
-                })
+                authoritativePlayerMaxHp = Math.max(1, Number(battle.player.maxHp) || activeMaxHp)
+                authoritativePlayerHp = clampValue(Number(battle.player.currentHp) || 0, 0, authoritativePlayerMaxHp)
             }
 
             let switchedAfterDefeat = false
@@ -1054,16 +1195,23 @@ export function BattlePage() {
                 const nextPlayerHpFromCounter = Number.isFinite(counterAttack.currentHp)
                     ? Math.max(0, counterAttack.currentHp)
                     : Math.max(0, playerCurrentHpForTurn - counterDamage)
-                if (!(battle?.player && Number.isFinite(battle.player.currentHp))) {
-                    nextPartyState = resolvedPartyState.map((entry, idx) => {
-                        if (idx !== resolvedActiveIndex) return entry
-                        return {
-                            currentHp: clampValue(nextPlayerHpFromCounter, 0, activeMaxHp),
-                            maxHp: activeMaxHp,
-                        }
-                    })
+                authoritativePlayerMaxHp = Math.max(1, Number(counterAttack?.maxHp) || authoritativePlayerMaxHp || activeMaxHp)
+                if (Number.isFinite(authoritativePlayerHp)) {
+                    authoritativePlayerHp = Math.min(authoritativePlayerHp, clampValue(nextPlayerHpFromCounter, 0, authoritativePlayerMaxHp))
+                } else {
+                    authoritativePlayerHp = clampValue(nextPlayerHpFromCounter, 0, authoritativePlayerMaxHp)
                 }
                 logLines.push(`${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
+            }
+
+            if (Number.isFinite(authoritativePlayerHp)) {
+                nextPartyState = resolvedPartyState.map((entry, idx) => {
+                    if (idx !== resolvedActiveIndex) return entry
+                    return {
+                        currentHp: clampValue(authoritativePlayerHp, 0, authoritativePlayerMaxHp),
+                        maxHp: authoritativePlayerMaxHp,
+                    }
+                })
             }
 
             if (effectLogs.length > 0) {
@@ -1099,6 +1247,16 @@ export function BattlePage() {
             }
 
             if (nextPlayerHp <= 0) {
+                if (activeBattleMode === 'duel') {
+                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || 'Đối thủ BXH'
+                    setActionMessage('Pokemon của bạn đã bại trận.')
+                    showRankedDuelResultModal({
+                        resultType: 'defeat',
+                        title: 'Thua Khiêu Chiến BXH',
+                        message: `Bạn đã thua trước ${defeatedTargetName}.`,
+                    })
+                    return
+                }
                 setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
                 setBattleResults({
                     resultType: 'defeat',
@@ -1128,6 +1286,16 @@ export function BattlePage() {
             }
 
             if (defeatedAll) {
+                if (activeBattleMode === 'duel') {
+                    const defeatedTargetName = target?.name || battleOpponent?.trainerName || 'Đối thủ BXH'
+                    setActionMessage('Bạn đã chiến thắng trận khiêu chiến BXH.')
+                    showRankedDuelResultModal({
+                        resultType: 'win',
+                        title: 'Thắng Khiêu Chiến BXH',
+                        message: `Bạn đã đánh bại ${defeatedTargetName}.`,
+                    })
+                    return
+                }
                 setActionMessage('Bạn đã đánh bại toàn bộ đội hình đối thủ.')
                 try {
                     const resResolve = await gameApi.resolveBattle(
@@ -1167,6 +1335,14 @@ export function BattlePage() {
         } catch (err) {
             setActionMessage(err.message)
             if (String(err?.message || '').toLowerCase().includes('bại trận')) {
+                if (activeBattleMode === 'duel') {
+                    showRankedDuelResultModal({
+                        resultType: 'defeat',
+                        title: 'Thua Khiêu Chiến BXH',
+                        message: err.message || 'Pokemon của bạn đã bại trận.',
+                    })
+                    return
+                }
                 setBattleResults((prev) => prev || {
                     resultType: 'defeat',
                     message: err.message,
@@ -1234,6 +1410,10 @@ export function BattlePage() {
     }
 
     const handleRun = async () => {
+        if (activeBattleMode === 'duel') {
+            navigateBackToRankingsAfterDuel()
+            return
+        }
         if (!encounter?._id) {
             setActionMessage('Bạn đã thoát.')
             appendBattleLog(['Bạn đã thoát.'])
@@ -1412,6 +1592,10 @@ export function BattlePage() {
         setActionMessage('')
         setSelectedMoveIndex(0)
         setActiveTab('fight')
+        setActiveBattleMode('trainer')
+        setDuelOpponentMoves([])
+        setDuelOpponentMoveCursor(0)
+        setDuelResultModal(null)
         setBattleOpponent(nextOpponent)
         setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
             if (!slot) return slot
@@ -1432,6 +1616,138 @@ export function BattlePage() {
         setView('battle')
     }
 
+    const startRankedPokemonDuel = async (targetPokemonId) => {
+        const normalizedTargetId = String(targetPokemonId || '').trim()
+        if (!normalizedTargetId) {
+            setActionMessage('Thiếu Pokemon mục tiêu để khiêu chiến.')
+            return
+        }
+
+        const attackerCandidate = partyCandidates[0]
+            || null
+        if (!attackerCandidate) {
+            setActionMessage('Bạn chưa có Pokemon trong đội hình để khiêu chiến.')
+            return
+        }
+
+        const attackerSlot = party[attackerCandidate.index] || null
+        if (!attackerSlot) {
+            setActionMessage('Không tìm thấy Pokemon của bạn trong đội hình hiện tại.')
+            return
+        }
+
+        try {
+            const targetPokemon = await gameApi.getPokemonDetail(normalizedTargetId)
+            const targetSpecies = targetPokemon?.pokemonId || {}
+            const targetLevel = Math.max(1, Number(targetPokemon?.level) || 1)
+            const targetStats = targetPokemon?.stats || {}
+            const targetMaxHp = Math.max(1, Number(targetStats?.maxHp || targetStats?.hp) || 1)
+
+            const targetMoves = Array.isArray(targetPokemon?.moveDetails) && targetPokemon.moveDetails.length > 0
+                ? targetPokemon.moveDetails
+                : mergeBattleMoveNames(targetPokemon?.moves || [], targetSpecies, targetLevel)
+            const defenderMoves = normalizeMoveList(
+                (Array.isArray(targetMoves) ? targetMoves : []).map((entry) => {
+                    const maxPp = Number(entry?.maxPp ?? entry?.pp)
+                    const resolvedMaxPp = Number.isFinite(maxPp) && maxPp > 0 ? Math.floor(maxPp) : 10
+                    return {
+                        ...(entry || {}),
+                        maxPp: resolvedMaxPp,
+                        currentPp: resolvedMaxPp,
+                    }
+                })
+            ).map((entry, index) => ({
+                ...entry,
+                id: `ranked-op-${index}-${entry.name}`,
+            }))
+
+            const duelOpponent = {
+                trainerId: null,
+                trainerOrder: 0,
+                trainerName: `BXH: ${getBattlePokemonDisplayName(targetPokemon)}`,
+                trainerImage: resolvePokemonSprite({
+                    species: targetSpecies,
+                    formId: targetPokemon?.formId,
+                    isShiny: Boolean(targetPokemon?.isShiny),
+                }),
+                trainerQuote: 'Auto chọn kỹ năng thông minh',
+                trainerPrize: 'Không có',
+                trainerPrizeItem: 'Không có',
+                trainerPrizeItemQuantity: 1,
+                trainerCoinsReward: 0,
+                trainerExpReward: 0,
+                trainerMoonPointsReward: 0,
+                currentIndex: 0,
+                level: targetLevel,
+                hp: targetMaxHp,
+                maxHp: targetMaxHp,
+                pokemon: targetSpecies,
+                team: [{
+                    id: targetPokemon?._id || normalizedTargetId,
+                    name: getBattlePokemonDisplayName(targetPokemon),
+                    level: targetLevel,
+                    sprite: resolvePokemonSprite({
+                        species: targetSpecies,
+                        formId: targetPokemon?.formId,
+                        isShiny: Boolean(targetPokemon?.isShiny),
+                    }),
+                    baseStats: targetStats,
+                    types: Array.isArray(targetSpecies?.types) ? targetSpecies.types : [],
+                    currentHp: targetMaxHp,
+                    maxHp: targetMaxHp,
+                    status: '',
+                    statusTurns: 0,
+                    statStages: {},
+                    damageGuards: {},
+                    wasDamagedLastTurn: false,
+                    volatileState: {},
+                }],
+                fieldState: {},
+            }
+
+            setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot, index) => {
+                if (!slot || index !== attackerCandidate.index) return slot
+                return {
+                    ...slot,
+                    status: '',
+                    statusTurns: 0,
+                    statStages: {},
+                    damageGuards: {},
+                    wasDamagedLastTurn: false,
+                    volatileState: {},
+                }
+            }) : prevParty))
+
+            const initialPartyState = buildBattlePartyState(party).map((entry, index) => {
+                if (!entry) return entry
+                if (index !== attackerCandidate.index) {
+                    return {
+                        ...entry,
+                        currentHp: 0,
+                    }
+                }
+                return entry
+            })
+
+            setBattleResults(null)
+            setBattleLog([])
+            setActionMessage(`Bạn khiêu chiến ${getBattlePokemonDisplayName(targetPokemon)} từ BXH.`)
+            setSelectedMoveIndex(0)
+            setActiveTab('fight')
+            setActiveBattleMode('duel')
+            setDuelResultModal(null)
+            setOpponent(duelOpponent)
+            setBattleOpponent(duelOpponent)
+            setBattlePlayerIndex(attackerCandidate.index)
+            setBattlePartyHpState(initialPartyState)
+            setDuelOpponentMoves(defenderMoves)
+            setDuelOpponentMoveCursor(0)
+            setView('battle')
+        } catch (error) {
+            setActionMessage(error?.message || 'Không thể bắt đầu trận khiêu chiến từ BXH.')
+        }
+    }
+
     const handleRematchTrainer = (entry) => {
         const normalizedId = String(entry?.id || '').trim()
         if (!normalizedId) return
@@ -1450,12 +1766,25 @@ export function BattlePage() {
         startBattleWithOpponent(rematchOpponent)
     }
 
+    if (isRankedChallengeRequested && (loading || isStartingRankedDuel || activeBattleMode !== 'duel')) {
+        return (
+            <div className="max-w-4xl mx-auto py-12">
+                <div className="text-center text-slate-500 font-bold animate-pulse">
+                    Đang vào trận khiêu chiến Pokemon từ BXH...
+                </div>
+            </div>
+        )
+    }
+
     if (view === 'battle') {
         return (
             <div className="space-y-6 animate-fadeIn max-w-4xl mx-auto font-sans">
                 <div className="text-center space-y-2">
                     <div className="text-slate-600 font-bold text-sm">
-                        🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
+                        🪙 {playerState?.platinumCoins ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                        {activeBattleMode === 'duel' ? 'Chế độ: Khiêu chiến BXH' : 'Chế độ: Battle Trainer'}
                     </div>
                 </div>
 
@@ -1478,6 +1807,29 @@ export function BattlePage() {
                     activePartyIndex={battlePlayerIndex}
                     partyHpState={battlePartyHpState}
                 />
+                {activeBattleMode === 'duel' && duelResultModal && (
+                    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                        <div className="bg-white border-2 border-slate-300 rounded w-[440px] max-w-[90%] shadow-lg">
+                            <div className="text-center font-bold text-sm border-b border-slate-200 py-2">
+                                {duelResultModal.title}
+                            </div>
+                            <div className="p-4 text-center space-y-2">
+                                <div className={`text-base font-bold ${duelResultModal.resultType === 'win' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                    {duelResultModal.resultType === 'win' ? 'Chiến thắng!' : 'Thất bại!'}
+                                </div>
+                                <div className="text-sm text-slate-700">{duelResultModal.message}</div>
+                            </div>
+                            <div className="border-t border-slate-200 p-3 text-center">
+                                <button
+                                    onClick={closeRankedDuelResultModal}
+                                    className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
+                                >
+                                    Quay về BXH Pokémon
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {battleResults && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                         <div className="bg-white border-2 border-slate-300 rounded w-[520px] max-w-[90%] shadow-lg">
@@ -1618,20 +1970,11 @@ export function BattlePage() {
 
             <div className="text-center space-y-2">
                 <div className="text-slate-600 font-bold text-sm">
-                    🪙 {playerState?.gold ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
+                    🪙 {playerState?.platinumCoins ?? 0} Xu Bạch Kim <span className="mx-2">•</span> 🌑 {playerState?.moonPoints ?? 0} Điểm Nguyệt Các
                 </div>
                 <h1 className="text-3xl font-extrabold text-blue-900 drop-shadow-sm uppercase tracking-wide">
                     Khu Vực Chiến Đấu
                 </h1>
-            </div>
-
-            <div className="rounded border border-blue-400 bg-white shadow-sm overflow-hidden">
-                <SectionHeader title="Cốt Truyện" />
-                <div className="p-4 bg-slate-50 text-center">
-                    <div className="inline-block font-bold text-slate-700 hover:text-blue-600 cursor-pointer">
-                        [ Cốt Truyện Galactic ]
-                    </div>
-                </div>
             </div>
 
             <div className="rounded border border-blue-400 bg-white shadow-sm overflow-hidden">
@@ -1839,7 +2182,3 @@ export function ExplorePage() {
         </div>
     )
 }
-
-
-
-

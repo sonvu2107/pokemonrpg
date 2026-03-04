@@ -118,8 +118,7 @@ router.put('/:day', async (req, res) => {
             return res.status(400).json({ ok: false, message: `Ngày quà không hợp lệ (1-${DAILY_REWARD_CYCLE_DAYS})` })
         }
 
-        const rewardTypeRaw = String(req.body?.rewardType || '').trim()
-        const rewardType = rewardTypeRaw === 'gold' ? 'platinumCoins' : rewardTypeRaw
+        const rewardType = String(req.body?.rewardType || '').trim()
         const amount = toSafeAmount(req.body?.amount)
         const title = String(req.body?.title || '').trim().slice(0, 100)
         const itemIdRaw = String(req.body?.itemId || '').trim()
