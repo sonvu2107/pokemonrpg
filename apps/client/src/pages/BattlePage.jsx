@@ -9,6 +9,8 @@ const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/stats/online'])
+const normalizeEntityId = (value = '') => String(value || '').trim()
+const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
 const resolveSafeRankedReturnPath = (value = '') => {
     const normalizedRaw = String(value || '').trim()
     if (!normalizedRaw) return DEFAULT_RANKED_RETURN_PATH
@@ -172,6 +174,8 @@ const normalizeMoveList = (moves = []) => {
                 type,
                 power,
                 category: String(entry?.category || '').trim().toLowerCase(),
+                accuracy: Number.isFinite(Number(entry?.accuracy)) ? Math.max(1, Math.floor(Number(entry.accuracy))) : 100,
+                priority: Number.isFinite(Number(entry?.priority)) ? Math.floor(Number(entry.priority)) : 0,
                 currentPp,
                 maxPp,
             }
@@ -186,6 +190,116 @@ const normalizeMoveList = (moves = []) => {
 
     return [struggleMove]
 }
+
+const moveTypeAdvantageHints = {
+    fire: { strong: ['grass', 'ice'], weak: ['water', 'fire'] },
+    water: { strong: ['fire', 'rock'], weak: ['grass', 'water', 'electric'] },
+    grass: { strong: ['water', 'rock', 'ground'], weak: ['fire', 'grass', 'poison', 'flying', 'bug', 'dragon'] },
+    electric: { strong: ['water', 'flying'], weak: ['grass', 'electric', 'dragon', 'ground'] },
+    ice: { strong: ['grass', 'dragon', 'flying', 'ground'], weak: ['fire', 'water', 'ice'] },
+    poison: { strong: ['grass', 'fairy'], weak: ['poison', 'ground', 'rock', 'ghost'] },
+    dragon: { strong: ['dragon'], weak: ['steel', 'fairy'] },
+    normal: { strong: [], weak: ['rock', 'steel', 'ghost'] },
+}
+
+const resolveMoveEffectivenessHint = (moveType = 'normal', targetTypes = []) => {
+    const normalizedMoveType = String(moveType || 'normal').trim().toLowerCase() || 'normal'
+    const normalizedTargetTypes = [...new Set(
+        (Array.isArray(targetTypes) ? targetTypes : [])
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter(Boolean)
+    )]
+    if (normalizedTargetTypes.length === 0) return 1
+
+    const chartEntry = moveTypeAdvantageHints[normalizedMoveType] || { strong: [], weak: [] }
+    let multiplier = 1
+    normalizedTargetTypes.forEach((targetType) => {
+        if (chartEntry.strong.includes(targetType)) {
+            multiplier *= 1.6
+            return
+        }
+        if (chartEntry.weak.includes(targetType)) {
+            multiplier *= 0.65
+        }
+    })
+    return Math.max(0.2, Math.min(2.56, multiplier))
+}
+
+const buildBattlePlans = ({ moves = [], playerTypes = [], targetTypes = [] } = {}) => {
+    const normalizedMoves = Array.isArray(moves) ? moves : []
+    const availableMoves = normalizedMoves
+        .map((entry, index) => ({ ...entry, index }))
+        .filter((entry) => Number(entry?.currentPp) > 0)
+
+    if (availableMoves.length === 0) return []
+
+    const normalizedPlayerTypes = [...new Set(
+        (Array.isArray(playerTypes) ? playerTypes : [])
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter(Boolean)
+    )]
+
+    const buildScore = (entry, profile = 'balanced') => {
+        const power = Math.max(1, Number(entry?.power) || 1)
+        const accuracy = Math.max(0.35, Math.min(1, (Number(entry?.accuracy) || 100) / 100))
+        const priority = Number(entry?.priority) || 0
+        const pp = Math.max(1, Number(entry?.currentPp) || 1)
+        const effectiveness = resolveMoveEffectivenessHint(entry?.type, targetTypes)
+        const stab = normalizedPlayerTypes.includes(String(entry?.type || '').trim().toLowerCase()) ? 1.25 : 1
+
+        if (profile === 'finisher') {
+            return (power * effectiveness * stab * 1.2) + (priority * 10) + (accuracy * 35)
+        }
+
+        if (profile === 'safe') {
+            return (accuracy * 140) + (effectiveness * 38) + (stab * 24) + (priority * 14) + Math.min(18, pp)
+        }
+
+        return (power * effectiveness * stab) + (accuracy * 28) + (priority * 8) + Math.min(12, pp)
+    }
+
+    const pickBestMove = (profile) => {
+        let best = availableMoves[0]
+        let bestScore = Number.NEGATIVE_INFINITY
+        for (const entry of availableMoves) {
+            const score = buildScore(entry, profile)
+            if (score > bestScore) {
+                bestScore = score
+                best = entry
+            }
+        }
+        return { move: best, score: bestScore }
+    }
+
+    const finisher = pickBestMove('finisher')
+    const safe = pickBestMove('safe')
+    const balanced = pickBestMove('balanced')
+
+    return [
+        {
+            key: 'finisher',
+            title: 'Kết liễu',
+            description: 'Ưu tiên đòn mạnh, hiệu quả hệ và có lợi thế ra đòn.',
+            move: finisher.move,
+            score: finisher.score,
+        },
+        {
+            key: 'safe',
+            title: 'An toàn',
+            description: 'Ưu tiên độ chính xác cao, giảm rủi ro trượt chiêu.',
+            move: safe.move,
+            score: safe.score,
+        },
+        {
+            key: 'balanced',
+            title: 'Cân bằng',
+            description: 'Kết hợp sát thương, PP và tính ổn định tổng thể.',
+            move: balanced.move,
+            score: balanced.score,
+        },
+    ]
+}
+
 const buildRefilledBattleMoves = (pokemonSlot = null) => {
     const mergedMoves = mergeBattleMoveNames(
         pokemonSlot?.moves || [],
@@ -245,6 +359,8 @@ const ActiveBattleView = ({
     onRun,
     selectedMoveIndex,
     onSelectMove,
+    onPlanMove,
+    onSwitchParty,
     battleLog,
     isAttacking,
     activePartyIndex,
@@ -324,6 +440,41 @@ const ActiveBattleView = ({
 
     const moves = playerMon?.moves || normalizeMoveList([])
     const selectedMove = moves[selectedMoveIndex] || moves[0] || normalizeMoveList([])[0]
+    const playerTypes = Array.isArray(activePokemon?.pokemonId?.types) ? activePokemon.pokemonId.types : []
+    const enemyTypes = Array.isArray(activeOpponent?.types)
+        ? activeOpponent.types
+        : (Array.isArray(activeOpponent?.pokemon?.types) ? activeOpponent.pokemon.types : [])
+    const planOptions = buildBattlePlans({
+        moves,
+        playerTypes,
+        targetTypes: enemyTypes,
+    })
+    const partySwitchOptions = (Array.isArray(party) ? party : []).map((slot, index) => {
+        if (!slot) return null
+        const hpEntry = Array.isArray(partyHpState) ? partyHpState[index] : null
+        const maxHp = Math.max(
+            1,
+            Number(hpEntry?.maxHp)
+            || Number(slot?.battleMaxHp)
+            || Number(slot?.stats?.hp)
+            || 1
+        )
+        const currentHp = clampValue(
+            Number.isFinite(Number(hpEntry?.currentHp))
+                ? Number(hpEntry.currentHp)
+                : (Number.isFinite(Number(slot?.battleCurrentHp)) ? Number(slot.battleCurrentHp) : maxHp),
+            0,
+            maxHp
+        )
+        return {
+            index,
+            slot,
+            maxHp,
+            currentHp,
+            isFainted: currentHp <= 0,
+            isActive: index === resolvedActiveIndex,
+        }
+    }).filter(Boolean)
     const battleUsableInventory = (Array.isArray(inventory) ? inventory : [])
         .filter((entry) => {
             const itemType = String(entry?.item?.type || '').trim().toLowerCase()
@@ -431,7 +582,7 @@ const ActiveBattleView = ({
                         onClick={() => onSelectTab('focus')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'focus' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Tập Trung
+                        Lên Kế Hoạch
                     </button>
                     <button
                         onClick={() => onSelectTab('party')}
@@ -503,22 +654,77 @@ const ActiveBattleView = ({
                 )}
 
                 {activeTab === 'focus' && (
-                    <div className="p-3">
-                        <FeatureUnavailableNotice
-                            compact
-                            title="Tập trung chưa cập nhật"
-                            message="Tính năng Tập Trung trong battle đang được phát triển."
-                        />
+                    <div className="p-3 space-y-2">
+                        {planOptions.length === 0 ? (
+                            <div className="text-center text-xs text-slate-500">Không có chiêu còn PP để lên kế hoạch.</div>
+                        ) : (
+                            planOptions.map((plan) => {
+                                const move = plan.move
+                                const isSelectedPlan = selectedMoveIndex === move?.index
+                                return (
+                                    <div
+                                        key={plan.key}
+                                        className={`border rounded p-2 ${isSelectedPlan ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div className="text-xs font-bold text-slate-800">{plan.title}</div>
+                                                <div className="text-[10px] text-slate-500">{plan.description}</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-[10px] font-bold text-slate-500 uppercase">Chiêu</div>
+                                                <div className="text-xs font-bold text-slate-800">{move?.name || 'N/A'}</div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 flex gap-2">
+                                            <button
+                                                onClick={() => onPlanMove?.(move?.index, `${plan.title}: ưu tiên ${move?.name || 'chiêu hiện tại'}.`)}
+                                                disabled={isAttacking || !Number.isInteger(move?.index)}
+                                                className="flex-1 px-2 py-1 border border-blue-300 rounded text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                            >
+                                                Áp dụng kế hoạch
+                                            </button>
+                                            <button
+                                                onClick={() => move && onAttack?.(move)}
+                                                disabled={isAttacking || !move}
+                                                className="flex-1 px-2 py-1 border border-emerald-300 rounded text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                            >
+                                                Đánh theo kế hoạch
+                                            </button>
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
                     </div>
                 )}
 
                 {activeTab === 'party' && (
                     <div className="p-3">
-                        <FeatureUnavailableNotice
-                            compact
-                            title="Đổi đội hình chưa cập nhật"
-                            message="Đổi đội hình ngay trong battle chưa khả dụng ở phiên bản này."
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            {partySwitchOptions.map((entry) => {
+                                const slotName = getBattlePokemonDisplayName(entry.slot)
+                                return (
+                                    <button
+                                        key={`${entry.slot?._id || slotName}-${entry.index}`}
+                                        onClick={() => onSwitchParty?.(entry.index)}
+                                        disabled={isAttacking || entry.isFainted || entry.isActive}
+                                        className={`border rounded p-2 text-left ${entry.isActive ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'} disabled:opacity-50`}
+                                    >
+                                        <div className="text-xs font-bold text-slate-800">{slotName}</div>
+                                        <div className="text-[10px] text-slate-500">Lv.{entry.slot?.level || 1}</div>
+                                        <div className="text-[10px] mt-1 text-slate-600">
+                                            HP {Math.floor(entry.currentHp)}/{Math.floor(entry.maxHp)}
+                                        </div>
+                                        <div className="text-[10px] mt-1 font-bold">
+                                            {entry.isActive
+                                                ? 'Đang chiến đấu'
+                                                : (entry.isFainted ? 'Đã kiệt sức' : 'Đổi vào sân')}
+                                        </div>
+                                    </button>
+                                )
+                            })}
+                        </div>
                     </div>
                 )}
 
@@ -708,7 +914,7 @@ export function BattlePage() {
             )
 
         const firstUncompletedIndex = trainers.findIndex((trainer) => {
-            const trainerId = String(trainer?._id || '').trim()
+            const trainerId = normalizeEntityId(trainer?._id || trainer?.id)
             if (!trainerId) return true
             return !normalizedCompleted.has(trainerId)
         })
@@ -1009,10 +1215,24 @@ export function BattlePage() {
                 }
                 : {}
 
+            const fallbackTrainerByOrder = Number.isInteger(Number(battleOpponent?.trainerOrder))
+                ? masterPokemon[Math.max(0, Math.floor(Number(battleOpponent?.trainerOrder)))]
+                : null
+            const resolvedTrainerId = normalizeEntityId(
+                battleOpponent?.trainerId
+                || opponent?.trainerId
+                || fallbackTrainerByOrder?._id
+                || fallbackTrainerByOrder?.id
+            )
+            if (activeBattleMode === 'trainer' && !resolvedTrainerId) {
+                setActionMessage('Không xác định được huấn luyện viên hiện tại. Hãy thoát trận và vào lại.')
+                return
+            }
+
             const res = await gameApi.battleAttack({
                 moveName: selectedMove?.name,
                 move: selectedMove,
-                trainerId: battleOpponent?.trainerId || null,
+                trainerId: resolvedTrainerId || null,
                 activePokemonId: activePokemon?._id || null,
                 fieldState: battleOpponent?.fieldState || {},
                 opponent: {
@@ -1477,6 +1697,50 @@ export function BattlePage() {
         }
     }
 
+    const handlePlanMove = (nextMoveIndex, note = '') => {
+        if (!Number.isInteger(nextMoveIndex) || nextMoveIndex < 0) return
+        setSelectedMoveIndex(nextMoveIndex)
+        setActiveTab('fight')
+        const resolvedNote = String(note || '').trim() || 'Đã cập nhật kế hoạch đánh cho lượt tiếp theo.'
+        setActionMessage(resolvedNote)
+        appendBattleLog([resolvedNote])
+    }
+
+    const handleSwitchParty = (targetIndex) => {
+        if (isAttacking) return
+        if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= party.length) return
+        if (targetIndex === battlePlayerIndex) return
+
+        const targetSlot = party[targetIndex]
+        if (!targetSlot) return
+        const targetHpEntry = Array.isArray(battlePartyHpState) ? battlePartyHpState[targetIndex] : null
+        const targetMaxHp = Math.max(1, Number(targetHpEntry?.maxHp) || Number(targetSlot?.battleMaxHp) || Number(targetSlot?.stats?.hp) || 1)
+        const targetCurrentHp = clampValue(
+            Number.isFinite(Number(targetHpEntry?.currentHp))
+                ? Number(targetHpEntry.currentHp)
+                : (Number.isFinite(Number(targetSlot?.battleCurrentHp)) ? Number(targetSlot.battleCurrentHp) : targetMaxHp),
+            0,
+            targetMaxHp
+        )
+
+        if (targetCurrentHp <= 0) {
+            const message = `${getBattlePokemonDisplayName(targetSlot)} đã kiệt sức và không thể ra sân.`
+            setActionMessage(message)
+            appendBattleLog([message])
+            return
+        }
+
+        const activeSlot = party[battlePlayerIndex] || null
+        const fromName = activeSlot ? getBattlePokemonDisplayName(activeSlot) : 'Pokemon hiện tại'
+        const toName = getBattlePokemonDisplayName(targetSlot)
+        setBattlePlayerIndex(targetIndex)
+        setSelectedMoveIndex(0)
+        setActiveTab('fight')
+        const message = `Đổi đội hình: ${fromName} rút lui, ${toName} vào sân.`
+        setActionMessage(message)
+        appendBattleLog([message])
+    }
+
     const handleUseItem = async (entry) => {
         if (!entry?.item?._id) return
         if (entry.item?.type !== 'healing') {
@@ -1551,8 +1815,6 @@ export function BattlePage() {
             setActionMessage(err.message)
         }
     }
-
-    const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
 
     const resolveBattleStats = (pokemonStats = {}, formStats = {}) => {
         const baseHp = Number(formStats?.hp) || Number(pokemonStats?.hp) || 1
@@ -1635,7 +1897,7 @@ export function BattlePage() {
         })
 
         return {
-            trainerId: trainer?._id || null,
+            trainerId: normalizeEntityId(trainer?._id || trainer?.id) || null,
             trainerOrder,
             trainerName: trainer?.name || 'Trainer',
             trainerImage: trainer?.imageUrl || '/assets/08_trainer_female.png',
@@ -1688,7 +1950,7 @@ export function BattlePage() {
                 }
             })
             return {
-                id: trainer._id,
+                id: normalizeEntityId(trainer?._id || trainer?.id),
                 name: trainer.name,
                 image: trainer.imageUrl || '/assets/08_trainer_female.png',
                 quote: trainer.quote || '',
@@ -2030,7 +2292,7 @@ export function BattlePage() {
         if (!normalizedId) return
 
         const trainerOrder = masterPokemon.findIndex(
-            (trainer) => String(trainer?._id || '').trim() === normalizedId
+            (trainer) => normalizeEntityId(trainer?._id || trainer?.id) === normalizedId
         )
         if (trainerOrder === -1) {
             setActionMessage('Không tìm thấy dữ liệu huấn luyện viên để đấu lại.')
@@ -2087,6 +2349,8 @@ export function BattlePage() {
                     onRun={handleRun}
                     selectedMoveIndex={selectedMoveIndex}
                     onSelectMove={setSelectedMoveIndex}
+                    onPlanMove={handlePlanMove}
+                    onSwitchParty={handleSwitchParty}
                     battleLog={battleLog}
                     isAttacking={isAttacking}
                     activePartyIndex={battlePlayerIndex}

@@ -8,6 +8,10 @@ import Pokemon from '../models/Pokemon.js'
 const router = express.Router()
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const getAdminUserIds = async () => {
+    const admins = await User.find({ role: 'admin' }).select('_id').lean()
+    return admins.map((entry) => entry._id)
+}
 
 const buildPokemonSort = (order = 'level_desc') => {
     switch (order) {
@@ -133,6 +137,7 @@ router.get('/daily', async (req, res, next) => {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
+        const adminUserIds = await getAdminUserIds()
 
         const requestedDate = String(req.query.date || '').trim()
         const date = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : toDailyDateKey()
@@ -140,6 +145,9 @@ router.get('/daily', async (req, res, next) => {
         const sort = buildDailySort(rankingType)
 
         const filter = { date }
+        if (adminUserIds.length > 0) {
+            filter.userId = { $nin: adminUserIds }
+        }
         const [totalUsers, activities] = await Promise.all([
             DailyActivity.countDocuments(filter),
             DailyActivity.find(filter)
@@ -199,10 +207,12 @@ router.get('/overall', async (req, res, next) => {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
+        const adminUserIds = await getAdminUserIds()
+        const playerFilter = adminUserIds.length > 0 ? { userId: { $nin: adminUserIds } } : {}
 
         const [totalUsers, playerStates] = await Promise.all([
-            PlayerState.countDocuments(),
-            PlayerState.find({})
+            PlayerState.countDocuments(playerFilter),
+            PlayerState.find(playerFilter)
                 .select('userId experience level')
                 .sort({ experience: -1, level: -1, _id: -1 })
                 .skip(skip)
@@ -246,6 +256,7 @@ router.get('/pokemon', async (req, res, next) => {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
+        const adminUserIds = await getAdminUserIds()
 
         const pokemonName = String(req.query.pokemonName || '').trim()
         const username = String(req.query.username || '').trim()
@@ -263,6 +274,9 @@ router.get('/pokemon', async (req, res, next) => {
         const normalizedMaxLevel = minLevel != null && maxLevel != null ? Math.max(minLevel, maxLevel) : maxLevel
 
         const baseMatch = {}
+        if (adminUserIds.length > 0) {
+            baseMatch.userId = { $nin: adminUserIds }
+        }
         if (normalizedMinLevel != null || normalizedMaxLevel != null) {
             baseMatch.level = {}
             if (normalizedMinLevel != null) baseMatch.level.$gte = normalizedMinLevel
@@ -312,6 +326,7 @@ router.get('/pokemon', async (req, res, next) => {
         if (username) {
             const ownerMatches = await User.find({
                 username: { $regex: escapeRegExp(username), $options: 'i' },
+                role: { $ne: 'admin' },
             })
                 .select('_id')
                 .lean()
@@ -339,7 +354,11 @@ router.get('/pokemon', async (req, res, next) => {
                     },
                 })
             }
-            baseMatch.userId = { $in: ownerIds }
+            if (baseMatch.userId?.$nin) {
+                baseMatch.userId = { $in: ownerIds, $nin: baseMatch.userId.$nin }
+            } else {
+                baseMatch.userId = { $in: ownerIds }
+            }
         }
 
         const sortOptions = buildPokemonSort(order)

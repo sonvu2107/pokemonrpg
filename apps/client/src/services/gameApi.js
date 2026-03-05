@@ -103,7 +103,13 @@ export const gameApi = {
             const err = await res.json()
             throw new Error(err.message || 'Bắt Pokemon thất bại')
         }
-        return res.json()
+        const data = await res.json()
+        if (data?.globalNotification && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('globalNotification:local', {
+                detail: data.globalNotification,
+            }))
+        }
+        return data
     },
 
     // POST /api/game/encounter/:id/run
@@ -467,7 +473,13 @@ export const gameApi = {
             const err = await res.json()
             throw new Error(err.message || 'Dùng vật phẩm thất bại')
         }
-        return res.json()
+        const data = await res.json()
+        if (data?.globalNotification && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('globalNotification:local', {
+                detail: data.globalNotification,
+            }))
+        }
+        return data
     },
 
     // POST /api/party/swap

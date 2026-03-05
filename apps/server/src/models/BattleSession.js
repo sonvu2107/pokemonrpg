@@ -6,6 +6,7 @@ const battleSessionOpponentSchema = new mongoose.Schema(
         pokemonId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pokemon', required: true },
         name: { type: String, required: true, trim: true },
         level: { type: Number, required: true, min: 1 },
+        types: { type: [String], default: [] },
         formId: { type: String, default: 'normal', trim: true },
         baseStats: {
             hp: { type: Number, default: 1 },
@@ -23,6 +24,9 @@ const battleSessionOpponentSchema = new mongoose.Schema(
         damageGuards: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         wasDamagedLastTurn: { type: Boolean, default: false },
         volatileState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        counterMoves: { type: [mongoose.Schema.Types.Mixed], default: [] },
+        counterMoveCursor: { type: Number, default: 0, min: 0 },
+        counterMoveMode: { type: String, default: 'smart-random', trim: true },
     },
     { _id: false }
 )

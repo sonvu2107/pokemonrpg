@@ -4,13 +4,13 @@ import PlayerState from '../models/PlayerState.js'
 import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
 import BattleSession from '../models/BattleSession.js'
+import User from '../models/User.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { getIO } from '../socket/index.js'
 import { buildMovesForLevel, syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 
 const router = express.Router()
-
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
-
 const serializePlayerWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
     return {
@@ -42,10 +42,31 @@ const getHealAmounts = (item) => {
     return { hpAmount: 0, ppAmount: 0 }
 }
 
-// All routes require authentication
-router.use(authMiddleware)
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+const resolvePokemonImageForEncounter = (pokemon, formId, isShiny = false) => {
+    const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
+    const defaultFormId = normalizeFormId(pokemon?.defaultFormId || 'normal')
+    const requestedFormId = normalizeFormId(formId || defaultFormId)
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+    const normalSprite = resolvedForm?.imageUrl
+        || resolvedForm?.sprites?.normal
+        || resolvedForm?.sprites?.icon
+        || pokemon?.imageUrl
+        || pokemon?.sprites?.normal
+        || pokemon?.sprites?.front_default
+        || ''
 
-// GET /api/inventory - List user's items
+    if (isShiny) {
+        return resolvedForm?.sprites?.shiny || pokemon?.sprites?.shiny || normalSprite
+    }
+
+    return normalSprite
+}
+
+router.use(authMiddleware)
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.userId
@@ -75,7 +96,6 @@ router.get('/', async (req, res) => {
     }
 })
 
-// POST /api/inventory/use - Use an item (placeholder effect)
 router.post('/use', async (req, res) => {
     try {
         const { itemId, quantity = 1, encounterId, activePokemonId = null, moveName = '' } = req.body
@@ -129,7 +149,7 @@ router.post('/use', async (req, res) => {
 
             const Pokemon = (await import('../models/Pokemon.js')).default
             const pokemon = await Pokemon.findById(encounter.pokemonId)
-                .select('name pokedexNumber baseStats catchRate levelUpMoves')
+                .select('name pokedexNumber baseStats catchRate levelUpMoves rarity imageUrl forms sprites defaultFormId')
                 .lean()
 
             if (!pokemon) {
@@ -184,6 +204,39 @@ router.post('/use', async (req, res) => {
                 })
                 await caughtPokemon.save()
 
+                const rarity = String(pokemon.rarity || '').trim().toLowerCase()
+                const shouldEmitGlobalNotification = ['s', 'ss', 'sss'].includes(rarity)
+                let globalNotificationPayload = null
+                if (shouldEmitGlobalNotification) {
+                    try {
+                        const currentUser = await User.findById(userId)
+                            .select('username')
+                            .lean()
+                        const username = String(currentUser?.username || '').trim() || 'Người chơi'
+                        const rarityLabel = rarity ? rarity.toUpperCase() : 'UNKNOWN'
+                        const notificationImage = resolvePokemonImageForEncounter(
+                            pokemon,
+                            encounter.formId || pokemon.defaultFormId || 'normal',
+                            encounter.isShiny
+                        )
+                        globalNotificationPayload = {
+                            notificationId: `${resolvedEncounter._id}-${Date.now()}`,
+                            username,
+                            pokemonName: pokemon.name,
+                            rarity,
+                            imageUrl: notificationImage,
+                            message: `Người chơi ${username} vừa bắt được Pokemon ${rarityLabel} - ${pokemon.name}!`,
+                        }
+
+                        const io = getIO()
+                        if (io) {
+                            io.emit('globalNotification', globalNotificationPayload)
+                        }
+                    } catch (notificationError) {
+                        console.error('Không thể phát globalNotification:', notificationError)
+                    }
+                }
+
                 return res.json({
                     ok: true,
                     caught: true,
@@ -191,6 +244,7 @@ router.post('/use', async (req, res) => {
                     hp: resolvedEncounter.hp,
                     maxHp: resolvedEncounter.maxHp,
                     message: `Đã bắt được ${pokemon.name}!`,
+                    globalNotification: globalNotificationPayload,
                 })
             }
 

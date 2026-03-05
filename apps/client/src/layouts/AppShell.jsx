@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
+import GlobalNotification from "../components/GlobalNotification"
 
 export default function AppShell() {
     const { user, logout } = useAuth()
@@ -12,6 +13,8 @@ export default function AppShell() {
 
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
+            <GlobalNotification />
+
             {/* Header / Banner */}
             <header className="border-b border-blue-400 bg-white/95 sticky top-0 z-50 backdrop-blur-md shadow-sm">
                 <div className="mx-auto max-w-[1280px] px-3 py-3">

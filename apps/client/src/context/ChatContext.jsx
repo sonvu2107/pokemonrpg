@@ -198,6 +198,7 @@ export function ChatProvider({ children }) {
   }, [])
 
   const value = {
+    socket,
     messages,
     unreadCount,
     onlineCount,
