@@ -128,7 +128,7 @@ export default function RightColumn() {
             </SidebarSection>
 
             <SidebarSection title="Quà Tặng" iconId={385}>
-                <SidebarLink to="/promo">Pokémon Sự Kiện</SidebarLink>
+                <SidebarLink to="/promo">Nhập Giftcode</SidebarLink>
                 <SidebarLink to="/daily">Quà Hằng Ngày</SidebarLink>
             </SidebarSection>
 

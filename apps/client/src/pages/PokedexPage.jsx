@@ -115,6 +115,7 @@ export default function PokedexPage() {
             const formRows = alternates.map((form) => ({
                 ...entry,
                 rowKey: `${entry._id}-${form.formId}`,
+                got: Boolean(form?.got),
                 displayName: `${entry.name} (${form.formName || toTitle(form.formId)})`,
                 displaySprite: form.sprite || entry.sprite,
             }))

@@ -292,8 +292,26 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
         const showIncomplete = toBoolean(req.query.incomplete)
 
         const userId = req.user.userId
-        const ownedPokemonIds = await UserPokemon.distinct('pokemonId', { userId })
-        const ownedSet = new Set(ownedPokemonIds.map((id) => id.toString()))
+        const ownedEntries = await UserPokemon.find({ userId })
+            .select('pokemonId formId')
+            .lean()
+
+        const ownedSet = new Set()
+        const ownedFormsByPokemonId = new Map()
+        for (const entry of ownedEntries) {
+            const speciesId = String(entry?.pokemonId || '').trim()
+            if (!speciesId) continue
+
+            ownedSet.add(speciesId)
+
+            const normalizedFormId = normalizeFormId(entry?.formId || 'normal')
+            if (!ownedFormsByPokemonId.has(speciesId)) {
+                ownedFormsByPokemonId.set(speciesId, new Set())
+            }
+            ownedFormsByPokemonId.get(speciesId).add(normalizedFormId)
+        }
+
+        const ownedPokemonIds = Array.from(ownedSet)
 
         const query = {}
         if (showIncomplete && ownedPokemonIds.length > 0) {
@@ -326,21 +344,30 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
 
         const ownedCount = ownedPokemonIds.length
 
-        const rows = pokemon.map((entry) => ({
-            _id: entry._id,
-            pokedexNumber: entry.pokedexNumber,
-            name: entry.name,
-            types: Array.isArray(entry.types) ? entry.types : [],
-            imageUrl: entry.imageUrl || '',
-            sprite: entry.sprites?.icon || entry.sprites?.normal || entry.imageUrl || '',
-            defaultFormId: String(entry.defaultFormId || 'normal').trim() || 'normal',
-            forms: (Array.isArray(entry.forms) ? entry.forms : []).map((form) => ({
-                formId: String(form?.formId || '').trim(),
-                formName: String(form?.formName || '').trim(),
-                sprite: form?.sprites?.icon || form?.sprites?.normal || form?.imageUrl || '',
-            })),
-            got: ownedSet.has(entry._id.toString()),
-        }))
+        const rows = pokemon.map((entry) => {
+            const speciesId = entry._id.toString()
+            const ownedForms = ownedFormsByPokemonId.get(speciesId) || new Set()
+
+            return {
+                _id: entry._id,
+                pokedexNumber: entry.pokedexNumber,
+                name: entry.name,
+                types: Array.isArray(entry.types) ? entry.types : [],
+                imageUrl: entry.imageUrl || '',
+                sprite: entry.sprites?.icon || entry.sprites?.normal || entry.imageUrl || '',
+                defaultFormId: String(entry.defaultFormId || 'normal').trim() || 'normal',
+                forms: (Array.isArray(entry.forms) ? entry.forms : []).map((form) => {
+                    const formId = String(form?.formId || '').trim()
+                    return {
+                        formId,
+                        formName: String(form?.formName || '').trim(),
+                        sprite: form?.sprites?.icon || form?.sprites?.normal || form?.imageUrl || '',
+                        got: ownedForms.has(normalizeFormId(formId || entry.defaultFormId || 'normal')),
+                    }
+                }),
+                got: ownedSet.has(speciesId),
+            }
+        })
 
         const completionPercent = totalSpecies > 0 ? Math.round((ownedCount / totalSpecies) * 100) : 0
 
