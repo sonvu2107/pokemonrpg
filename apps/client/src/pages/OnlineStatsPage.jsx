@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import { friendsApi } from '../services/friendsApi'
+import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import { resolveAvatarUrl } from '../utils/avatarUrl'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png'
@@ -50,6 +53,7 @@ const PARTY_SLOT_TOTAL = 6
 
 export default function OnlineStatsPage() {
     const navigate = useNavigate()
+    const { user: currentUser } = useAuth()
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [onlineCount, setOnlineCount] = useState(0)
     const [onlineTrainers, setOnlineTrainers] = useState([])
@@ -58,6 +62,7 @@ export default function OnlineStatsPage() {
     const [featureNotice, setFeatureNotice] = useState('')
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1 })
     const [selectedTrainer, setSelectedTrainer] = useState(null)
+    const [sendingFriendRequest, setSendingFriendRequest] = useState(false)
 
     useEffect(() => {
         loadWallet()
@@ -110,12 +115,20 @@ export default function OnlineStatsPage() {
     }
     const hasChallengeParty = paddedSelectedParty.some((slot) => Boolean(slot?._id))
     const challengeUserId = String(selectedTrainer?.userId || '').trim()
+    const isSelfTrainer = Boolean(
+        selectedTrainer?.userId && currentUser?.id && String(selectedTrainer.userId) === String(currentUser.id)
+    )
     const trainerProfileId = selectedTrainer?.userId
         ? `#${String(selectedTrainer.userId).slice(-7).toUpperCase()}`
         : (selectedTrainer?.userIdLabel || '???')
 
     const handleChallengeFromOnline = () => {
         if (!selectedTrainer) return
+
+        if (isSelfTrainer) {
+            setFeatureNotice('Bạn không thể tự khiêu chiến chính mình.')
+            return
+        }
 
         if (!challengeUserId) {
             setFeatureNotice('Không tìm thấy userId để khiêu chiến online.')
@@ -129,6 +142,30 @@ export default function OnlineStatsPage() {
 
         setSelectedTrainer(null)
         navigate(`/battle?challengeUserId=${encodeURIComponent(challengeUserId)}&returnTo=${encodeURIComponent('stats/online')}`)
+    }
+
+    const handleSendFriendRequest = async () => {
+        if (!selectedTrainer) return
+
+        if (isSelfTrainer) {
+            setFeatureNotice('Bạn không thể tự gửi lời mời kết bạn cho chính mình.')
+            return
+        }
+
+        if (!challengeUserId) {
+            setFeatureNotice('Không tìm thấy userId để kết bạn.')
+            return
+        }
+
+        try {
+            setSendingFriendRequest(true)
+            const data = await friendsApi.sendRequest(challengeUserId)
+            setFeatureNotice(data?.message || `Đã gửi lời mời kết bạn tới ${selectedTrainer.username || 'huấn luyện viên'}.`)
+        } catch (err) {
+            setFeatureNotice(err.message || 'Không thể gửi lời mời kết bạn.')
+        } finally {
+            setSendingFriendRequest(false)
+        }
     }
 
     return (
@@ -247,23 +284,31 @@ export default function OnlineStatsPage() {
                                 </div>
                                 <div className="mx-auto w-28 h-28 mb-4 flex items-center justify-center">
                                     <img
-                                        src={selectedTrainer.avatar || DEFAULT_AVATAR}
+                                        src={resolveAvatarUrl(selectedTrainer.avatar, DEFAULT_AVATAR)}
                                         alt={selectedTrainer.username || 'Huấn luyện viên'}
                                         className="h-full object-contain pixelated drop-shadow-md"
                                         onError={(event) => {
                                             event.currentTarget.onerror = null
-                                            event.currentTarget.src = DEFAULT_AVATAR
+                                            event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
                                         }}
                                     />
                                 </div>
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                                     Hành Động
                                 </div>
-                                <div className="flex justify-center gap-2 text-xs font-bold text-blue-700 mb-4 px-4">
+                                 <div className="flex justify-center gap-2 text-xs font-bold text-blue-700 mb-4 px-4">
+                                    <button
+                                        type="button"
+                                        onClick={handleSendFriendRequest}
+                                        disabled={!challengeUserId || isSelfTrainer || sendingFriendRequest}
+                                        className="px-3 py-1 rounded border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {sendingFriendRequest ? '[ Đang gửi... ]' : '[ Kết bạn ]'}
+                                    </button>
                                     <button
                                         type="button"
                                         onClick={handleChallengeFromOnline}
-                                        disabled={!challengeUserId || !hasChallengeParty}
+                                        disabled={!challengeUserId || !hasChallengeParty || isSelfTrainer}
                                         className="px-3 py-1 rounded border border-blue-300 bg-white text-blue-800 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         [ Khiêu Chiến ]

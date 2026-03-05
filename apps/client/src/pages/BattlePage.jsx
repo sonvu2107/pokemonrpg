@@ -3,12 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import { resolveAvatarUrl } from '../utils/avatarUrl'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
-const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/stats/online'])
+const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/stats/online', '/friends'])
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
 const resolveSafeRankedReturnPath = (value = '') => {
@@ -17,6 +18,11 @@ const resolveSafeRankedReturnPath = (value = '') => {
     const normalized = `/${normalizedRaw.replace(/^\/+/, '')}`
     if (ALLOWED_RANKED_RETURN_PATHS.has(normalized)) return normalized
     return DEFAULT_RANKED_RETURN_PATH
+}
+const resolveDuelReturnLabel = (value = '') => {
+    if (value === '/stats/online') return 'Quay về danh sách online'
+    if (value === '/friends') return 'Quay về Bạn bè'
+    return 'Quay về BXH Pokemon'
 }
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-400 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm first:rounded-t">
@@ -2225,7 +2231,7 @@ export function BattlePage() {
                 trainerId: null,
                 trainerOrder: 0,
                 trainerName,
-                trainerImage: String(trainer?.avatar || '').trim() || '/assets/08_trainer_female.png',
+                trainerImage: resolveAvatarUrl(trainer?.avatar, '/assets/08_trainer_female.png'),
                 trainerQuote: String(trainer?.signature || '').trim() || 'Auto chọn kỹ năng thông minh',
                 trainerPrize: 'Không có',
                 trainerPrizeItem: 'Không có',
@@ -2373,7 +2379,7 @@ export function BattlePage() {
                                     onClick={closeRankedDuelResultModal}
                                     className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
                                 >
-                                    {duelReturnPath === '/stats/online' ? 'Quay về danh sách online' : 'Quay về BXH Pokémon'}
+                                    {resolveDuelReturnLabel(duelReturnPath)}
                                 </button>
                             </div>
                         </div>
@@ -2535,6 +2541,10 @@ export function BattlePage() {
                                 src={opponent.trainerImage}
                                 alt={opponent.trainerName}
                                 className="w-24 h-24 object-contain pixelated"
+                                onError={(event) => {
+                                    event.currentTarget.onerror = null
+                                    event.currentTarget.src = '/assets/08_trainer_female.png'
+                                }}
                             />
                             <div className="mt-2">
                                 <span className="font-bold text-slate-800">Huấn luyện viên {opponent.trainerName}:</span>

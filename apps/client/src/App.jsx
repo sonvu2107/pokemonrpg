@@ -24,6 +24,7 @@ import DailyStatsPage from './pages/DailyStatsPage'
 import OnlineStatsPage from './pages/OnlineStatsPage'
 import DailyCheckInPage from './pages/DailyCheckInPage'
 import PromoCodePage from './pages/PromoCodePage'
+import FriendsPage from './pages/FriendsPage'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -80,6 +81,7 @@ export default function App() {
                 <Route path="/daily" element={<DailyCheckInPage />} />
                 <Route path="/promo" element={<PromoCodePage />} />
                 <Route path="/trades" element={<TradesPage />} />
+                <Route path="/friends" element={<FriendsPage />} />
 
                 {/* Admin Routes */}
                 <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
