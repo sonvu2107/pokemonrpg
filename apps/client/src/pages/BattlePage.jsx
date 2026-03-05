@@ -50,8 +50,52 @@ const typeColors = {
     electric: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     ice: 'bg-cyan-100 text-cyan-800 border-cyan-300',
     dragon: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-    poison: 'bg-purple-100 text-purple-800 border-purple-300',
+    poison: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300',
     normal: 'bg-slate-100 text-slate-800 border-slate-300',
+    bug: 'bg-lime-100 text-lime-800 border-lime-300',
+    dark: 'bg-stone-200 text-stone-800 border-stone-400',
+    fairy: 'bg-pink-100 text-pink-800 border-pink-300',
+    fighting: 'bg-orange-100 text-orange-800 border-orange-300',
+    flying: 'bg-sky-100 text-sky-800 border-sky-300',
+    ghost: 'bg-violet-100 text-violet-800 border-violet-300',
+    ground: 'bg-amber-100 text-amber-800 border-amber-300',
+    psychic: 'bg-rose-100 text-rose-800 border-rose-300',
+    rock: 'bg-yellow-200 text-yellow-900 border-yellow-400',
+    steel: 'bg-zinc-100 text-zinc-800 border-zinc-300',
+}
+const normalizeTypeValue = (value = '') => String(value || '').trim().toLowerCase()
+const resolvePokemonTypes = (rawTypes = []) => {
+    const list = Array.isArray(rawTypes) ? rawTypes : []
+    return [...new Set(
+        list
+            .map((entry) => {
+                if (typeof entry === 'string') return normalizeTypeValue(entry)
+                if (!entry || typeof entry !== 'object') return ''
+                if (typeof entry.type === 'string') return normalizeTypeValue(entry.type)
+                if (typeof entry.name === 'string') return normalizeTypeValue(entry.name)
+                if (entry.type && typeof entry.type === 'object') return normalizeTypeValue(entry.type.name)
+                return ''
+            })
+            .filter(Boolean)
+    )]
+}
+const PokemonTypeBadges = ({ types = [] }) => {
+    const normalizedTypes = resolvePokemonTypes(types)
+    if (normalizedTypes.length === 0) {
+        return <div className="mb-1 text-[10px] font-bold text-slate-400">Hệ: --</div>
+    }
+    return (
+        <div className="mb-1 flex flex-wrap justify-center gap-1">
+            {normalizedTypes.map((type) => (
+                <span
+                    key={type}
+                    className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase ${typeColors[type] || 'bg-slate-100 text-slate-700 border-slate-200'}`}
+                >
+                    {type}
+                </span>
+            ))}
+        </div>
+    )
 }
 const statusLabels = {
     burn: 'Bỏng',
@@ -410,6 +454,7 @@ const ActiveBattleView = ({
     const playerMon = activePokemon ? {
         name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Unknown',
         level: activePokemon.level,
+        types: resolvePokemonTypes(activePokemon?.pokemonId?.types),
         maxHp: activeMaxHp,
         hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
         exp: activePokemon.experience,
@@ -434,10 +479,16 @@ const ActiveBattleView = ({
     } : null
 
     const activeOpponent = opponent?.team?.[opponent.currentIndex || 0] || null
+    const activeOpponentTypes = resolvePokemonTypes(
+        Array.isArray(activeOpponent?.types)
+            ? activeOpponent.types
+            : (Array.isArray(activeOpponent?.pokemon?.types) ? activeOpponent.pokemon.types : [])
+    )
     const enemyMon = activeOpponent ? {
         name: activeOpponent.name || 'Pokemon Hoang Dã',
         owner: opponent?.trainerName || 'Hoang Dã',
         level: activeOpponent.level,
+        types: activeOpponentTypes,
         maxHp: activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1,
         hp: activeOpponent.currentHp ?? (activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1),
         sprite: activeOpponent.sprite || '',
@@ -454,16 +505,15 @@ const ActiveBattleView = ({
         sprite: '',
         status: '',
         statusTurns: 0,
+        types: [],
         damageGuards: {},
         volatileState: {},
     }
 
     const moves = playerMon?.moves || normalizeMoveList([])
     const selectedMove = moves[selectedMoveIndex] || moves[0] || normalizeMoveList([])[0]
-    const playerTypes = Array.isArray(activePokemon?.pokemonId?.types) ? activePokemon.pokemonId.types : []
-    const enemyTypes = Array.isArray(activeOpponent?.types)
-        ? activeOpponent.types
-        : (Array.isArray(activeOpponent?.pokemon?.types) ? activeOpponent.pokemon.types : [])
+    const playerTypes = playerMon?.types || []
+    const enemyTypes = enemyMon?.types || []
     const planOptions = buildBattlePlans({
         moves,
         playerTypes,
@@ -509,6 +559,7 @@ const ActiveBattleView = ({
                     <h3 className="font-bold text-sm mb-1">
                         {playerMon ? `Của bạn: ${playerMon.name}` : 'Không có Pokemon trong đội'}
                     </h3>
+                    {playerMon && <PokemonTypeBadges types={playerMon.types} />}
                     {playerMon?.status && (
                         <div className="mb-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-0.5">
                             {statusLabels[playerMon.status] || playerMon.status}
@@ -550,6 +601,7 @@ const ActiveBattleView = ({
 
                 <div className="border-2 border-double border-slate-300 rounded p-2 bg-white flex flex-col items-center">
                     <h3 className="font-bold text-sm mb-1">{enemyMon.owner} - {enemyMon.name}</h3>
+                    <PokemonTypeBadges types={enemyMon.types} />
                     {enemyMon.status && (
                         <div className="mb-1 text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-0.5">
                             {statusLabels[enemyMon.status] || enemyMon.status}
@@ -1916,6 +1968,7 @@ export function BattlePage() {
                 formName: resolvedEntry.formName,
                 baseStats,
                 pokemon: poke,
+                types: resolvePokemonTypes(poke?.types),
                 currentHp: hp,
                 maxHp: hp,
                 status: '',
@@ -2116,7 +2169,7 @@ export function BattlePage() {
                         isShiny: Boolean(targetPokemon?.isShiny),
                     }),
                     baseStats: targetStats,
-                    types: Array.isArray(targetSpecies?.types) ? targetSpecies.types : [],
+                    types: resolvePokemonTypes(targetSpecies?.types),
                     currentHp: targetMaxHp,
                     maxHp: targetMaxHp,
                     status: '',
@@ -2237,7 +2290,7 @@ export function BattlePage() {
                     formName: resolvedEntry.formName || String(entry?.formId || 'normal').trim() || 'normal',
                     baseStats,
                     pokemon: poke,
-                    types: Array.isArray(poke?.types) ? poke.types : [],
+                    types: resolvePokemonTypes(poke?.types),
                     currentHp: hp,
                     maxHp: hp,
                     status: '',

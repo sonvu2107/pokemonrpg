@@ -195,7 +195,7 @@ export default function TrainerProfileModal({
                             }
 
                             const species = p.pokemonId || {}
-                            const { formId, formName } = resolvePokemonForm(species, p.formId)
+                            const { formId } = resolvePokemonForm(species, p.formId)
                             const sprite = resolvePokemonSprite({
                                 species,
                                 formId,
@@ -234,11 +234,6 @@ export default function TrainerProfileModal({
                                         )}
                                     </div>
                                     <span className="text-xs text-amber-600 font-bold">Lv. {formatNumber(p.level)}</span>
-                                    {formId !== 'normal' && (
-                                        <span className="text-[9px] bg-sky-100 text-sky-700 font-bold px-1.5 py-0.5 rounded-full border border-sky-200">
-                                            {formName}
-                                        </span>
-                                    )}
                                 </Link>
                             )
                         })}

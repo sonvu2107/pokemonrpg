@@ -70,9 +70,22 @@ export default function LeftColumn() {
         setComingSoonModalOpen(true)
     }
 
-    const resolvePostTarget = (post) => {
+    const resolveEventTarget = (post) => {
         if (post?.mapId?.slug) return `/map/${post.mapId.slug}`
         return '/'
+    }
+
+    const resolveNewsTarget = (post) => {
+        if (post?._id) return `/news/${post._id}`
+        return '/'
+    }
+
+    const sortPostsByDate = (posts) => {
+        return [...posts].sort((a, b) => {
+            const aTime = new Date(a?.createdAt || 0).getTime()
+            const bTime = new Date(b?.createdAt || 0).getTime()
+            return bTime - aTime
+        })
     }
 
     const sortByDisplayOrder = (maps) => {
@@ -138,13 +151,19 @@ export default function LeftColumn() {
     useEffect(() => {
         const loadHighlights = async () => {
             try {
-                const [eventRes, updateRes] = await Promise.all([
+                const [eventRes, newsRes, updateRes] = await Promise.all([
                     newsApi.getNews({ limit: 5, type: 'event' }),
+                    newsApi.getNews({ limit: 10, type: 'news' }),
                     newsApi.getNews({ limit: 5, type: 'update' }),
                 ])
 
+                const mergedUpdates = sortPostsByDate([
+                    ...(newsRes?.ok ? (newsRes.posts || []) : []),
+                    ...(updateRes?.ok ? (updateRes.posts || []) : []),
+                ]).slice(0, 5)
+
                 setEventPosts(eventRes?.ok ? (eventRes.posts || []) : [])
-                setUpdatePosts(updateRes?.ok ? (updateRes.posts || []) : [])
+                setUpdatePosts(mergedUpdates)
             } catch (err) {
                 console.error('Không thể tải điểm nhấn:', err)
                 setEventPosts([])
@@ -168,7 +187,7 @@ export default function LeftColumn() {
                     <div className="text-xs text-white/70 px-2 py-1">Chưa có sự kiện mới.</div>
                 ) : (
                     eventPosts.map((post) => (
-                        <SidebarLink key={post._id} to={resolvePostTarget(post)} isSpecial>
+                        <SidebarLink key={post._id} to={resolveEventTarget(post)} isSpecial>
                             {post.title}
                         </SidebarLink>
                     ))
@@ -183,7 +202,7 @@ export default function LeftColumn() {
                     <div className="text-xs text-white/70 px-2 py-1">Chưa có cập nhật mới.</div>
                 ) : (
                     updatePosts.map((post) => (
-                        <SidebarLink key={post._id} to={resolvePostTarget(post)} isSpecial>
+                        <SidebarLink key={post._id} to={resolveNewsTarget(post)} isSpecial>
                             {post.title}
                         </SidebarLink>
                     ))

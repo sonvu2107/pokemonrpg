@@ -432,6 +432,10 @@ export default function PokemonInfoPage() {
     const obtainedLabel = originalTrainerRaw
         ? (String(originalTrainerRaw).toLowerCase().startsWith('admin_grant') ? 'Nhận từ hệ thống' : 'Trao đổi')
         : 'Bắt hoang dã'
+    const nicknameDisplay = String(pokemon.nickname || '').trim()
+    const hasCustomNickname = Boolean(
+        nicknameDisplay && nicknameDisplay.toLowerCase() !== String(base.name || '').trim().toLowerCase()
+    )
     const serverStats = pokemon.serverStats || {}
     const hasServerStats = Object.prototype.hasOwnProperty.call(serverStats, 'speciesTotal')
     const speciesTotal = Number(serverStats.speciesTotal) || 0
@@ -514,15 +518,24 @@ export default function PokemonInfoPage() {
                             {/* Small icon maybe? */}
                         </div>
 
-                        <h2 className="text-xl font-bold text-blue-900 flex items-center gap-2">
-                            {pokemon.nickname || base.name}
+                        <h2 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
+                            {base.name}
                             {pokemon.isShiny && <span className="text-amber-500 text-sm">★</span>}
-                            {resolvedFormId !== 'normal' && (
+                        </h2>
+
+                        {hasCustomNickname && (
+                            <div className="mt-1 text-sm font-semibold text-slate-600">
+                                {nicknameDisplay}
+                            </div>
+                        )}
+
+                        {resolvedFormId !== 'normal' && (
+                            <div className="mt-1">
                                 <span className="text-[11px] uppercase bg-sky-100 text-sky-700 px-2 py-0.5 rounded border border-sky-200">
                                     {resolvedFormName}
                                 </span>
-                            )}
-                        </h2>
+                            </div>
+                        )}
 
                         <div className="text-xs font-bold mt-1 flex gap-2">
                             <span className="bg-slate-200 px-2 py-0.5 rounded text-slate-700">Lv. {pokemon.level}</span>
