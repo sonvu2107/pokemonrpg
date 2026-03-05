@@ -7,7 +7,6 @@ import ComingSoonModal from "../components/ComingSoonModal"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
-        {/* Header */}
         <div className="bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600">
             {iconId && (
                 <img
@@ -18,7 +17,6 @@ const SidebarSection = ({ title, iconId, children }) => (
             )}
             <span className="text-sm font-bold text-white drop-shadow-md">{title}</span>
         </div>
-        {/* Body */}
         <div className="bg-cyan-400 p-2 space-y-0.5">
             {children}
         </div>
@@ -195,11 +193,11 @@ export default function LeftColumn() {
             </SidebarSection>
 
             {/* RECENT UPDATES */}
-            <SidebarSection title="Mới Cập Nhật" iconId={89}>
+            <SidebarSection title="Tin Tức" iconId={89}>
                 {loadingHighlights ? (
                     <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
                 ) : updatePosts.length === 0 ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Chưa có cập nhật mới.</div>
+                    <div className="text-xs text-white/70 px-2 py-1">Chưa có tin tức mới.</div>
                 ) : (
                     updatePosts.map((post) => (
                         <SidebarLink key={post._id} to={resolveNewsTarget(post)} isSpecial>
@@ -210,7 +208,7 @@ export default function LeftColumn() {
             </SidebarSection>
 
             {/* GENERAL */}
-            <SidebarSection title="Chung" iconId={81}> {/* Magnemite */}
+            <SidebarSection title="Chung" iconId={81}>
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tin Nhắn')}>Tin Nhắn</SidebarLink>
                 <SidebarLink to="/shop/buy">Giao Dịch</SidebarLink>
@@ -222,7 +220,7 @@ export default function LeftColumn() {
             </SidebarSection>
 
             {/* MISCELLANEOUS */}
-            <SidebarSection title="Khác" iconId={121}> {/* Starmie */}
+            <SidebarSection title="Khác" iconId={121}>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tìm Người Chơi')}>Tìm Người Chơi</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tùy Chọn')}>Tùy Chọn</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Giới Thiệu')}>Giới Thiệu</SidebarLink>
@@ -230,7 +228,7 @@ export default function LeftColumn() {
             </SidebarSection>
 
             {/* EXPLORE */}
-            <SidebarSection title="Khám Phá" iconId={138}> {/* Omanyte/Omastar for exploration */}
+            <SidebarSection title="Khám Phá" iconId={138}>
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Hầm Mỏ')}>Hầm Mỏ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Trung Tâm Pokemon')}>Trung Tâm Pokemon</SidebarLink>
