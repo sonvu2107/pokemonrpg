@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
 import MessageList from './chat/MessageList'
 import ChatInput from './chat/ChatInput'
 import { CHAT_ICONS, getPokemonSpriteUrl } from '../utils/chatUtils'
+import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
+import TrainerProfileModal from './TrainerProfileModal'
 
 export default function GlobalChatPopup() {
+  const location = useLocation()
   const { user } = useAuth()
   const { 
     messages, 
@@ -23,6 +27,7 @@ export default function GlobalChatPopup() {
 
   const [isOpen, setIsOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: location.pathname })
 
   // Check if mobile
   useEffect(() => {
@@ -126,6 +131,7 @@ export default function GlobalChatPopup() {
   // Mobile: Full-screen overlay
   if (isMobile) {
     return (
+      <>
       <div className="
         fixed inset-0 z-50
         bg-white
@@ -192,6 +198,7 @@ export default function GlobalChatPopup() {
             messages={messages} 
             typingUsers={typingUsers}
             loading={loading}
+            onOpenProfile={(trainer) => openTrainerProfile(trainer, { returnTo: location.pathname })}
           />
         </div>
 
@@ -202,11 +209,14 @@ export default function GlobalChatPopup() {
           disabled={!isConnected}
         />
       </div>
+      <TrainerProfileModal {...trainerModalProps} />
+      </>
     )
   }
 
   // Desktop: Floating popup
   return (
+    <>
     <div className="
       fixed bottom-6 right-6 z-40
       w-96 h-[600px]
@@ -294,6 +304,7 @@ export default function GlobalChatPopup() {
           messages={messages} 
           typingUsers={typingUsers}
           loading={loading}
+          onOpenProfile={(trainer) => openTrainerProfile(trainer, { returnTo: location.pathname })}
         />
       </div>
 
@@ -306,5 +317,7 @@ export default function GlobalChatPopup() {
         />
       </div>
     </div>
+    <TrainerProfileModal {...trainerModalProps} />
+    </>
   )
 }

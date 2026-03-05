@@ -9,7 +9,7 @@ const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
-const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/stats/online', '/friends'])
+const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
 const resolveSafeRankedReturnPath = (value = '') => {
@@ -22,6 +22,8 @@ const resolveSafeRankedReturnPath = (value = '') => {
 const resolveDuelReturnLabel = (value = '') => {
     if (value === '/stats/online') return 'Quay về danh sách online'
     if (value === '/friends') return 'Quay về Bạn bè'
+    if (value === '/rankings/overall') return 'Quay về BXH chung'
+    if (value === '/rankings/daily') return 'Quay về BXH hằng ngày'
     return 'Quay về BXH Pokemon'
 }
 const SectionHeader = ({ title }) => (

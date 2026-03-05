@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
 
-export default function MessageList({ messages, typingUsers, loading }) {
+export default function MessageList({ messages, typingUsers, loading, onOpenProfile }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -68,7 +68,7 @@ export default function MessageList({ messages, typingUsers, loading }) {
       "
     >
       {messages.map((message) => (
-        <MessageBubble key={message._id} message={message} />
+        <MessageBubble key={message._id} message={message} onOpenProfile={onOpenProfile} />
       ))}
       
       <TypingIndicator typingUsers={typingUsers} />

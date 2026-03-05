@@ -1,9 +1,10 @@
 import { getUserPokemonId, getPokemonSpriteUrl, formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
+import { resolveAvatarUrl } from '../../utils/avatarUrl'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png' // Ditto
 
-export default function MessageBubble({ message }) {
+export default function MessageBubble({ message, onOpenProfile }) {
   const { user } = useAuth()
   const isOwnMessage = user && message.sender._id === user._id
   const isSystemMessage = message.type === 'system'
@@ -47,6 +48,8 @@ export default function MessageBubble({ message }) {
 
   // Other users' messages (left aligned, white background)
   const isAdmin = message.sender.role === 'admin'
+  const senderUserId = String(message?.sender?._id || '').trim()
+  const canOpenProfile = Boolean(senderUserId && typeof onOpenProfile === 'function')
   
   // Use user's avatar if available, otherwise fallback to Pokemon sprite or Ditto
   const avatarUrl = message.sender.avatar 
@@ -55,23 +58,47 @@ export default function MessageBubble({ message }) {
       ? getPokemonSpriteUrl(getUserPokemonId(message.sender._id))
       : DEFAULT_AVATAR)
 
+  const handleOpenProfile = () => {
+    if (!canOpenProfile) return
+    onOpenProfile({
+      userId: senderUserId,
+      username: message?.sender?.username,
+      avatar: message?.sender?.avatar,
+      role: message?.sender?.role,
+    })
+  }
+
   return (
     <div className="flex flex-col gap-1 animate-fade-in">
       <div className="flex items-center gap-2">
         {/* User avatar */}
-        <img 
-          src={avatarUrl}
-          alt={message.sender.username}
-          className="w-6 h-6 rounded-full object-cover flex-shrink-0 pixelated"
-          loading="lazy"
-          onError={(e) => {
-            // Fallback to Ditto if image fails to load
-            e.target.src = DEFAULT_AVATAR
-          }}
-        />
+        <button
+          type="button"
+          onClick={handleOpenProfile}
+          disabled={!canOpenProfile}
+          className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0"
+        >
+          <img 
+            src={resolveAvatarUrl(avatarUrl, DEFAULT_AVATAR)}
+            alt={message.sender.username}
+            className="w-6 h-6 rounded-full object-cover flex-shrink-0 pixelated"
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null
+              e.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
+            }}
+          />
+        </button>
         
         <span className="text-xs font-bold text-white drop-shadow-sm flex items-center gap-1 flex-wrap">
-          {message.sender.username}
+          <button
+            type="button"
+            onClick={handleOpenProfile}
+            disabled={!canOpenProfile}
+            className="hover:underline"
+          >
+            {message.sender.username}
+          </button>
           
           {/* Admin badge */}
           {isAdmin && (

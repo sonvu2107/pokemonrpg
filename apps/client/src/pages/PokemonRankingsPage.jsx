@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import { resolveAvatarUrl } from '../utils/avatarUrl'
+import TrainerProfileModal from '../components/TrainerProfileModal'
+import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const SectionHeader = ({ title }) => (
@@ -18,6 +21,7 @@ export default function PokemonRankingsPage() {
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
     const [featureNotice, setFeatureNotice] = useState('')
+    const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: '/rankings/pokemon' })
 
     useEffect(() => {
         loadRankings(currentPage)
@@ -224,19 +228,37 @@ export default function PokemonRankingsPage() {
                                     </div>
                                     <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center p-2 gap-1">
                                         <div className="w-10 h-10 rounded overflow-hidden mb-1">
-                                            <img
-                                                src={String(entry.owner?.avatar || '').trim() || DEFAULT_AVATAR}
-                                                className="w-full h-full object-cover"
-                                                alt="Avatar"
-                                                onError={(e) => {
-                                                    e.currentTarget.onerror = null
-                                                    e.currentTarget.src = DEFAULT_AVATAR
-                                                }}
-                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => openTrainerProfile({
+                                                    userId: entry.owner?._id,
+                                                    username: entry.owner?.username,
+                                                    avatar: entry.owner?.avatar,
+                                                }, { returnTo: '/rankings/pokemon' })}
+                                                className="w-10 h-10 rounded overflow-hidden"
+                                            >
+                                                <img
+                                                    src={resolveAvatarUrl(entry.owner?.avatar, DEFAULT_AVATAR)}
+                                                    className="w-full h-full object-cover"
+                                                    alt="Avatar"
+                                                    onError={(e) => {
+                                                        e.currentTarget.onerror = null
+                                                        e.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
+                                                    }}
+                                                />
+                                            </button>
                                         </div>
-                                        <div className={`font-bold text-sm sm:text-base ${getUsernameColor(entry.rank)}`}>
+                                        <button
+                                            type="button"
+                                            onClick={() => openTrainerProfile({
+                                                userId: entry.owner?._id,
+                                                username: entry.owner?.username,
+                                                avatar: entry.owner?.avatar,
+                                            }, { returnTo: '/rankings/pokemon' })}
+                                            className={`font-bold text-sm sm:text-base hover:underline ${getUsernameColor(entry.rank)}`}
+                                        >
                                             {entry.owner?.username || 'Không rõ'}
-                                        </div>
+                                        </button>
                                         <div className={`text-xs ${getMasterTitleColor(entry.pokemon)} font-medium`}>
                                             Bậc Thầy {pokemonName}
                                         </div>
@@ -252,6 +274,8 @@ export default function PokemonRankingsPage() {
                     </div>
                 )}
             </div>
+
+            <TrainerProfileModal {...trainerModalProps} />
         </div>
     )
 }
