@@ -92,7 +92,7 @@ export default function PokemonRankingsPage() {
     }
 
     const getMasterTitleColor = (pokemon) => {
-        if (!pokemon || !pokemon.types || pokemon.types.length === 0) return 'text-slate-500';
+        if (!pokemon || !pokemon.types || pokemon.types.length === 0) return 'text-slate-500'
 
         const typeColors = {
             fire: 'text-red-500',
@@ -107,7 +107,22 @@ export default function PokemonRankingsPage() {
             fairy: 'text-pink-400',
         }
 
-        return typeColors[pokemon.types[0].toLowerCase()] || 'text-slate-500';
+        return typeColors[pokemon.types[0].toLowerCase()] || 'text-slate-500'
+    }
+
+    const getPokemonTitleByLevel = (level) => {
+        const normalizedLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1
+
+        if (normalizedLevel >= 900) return 'Nhà Vô Địch Thế Giới'
+        if (normalizedLevel >= 800) return 'Huyền Thoại Liên Minh'
+        if (normalizedLevel >= 700) return 'Bậc Thầy Pokémon'
+        if (normalizedLevel >= 600) return 'Quán Quân'
+        if (normalizedLevel >= 500) return 'Tứ Đại Thiên Vương'
+        if (normalizedLevel >= 400) return 'Thủ Lĩnh Nhà Thi Đấu'
+        if (normalizedLevel >= 300) return 'Huấn Luyện Viên Tinh Anh'
+        if (normalizedLevel >= 200) return 'Ace Trainer'
+        if (normalizedLevel >= 100) return 'Huấn Luyện Viên Kỳ Cựu'
+        return 'Tân Huấn Luyện Viên'
     }
 
     const handleChallengeFromRanking = (userPokemonId) => {
@@ -177,7 +192,7 @@ export default function PokemonRankingsPage() {
                             const detailId = entry.userPokemonId || entry.id
                             const pokemonName = entry.pokemon?.name || 'Không rõ'
                             const level = entry.level || entry.pokemon?.level || 1
-                            const exp = entry.experience || entry.pokemon?.experience || 0
+                            const pokemonTitle = getPokemonTitleByLevel(level)
                             const sprite = entry.sprite || entry.pokemon?.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
                             return (
                                 <div
@@ -260,7 +275,7 @@ export default function PokemonRankingsPage() {
                                             {entry.owner?.username || 'Không rõ'}
                                         </button>
                                         <div className={`text-xs ${getMasterTitleColor(entry.pokemon)} font-medium`}>
-                                            Bậc Thầy {pokemonName}
+                                            {pokemonTitle} {pokemonName}
                                         </div>
                                     </div>
                                 </div>
