@@ -19,6 +19,33 @@ const resolveFormStats = (species = {}, formId = null) => {
     return resolvedForm?.stats || species?.baseStats || {}
 }
 
+const serializePartyPokemon = ({ entry, moveLookupMap }) => {
+    if (!entry) return null
+
+    const base = entry.pokemonId || {}
+    const stats = calcStatsForLevel(resolveFormStats(base, entry.formId), entry.level, base.rarity)
+    const plainEntry = entry.toObject()
+    plainEntry.stats = stats
+
+    const mergedMoveNames = mergeKnownMovesWithFallback(plainEntry.moves, base, entry.level)
+    const movePpState = buildMovePpStateFromMoves({
+        moveNames: mergedMoveNames,
+        movePpState: plainEntry.movePpState,
+        moveLookupMap,
+    })
+
+    plainEntry.moves = movePpState.map((moveEntry) => ({
+        ...(moveLookupMap.get(normalizeMoveName(moveEntry.moveName)) || {}),
+        name: moveEntry.moveName,
+        currentPp: moveEntry.currentPp,
+        maxPp: moveEntry.maxPp,
+        pp: moveEntry.currentPp,
+    }))
+    plainEntry.movePpState = movePpState
+
+    return plainEntry
+}
+
 router.use(authMiddleware)
 
 // GET /api/party
@@ -39,55 +66,25 @@ router.get('/', async (req, res) => {
 
         // Ensure we always return 6 slots, even if empty
         const slots = Array(6).fill(null)
-        party.forEach(p => {
-            if (p.partyIndex >= 0 && p.partyIndex < 6) {
-                // Calculate stats for this pokemon
-                const base = p.pokemonId || {}
-                const stats = calcStatsForLevel(resolveFormStats(base, p.formId), p.level, base.rarity)
+        party.forEach((entry) => {
+            const payload = serializePartyPokemon({ entry, moveLookupMap })
+            if (!payload) return
 
-                // Return a plain object with stats injected
-                const po = p.toObject()
-                po.stats = stats
-                const mergedMoveNames = mergeKnownMovesWithFallback(po.moves, base, p.level)
-                const movePpState = buildMovePpStateFromMoves({
-                    moveNames: mergedMoveNames,
-                    movePpState: po.movePpState,
-                    moveLookupMap,
-                })
-                po.moves = movePpState.map((entry) => ({
-                    ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
-                    name: entry.moveName,
-                    currentPp: entry.currentPp,
-                    maxPp: entry.maxPp,
-                    pp: entry.currentPp,
-                }))
-                po.movePpState = movePpState
+            const requestedSlotIndex = Number(entry?.partyIndex)
+            if (
+                Number.isInteger(requestedSlotIndex)
+                && requestedSlotIndex >= 0
+                && requestedSlotIndex < slots.length
+                && !slots[requestedSlotIndex]
+            ) {
+                slots[requestedSlotIndex] = payload
+                return
+            }
 
-                slots[p.partyIndex] = po
-            } else {
-                // If index is messed up, put in first available slot
-                const firstEmpty = slots.findIndex(s => s === null)
-                if (firstEmpty !== -1) {
-                    const base = p.pokemonId || {}
-                    const stats = calcStatsForLevel(resolveFormStats(base, p.formId), p.level, base.rarity)
-                    const po = p.toObject()
-                    po.stats = stats
-                    const mergedMoveNames = mergeKnownMovesWithFallback(po.moves, base, p.level)
-                    const movePpState = buildMovePpStateFromMoves({
-                        moveNames: mergedMoveNames,
-                        movePpState: po.movePpState,
-                        moveLookupMap,
-                    })
-                    po.moves = movePpState.map((entry) => ({
-                        ...(moveLookupMap.get(normalizeMoveName(entry.moveName)) || {}),
-                        name: entry.moveName,
-                        currentPp: entry.currentPp,
-                        maxPp: entry.maxPp,
-                        pp: entry.currentPp,
-                    }))
-                    po.movePpState = movePpState
-                    slots[firstEmpty] = po
-                }
+            // Handle duplicate/invalid indexes by placing into next available slot.
+            const firstEmpty = slots.findIndex((slot) => slot === null)
+            if (firstEmpty !== -1) {
+                slots[firstEmpty] = payload
             }
         })
 

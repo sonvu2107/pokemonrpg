@@ -1,14 +1,65 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { api } from "../services/api"
+import { resolveAvatarUrl } from "../utils/avatarUrl"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
 import GlobalNotification from "../components/GlobalNotification"
 
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
 export default function AppShell() {
     const { user, logout } = useAuth()
     const [isMenuOpen, setIsMenuOpen] = useState(false)
+    const [mobileProfile, setMobileProfile] = useState({
+        avatar: '',
+        level: 1,
+    })
+
+    useEffect(() => {
+        let isCancelled = false
+
+        const fallbackAvatar = String(user?.avatar || '').trim()
+        const fallbackLevel = Math.max(1, Number(user?.level || user?.playerState?.level || 1))
+
+        if (!user) {
+            setMobileProfile({ avatar: '', level: 1 })
+            return () => {
+                isCancelled = true
+            }
+        }
+
+        setMobileProfile({
+            avatar: fallbackAvatar,
+            level: fallbackLevel,
+        })
+
+        const loadProfileState = async () => {
+            try {
+                const profileData = await api.getProfile()
+                if (isCancelled) return
+
+                const resolvedAvatar = String(profileData?.user?.avatar || fallbackAvatar).trim()
+                const resolvedLevel = Math.max(
+                    1,
+                    Number(profileData?.playerState?.level || fallbackLevel || 1)
+                )
+
+                setMobileProfile({
+                    avatar: resolvedAvatar,
+                    level: resolvedLevel,
+                })
+            } catch {}
+        }
+
+        loadProfileState()
+
+        return () => {
+            isCancelled = true
+        }
+    }, [user?.id, user?.avatar, user?.level])
 
 
     return (
@@ -135,12 +186,12 @@ export default function AppShell() {
                                     <div className="flex items-center gap-3 mb-3">
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-b from-blue-100 to-white flex items-center justify-center shadow-md overflow-hidden border-2 border-blue-300 shrink-0 p-0.5">
                                             <img
-                                                src={user.avatar || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'}
+                                                src={resolveAvatarUrl(mobileProfile.avatar, DEFAULT_AVATAR)}
                                                 alt="Avatar"
                                                 className="w-full h-full object-contain pixelated"
                                                 onError={(e) => {
                                                     e.currentTarget.onerror = null
-                                                    e.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+                                                    e.currentTarget.src = DEFAULT_AVATAR
                                                 }}
                                             />
                                         </div>
@@ -150,7 +201,7 @@ export default function AppShell() {
                                                 {user.role === 'admin' && (
                                                     <span className="px-1.5 py-0.5 bg-purple-600 rounded text-white font-bold uppercase">ADMIN</span>
                                                 )}
-                                                <span className="text-slate-500">Level {user.level || 1}</span>
+                                                <span className="text-slate-500">Level {mobileProfile.level}</span>
                                             </div>
                                         </div>
                                     </div>

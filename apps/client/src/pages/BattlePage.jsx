@@ -12,6 +12,18 @@ const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
+const expToNextPokemonLevel = (level = 1) => 250 + Math.max(0, Number(level || 1) - 1) * 100
+const hydratePartyWithBattleHp = (partySlots = []) => {
+    return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
+        if (!slot) return slot
+        const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+        return {
+            ...slot,
+            battleCurrentHp: maxHp,
+            battleMaxHp: maxHp,
+        }
+    })
+}
 const resolveSafeRankedReturnPath = (value = '') => {
     const normalizedRaw = String(value || '').trim()
     if (!normalizedRaw) return DEFAULT_RANKED_RETURN_PATH
@@ -401,7 +413,7 @@ const ActiveBattleView = ({
         maxHp: activeMaxHp,
         hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
         exp: activePokemon.experience,
-        maxExp: activePokemon.level * 100,
+        maxExp: expToNextPokemonLevel(activePokemon.level),
         sprite: resolvePokemonSprite({
             species: activePokemon.pokemonId || {},
             formId: activePokemon.formId,
@@ -1040,18 +1052,6 @@ export function BattlePage() {
 
     const loadData = async () => {
         try {
-            const hydratePartyWithBattleHp = (partySlots = []) => {
-                return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
-                    if (!slot) return slot
-                    const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-                    return {
-                        ...slot,
-                        battleCurrentHp: maxHp,
-                        battleMaxHp: maxHp,
-                    }
-                })
-            }
-
             if (isExternalChallengeRequested) {
                 const [allMaps, partyData, encounterData, profileData, inventoryData] = await Promise.all([
                     gameApi.getMaps(),
@@ -1589,7 +1589,7 @@ export function BattlePage() {
                         imageUrl: activeResultImage,
                         level: activePokemon?.level || 1,
                         exp: activePokemon?.experience || 0,
-                        expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
+                        expToNext: expToNextPokemonLevel(activePokemon?.level || 1),
                         levelsGained: 0,
                         happinessGained: 0,
                     },
@@ -1628,12 +1628,35 @@ export function BattlePage() {
                         currentBattleState?.trainerId || null
                     )
                     setBattleResults(resResolve.results)
+                    if (Array.isArray(resResolve?.results?.pokemonRewards) && resResolve.results.pokemonRewards.length > 0) {
+                        const rewardByPokemonId = new Map(
+                            resResolve.results.pokemonRewards
+                                .map((reward) => [String(reward?.userPokemonId || '').trim(), reward])
+                                .filter(([id]) => Boolean(id))
+                        )
+                        setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
+                            if (!slot) return slot
+                            const reward = rewardByPokemonId.get(String(slot?._id || '').trim())
+                            if (!reward) return slot
+                            return {
+                                ...slot,
+                                level: Math.max(1, Number(reward?.level) || Number(slot?.level) || 1),
+                                experience: Math.max(0, Number(reward?.exp) || 0),
+                            }
+                        }) : prevParty))
+                    }
                     if (resResolve?.wallet) {
                         setPlayerState((prev) => ({
                             ...(prev || {}),
                             platinumCoins: Number(resResolve.wallet?.platinumCoins ?? prev?.platinumCoins ?? 0),
                             moonPoints: Number(resResolve.wallet?.moonPoints ?? prev?.moonPoints ?? 0),
                         }))
+                    }
+                    try {
+                        const refreshedParty = await gameApi.getParty()
+                        setParty(hydratePartyWithBattleHp(refreshedParty))
+                    } catch (refreshPartyError) {
+                        console.error('Làm mới đội hình sau battle thất bại', refreshPartyError)
                     }
                     const entry = buildCompletedEntryFromBattle(currentBattleState)
                     if (entry) {
@@ -1683,7 +1706,7 @@ export function BattlePage() {
                         imageUrl: activeResultImage,
                         level: activePokemon?.level || 1,
                         exp: activePokemon?.experience || 0,
-                        expToNext: Math.max(1, Number(activePokemon?.level || 1) * 100),
+                        expToNext: expToNextPokemonLevel(activePokemon?.level || 1),
                         levelsGained: 0,
                         happinessGained: 0,
                     },
@@ -1991,8 +2014,11 @@ export function BattlePage() {
         setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
             if (!slot) return slot
             const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+            const refilledMoveData = buildRefilledBattleMoves(slot)
             return {
                 ...slot,
+                moves: refilledMoveData.moves,
+                movePpState: refilledMoveData.movePpState,
                 status: '',
                 statusTurns: 0,
                 statStages: {},
@@ -2439,7 +2465,9 @@ export function BattlePage() {
                                                             <div>+{reward.levelsGained || 0} cấp</div>
                                                             <div>+{reward.happinessGained || 0} Hạnh phúc</div>
                                                             <div className="text-slate-500">
-                                                                EXP: {reward.exp}/{reward.expToNext} (+{reward.finalExp || 0})
+                                                                EXP: {Number.isFinite(Number(reward?.expBefore))
+                                                                    ? `${Math.max(0, Number(reward.expBefore))} -> ${reward.exp}`
+                                                                    : reward.exp}/{reward.expToNext} (+{reward.finalExp || 0})
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2460,7 +2488,11 @@ export function BattlePage() {
                                                     <div className="font-bold text-sm">{battleResults.pokemon.name}</div>
                                                     <div>+{battleResults.pokemon.levelsGained} cấp</div>
                                                     <div>+{battleResults.pokemon.happinessGained} Hạnh phúc</div>
-                                                    <div className="text-slate-500">EXP: {battleResults.pokemon.exp}/{battleResults.pokemon.expToNext}</div>
+                                                    <div className="text-slate-500">
+                                                        EXP: {Number.isFinite(Number(battleResults?.pokemon?.expBefore))
+                                                            ? `${Math.max(0, Number(battleResults.pokemon.expBefore))} -> ${battleResults.pokemon.exp}`
+                                                            : battleResults.pokemon.exp}/{battleResults.pokemon.expToNext}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}

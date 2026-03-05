@@ -14,6 +14,8 @@ export default function ChangePartyPage() {
     const [party, setParty] = useState(Array(6).fill(null))
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [swapSourceIndex, setSwapSourceIndex] = useState(null)
+    const [swapping, setSwapping] = useState(false)
 
     const [refreshKey, setRefreshKey] = useState(0)
 
@@ -25,7 +27,12 @@ export default function ChangePartyPage() {
         try {
             setLoading(true)
             const data = await gameApi.getParty()
-            setParty(data)
+            const normalizedParty = Array.from({ length: 6 }, (_, index) => {
+                if (!Array.isArray(data)) return null
+                return data[index] || null
+            })
+            setParty(normalizedParty)
+            setSwapSourceIndex(null)
             setError(null)
         } catch (err) {
             console.error(err)
@@ -38,11 +45,32 @@ export default function ChangePartyPage() {
     const handleSwap = async (fromIndex, toIndex) => {
         if (fromIndex === toIndex) return
         try {
+            setSwapping(true)
             await gameApi.swapParty(fromIndex, toIndex)
             setRefreshKey(k => k + 1)
         } catch (err) {
             alert(err.message)
+        } finally {
+            setSwapping(false)
         }
+    }
+
+    const handlePickSwap = async (targetIndex) => {
+        if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 5) return
+
+        if (!Number.isInteger(swapSourceIndex)) {
+            if (!party[targetIndex]) return
+            setSwapSourceIndex(targetIndex)
+            return
+        }
+
+        if (swapSourceIndex === targetIndex) {
+            setSwapSourceIndex(null)
+            return
+        }
+
+        await handleSwap(swapSourceIndex, targetIndex)
+        setSwapSourceIndex(null)
     }
 
     const handleRemove = async (pokemonId) => {
@@ -75,6 +103,11 @@ export default function ChangePartyPage() {
 
             <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                 <SectionHeader title="Thay Đổi Đội Hình" />
+                {Number.isInteger(swapSourceIndex) && (
+                    <div className="px-4 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-200 text-center">
+                        Đã chọn vị trí {swapSourceIndex + 1}. Chọn vị trí khác để đổi chỗ.
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x border-blue-200">
                     {[0, 1, 2].map(index =>
@@ -84,7 +117,10 @@ export default function ChangePartyPage() {
                             data={party[index]}
                             label={slotNames[index]}
                             onSwap={handleSwap}
+                            onPickSwap={handlePickSwap}
                             onRemove={handleRemove}
+                            swapSourceIndex={swapSourceIndex}
+                            swapping={swapping}
                         />
                     )}
                 </div>
@@ -96,7 +132,10 @@ export default function ChangePartyPage() {
                             data={party[index]}
                             label={slotNames[index]}
                             onSwap={handleSwap}
+                            onPickSwap={handlePickSwap}
                             onRemove={handleRemove}
+                            swapSourceIndex={swapSourceIndex}
+                            swapping={swapping}
                         />
                     )}
                 </div>
@@ -112,8 +151,10 @@ export default function ChangePartyPage() {
     )
 }
 
-function PartySlot({ index, data, label, onSwap, onRemove }) {
+function PartySlot({ index, data, label, onSwap, onPickSwap, onRemove, swapSourceIndex, swapping }) {
     const isFirst = index === 0
+    const hasSwapSource = Number.isInteger(swapSourceIndex)
+    const isSwapSource = hasSwapSource && swapSourceIndex === index
 
     if (!data) {
         return (
@@ -127,6 +168,16 @@ function PartySlot({ index, data, label, onSwap, onRemove }) {
                 <div className="text-sm font-bold text-slate-500">None</div>
                 <div className="text-xs text-slate-400 mt-1">Level: 1</div>
                 <div className="text-xs text-slate-400">HP: 0/0</div>
+
+                {hasSwapSource && (
+                    <button
+                        onClick={() => onPickSwap(index)}
+                        disabled={swapping}
+                        className="mt-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline uppercase disabled:opacity-60"
+                    >
+                        [ Chuyển Vào Ô Này ]
+                    </button>
+                )}
 
             </div>
         )
@@ -188,10 +239,23 @@ function PartySlot({ index, data, label, onSwap, onRemove }) {
                 ATK: {data.stats?.atk || '?'} | DEF: {data.stats?.def || '?'}
             </div>
 
+            <button
+                onClick={() => onPickSwap(index)}
+                disabled={swapping}
+                className={`mt-2 text-[10px] font-bold hover:underline uppercase disabled:opacity-60 ${
+                    isSwapSource ? 'text-amber-600 hover:text-amber-700' : 'text-blue-600 hover:text-blue-800'
+                }`}
+            >
+                {isSwapSource
+                    ? '[ Hủy Chọn ]'
+                    : (hasSwapSource ? `[ Đổi Với Vị Trí ${swapSourceIndex + 1} ]` : '[ Chọn Đổi Chỗ ]')}
+            </button>
+
             {!isFirst && (
                 <button
                     onClick={() => onSwap(index, 0)}
-                    className="mt-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline uppercase"
+                    disabled={swapping}
+                    className="mt-2 text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline uppercase disabled:opacity-60"
                 >
                     [ Chuyển Lên Đầu ]
                 </button>

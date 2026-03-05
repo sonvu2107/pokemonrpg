@@ -2801,7 +2801,7 @@ router.post('/battle/attack', authMiddleware, async (req, res, next) => {
         const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
         const party = await UserPokemon.find({ userId, location: 'party' })
-            .select('pokemonId level moves movePpState nickname formId partyIndex')
+            .select('pokemonId level experience moves movePpState nickname formId partyIndex')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
 
@@ -4544,6 +4544,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             const pokemonRarity = participantPokemon.pokemonId?.rarity || 'd'
             const expMultiplier = getRarityExpMultiplier(pokemonRarity)
             const finalExp = Math.floor(expParticipant.baseExp * expMultiplier)
+            const expBefore = Math.max(0, Math.floor(Number(participantPokemon.experience) || 0))
 
             let levelsGained = 0
 
@@ -4551,12 +4552,12 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 participantPokemon.level = USER_POKEMON_MAX_LEVEL
                 participantPokemon.experience = 0
             } else {
-                participantPokemon.experience += finalExp
+                participantPokemon.experience = expBefore + finalExp
                 while (
                     participantPokemon.level < USER_POKEMON_MAX_LEVEL
-                    && participantPokemon.experience >= participantPokemon.level * 100
+                    && participantPokemon.experience >= expToNext(participantPokemon.level)
                 ) {
-                    participantPokemon.experience -= participantPokemon.level * 100
+                    participantPokemon.experience -= expToNext(participantPokemon.level)
                     participantPokemon.level += 1
                     levelsGained += 1
                 }
@@ -4591,7 +4592,8 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 ),
                 level: participantPokemon.level,
                 exp: participantPokemon.experience,
-                expToNext: participantPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : participantPokemon.level * 100,
+                expBefore,
+                expToNext: participantPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(participantPokemon.level),
                 levelsGained,
                 happiness: participantPokemon.friendship,
                 happinessGained: happinessAwarded,
@@ -4611,7 +4613,8 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 ),
                 level: activePokemon.level,
                 exp: activePokemon.experience,
-                expToNext: activePokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : activePokemon.level * 100,
+                expBefore: activePokemon.experience,
+                expToNext: activePokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(activePokemon.level),
                 levelsGained: 0,
                 happiness: activePokemon.friendship,
                 happinessGained: 0,
@@ -4734,6 +4737,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                     imageUrl: primaryPokemonReward.imageUrl,
                     level: primaryPokemonReward.level,
                     exp: primaryPokemonReward.exp,
+                    expBefore: primaryPokemonReward.expBefore,
                     expToNext: primaryPokemonReward.expToNext,
                     levelsGained: primaryPokemonReward.levelsGained,
                     happiness: primaryPokemonReward.happiness,
