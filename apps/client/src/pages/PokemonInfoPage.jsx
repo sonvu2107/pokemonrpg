@@ -321,14 +321,7 @@ export default function PokemonInfoPage() {
     const currentMoves = Array.isArray(pokemon.moves)
         ? pokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean)
         : []
-    const defaultLevelMoves = (Array.isArray(base?.levelUpMoves) ? base.levelUpMoves : [])
-        .filter((entry) => Number.isFinite(Number(entry?.level)) && Number(entry.level) <= Number(pokemon?.level || 1))
-        .sort((a, b) => Number(a.level) - Number(b.level))
-        .map((entry) => String(entry?.moveName || '').trim())
-        .filter(Boolean)
-        .slice(-4)
     const protectedMoveKeySet = new Set([
-        ...defaultLevelMoves.map((entry) => String(entry || '').trim().toLowerCase()),
         'struggle',
     ])
     const isProtectedMoveName = (value = '') => protectedMoveKeySet.has(String(value || '').trim().toLowerCase())

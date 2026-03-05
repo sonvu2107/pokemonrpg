@@ -7,7 +7,7 @@ import BattleSession from '../models/BattleSession.js'
 import User from '../models/User.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { getIO } from '../socket/index.js'
-import { buildMovesForLevel, syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
+import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 
 const router = express.Router()
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -186,23 +186,17 @@ router.post('/use', async (req, res) => {
                     return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
                 }
 
-                const moves = buildMovesForLevel(pokemon, encounter.level)
-                const caughtPokemon = await UserPokemon.create({
+                await UserPokemon.create({
                     userId,
                     pokemonId: encounter.pokemonId,
                     level: encounter.level,
                     experience: 0,
-                    moves,
+                    moves: [],
                     movePpState: [],
                     formId: encounter.formId || 'normal',
                     isShiny: encounter.isShiny,
                     location: 'box',
                 })
-                await syncUserPokemonMovesAndPp(caughtPokemon, {
-                    pokemonSpecies: pokemon,
-                    level: encounter.level,
-                })
-                await caughtPokemon.save()
 
                 const rarity = String(pokemon.rarity || '').trim().toLowerCase()
                 const shouldEmitGlobalNotification = ['s', 'ss', 'sss'].includes(rarity)

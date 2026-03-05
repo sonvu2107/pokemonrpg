@@ -2689,23 +2689,17 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 return res.status(409).json({ ok: false, message: 'Cuộc chạm trán đã được xử lý. Vui lòng tải lại.' })
             }
 
-            const moves = buildMovesForLevel(pokemon, encounter.level)
-            const caughtPokemon = await UserPokemon.create({
+            await UserPokemon.create({
                 userId,
                 pokemonId: encounter.pokemonId,
                 level: encounter.level,
                 experience: 0,
-                moves,
+                moves: [],
                 movePpState: [],
                 formId: encounter.formId || 'normal',
                 isShiny: encounter.isShiny,
                 location: 'box',
             })
-            await syncUserPokemonMovesAndPp(caughtPokemon, {
-                pokemonSpecies: pokemon,
-                level: encounter.level,
-            })
-            await caughtPokemon.save()
 
             const rarity = String(pokemon.rarity || '').trim().toLowerCase()
             const shouldEmitGlobalNotification = ['s', 'ss', 'sss'].includes(rarity)
