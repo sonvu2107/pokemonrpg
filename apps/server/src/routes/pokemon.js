@@ -660,13 +660,11 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Bạn không có kỹ năng này trong kho' })
         }
 
-        await syncUserPokemonMovesAndPp(userPokemon, {
-            pokemonSpecies: userPokemon.pokemonId,
-            level: userPokemon.level,
-        })
-        const currentMoves = Array.isArray(userPokemon.moves)
-            ? userPokemon.moves.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 4)
-            : []
+        const currentMoves = mergeKnownMovesWithFallback(
+            userPokemon.moves,
+            userPokemon.pokemonId,
+            Number(userPokemon.level) || 1
+        )
 
         const moveName = String(move.name || '').trim()
         const moveKey = normalizeMoveName(moveName)
@@ -834,9 +832,26 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
         })
         await userPokemon.save()
 
+        const removedMoveDoc = await Move.findOne({
+            nameLower: normalizeMoveName(moveName),
+        })
+            .select('_id')
+            .lean()
+
+        if (removedMoveDoc?._id) {
+            await UserMoveInventory.updateOne(
+                {
+                    userId,
+                    moveId: removedMoveDoc._id,
+                },
+                { $inc: { quantity: 1 } },
+                { upsert: true }
+            )
+        }
+
         res.json({
             ok: true,
-            message: `${userPokemon.nickname || 'Pokemon'} đã gỡ kỹ năng ${moveName}`,
+            message: `${userPokemon.nickname || 'Pokemon'} đã gỡ kỹ năng ${moveName} và trả về kho kỹ năng`,
             pokemon: {
                 _id: userPokemon._id,
                 moves: userPokemon.moves,

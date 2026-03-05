@@ -14,6 +14,14 @@ const SectionHeader = ({ title }) => (
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
+const toOptionalNumber = (value) => {
+    if (value === null || value === undefined || value === '') return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+}
+
+const normalizeMoveKey = (value = '') => String(value || '').trim().toLowerCase()
+
 const InfoRow = ({ label, value, valueClass = '' }) => (
     <div className="flex border-b border-blue-200 last:border-0 text-xs">
         <div className="w-1/3 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
@@ -144,10 +152,69 @@ export default function PokemonInfoPage() {
             const data = await gameApi.teachPokemonSkill(id, payload)
             setPokemon((prev) => {
                 if (!prev) return prev
+
+                const nextMoves = Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves
+                const nextMovePpState = Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState
+                const moveDetailsMap = new Map(
+                    (Array.isArray(prev.moveDetails) ? prev.moveDetails : [])
+                        .map((entry) => {
+                            const name = String(entry?.name || '').trim()
+                            const key = normalizeMoveKey(name)
+                            if (!key) return null
+                            return [key, {
+                                name,
+                                type: String(entry?.type || '').trim().toLowerCase(),
+                                category: String(entry?.category || '').trim().toLowerCase(),
+                                power: toOptionalNumber(entry?.power),
+                                accuracy: toOptionalNumber(entry?.accuracy),
+                            }]
+                        })
+                        .filter(Boolean)
+                )
+
+                const replacedMoveName = String(data?.replacedMove || '').trim()
+                if (replacedMoveName) {
+                    moveDetailsMap.delete(normalizeMoveKey(replacedMoveName))
+                }
+
+                const taughtMove = data?.taughtMove || null
+                const taughtMoveName = String(taughtMove?.name || '').trim()
+                if (taughtMoveName) {
+                    moveDetailsMap.set(normalizeMoveKey(taughtMoveName), {
+                        name: taughtMoveName,
+                        type: String(taughtMove?.type || '').trim().toLowerCase(),
+                        category: String(taughtMove?.category || '').trim().toLowerCase(),
+                        power: toOptionalNumber(taughtMove?.power),
+                        accuracy: toOptionalNumber(taughtMove?.accuracy),
+                    })
+                }
+
+                const nextMoveDetails = (Array.isArray(nextMoves) ? nextMoves : [])
+                    .map((moveNameRaw) => {
+                        const moveName = String(moveNameRaw || '').trim()
+                        if (!moveName) return null
+                        const existing = moveDetailsMap.get(normalizeMoveKey(moveName))
+                        if (existing) {
+                            return {
+                                ...existing,
+                                name: moveName,
+                            }
+                        }
+                        return {
+                            name: moveName,
+                            type: '',
+                            category: '',
+                            power: null,
+                            accuracy: null,
+                        }
+                    })
+                    .filter(Boolean)
+
                 return {
                     ...prev,
-                    moves: Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves,
-                    movePpState: Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState,
+                    moves: nextMoves,
+                    movePpState: nextMovePpState,
+                    moveDetails: nextMoveDetails,
                 }
             })
             setFeatureNotice(data?.message || 'Pokemon đã học kỹ năng mới.')
@@ -171,10 +238,57 @@ export default function PokemonInfoPage() {
             const data = await gameApi.removePokemonSkill(id, { moveName: safeMoveName })
             setPokemon((prev) => {
                 if (!prev) return prev
+
+                const nextMoves = Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves
+                const nextMovePpState = Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState
+                const moveDetailsMap = new Map(
+                    (Array.isArray(prev.moveDetails) ? prev.moveDetails : [])
+                        .map((entry) => {
+                            const name = String(entry?.name || '').trim()
+                            const key = normalizeMoveKey(name)
+                            if (!key) return null
+                            return [key, {
+                                name,
+                                type: String(entry?.type || '').trim().toLowerCase(),
+                                category: String(entry?.category || '').trim().toLowerCase(),
+                                power: toOptionalNumber(entry?.power),
+                                accuracy: toOptionalNumber(entry?.accuracy),
+                            }]
+                        })
+                        .filter(Boolean)
+                )
+
+                const removedMoveName = String(data?.removedMove || safeMoveName).trim()
+                if (removedMoveName) {
+                    moveDetailsMap.delete(normalizeMoveKey(removedMoveName))
+                }
+
+                const nextMoveDetails = (Array.isArray(nextMoves) ? nextMoves : [])
+                    .map((moveNameRaw) => {
+                        const moveName = String(moveNameRaw || '').trim()
+                        if (!moveName) return null
+                        const existing = moveDetailsMap.get(normalizeMoveKey(moveName))
+                        if (existing) {
+                            return {
+                                ...existing,
+                                name: moveName,
+                            }
+                        }
+                        return {
+                            name: moveName,
+                            type: '',
+                            category: '',
+                            power: null,
+                            accuracy: null,
+                        }
+                    })
+                    .filter(Boolean)
+
                 return {
                     ...prev,
-                    moves: Array.isArray(data?.pokemon?.moves) ? data.pokemon.moves : prev.moves,
-                    movePpState: Array.isArray(data?.pokemon?.movePpState) ? data.pokemon.movePpState : prev.movePpState,
+                    moves: nextMoves,
+                    movePpState: nextMovePpState,
+                    moveDetails: nextMoveDetails,
                 }
             })
             setFeatureNotice(data?.message || `Đã gỡ kỹ năng ${safeMoveName}.`)
@@ -243,8 +357,8 @@ export default function PokemonInfoPage() {
                         name,
                         type: String(entry?.type || '').trim().toLowerCase(),
                         category: String(entry?.category || '').trim().toLowerCase(),
-                        power: Number.isFinite(Number(entry?.power)) ? Number(entry.power) : null,
-                        accuracy: Number.isFinite(Number(entry?.accuracy)) ? Number(entry.accuracy) : null,
+                        power: toOptionalNumber(entry?.power),
+                        accuracy: toOptionalNumber(entry?.accuracy),
                         currentPp: Number.isFinite(Number(ppState?.currentPp)) ? Number(ppState.currentPp) : Math.max(0, Number(entry?.currentPp || 0)),
                         maxPp: Number.isFinite(Number(ppState?.maxPp)) ? Number(ppState.maxPp) : Math.max(1, Number(entry?.maxPp || 1)),
                     }
@@ -513,9 +627,9 @@ export default function PokemonInfoPage() {
                                                     {' • '}
                                                     {slot.category ? String(slot.category).toUpperCase() : '--'}
                                                     {' • Pow '}
-                                                    {Number.isFinite(Number(slot.power)) ? Number(slot.power) : '--'}
+                                                    {toOptionalNumber(slot.power) ?? '--'}
                                                     {' • Acc '}
-                                                    {Number.isFinite(Number(slot.accuracy)) ? Number(slot.accuracy) : '--'}
+                                                    {toOptionalNumber(slot.accuracy) ?? '--'}
                                                 </div>
                                             </>
                                         ) : (
