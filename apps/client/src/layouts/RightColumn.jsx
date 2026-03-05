@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
 import { ADMIN_PERMISSIONS } from "../constants/adminPermissions"
+import ComingSoonModal from "../components/ComingSoonModal"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -22,19 +23,33 @@ const SidebarSection = ({ title, iconId, children }) => (
     </div>
 )
 
-const SidebarLink = ({ to, children, isSpecial }) => (
-    <NavLink
-        to={to}
-        className={({ isActive }) =>
-            "block px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm " +
-            (isActive ? "text-amber-300" : "") +
-            (isSpecial ? " text-blue-800" : "")
-        }
-    >
-        {isSpecial && <span className="mr-1 text-blue-700">*</span>}
-        {children}
-    </NavLink>
-)
+const SidebarLink = ({ to, children, isSpecial, onClick }) => {
+    if (onClick) {
+        return (
+            <button
+                onClick={onClick}
+                className={"block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm" + (isSpecial ? " text-blue-800" : "")}
+            >
+                {isSpecial && <span className="mr-1 text-blue-700">*</span>}
+                {children}
+            </button>
+        )
+    }
+
+    return (
+        <NavLink
+            to={to}
+            className={({ isActive }) =>
+                "block px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm " +
+                (isActive ? "text-amber-300" : "") +
+                (isSpecial ? " text-blue-800" : "")
+            }
+        >
+            {isSpecial && <span className="mr-1 text-blue-700">*</span>}
+            {children}
+        </NavLink>
+    )
+}
 
 const InfoRow = ({ label, value, to }) => {
     if (to) {
@@ -75,6 +90,14 @@ export default function RightColumn() {
     ].filter((link) => !link.permission || canAccessAdminModule(link.permission))
 
     const [serverStats, setServerStats] = useState({ totalUsers: null, onlineUsers: null })
+    const [comingSoonModalOpen, setComingSoonModalOpen] = useState(false)
+    const [comingSoonFeature, setComingSoonFeature] = useState('')
+
+    const handleFeatureClick = (e, featureName) => {
+        e.preventDefault()
+        setComingSoonFeature(featureName)
+        setComingSoonModalOpen(true)
+    }
 
     useEffect(() => {
         const fetchStats = async () => {
@@ -117,7 +140,7 @@ export default function RightColumn() {
                 <SidebarLink to="/profile">Hồ sơ ({user?.username || 'Khách'})</SidebarLink>
                 <SidebarLink to="/inventory">Túi đồ</SidebarLink>
                 <SidebarLink to="/profile/edit">Sửa hồ sơ</SidebarLink>
-                <SidebarLink to="/titles">Danh hiệu</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Danh hiệu')}>Danh hiệu</SidebarLink>
             </SidebarSection>
 
             <SidebarSection title="Pokemon" iconId={823}>
@@ -143,10 +166,15 @@ export default function RightColumn() {
                 <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>
                 <SidebarLink to="/shop/items">Cửa hàng Vật Phẩm</SidebarLink>
                 <SidebarLink to="/shop/skills">Cửa hàng Kỹ Năng</SidebarLink>
-                <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>
-                <SidebarLink to="/shop/mine">Cửa hàng Hầm Mỏ</SidebarLink>
-                <SidebarLink to="/shop/parrot" isSpecial>Cửa hàng Vẹt</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Nguyệt Các')}>Cửa hàng Nguyệt Các</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Hầm Mỏ')}>Cửa hàng Hầm Mỏ</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Vẹt')} isSpecial>Cửa hàng Vẹt</SidebarLink>
             </SidebarSection>
+            <ComingSoonModal
+                isOpen={comingSoonModalOpen}
+                onClose={() => setComingSoonModalOpen(false)}
+                featureName={comingSoonFeature}
+            />
         </div>
     )
 }

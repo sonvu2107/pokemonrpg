@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext"
 import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
 import newsApi from "../services/newsApi"
+import ComingSoonModal from "../components/ComingSoonModal"
 
 const SidebarSection = ({ title, iconId, children }) => (
     <div className="rounded-md overflow-hidden shadow-sm mb-3">
@@ -24,19 +25,33 @@ const SidebarSection = ({ title, iconId, children }) => (
     </div>
 )
 
-const SidebarLink = ({ to, children, isSpecial }) => (
-    <NavLink
-        to={to}
-        className={({ isActive }) =>
-            "block px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm " +
-            (isActive ? "text-amber-300" : "") +
-            (isSpecial ? " text-blue-800" : "")
-        }
-    >
-        {isSpecial && <span className="mr-1 text-blue-700">*</span>}
-        {children}
-    </NavLink>
-)
+const SidebarLink = ({ to, children, isSpecial, onClick }) => {
+    if (onClick) {
+        return (
+            <button
+                onClick={onClick}
+                className={"block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm" + (isSpecial ? " text-blue-800" : "")}
+            >
+                {isSpecial && <span className="mr-1 text-blue-700">*</span>}
+                {children}
+            </button>
+        )
+    }
+
+    return (
+        <NavLink
+            to={to}
+            className={({ isActive }) =>
+                "block px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm " +
+                (isActive ? "text-amber-300" : "") +
+                (isSpecial ? " text-blue-800" : "")
+            }
+        >
+            {isSpecial && <span className="mr-1 text-blue-700">*</span>}
+            {children}
+        </NavLink>
+    )
+}
 
 export default function LeftColumn() {
     const { user, logout } = useAuth()
@@ -45,6 +60,15 @@ export default function LeftColumn() {
     const [eventPosts, setEventPosts] = useState([])
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
+
+    const [comingSoonModalOpen, setComingSoonModalOpen] = useState(false)
+    const [comingSoonFeature, setComingSoonFeature] = useState('')
+
+    const handleFeatureClick = (e, featureName) => {
+        e.preventDefault()
+        setComingSoonFeature(featureName)
+        setComingSoonModalOpen(true)
+    }
 
     const resolvePostTarget = (post) => {
         if (post?.mapId?.slug) return `/map/${post.mapId.slug}`
@@ -169,10 +193,10 @@ export default function LeftColumn() {
             {/* GENERAL */}
             <SidebarSection title="Chung" iconId={81}> {/* Magnemite */}
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
-                <SidebarLink to="/messages">Tin Nhắn</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tin Nhắn')}>Tin Nhắn</SidebarLink>
                 <SidebarLink to="/shop/buy">Giao Dịch</SidebarLink>
                 <SidebarLink to="/friends">Bạn Bè</SidebarLink>
-                <SidebarLink to="/donations">Ủng Hộ</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Ủng Hộ')}>Ủng Hộ</SidebarLink>
                 <button onClick={logout} className="block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm">
                     Đăng Xuất
                 </button>
@@ -180,18 +204,18 @@ export default function LeftColumn() {
 
             {/* MISCELLANEOUS */}
             <SidebarSection title="Khác" iconId={121}> {/* Starmie */}
-                <SidebarLink to="/search">Tìm Người Chơi</SidebarLink>
-                <SidebarLink to="/options">Tùy Chọn</SidebarLink>
-                <SidebarLink to="/referral">Giới Thiệu</SidebarLink>
-                <SidebarLink to="/music">Nghe Nhạc</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tìm Người Chơi')}>Tìm Người Chơi</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tùy Chọn')}>Tùy Chọn</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Giới Thiệu')}>Giới Thiệu</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Nghe Nhạc')}>Nghe Nhạc</SidebarLink>
             </SidebarSection>
 
             {/* EXPLORE */}
             <SidebarSection title="Khám Phá" iconId={138}> {/* Omanyte/Omastar for exploration */}
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
-                <SidebarLink to="/mines">Hầm Mỏ</SidebarLink>
-                <SidebarLink to="/center">Trung Tâm Pokemon</SidebarLink>
-                <SidebarLink to="/minigames">Minigame</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Hầm Mỏ')}>Hầm Mỏ</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Trung Tâm Pokemon')}>Trung Tâm Pokemon</SidebarLink>
+                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Minigame')}>Minigame</SidebarLink>
             </SidebarSection>
 
             {/* LEGENDARY AREAS */}
@@ -238,6 +262,11 @@ export default function LeftColumn() {
                 </SidebarSection>
             )}
 
+            <ComingSoonModal
+                isOpen={comingSoonModalOpen}
+                onClose={() => setComingSoonModalOpen(false)}
+                featureName={comingSoonFeature}
+            />
         </div>
     )
 }

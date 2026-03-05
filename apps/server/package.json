@@ -10,6 +10,8 @@
         "reset:battle-trainer-progress": "node src/scripts/resetBattleTrainerProgress.js",
         "reset:battle-trainer-moon-points:dry": "node src/scripts/resetBattleTrainerMoonPoints.js --dry-run",
         "reset:battle-trainer-moon-points": "node src/scripts/resetBattleTrainerMoonPoints.js",
+        "reset:user-moon-points:dry": "node src/resetUserMoonPoints.js",
+        "reset:user-moon-points": "node src/resetUserMoonPoints.js --apply",
         "migrate:pokemon-move-ids:dry": "node scripts/migratePokemonMoveIds.js",
         "migrate:pokemon-move-ids": "node scripts/migratePokemonMoveIds.js --apply",
         "set:moves:learn-scope:move-type:dry": "node scripts/setMoveLearnScopeMoveType.js",

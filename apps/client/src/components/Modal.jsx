@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
-export default function Modal({ 
-  isOpen, 
-  onClose, 
-  title, 
-  children, 
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
   maxWidth = 'md',
-  showCloseButton = true 
+  showCloseButton = true
 }) {
   // Close on Escape key
   useEffect(() => {
@@ -37,17 +38,17 @@ export default function Modal({
     xl: 'max-w-6xl'
   }
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
       {/* Backdrop - click to close */}
-      <div 
-        className="absolute inset-0" 
+      <div
+        className="absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Modal content */}
-      <div 
+      <div
         className={`
           relative bg-white rounded-lg border-2 border-blue-400 
           w-full ${maxWidthClasses[maxWidth]} 
@@ -92,6 +93,7 @@ export default function Modal({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
