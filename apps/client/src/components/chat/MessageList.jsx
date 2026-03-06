@@ -41,7 +41,7 @@ export default function MessageList({ messages, typingUsers, loading, onOpenProf
       ">
         <div className="text-center">
           <img 
-            src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png"
+            src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"
             alt="Ditto"
             className="w-20 h-20 pixelated mx-auto mb-2 opacity-80"
           />

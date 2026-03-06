@@ -49,12 +49,33 @@ const getHealAmounts = (item) => {
     return { hpAmount: 0, ppAmount: 0 }
 }
 
+const sanitizeObjectIdToken = (value) => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    if (/^[a-f\d]{24}$/i.test(raw)) return raw
+    const objectIdMatch = raw.match(/ObjectId\(["']?([a-f\d]{24})["']?\)/i)
+    if (objectIdMatch?.[1]) return objectIdMatch[1]
+    return ''
+}
+
 const normalizeObjectIdInput = (value) => {
-    if (typeof value === 'string') return value.trim()
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (typeof value === 'string') return sanitizeObjectIdToken(value)
+    if (typeof value === 'number' && Number.isFinite(value)) return sanitizeObjectIdToken(String(value))
     if (value && typeof value === 'object') {
-        if (typeof value._id === 'string') return value._id.trim()
-        if (typeof value.id === 'string') return value.id.trim()
+        if (typeof value.$oid === 'string') return sanitizeObjectIdToken(value.$oid)
+        if (typeof value._id === 'string') return sanitizeObjectIdToken(value._id)
+        if (typeof value.id === 'string') return sanitizeObjectIdToken(value.id)
+        if (value._id && typeof value._id === 'object') {
+            const nestedId = normalizeObjectIdInput(value._id)
+            if (nestedId) return nestedId
+        }
+        if (typeof value.toHexString === 'function') {
+            try {
+                return sanitizeObjectIdToken(value.toHexString())
+            } catch {
+                return ''
+            }
+        }
     }
     return ''
 }

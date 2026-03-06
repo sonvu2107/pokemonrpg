@@ -164,6 +164,60 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/game/auto-trainer/status
+    async getAutoTrainerStatus() {
+        const res = await fetch(`${API_URL}/game/auto-trainer/status`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải trạng thái auto trainer')
+        }
+        return res.json()
+    },
+
+    // POST /api/game/auto-trainer/settings
+    async updateAutoTrainerSettings(payload = {}) {
+        const res = await fetch(`${API_URL}/game/auto-trainer/settings`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể cập nhật auto trainer')
+        }
+        return res.json()
+    },
+
+    // GET /api/game/auto-search/status
+    async getAutoSearchStatus() {
+        const res = await fetch(`${API_URL}/game/auto-search/status`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải trạng thái auto tìm kiếm')
+        }
+        return res.json()
+    },
+
+    // POST /api/game/auto-search/settings
+    async updateAutoSearchSettings(payload = {}) {
+        const res = await fetch(`${API_URL}/game/auto-search/settings`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể cập nhật auto tìm kiếm')
+        }
+        return res.json()
+    },
+
     // GET /api/stats - Get server statistics
     async getServerStats() {
         const res = await fetch(`${API_URL}/stats`)

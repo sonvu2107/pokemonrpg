@@ -4,9 +4,13 @@ import UserPokemon from '../models/UserPokemon.js'
 import DailyActivity from '../models/DailyActivity.js'
 import User from '../models/User.js'
 import Pokemon from '../models/Pokemon.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
+const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
+const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
 const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
@@ -21,6 +25,102 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
         autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
     }
+}
+
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipBenefits(currentBenefitsLike)
+    const tier = normalizeVipBenefits(tierBenefitsLike)
+    return {
+        ...current,
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+        avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+    }
+}
+
+const buildVipTierLookup = async (users = []) => {
+    const tierIdSet = new Set()
+    const tierLevelSet = new Set()
+
+    for (const entry of users) {
+        const vipTierId = String(entry?.vipTierId || '').trim()
+        if (vipTierId) {
+            tierIdSet.add(vipTierId)
+            continue
+        }
+        const vipTierLevel = Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0)
+        if (vipTierLevel > 0) {
+            tierLevelSet.add(vipTierLevel)
+        }
+    }
+
+    const conditions = []
+    if (tierIdSet.size > 0) {
+        conditions.push({ _id: { $in: Array.from(tierIdSet) } })
+    }
+    if (tierLevelSet.size > 0) {
+        conditions.push({ level: { $in: Array.from(tierLevelSet) } })
+    }
+
+    if (conditions.length === 0) {
+        return {
+            tierById: new Map(),
+            tierByLevel: new Map(),
+        }
+    }
+
+    const tiers = await VipPrivilegeTier.find({ $or: conditions }).select('_id level benefits').lean()
+    const tierById = new Map()
+    const tierByLevel = new Map()
+
+    for (const tier of tiers) {
+        const idKey = String(tier?._id || '').trim()
+        if (idKey) {
+            tierById.set(idKey, tier)
+        }
+        const levelKey = Math.max(0, parseInt(tier?.level, 10) || 0)
+        if (levelKey > 0) {
+            tierByLevel.set(levelKey, tier)
+        }
+    }
+
+    return { tierById, tierByLevel }
+}
+
+const resolveTierBenefitsForUser = (userLike, tierById, tierByLevel) => {
+    const vipTierId = String(userLike?.vipTierId || '').trim()
+    if (vipTierId && tierById.has(vipTierId)) {
+        return normalizeVipBenefits(tierById.get(vipTierId)?.benefits)
+    }
+
+    const vipTierLevel = Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0)
+    if (vipTierLevel > 0 && tierByLevel.has(vipTierLevel)) {
+        return normalizeVipBenefits(tierByLevel.get(vipTierLevel)?.benefits)
+    }
+
+    return normalizeVipBenefits({})
+}
+
+const buildEffectiveVipBenefitsByUserId = async (users = []) => {
+    const normalizedUsers = Array.isArray(users) ? users.filter(Boolean) : []
+    if (normalizedUsers.length === 0) return new Map()
+
+    const { tierById, tierByLevel } = await buildVipTierLookup(normalizedUsers)
+    const benefitsByUserId = new Map()
+
+    for (const entry of normalizedUsers) {
+        const userId = String(entry?._id || '').trim()
+        if (!userId) continue
+        benefitsByUserId.set(
+            userId,
+            mergeVipVisualBenefits(
+                entry?.vipBenefits,
+                resolveTierBenefitsForUser(entry, tierById, tierByLevel)
+            )
+        )
+    }
+
+    return benefitsByUserId
 }
 
 const getAdminUserIds = async () => {
@@ -180,7 +280,7 @@ router.get('/daily', async (req, res, next) => {
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username avatar role vipTierLevel vipTierCode vipBenefits')
+                .populate('userId', 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
                 .lean(),
         ])
 
@@ -191,16 +291,17 @@ router.get('/daily', async (req, res, next) => {
             .select('userId level')
             .lean()
         const playerLevelByUserId = new Map(playerStates.map((state) => [state.userId.toString(), state.level || 1]))
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(activities.map((activity) => activity?.userId))
 
         const rankings = activities.map((activity, index) => ({
             rank: skip + index + 1,
             userId: activity.userId?._id || null,
             username: activity.userId?.username || 'Unknown',
-            avatar: activity.userId?.avatar || '',
+            avatar: normalizeAvatarUrl(activity.userId?.avatar),
             role: String(activity?.userId?.role || 'user').trim() || 'user',
             vipTierLevel: Math.max(0, parseInt(activity?.userId?.vipTierLevel, 10) || 0),
             vipTierCode: String(activity?.userId?.vipTierCode || '').trim().toUpperCase(),
-            vipBenefits: normalizeVipBenefits(activity?.userId?.vipBenefits),
+            vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(activity?.userId?._id || ''))),
             level: activity.userId?._id ? (playerLevelByUserId.get(activity.userId._id.toString()) || 1) : 1,
             searches: activity.searches || 0,
             mapExp: activity.mapExp || 0,
@@ -246,20 +347,22 @@ router.get('/overall', async (req, res, next) => {
                 .sort({ experience: -1, level: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username avatar role vipTierLevel vipTierCode vipBenefits')
+                .populate('userId', 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
                 .lean(),
         ])
+
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(playerStates.map((state) => state?.userId))
 
         // Build rankings with rank numbers
         const rankings = playerStates.map((state, index) => ({
             rank: skip + index + 1,
             userId: state.userId?._id,
             username: state.userId?.username || 'Unknown',
-            avatar: state.userId?.avatar || '',
+            avatar: normalizeAvatarUrl(state.userId?.avatar),
             role: String(state?.userId?.role || 'user').trim() || 'user',
             vipTierLevel: Math.max(0, parseInt(state?.userId?.vipTierLevel, 10) || 0),
             vipTierCode: String(state?.userId?.vipTierCode || '').trim().toUpperCase(),
-            vipBenefits: normalizeVipBenefits(state?.userId?.vipBenefits),
+            vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(state?.userId?._id || ''))),
             experience: state.experience || 0,
             level: state.level || 1,
         }))
@@ -350,6 +453,7 @@ router.get('/pokemon', async (req, res, next) => {
                             username: '$owner.username',
                             avatar: '$owner.avatar',
                             role: '$owner.role',
+                            vipTierId: '$owner.vipTierId',
                             vipTierLevel: '$owner.vipTierLevel',
                             vipTierCode: '$owner.vipTierCode',
                             vipBenefits: '$owner.vipBenefits',
@@ -380,6 +484,9 @@ router.get('/pokemon', async (req, res, next) => {
             const total = sortedRows.length
             const totalPages = Math.max(1, Math.ceil(total / limit))
             const pageRows = sortedRows.slice(skip, skip + limit)
+            const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(
+                pageRows.map((entry) => entry?.owner)
+            )
             const rankings = pageRows.map((entry, index) => ({
                 rank: skip + index + 1,
                 userPokemonId: entry._id,
@@ -400,11 +507,11 @@ router.get('/pokemon', async (req, res, next) => {
                 owner: {
                     _id: entry.owner?._id || null,
                     username: entry.owner?.username || 'Unknown',
-                    avatar: entry.owner?.avatar || '',
+                    avatar: normalizeAvatarUrl(entry.owner?.avatar),
                     role: String(entry?.owner?.role || 'user').trim() || 'user',
                     vipTierLevel: Math.max(0, parseInt(entry?.owner?.vipTierLevel, 10) || 0),
                     vipTierCode: String(entry?.owner?.vipTierCode || '').trim().toUpperCase(),
-                    vipBenefits: normalizeVipBenefits(entry?.owner?.vipBenefits),
+                    vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(entry?.owner?._id || ''))),
                 },
             }))
 
@@ -503,16 +610,17 @@ router.get('/pokemon', async (req, res, next) => {
         const normalizedTotalUsers = Math.max(0, Number(totalUsers?.[0]?.total || 0))
         const totalPages = Math.max(1, Math.ceil(normalizedTotalUsers / limit))
         const normalizedTotalDexEntries = Math.max(0, Number(totalDexEntries || 0))
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(rows.map((entry) => entry?.user))
 
         const rankings = rows.map((entry, index) => ({
             rank: skip + index + 1,
             userId: entry._id || null,
             username: entry.user?.username || 'Unknown',
-            avatar: entry.user?.avatar || '',
+            avatar: normalizeAvatarUrl(entry.user?.avatar),
             role: String(entry?.user?.role || 'user').trim() || 'user',
             vipTierLevel: Math.max(0, parseInt(entry?.user?.vipTierLevel, 10) || 0),
             vipTierCode: String(entry?.user?.vipTierCode || '').trim().toUpperCase(),
-            vipBenefits: normalizeVipBenefits(entry?.user?.vipBenefits),
+            vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(entry?.user?._id || ''))),
             collectedCount: Math.max(0, Number(entry.collectedCount || 0)),
             totalPokemon: Math.max(0, Number(entry.totalPokemon || 0)),
             completionPercent: normalizedTotalDexEntries > 0

@@ -27,6 +27,20 @@ import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 import { syncUserPokemonMovesAndPp } from '../utils/movePpUtils.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
+import {
+    AUTO_SEARCH_RARITY_KEYS,
+    hasVipAutoTrainerAccess,
+    hasVipAutoSearchAccess,
+    isEventMapLike,
+    normalizeAutoSearchActionByRarity,
+    normalizeAutoSearchState,
+    normalizeAutoTrainerState,
+    normalizeAutoCatchFormMode,
+    normalizeId as normalizeAutoTrainerId,
+    resolveDailyState as resolveAutoSearchDailyState,
+    resolveDailyState as resolveAutoTrainerDailyState,
+    toSafeInt as toSafeAutoTrainerInt,
+} from '../utils/autoTrainerUtils.js'
 
 
 
@@ -70,6 +84,9 @@ const battleAttackActionGuard = createActionGuard({
     cooldownMs: 350,
     message: 'Ra đòn quá nhanh. Vui lòng đợi một chút.',
 })
+
+const AUTO_TRAINER_LOGS_LIMIT = 12
+const AUTO_SEARCH_LOGS_LIMIT = 12
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
     const normalizedLevel = Math.max(1, Number(level) || 1)
@@ -1980,6 +1997,445 @@ const unlockMapsInBulk = async (userId, mapIds = []) => {
         .lean()
     return buildProgressIndex(unlockedProgresses)
 }
+
+const resolveTrainerAverageLevel = (trainerLike = {}) => {
+    const levels = (Array.isArray(trainerLike?.team) ? trainerLike.team : [])
+        .map((entry) => Math.max(1, Number(entry?.level || 1)))
+    if (levels.length === 0) return 1
+    const total = levels.reduce((sum, level) => sum + level, 0)
+    return Math.max(1, Math.round(total / levels.length))
+}
+
+const buildAutoTrainerStatusPayload = async (userLike = {}) => {
+    const normalizedState = normalizeAutoTrainerState(userLike?.autoTrainer)
+    const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+    const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+
+    let trainerMeta = null
+    const selectedTrainerId = normalizeAutoTrainerId(normalizedState.trainerId)
+    if (selectedTrainerId) {
+        const trainer = await BattleTrainer.findOne({
+            _id: selectedTrainerId,
+            isActive: true,
+        })
+            .select('_id name team.level')
+            .lean()
+
+        if (trainer) {
+            trainerMeta = {
+                id: String(trainer._id),
+                name: String(trainer.name || 'Trainer').trim() || 'Trainer',
+                level: resolveTrainerAverageLevel(trainer),
+            }
+        }
+    }
+
+    return {
+        enabled: Boolean(normalizedState.enabled),
+        trainerId: selectedTrainerId,
+        trainer: trainerMeta,
+        attackIntervalMs: Math.max(450, toSafeAutoTrainerInt(normalizedState.attackIntervalMs, 700)),
+        startedAt: normalizedState.startedAt || null,
+        canUseVipAutoTrainer: hasVipAutoTrainerAccess(userLike),
+        daily: {
+            dayKey: dailyState.dayKey,
+            count: dailyState.count,
+            limit: dailyState.limit,
+            remaining: Number.isFinite(dailyState.remaining) ? dailyState.remaining : null,
+        },
+        lastAction: normalizedState.lastAction || null,
+        logs: (Array.isArray(normalizedState.logs) ? normalizedState.logs : []).slice(0, AUTO_TRAINER_LOGS_LIMIT),
+    }
+}
+
+const buildAutoSearchStatusPayload = async (userLike = {}) => {
+    const normalizedState = normalizeAutoSearchState(userLike?.autoSearch)
+    const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoSearchUsesPerDay, 0)
+    const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+
+    let mapMeta = null
+    const selectedMapSlug = String(normalizedState.mapSlug || '').trim().toLowerCase()
+    if (selectedMapSlug) {
+        const map = await MapModel.findOne({ slug: selectedMapSlug })
+            .select('_id slug name isEventMap')
+            .lean()
+        if (map) {
+            mapMeta = {
+                id: String(map._id),
+                slug: String(map.slug || '').trim().toLowerCase(),
+                name: String(map.name || map.slug || '').trim() || map.slug,
+                isEventMap: Boolean(isEventMapLike(map)),
+            }
+        }
+    }
+
+    return {
+        enabled: Boolean(normalizedState.enabled),
+        mapSlug: selectedMapSlug,
+        map: mapMeta,
+        searchIntervalMs: Math.max(900, toSafeAutoTrainerInt(normalizedState.searchIntervalMs, 1200)),
+        actionByRarity: normalizeAutoSearchActionByRarity(normalizedState.actionByRarity),
+        catchFormMode: normalizeAutoCatchFormMode(normalizedState.catchFormMode),
+        catchBallItemId: normalizeAutoTrainerId(normalizedState.catchBallItemId),
+        startedAt: normalizedState.startedAt || null,
+        canUseVipAutoSearch: hasVipAutoSearchAccess(userLike),
+        daily: {
+            dayKey: dailyState.dayKey,
+            count: dailyState.count,
+            limit: dailyState.limit,
+            remaining: Number.isFinite(dailyState.remaining) ? dailyState.remaining : null,
+        },
+        lastAction: normalizedState.lastAction || null,
+        logs: (Array.isArray(normalizedState.logs) ? normalizedState.logs : []).slice(0, AUTO_SEARCH_LOGS_LIMIT),
+    }
+}
+
+// GET /api/game/auto-search/status (protected)
+router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+            .lean()
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        const normalizedState = normalizeAutoSearchState(user.autoSearch)
+        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
+        const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+
+        const shouldSyncState = (
+            String(normalizedState.dayKey || '') !== dailyState.dayKey
+            || Number(normalizedState.dayCount || 0) !== dailyState.count
+            || Number(normalizedState.dayLimit || 0) !== dailyState.limit
+        )
+
+        if (shouldSyncState) {
+            await User.updateOne(
+                { _id: req.user.userId },
+                {
+                    $set: {
+                        'autoSearch.dayKey': dailyState.dayKey,
+                        'autoSearch.dayCount': dailyState.count,
+                        'autoSearch.dayLimit': dailyState.limit,
+                    },
+                }
+            )
+        }
+
+        const payload = await buildAutoSearchStatusPayload({
+            ...user,
+            autoSearch: {
+                ...(user.autoSearch || {}),
+                dayKey: dailyState.dayKey,
+                dayCount: dailyState.count,
+                dayLimit: dailyState.limit,
+            },
+        })
+
+        return res.json({ ok: true, autoSearch: payload })
+    } catch (error) {
+        return next(error)
+    }
+})
+
+// POST /api/game/auto-search/settings (protected)
+router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        const incomingEnabled = req.body?.enabled
+        const shouldUpdateEnabled = incomingEnabled === true || incomingEnabled === false
+        const hasMapSlugPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'mapSlug')
+        const requestedMapSlug = String(req.body?.mapSlug || '').trim().toLowerCase()
+        const requestedIntervalRaw = Number(req.body?.searchIntervalMs)
+        const hasIntervalPatch = Number.isFinite(requestedIntervalRaw)
+        const hasActionPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'actionByRarity')
+        const hasCatchFormPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'catchFormMode')
+        const hasCatchBallPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'catchBallItemId')
+
+        const normalizedState = normalizeAutoSearchState(user.autoSearch)
+        const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
+        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
+        const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+
+        const nextEnabled = shouldUpdateEnabled
+            ? Boolean(incomingEnabled)
+            : Boolean(normalizedState.enabled)
+        const nextMapSlug = hasMapSlugPatch
+            ? requestedMapSlug
+            : String(normalizedState.mapSlug || '').trim().toLowerCase()
+        const nextIntervalMs = hasIntervalPatch
+            ? Math.max(900, Math.min(10000, Math.floor(requestedIntervalRaw)))
+            : Math.max(900, toSafeAutoTrainerInt(normalizedState.searchIntervalMs, 1200))
+        const nextActionByRarity = hasActionPatch
+            ? normalizeAutoSearchActionByRarity(req.body?.actionByRarity)
+            : normalizeAutoSearchActionByRarity(normalizedState.actionByRarity)
+        const nextCatchFormMode = hasCatchFormPatch
+            ? normalizeAutoCatchFormMode(req.body?.catchFormMode)
+            : normalizeAutoCatchFormMode(normalizedState.catchFormMode)
+        const nextCatchBallItemId = hasCatchBallPatch
+            ? normalizeAutoTrainerId(req.body?.catchBallItemId)
+            : normalizeAutoTrainerId(normalizedState.catchBallItemId)
+
+        if (nextEnabled && !canUseVipAutoSearch) {
+            return res.status(403).json({
+                ok: false,
+                message: 'Tài khoản hiện không có quyền lợi VIP để bật auto tìm kiếm.',
+            })
+        }
+
+        if (nextEnabled && !nextMapSlug) {
+            return res.status(400).json({ ok: false, message: 'mapSlug là bắt buộc khi bật auto tìm kiếm.' })
+        }
+
+        let resolvedMap = null
+        if (nextMapSlug) {
+            resolvedMap = await MapModel.findOne({ slug: nextMapSlug })
+                .select('_id slug name isEventMap')
+                .lean()
+            if (!resolvedMap && nextEnabled) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ đã chọn cho auto tìm kiếm.' })
+            }
+        }
+
+        if (nextEnabled && resolvedMap && isEventMapLike(resolvedMap)) {
+            return res.status(400).json({ ok: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
+        }
+
+        const isCatchConfigured = AUTO_SEARCH_RARITY_KEYS.some(
+            (rarityKey) => String(nextActionByRarity?.[rarityKey] || '').trim().toLowerCase() === 'catch'
+        )
+        if (nextEnabled && isCatchConfigured && !nextCatchBallItemId) {
+            return res.status(400).json({ ok: false, message: 'Có cấu hình auto bắt nhưng chưa chọn bóng.' })
+        }
+
+        const shouldConsumeUse = nextEnabled && !Boolean(normalizedState.enabled)
+        if (shouldConsumeUse && dailyLimit > 0 && dailyState.count >= dailyLimit) {
+            return res.status(400).json({
+                ok: false,
+                message: `Đã hết lượt auto tìm kiếm trong hôm nay (${dailyState.count}/${dailyLimit}).`,
+            })
+        }
+
+        const now = new Date()
+        const nextDayCount = shouldConsumeUse ? (dailyState.count + 1) : dailyState.count
+        const nextStartedAt = nextEnabled
+            ? (shouldConsumeUse ? now : (normalizedState.startedAt || now))
+            : null
+
+        const updateDoc = {
+            $set: {
+                'autoSearch.enabled': nextEnabled,
+                'autoSearch.mapSlug': nextMapSlug,
+                'autoSearch.searchIntervalMs': nextIntervalMs,
+                'autoSearch.actionByRarity': nextActionByRarity,
+                'autoSearch.catchFormMode': nextCatchFormMode,
+                'autoSearch.catchBallItemId': nextCatchBallItemId,
+                'autoSearch.startedAt': nextStartedAt,
+                'autoSearch.dayKey': dailyState.dayKey,
+                'autoSearch.dayCount': nextDayCount,
+                'autoSearch.dayLimit': dailyState.limit,
+                'autoSearch.lastAction': {
+                    action: 'toggle',
+                    result: nextEnabled ? 'enabled' : 'disabled',
+                    reason: '',
+                    targetId: nextMapSlug,
+                    at: now,
+                },
+            },
+            $push: {
+                'autoSearch.logs': {
+                    $each: [{
+                        message: nextEnabled
+                            ? `Đã bật auto tìm kiếm tại map ${nextMapSlug || 'đã chọn'}.`
+                            : 'Đã tắt auto tìm kiếm.',
+                        type: nextEnabled ? 'success' : 'info',
+                        at: now,
+                    }],
+                    $position: 0,
+                    $slice: AUTO_SEARCH_LOGS_LIMIT,
+                },
+            },
+        }
+
+        await User.updateOne({ _id: req.user.userId }, updateDoc)
+        const refreshedUser = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+            .lean()
+        const payload = await buildAutoSearchStatusPayload(refreshedUser || user.toObject())
+
+        return res.json({ ok: true, autoSearch: payload })
+    } catch (error) {
+        return next(error)
+    }
+})
+
+// GET /api/game/auto-trainer/status (protected)
+router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+            .lean()
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
+        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+        const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+
+        const shouldSyncState = (
+            String(normalizedState.dayKey || '') !== dailyState.dayKey
+            || Number(normalizedState.dayCount || 0) !== dailyState.count
+            || Number(normalizedState.dayLimit || 0) !== dailyState.limit
+        )
+
+        if (shouldSyncState) {
+            await User.updateOne(
+                { _id: req.user.userId },
+                {
+                    $set: {
+                        'autoTrainer.dayKey': dailyState.dayKey,
+                        'autoTrainer.dayCount': dailyState.count,
+                        'autoTrainer.dayLimit': dailyState.limit,
+                    },
+                }
+            )
+        }
+
+        const payload = await buildAutoTrainerStatusPayload({
+            ...user,
+            autoTrainer: {
+                ...(user.autoTrainer || {}),
+                dayKey: dailyState.dayKey,
+                dayCount: dailyState.count,
+                dayLimit: dailyState.limit,
+            },
+        })
+
+        return res.json({ ok: true, autoTrainer: payload })
+    } catch (error) {
+        return next(error)
+    }
+})
+
+// POST /api/game/auto-trainer/settings (protected)
+router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        const incomingEnabled = req.body?.enabled
+        const shouldUpdateEnabled = incomingEnabled === true || incomingEnabled === false
+        const requestedTrainerId = normalizeAutoTrainerId(req.body?.trainerId)
+        const hasTrainerIdPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'trainerId')
+        const requestedIntervalRaw = Number(req.body?.attackIntervalMs)
+        const hasIntervalPatch = Number.isFinite(requestedIntervalRaw)
+        const requestedInterval = hasIntervalPatch
+            ? Math.max(450, Math.min(10000, Math.floor(requestedIntervalRaw)))
+            : Math.max(450, toSafeAutoTrainerInt(user?.autoTrainer?.attackIntervalMs, 700))
+
+        const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
+        const canUseVipAutoTrainer = hasVipAutoTrainerAccess(user)
+        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+        const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+
+        const targetTrainerId = hasTrainerIdPatch
+            ? requestedTrainerId
+            : normalizeAutoTrainerId(normalizedState.trainerId)
+
+        const nextEnabled = shouldUpdateEnabled
+            ? Boolean(incomingEnabled)
+            : Boolean(normalizedState.enabled)
+
+        if (nextEnabled && !canUseVipAutoTrainer) {
+            return res.status(403).json({
+                ok: false,
+                message: 'Tài khoản hiện không có quyền lợi VIP để bật auto battle trainer.',
+            })
+        }
+
+        if (nextEnabled && dailyLimit > 0 && dailyState.count >= dailyLimit) {
+            return res.status(400).json({
+                ok: false,
+                message: `Đã hết lượt auto battle trong hôm nay (${dailyState.count}/${dailyLimit}).`,
+            })
+        }
+
+        if (nextEnabled) {
+            if (!targetTrainerId) {
+                return res.status(400).json({ ok: false, message: 'Hãy chọn trainer đã pass để bật auto battle.' })
+            }
+
+            const isCompletedTrainer = (Array.isArray(user.completedBattleTrainers) ? user.completedBattleTrainers : [])
+                .map((entry) => normalizeAutoTrainerId(entry))
+                .includes(targetTrainerId)
+            if (!isCompletedTrainer) {
+                return res.status(400).json({ ok: false, message: 'Trainer đã chọn chưa được hoàn thành.' })
+            }
+
+            const trainerExists = await BattleTrainer.exists({ _id: targetTrainerId, isActive: true })
+            if (!trainerExists) {
+                return res.status(404).json({ ok: false, message: 'Trainer đã chọn không còn khả dụng.' })
+            }
+        }
+
+        const now = new Date()
+        const updateDoc = {
+            $set: {
+                'autoTrainer.enabled': nextEnabled,
+                'autoTrainer.trainerId': targetTrainerId,
+                'autoTrainer.attackIntervalMs': requestedInterval,
+                'autoTrainer.startedAt': nextEnabled ? (normalizedState.startedAt || now) : null,
+                'autoTrainer.dayKey': dailyState.dayKey,
+                'autoTrainer.dayCount': dailyState.count,
+                'autoTrainer.dayLimit': dailyState.limit,
+                'autoTrainer.lastAction': {
+                    action: 'toggle',
+                    result: nextEnabled ? 'enabled' : 'disabled',
+                    reason: '',
+                    targetId: targetTrainerId,
+                    at: now,
+                },
+            },
+            $push: {
+                'autoTrainer.logs': {
+                    $each: [{
+                        message: nextEnabled
+                            ? `Đã bật auto battle trainer với trainer ${targetTrainerId}.`
+                            : 'Đã tắt auto battle trainer.',
+                        type: nextEnabled ? 'success' : 'info',
+                        at: now,
+                    }],
+                    $position: 0,
+                    $slice: AUTO_TRAINER_LOGS_LIMIT,
+                },
+            },
+        }
+
+        await User.updateOne({ _id: req.user.userId }, updateDoc)
+        const refreshedUser = await User.findById(req.user.userId)
+            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+            .lean()
+        const payload = await buildAutoTrainerStatusPayload(refreshedUser || user.toObject())
+
+        return res.json({ ok: true, autoTrainer: payload })
+    } catch (error) {
+        return next(error)
+    }
+})
 
 // POST /api/game/click (protected)
 router.post('/click', authMiddleware, (req, res) => {

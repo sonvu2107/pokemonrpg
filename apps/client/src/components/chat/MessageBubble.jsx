@@ -1,9 +1,9 @@
-import { getUserPokemonId, getPokemonSpriteUrl, formatMessageTime } from '../../utils/chatUtils'
+import { formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
 import VipAvatar from '../VipAvatar'
-import { isVipRole, getVipTitle, getVipBadgeLabel } from '../../utils/vip'
+import { getVipTitle, getVipTitleImageUrl } from '../../utils/vip'
 
-const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png' // Ditto
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png' // Pikachu
 
 export default function MessageBubble({ message, onOpenProfile }) {
   const { user } = useAuth()
@@ -48,18 +48,12 @@ export default function MessageBubble({ message, onOpenProfile }) {
   }
 
   // Other users' messages (left aligned, white background)
-  const isVip = isVipRole(message?.sender)
   const vipTitle = getVipTitle(message?.sender)
-  const vipBadgeLabel = getVipBadgeLabel(message?.sender)
+  const vipTitleImageUrl = getVipTitleImageUrl(message?.sender)
   const senderUserId = String(message?.sender?._id || '').trim()
   const canOpenProfile = Boolean(senderUserId && typeof onOpenProfile === 'function')
   
-  // Use user's avatar if available, otherwise fallback to Pokemon sprite or Ditto
-  const avatarUrl = message.sender.avatar 
-    ? message.sender.avatar 
-    : (getUserPokemonId(message.sender._id) 
-      ? getPokemonSpriteUrl(getUserPokemonId(message.sender._id))
-      : DEFAULT_AVATAR)
+  const avatarUrl = message.sender.avatar ? message.sender.avatar : DEFAULT_AVATAR
 
   const handleOpenProfile = () => {
     if (!canOpenProfile) return
@@ -82,16 +76,16 @@ export default function MessageBubble({ message, onOpenProfile }) {
           type="button"
           onClick={handleOpenProfile}
           disabled={!canOpenProfile}
-          className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0"
+          className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0"
         >
           <VipAvatar
             userLike={message?.sender}
             avatar={avatarUrl}
             fallback={DEFAULT_AVATAR}
             alt={message.sender.username}
-            wrapperClassName="w-6 h-6"
-            imageClassName="w-6 h-6 rounded-full object-cover flex-shrink-0 pixelated"
-            frameClassName="w-6 h-6 rounded-full object-cover"
+            wrapperClassName="w-11 h-11"
+            imageClassName="w-11 h-11 rounded-full object-cover flex-shrink-0 pixelated"
+            frameClassName="w-11 h-11 rounded-full object-cover"
           />
         </button>
         
@@ -105,18 +99,20 @@ export default function MessageBubble({ message, onOpenProfile }) {
             {message.sender.username}
           </button>
           
-          {/* VIP badge */}
-          {isVip && (
-            <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase">
-              {vipBadgeLabel}
-            </span>
-          )}
-
-          {vipTitle && (
+          {vipTitleImageUrl ? (
+            <img
+              src={vipTitleImageUrl}
+              alt={vipTitle || 'Danh hiệu VIP'}
+              className="h-6 max-w-[150px] object-contain"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+          ) : (vipTitle ? (
             <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] text-amber-700 font-bold">
               {vipTitle}
             </span>
-          )}
+          ) : null)}
           
           {/* Level badge - only show if level exists and is > 0 */}
           {message.sender.level && message.sender.level > 0 && (
@@ -132,7 +128,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
       </div>
       
       <div className="
-        ml-8 px-3 py-2 rounded-lg
+        ml-12 px-3 py-2 rounded-lg
         bg-white/90 backdrop-blur-sm
         border border-blue-200
         text-sm text-slate-800 font-medium

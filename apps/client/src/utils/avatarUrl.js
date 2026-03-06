@@ -7,7 +7,7 @@ const hasAbsoluteProtocol = (value = '') => /^(https?:)?\/\//i.test(value)
 export const resolveAvatarUrl = (value = '', fallback = '') => {
     const raw = String(value || '').trim()
     const normalizedFallback = String(fallback || '').trim()
-    const safeFallback = normalizedFallback || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png'
+    const safeFallback = normalizedFallback || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
     if (!raw) return safeFallback
     if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw

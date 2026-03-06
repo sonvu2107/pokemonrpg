@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { vipTierApi } from '../../services/adminApi'
+import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
 const createDefaultTierForm = () => ({
     code: '',
@@ -227,8 +228,9 @@ export default function VipPrivilegePage() {
 
     const handleUploadAsset = async (type, file) => {
         if (!file) return
-        if (!String(file.type || '').startsWith('image/')) {
-            setError('Chỉ hỗ trợ tải tệp hình ảnh')
+        const validationError = validateImageFile(file)
+        if (validationError) {
+            setError(validationError)
             return
         }
 
@@ -236,8 +238,7 @@ export default function VipPrivilegePage() {
         try {
             setError('')
             setUploadingAsset((prev) => ({ ...prev, [key]: true }))
-            const res = await vipTierApi.uploadImage(file)
-            const imageUrl = String(res?.imageUrl || '').trim()
+            const imageUrl = await uploadToCloudinary(file, undefined, { folder: 'pokemon/vip-assets' })
             if (!imageUrl) {
                 throw new Error('Không nhận được URL ảnh sau khi tải lên')
             }
@@ -275,7 +276,7 @@ export default function VipPrivilegePage() {
                 <div className="space-y-4">
                     <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-4 space-y-3">
                         <div className="text-sm font-bold text-slate-800 uppercase tracking-wide">Tạo nhanh VIP 1 - XXX</div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <input
                                 type="number"
                                 min="1"
@@ -304,7 +305,7 @@ export default function VipPrivilegePage() {
                     </div>
 
                     <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-blue-200 shadow-sm p-4 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="text-sm font-bold text-slate-800 uppercase tracking-wide">{formTitle}</div>
                             {editingId && (
                                 <button
@@ -317,13 +318,13 @@ export default function VipPrivilegePage() {
                             )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <input
                                 type="text"
                                 value={form.code}
                                 onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
                                 placeholder="Mã (VD: VIP1)"
-                                className="px-3 py-2 border border-slate-300 rounded text-sm"
+                                className="px-3 py-2 border border-slate-300 rounded text-sm w-full"
                             />
                             <input
                                 type="number"
@@ -355,7 +356,7 @@ export default function VipPrivilegePage() {
                         <div className="rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-3">
                             <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ảnh thưởng hiển thị (Upload)</div>
 
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-2">
                                     <div className="text-[11px] font-semibold text-slate-700">Ảnh thưởng danh hiệu VIP</div>
                                     <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
@@ -436,8 +437,8 @@ export default function VipPrivilegePage() {
                                 checked={form.autoSearchEnabled}
                                 onChange={(e) => setForm((prev) => ({ ...prev, autoSearchEnabled: e.target.checked }))}
                             />
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
                                     <div className="font-semibold text-slate-700 mb-1">Thời gian dùng Auto tìm (phút)</div>
                                     <input
                                         type="number"
@@ -448,7 +449,7 @@ export default function VipPrivilegePage() {
                                         placeholder="0 = không giới hạn"
                                     />
                                 </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
                                     <div className="font-semibold text-slate-700 mb-1">Số lượt Auto tìm mỗi ngày</div>
                                     <input
                                         type="number"
@@ -466,8 +467,8 @@ export default function VipPrivilegePage() {
                                 checked={form.autoBattleTrainerEnabled}
                                 onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerEnabled: e.target.checked }))}
                             />
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
                                     <div className="font-semibold text-slate-700 mb-1">Thời gian dùng Auto battle (phút)</div>
                                     <input
                                         type="number"
@@ -478,7 +479,7 @@ export default function VipPrivilegePage() {
                                         placeholder="0 = không giới hạn"
                                     />
                                 </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
                                     <div className="font-semibold text-slate-700 mb-1">Số lượt Auto battle mỗi ngày</div>
                                     <input
                                         type="number"
@@ -503,7 +504,7 @@ export default function VipPrivilegePage() {
 
                         <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3 space-y-2">
                             <div className="text-xs font-bold text-amber-900 uppercase tracking-wide">Thưởng chỉ số</div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
                                     <div className="font-semibold text-slate-700 mb-1">Thưởng kinh nghiệm (EXP) %</div>
                                     <input
@@ -548,7 +549,7 @@ export default function VipPrivilegePage() {
                                         className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
                                     />
                                 </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs col-span-2">
+                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs col-span-1 sm:col-span-2">
                                     <div className="font-semibold text-slate-700 mb-1">Thưởng quà đăng nhập hằng ngày %</div>
                                     <input
                                         type="number"
@@ -583,13 +584,13 @@ export default function VipPrivilegePage() {
                 <div className="bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/60 flex flex-wrap items-center gap-2 justify-between">
                         <div className="font-bold text-slate-800">Danh sách đặc quyền VIP ({visibleTiers.length})</div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center w-full sm:w-auto gap-2">
                             <input
                                 type="text"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                                 placeholder="Tìm theo mã/tên..."
-                                className="px-3 py-1.5 border border-slate-300 rounded text-sm"
+                                className="px-3 py-1.5 border border-slate-300 rounded text-sm flex-1 min-w-[120px]"
                             />
                             <label className="inline-flex items-center gap-1 text-xs text-slate-600 px-2 py-1 border border-slate-300 rounded bg-white">
                                 <input
@@ -620,101 +621,217 @@ export default function VipPrivilegePage() {
                     ) : visibleTiers.length === 0 ? (
                         <div className="p-6 text-center text-slate-400 italic">Chưa có cấp đặc quyền nào.</div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm min-w-[860px]">
-                                <thead className="bg-slate-50 text-slate-700 text-xs uppercase">
-                                    <tr>
-                                        <th className="px-3 py-2 text-left">Cấp</th>
-                                        <th className="px-3 py-2 text-left">Mã / Tên</th>
-                                        <th className="px-3 py-2 text-left">Quyền lợi chính</th>
-                                        <th className="px-3 py-2 text-left">Bonus</th>
-                                        <th className="px-3 py-2 text-center">Trạng thái</th>
-                                        <th className="px-3 py-2 text-center">Thao tác</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {visibleTiers.map((tier) => {
-                                        const benefits = tier?.benefits || {}
-                                        return (
-                                            <tr key={tier._id} className="hover:bg-blue-50/30">
-                                                <td className="px-3 py-2 font-bold text-blue-700">VIP {tier.level}</td>
-                                                <td className="px-3 py-2">
-                                                    <div className="font-bold text-slate-800">{tier.code} - {tier.name}</div>
+                        <>
+                            {/* Desktop View */}
+                            <div className="hidden lg:block overflow-x-auto">
+                                <table className="w-full text-sm min-w-[860px]">
+                                    <thead className="bg-slate-50 text-slate-700 text-xs uppercase">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left">Cấp</th>
+                                            <th className="px-3 py-2 text-left">Mã / Tên</th>
+                                            <th className="px-3 py-2 text-left">Quyền lợi chính</th>
+                                            <th className="px-3 py-2 text-left">Bonus</th>
+                                            <th className="px-3 py-2 text-center">Trạng thái</th>
+                                            <th className="px-3 py-2 text-center">Thao tác</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {visibleTiers.map((tier) => {
+                                            const benefits = tier?.benefits || {}
+                                            return (
+                                                <tr key={tier._id} className="hover:bg-blue-50/30">
+                                                    <td className="px-3 py-2 font-bold text-blue-700">VIP {tier.level}</td>
+                                                    <td className="px-3 py-2">
+                                                        <div className="font-bold text-slate-800">{tier.code} - {tier.name}</div>
+                                                        <div className="text-xs text-slate-500 break-all">{tier.description || '--'}</div>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-xs text-slate-700">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>Danh hiệu:</span>
+                                                            <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                                {benefits.titleImageUrl ? (
+                                                                    <img
+                                                                        src={benefits.titleImageUrl}
+                                                                        alt="Danh hiệu"
+                                                                        className="max-h-full max-w-full object-contain"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-[10px] text-slate-400">--</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span></div>
+                                                        <div>Thời gian Auto tìm: <span className="font-semibold">{Number(benefits.autoSearchDurationMinutes || 0) > 0 ? `${benefits.autoSearchDurationMinutes} phút` : 'Không giới hạn'}</span></div>
+                                                        <div>Số lượt Auto tìm/ngày: <span className="font-semibold">{Number(benefits.autoSearchUsesPerDay || 0) > 0 ? benefits.autoSearchUsesPerDay : 'Không giới hạn'}</span></div>
+                                                        <div>Auto battle: <span className="font-semibold">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span></div>
+                                                        <div>Thời gian Auto battle: <span className="font-semibold">{Number(benefits.autoBattleTrainerDurationMinutes || 0) > 0 ? `${benefits.autoBattleTrainerDurationMinutes} phút` : 'Không giới hạn'}</span></div>
+                                                        <div>Số lượt Auto battle/ngày: <span className="font-semibold">{Number(benefits.autoBattleTrainerUsesPerDay || 0) > 0 ? benefits.autoBattleTrainerUsesPerDay : 'Không giới hạn'}</span></div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span>Khung:</span>
+                                                            <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                                {benefits.avatarFrameUrl ? (
+                                                                    <img
+                                                                        src={benefits.avatarFrameUrl}
+                                                                        alt="Khung"
+                                                                        className="max-h-full max-w-full object-contain"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-[10px] text-slate-400">--</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-xs text-slate-700">
+                                                        <div>EXP: <span className="font-semibold">+{benefits.expBonusPercent || 0}%</span></div>
+                                                        <div>Moon: <span className="font-semibold">+{benefits.moonPointBonusPercent || 0}%</span></div>
+                                                        <div>Catch: <span className="font-semibold">+{benefits.catchRateBonusPercent || 0}%</span></div>
+                                                        <div>Drop: <span className="font-semibold">+{benefits.itemDropBonusPercent || 0}%</span></div>
+                                                        <div>Daily: <span className="font-semibold">+{benefits.dailyRewardBonusPercent || 0}%</span></div>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tier.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                            {tier.isActive ? 'Kích hoạt' : 'Đã tắt'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <div className="inline-flex gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEdit(tier)}
+                                                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold"
+                                                            >
+                                                                Sửa
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDelete(tier)}
+                                                                disabled={deletingId === tier._id}
+                                                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold disabled:opacity-60"
+                                                            >
+                                                                {deletingId === tier._id ? 'Xóa...' : 'Xóa'}
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile View */}
+                            <div className="lg:hidden flex flex-col divide-y divide-slate-100">
+                                {visibleTiers.map((tier) => {
+                                    const benefits = tier?.benefits || {}
+                                    return (
+                                        <div key={tier._id} className="p-4 space-y-4 hover:bg-blue-50/30">
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div>
+                                                    <div className="inline-flex items-center gap-2">
+                                                        <span className="font-bold text-blue-700 text-base">VIP {tier.level}</span>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tier.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                            {tier.isActive ? 'Kích hoạt' : 'Đã tắt'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="font-bold text-slate-800 mt-1">{tier.code} - {tier.name}</div>
                                                     <div className="text-xs text-slate-500 break-all">{tier.description || '--'}</div>
-                                                </td>
-                                                <td className="px-3 py-2 text-xs text-slate-700">
-                                                    <div className="flex items-center gap-2">
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-700 bg-slate-50 rounded p-3">
+                                                <div className="space-y-1.5">
+                                                    <div className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-2">Quyền lợi chính</div>
+                                                    <div className="flex justify-between items-center bg-white p-1 rounded">
                                                         <span>Danh hiệu:</span>
-                                                        <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                        <div className="h-7 w-16 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                             {benefits.titleImageUrl ? (
-                                                                <img
-                                                                    src={benefits.titleImageUrl}
-                                                                    alt="Danh hiệu"
-                                                                    className="max-h-full max-w-full object-contain"
-                                                                />
+                                                                <img src={benefits.titleImageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
                                                             ) : (
                                                                 <span className="text-[10px] text-slate-400">--</span>
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span></div>
-                                                    <div>Thời gian Auto tìm: <span className="font-semibold">{Number(benefits.autoSearchDurationMinutes || 0) > 0 ? `${benefits.autoSearchDurationMinutes} phút` : 'Không giới hạn'}</span></div>
-                                                    <div>Số lượt Auto tìm/ngày: <span className="font-semibold">{Number(benefits.autoSearchUsesPerDay || 0) > 0 ? benefits.autoSearchUsesPerDay : 'Không giới hạn'}</span></div>
-                                                    <div>Auto battle: <span className="font-semibold">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span></div>
-                                                    <div>Thời gian Auto battle: <span className="font-semibold">{Number(benefits.autoBattleTrainerDurationMinutes || 0) > 0 ? `${benefits.autoBattleTrainerDurationMinutes} phút` : 'Không giới hạn'}</span></div>
-                                                    <div>Số lượt Auto battle/ngày: <span className="font-semibold">{Number(benefits.autoBattleTrainerUsesPerDay || 0) > 0 ? benefits.autoBattleTrainerUsesPerDay : 'Không giới hạn'}</span></div>
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex justify-between items-center bg-white p-1 rounded">
                                                         <span>Khung:</span>
-                                                        <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                        <div className="h-7 w-16 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                             {benefits.avatarFrameUrl ? (
-                                                                <img
-                                                                    src={benefits.avatarFrameUrl}
-                                                                    alt="Khung"
-                                                                    className="max-h-full max-w-full object-contain"
-                                                                />
+                                                                <img src={benefits.avatarFrameUrl} alt="Khung" className="max-h-full max-w-full object-contain" />
                                                             ) : (
                                                                 <span className="text-[10px] text-slate-400">--</span>
                                                             )}
                                                         </div>
                                                     </div>
-                                                </td>
-                                                <td className="px-3 py-2 text-xs text-slate-700">
-                                                    <div>EXP: <span className="font-semibold">+{benefits.expBonusPercent || 0}%</span></div>
-                                                    <div>Moon: <span className="font-semibold">+{benefits.moonPointBonusPercent || 0}%</span></div>
-                                                    <div>Catch: <span className="font-semibold">+{benefits.catchRateBonusPercent || 0}%</span></div>
-                                                    <div>Drop: <span className="font-semibold">+{benefits.itemDropBonusPercent || 0}%</span></div>
-                                                    <div>Daily: <span className="font-semibold">+{benefits.dailyRewardBonusPercent || 0}%</span></div>
-                                                </td>
-                                                <td className="px-3 py-2 text-center">
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tier.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                        {tier.isActive ? 'Kích hoạt' : 'Đã tắt'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2 text-center">
-                                                    <div className="inline-flex gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleEdit(tier)}
-                                                            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold"
-                                                        >
-                                                            Sửa
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDelete(tier)}
-                                                            disabled={deletingId === tier._id}
-                                                            className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold disabled:opacity-60"
-                                                        >
-                                                            {deletingId === tier._id ? 'Xóa...' : 'Xóa'}
-                                                        </button>
+                                                    <div className="grid grid-cols-2 gap-1 mt-2">
+                                                        <div className="bg-white p-1.5 rounded">
+                                                            <span className="text-[10px] text-slate-500 block">Auto tìm</span>
+                                                            <span className="font-bold text-slate-800">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span>
+                                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                                {Number(benefits.autoSearchDurationMinutes || 0) > 0 ? `${benefits.autoSearchDurationMinutes}p` : 'Vô hạn'}
+                                                                {' • '}
+                                                                {Number(benefits.autoSearchUsesPerDay || 0) > 0 ? `${benefits.autoSearchUsesPerDay}/ngày` : 'Vô hạn'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="bg-white p-1.5 rounded">
+                                                            <span className="text-[10px] text-slate-500 block">Auto battle</span>
+                                                            <span className="font-bold text-slate-800">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span>
+                                                            <div className="text-[10px] text-slate-500 mt-0.5">
+                                                                {Number(benefits.autoBattleTrainerDurationMinutes || 0) > 0 ? `${benefits.autoBattleTrainerDurationMinutes}p` : 'Vô hạn'}
+                                                                {' • '}
+                                                                {Number(benefits.autoBattleTrainerUsesPerDay || 0) > 0 ? `${benefits.autoBattleTrainerUsesPerDay}/ngày` : 'Vô hạn'}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </td>
-                                            </tr>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                                </div>
+
+                                                <div className="space-y-1.5">
+                                                    <div className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-2">Thưởng chỉ số</div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
+                                                            <span className="text-slate-500 font-medium tracking-tight">EXP:</span>
+                                                            <span className="font-bold text-emerald-600 text-right shrink-0">+{benefits.expBonusPercent || 0}%</span>
+                                                        </div>
+                                                        <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
+                                                            <span className="text-slate-500 font-medium tracking-tight">Moon:</span>
+                                                            <span className="font-bold text-blue-600 text-right shrink-0">+{benefits.moonPointBonusPercent || 0}%</span>
+                                                        </div>
+                                                        <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
+                                                            <span className="text-slate-500 font-medium tracking-tight">Catch:</span>
+                                                            <span className="font-bold text-purple-600 text-right shrink-0">+{benefits.catchRateBonusPercent || 0}%</span>
+                                                        </div>
+                                                        <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
+                                                            <span className="text-slate-500 font-medium tracking-tight">Drop:</span>
+                                                            <span className="font-bold text-amber-600 text-right shrink-0">+{benefits.itemDropBonusPercent || 0}%</span>
+                                                        </div>
+                                                        <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100 col-span-2">
+                                                            <span className="text-slate-500 font-medium tracking-tight">Daily:</span>
+                                                            <span className="font-bold text-rose-600 text-right shrink-0">+{benefits.dailyRewardBonusPercent || 0}%</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-2 justify-end pt-2 border-t border-slate-200/50">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleEdit(tier)}
+                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded flex-1 text-sm font-bold"
+                                                >
+                                                    Sửa
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDelete(tier)}
+                                                    disabled={deletingId === tier._id}
+                                                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white flex-1 rounded text-sm font-bold disabled:opacity-60"
+                                                >
+                                                    {deletingId === tier._id ? 'Đang xóa...' : 'Xóa'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </>
                     )}
                 </div>
             </div>

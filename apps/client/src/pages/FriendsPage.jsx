@@ -6,9 +6,9 @@ import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { friendsApi } from '../services/friendsApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
-import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
+import { getPublicRoleLabel, getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
-const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png'
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const PARTY_SLOT_TOTAL = 6
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
@@ -474,13 +474,14 @@ export default function FriendsPage() {
     const renderTrainerIdentity = (userLike = {}, className = '') => {
         const userId = normalizeUserId(userLike?.userId)
         const vipTitle = getVipTitle(userLike)
+        const vipTitleImageUrl = getVipTitleImageUrl(userLike)
 
         return (
-            <div className={`flex items-center gap-2 min-w-0 ${className}`}>
+            <div className={`flex items-center gap-3 min-w-0 ${className}`}>
                 <button
                     type="button"
                     onClick={() => openTrainerModal(userLike)}
-                    className="w-9 h-9 rounded-full bg-blue-50 border border-blue-200 p-1 overflow-hidden shrink-0 hover:border-blue-400"
+                    className="w-16 h-16 rounded-full bg-blue-50 border border-blue-200 overflow-hidden shrink-0 hover:border-blue-400"
                     disabled={!userId}
                 >
                     <VipAvatar
@@ -489,8 +490,8 @@ export default function FriendsPage() {
                         fallback={DEFAULT_AVATAR}
                         alt={userLike?.username || 'Trainer'}
                         wrapperClassName="w-full h-full"
-                        imageClassName="w-full h-full object-contain pixelated"
-                        frameClassName="w-full h-full object-contain"
+                        imageClassName="w-full h-full object-cover rounded-full pixelated"
+                        frameClassName="w-full h-full object-cover rounded-full"
                     />
                 </button>
                 <button
@@ -499,14 +500,25 @@ export default function FriendsPage() {
                     className="text-left min-w-0"
                     disabled={!userId}
                 >
-                    <div className="text-sm font-bold text-slate-800 truncate hover:text-blue-700 hover:underline">
-                        {userLike?.username || 'Huấn Luyện Viên'}
-                    </div>
-                    {vipTitle && (
-                        <div className="text-[10px] font-bold text-amber-600 truncate max-w-[180px]">
-                            {vipTitle}
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <div className="text-xl font-bold text-slate-800 truncate hover:text-blue-700 hover:underline leading-none">
+                            {userLike?.username || 'Huấn Luyện Viên'}
                         </div>
-                    )}
+                        {vipTitleImageUrl ? (
+                            <img
+                                src={vipTitleImageUrl}
+                                alt={vipTitle || 'Danh hiệu VIP'}
+                                className="h-7 max-w-[190px] object-contain"
+                                onError={(event) => {
+                                    event.currentTarget.style.display = 'none'
+                                }}
+                            />
+                        ) : (vipTitle ? (
+                            <div className="text-xs font-bold text-amber-600 truncate max-w-[190px]">
+                                {vipTitle}
+                            </div>
+                        ) : null)}
+                    </div>
                     <div className="mt-0.5">
                         <PresenceBadge isOnline={Boolean(userLike?.isOnline)} />
                     </div>
@@ -813,7 +825,7 @@ export default function FriendsPage() {
                                         alt={selectedTrainer.username || 'Huấn luyện viên'}
                                         wrapperClassName="w-full h-full"
                                         imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
-                                        frameClassName="h-full w-full object-contain"
+                                        frameClassName="h-full w-full object-cover rounded-full"
                                         loading="eager"
                                     />
                                 </div>

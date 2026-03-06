@@ -4,7 +4,7 @@ import { gameApi } from '../services/gameApi'
 import VipAvatar from '../components/VipAvatar'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
-import { getVipTitle } from '../utils/vip'
+import { getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
@@ -108,6 +108,34 @@ export default function PokemonRankingsPage() {
         }
         const level = Math.max(1, Number(entry?.level || 1))
         return level * 10
+    }
+
+    const renderVipTitle = (userLike) => {
+        const vipTitle = getVipTitle(userLike)
+        const vipTitleImageUrl = getVipTitleImageUrl(userLike)
+
+        if (vipTitleImageUrl) {
+            return (
+                <img
+                    src={vipTitleImageUrl}
+                    alt={vipTitle || 'Danh hiệu VIP'}
+                    className="h-6 max-w-[130px] object-contain shrink-0"
+                    onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                    }}
+                />
+            )
+        }
+
+        if (vipTitle) {
+            return (
+                <span className="text-xs font-bold text-amber-600 truncate max-w-[130px] shrink-0">
+                    {vipTitle}
+                </span>
+            )
+        }
+
+        return null
     }
 
     if (loading && rankings.length === 0) {
@@ -223,31 +251,31 @@ export default function PokemonRankingsPage() {
                                                             avatar={entry.owner?.avatar}
                                                             fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"
                                                             alt={entry.owner?.username || 'Trainer'}
-                                                            wrapperClassName="h-8 w-8"
-                                                            imageClassName="h-8 w-8 rounded object-cover border border-blue-200"
-                                                            frameClassName="h-8 w-8 rounded object-cover"
+                                                            wrapperClassName="h-12 w-12"
+                                                            imageClassName="h-12 w-12 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-12 w-12 rounded object-cover"
                                                         />
-                                                        <button
-                                                            type="button"
-                                                            disabled={!hasProfile}
-                                                            onClick={() => openTrainerProfile({
-                                                                userId: entry.owner?._id,
-                                                                username: entry.owner?.username,
-                                                                avatar: entry.owner?.avatar,
-                                                                role: entry.owner?.role,
-                                                                vipTierLevel: entry.owner?.vipTierLevel,
-                                                                vipTierCode: entry.owner?.vipTierCode,
-                                                                vipBenefits: entry.owner?.vipBenefits,
-                                                            }, { returnTo: '/rankings/pokemon' })}
-                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
-                                                        >
-                                                            {entry.owner?.username || 'Không rõ'}
-                                                        </button>
-                                                        {getVipTitle(entry.owner) && (
-                                                            <span className="text-[10px] font-bold text-amber-600 truncate max-w-[140px]">
-                                                                {getVipTitle(entry.owner)}
-                                                            </span>
-                                                        )}
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={!hasProfile}
+                                                                    onClick={() => openTrainerProfile({
+                                                                        userId: entry.owner?._id,
+                                                                        username: entry.owner?.username,
+                                                                        avatar: entry.owner?.avatar,
+                                                                        role: entry.owner?.role,
+                                                                        vipTierLevel: entry.owner?.vipTierLevel,
+                                                                        vipTierCode: entry.owner?.vipTierCode,
+                                                                        vipBenefits: entry.owner?.vipBenefits,
+                                                                    }, { returnTo: '/rankings/pokemon' })}
+                                                                    className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
+                                                                >
+                                                                    {entry.owner?.username || 'Không rõ'}
+                                                                </button>
+                                                                {renderVipTitle(entry.owner)}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -289,31 +317,31 @@ export default function PokemonRankingsPage() {
                                                             avatar={entry.avatar}
                                                             fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"
                                                             alt={entry.username || 'Trainer'}
-                                                            wrapperClassName="h-8 w-8"
-                                                            imageClassName="h-8 w-8 rounded object-cover border border-blue-200"
-                                                            frameClassName="h-8 w-8 rounded object-cover"
+                                                            wrapperClassName="h-12 w-12"
+                                                            imageClassName="h-12 w-12 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-12 w-12 rounded object-cover"
                                                         />
-                                                        <button
-                                                            type="button"
-                                                            disabled={!hasProfile}
-                                                            onClick={() => openTrainerProfile({
-                                                                userId: entry.userId,
-                                                                username: entry.username,
-                                                                avatar: entry.avatar,
-                                                                role: entry.role,
-                                                                vipTierLevel: entry.vipTierLevel,
-                                                                vipTierCode: entry.vipTierCode,
-                                                                vipBenefits: entry.vipBenefits,
-                                                            }, { returnTo: '/rankings/pokemon' })}
-                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
-                                                        >
-                                                            {entry.username || 'Không rõ'}
-                                                        </button>
-                                                        {getVipTitle(entry) && (
-                                                            <span className="text-[10px] font-bold text-amber-600 truncate max-w-[140px]">
-                                                                {getVipTitle(entry)}
-                                                            </span>
-                                                        )}
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={!hasProfile}
+                                                                    onClick={() => openTrainerProfile({
+                                                                        userId: entry.userId,
+                                                                        username: entry.username,
+                                                                        avatar: entry.avatar,
+                                                                        role: entry.role,
+                                                                        vipTierLevel: entry.vipTierLevel,
+                                                                        vipTierCode: entry.vipTierCode,
+                                                                        vipBenefits: entry.vipBenefits,
+                                                                    }, { returnTo: '/rankings/pokemon' })}
+                                                                    className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
+                                                                >
+                                                                    {entry.username || 'Không rõ'}
+                                                                </button>
+                                                                {renderVipTitle(entry)}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">

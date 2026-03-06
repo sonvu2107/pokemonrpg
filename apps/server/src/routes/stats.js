@@ -8,6 +8,9 @@ import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
+const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
+const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
 const toDailyDateKey = (date = new Date()) => {
     const year = date.getFullYear()
@@ -407,7 +410,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 userId: String(user?._id || ''),
                 userIdLabel: `#${String(user?._id || '').slice(-7).toUpperCase()}`,
                 username: String(user?.username || '').trim() || 'Huấn Luyện Viên',
-                avatar: String(user?.avatar || '').trim(),
+                avatar: normalizeAvatarUrl(user?.avatar),
                 signature: String(user?.signature || '').trim(),
                 createdAt: toSafeIsoDate(user?.createdAt),
                 lastActive: toSafeIsoDate(user?.lastActive),
@@ -530,7 +533,7 @@ router.get('/online', authMiddleware, async (req, res) => {
             userIdLabel: `#${skip + index + 1}`,
             username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
             playTime: formatPlayTime(entry?.createdAt, now),
-            avatar: String(entry?.avatar || '').trim(),
+            avatar: normalizeAvatarUrl(entry?.avatar),
             signature: String(entry?.signature || '').trim(),
             createdAt: toSafeIsoDate(entry?.createdAt),
             lastActive: toSafeIsoDate(entry?.lastActive),

@@ -4,7 +4,7 @@ import { gameApi } from '../services/gameApi'
 import VipAvatar from '../components/VipAvatar'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
-import { getVipTitle } from '../utils/vip'
+import { getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -160,6 +160,33 @@ export default function RankingsPage() {
     }
 
     const numberFormat = (value) => Number(value || 0).toLocaleString('vi-VN')
+    const renderVipTitle = (userLike) => {
+        const vipTitle = getVipTitle(userLike)
+        const vipTitleImageUrl = getVipTitleImageUrl(userLike)
+
+        if (vipTitleImageUrl) {
+            return (
+                <img
+                    src={vipTitleImageUrl}
+                    alt={vipTitle || 'Danh hiệu VIP'}
+                    className="h-6 max-w-[140px] object-contain shrink-0"
+                    onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                    }}
+                />
+            )
+        }
+
+        if (vipTitle) {
+            return (
+                <div className="text-xs font-bold text-amber-600 truncate max-w-[140px] shrink-0">
+                    {vipTitle}
+                </div>
+            )
+        }
+
+        return null
+    }
 
     if (loading && rankings.length === 0) {
         return (
@@ -288,31 +315,29 @@ export default function RankingsPage() {
                                                             avatar={player.avatar}
                                                             fallback={DEFAULT_AVATAR}
                                                             alt={player.username || 'Player'}
-                                                            wrapperClassName="h-9 w-9"
-                                                            imageClassName="h-9 w-9 rounded object-cover border border-blue-200"
-                                                            frameClassName="h-9 w-9 rounded object-cover"
+                                                            wrapperClassName="h-12 w-12 md:h-14 md:w-14"
+                                                            imageClassName="h-12 w-12 md:h-14 md:w-14 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-12 w-12 md:h-14 md:w-14 rounded object-cover"
                                                         />
                                                         <div className="min-w-0">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openTrainerProfile({
-                                                                    userId: player.userId,
-                                                                    username: player.username,
-                                                                    avatar: player.avatar,
-                                                                    role: player.role,
-                                                                    vipTierLevel: player.vipTierLevel,
-                                                                    vipTierCode: player.vipTierCode,
-                                                                    vipBenefits: player.vipBenefits,
-                                                                }, { returnTo: defaultReturnTo })}
-                                                                className={`font-bold hover:underline ${getUsernameColor(player.rank)}`}
-                                                            >
-                                                                {player.username || 'Không rõ'}
-                                                            </button>
-                                                            {getVipTitle(player) && (
-                                                                <div className="text-[10px] font-bold text-amber-600 truncate max-w-[220px]">
-                                                                    {getVipTitle(player)}
-                                                                </div>
-                                                            )}
+                                                            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openTrainerProfile({
+                                                                        userId: player.userId,
+                                                                        username: player.username,
+                                                                        avatar: player.avatar,
+                                                                        role: player.role,
+                                                                        vipTierLevel: player.vipTierLevel,
+                                                                        vipTierCode: player.vipTierCode,
+                                                                        vipBenefits: player.vipBenefits,
+                                                                    }, { returnTo: defaultReturnTo })}
+                                                                    className={`font-bold hover:underline ${getUsernameColor(player.rank)}`}
+                                                                >
+                                                                    {player.username || 'Không rõ'}
+                                                                </button>
+                                                                {renderVipTitle(player)}
+                                                            </div>
                                                             <div className="text-xs text-slate-500">Cấp {numberFormat(player.level || 1)}</div>
                                                         </div>
                                                     </div>
@@ -330,31 +355,29 @@ export default function RankingsPage() {
                                                             avatar={player.avatar}
                                                             fallback={DEFAULT_AVATAR}
                                                             alt={player.username || 'Player'}
-                                                            wrapperClassName="h-9 w-9"
-                                                            imageClassName="h-9 w-9 rounded object-cover border border-blue-200"
-                                                            frameClassName="h-9 w-9 rounded object-cover"
+                                                            wrapperClassName="h-12 w-12 md:h-14 md:w-14"
+                                                            imageClassName="h-12 w-12 md:h-14 md:w-14 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-12 w-12 md:h-14 md:w-14 rounded object-cover"
                                                         />
                                                         <div className="min-w-0">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openTrainerProfile({
-                                                                    userId: player.userId,
-                                                                    username: player.username,
-                                                                    avatar: player.avatar,
-                                                                    role: player.role,
-                                                                    vipTierLevel: player.vipTierLevel,
-                                                                    vipTierCode: player.vipTierCode,
-                                                                    vipBenefits: player.vipBenefits,
-                                                                }, { returnTo: defaultReturnTo })}
-                                                                className={`hover:underline ${getUsernameColor(player.rank)}`}
-                                                            >
-                                                                {player.username}
-                                                            </button>
-                                                            {getVipTitle(player) && (
-                                                                <div className="text-[10px] font-bold text-amber-600 truncate max-w-[220px]">
-                                                                    {getVipTitle(player)}
-                                                                </div>
-                                                            )}
+                                                            <div className="flex items-center gap-2 min-w-0 flex-nowrap">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openTrainerProfile({
+                                                                        userId: player.userId,
+                                                                        username: player.username,
+                                                                        avatar: player.avatar,
+                                                                        role: player.role,
+                                                                        vipTierLevel: player.vipTierLevel,
+                                                                        vipTierCode: player.vipTierCode,
+                                                                        vipBenefits: player.vipBenefits,
+                                                                    }, { returnTo: defaultReturnTo })}
+                                                                    className={`hover:underline ${getUsernameColor(player.rank)}`}
+                                                                >
+                                                                    {player.username}
+                                                                </button>
+                                                                {renderVipTitle(player)}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>

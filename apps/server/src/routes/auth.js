@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcrypt'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 import { extractClientIp } from '../utils/ipUtils.js'
@@ -96,7 +97,19 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     }
 }
 
-const serializeAuthUser = (userLike) => {
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipBenefits(currentBenefitsLike)
+    const tier = normalizeVipBenefits(tierBenefitsLike)
+
+    return {
+        ...current,
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+        avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+    }
+}
+
+const serializeAuthUser = (userLike, vipBenefitsLike = null) => {
     if (!userLike) return null
     const adminPermissions = getEffectiveAdminPermissions(userLike)
 
@@ -113,7 +126,7 @@ const serializeAuthUser = (userLike) => {
         vipTierId: userLike?.vipTierId ? String(userLike.vipTierId) : null,
         vipTierLevel: Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0),
         vipTierCode: String(userLike?.vipTierCode || '').trim().toUpperCase(),
-        vipBenefits: normalizeVipBenefits(userLike.vipBenefits),
+        vipBenefits: normalizeVipBenefits(vipBenefitsLike || userLike.vipBenefits),
         hasRecoveryPin: Boolean(userLike.recoveryPinHash || userLike.recoveryPinUpdatedAt),
         recoveryPinUpdatedAt: userLike.recoveryPinUpdatedAt || null,
         adminPermissions,
@@ -502,11 +515,25 @@ router.get('/me', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const playerState = await PlayerState.findOne({ userId: user._id })
+        const [playerState, vipTier] = await Promise.all([
+            PlayerState.findOne({ userId: user._id }),
+            (() => {
+                if (user?.vipTierId) {
+                    return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
+                }
+                const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
+                if (vipTierLevel > 0) {
+                    return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
+                }
+                return Promise.resolve(null)
+            })(),
+        ])
+
+        const effectiveVipBenefits = mergeVipVisualBenefits(user?.vipBenefits, vipTier?.benefits)
 
         res.json({
             ok: true,
-            user: serializeAuthUser(user),
+            user: serializeAuthUser(user, effectiveVipBenefits),
             playerState: serializePlayerState(playerState),
         })
     } catch (error) {

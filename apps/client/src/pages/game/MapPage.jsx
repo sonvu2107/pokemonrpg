@@ -4,15 +4,88 @@ import { useAuth } from '../../context/AuthContext'
 import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
+import Modal from '../../components/Modal'
 import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 import { hasVipAutoSearchAccess } from '../../utils/vip'
-import { consumeVipAutoUse, getVipAutoLimitConfig, getVipAutoUsageToday } from '../../utils/vipAutoLimits'
+import { getVipAutoLimitConfig } from '../../utils/vipAutoLimits'
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const sanitizeObjectIdToken = (value) => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    if (/^[a-f\d]{24}$/i.test(raw)) return raw
+    const objectIdMatch = raw.match(/ObjectId\(["']?([a-f\d]{24})["']?\)/i)
+    if (objectIdMatch?.[1]) return objectIdMatch[1]
+    return ''
+}
+
+const extractObjectIdLike = (value) => {
+    if (typeof value === 'string') return sanitizeObjectIdToken(value)
+    if (typeof value === 'number' && Number.isFinite(value)) return sanitizeObjectIdToken(String(value))
+    if (value && typeof value === 'object') {
+        if (typeof value.$oid === 'string') return sanitizeObjectIdToken(value.$oid)
+        if (typeof value._id === 'string') return sanitizeObjectIdToken(value._id)
+        if (typeof value.id === 'string') return sanitizeObjectIdToken(value.id)
+        if (value._id && typeof value._id === 'object') {
+            const nestedId = extractObjectIdLike(value._id)
+            if (nestedId) return nestedId
+        }
+        if (typeof value.toHexString === 'function') {
+            try {
+                return sanitizeObjectIdToken(value.toHexString())
+            } catch {
+                return ''
+            }
+        }
+    }
+    return ''
+}
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 10
 const SEARCH_BUTTON_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 650
+const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 10
+const shuffleList = (list = []) => {
+    const copied = Array.isArray(list) ? [...list] : []
+    for (let index = copied.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1))
+        const tmp = copied[index]
+        copied[index] = copied[swapIndex]
+        copied[swapIndex] = tmp
+    }
+    return copied
+}
+
+const isMobileClient = () => {
+    if (typeof window === 'undefined') return false
+    return Number(window.innerWidth || 1024) <= 768
+}
+
+const createSearchChallenge = () => {
+    const left = 5 + Math.floor(Math.random() * 20)
+    const right = 3 + Math.floor(Math.random() * 15)
+    const useAddition = Math.random() < 0.5
+    const answer = useAddition ? (left + right) : Math.max(1, left - right)
+    const prompt = useAddition
+        ? `Mật mã Pokeball: ${left} + ${right} = ?`
+        : `Mật mã Pokeball: ${left} - ${right} = ?`
+    const wrongCandidates = [
+        answer + 1,
+        answer + 2,
+        Math.max(0, answer - 1),
+        Math.max(0, answer - 2),
+        answer + 4,
+    ].filter((value) => value !== answer)
+    const uniqueWrongs = [...new Set(wrongCandidates)].slice(0, 3)
+    const options = shuffleList([answer, ...uniqueWrongs])
+
+    return {
+        id: Date.now(),
+        prompt,
+        answer,
+        options,
+    }
+}
 const AUTO_SEARCH_INTERVAL_OPTIONS = [
     { value: 900, label: 'Nhanh (0.9s)' },
     { value: 1200, label: 'Vừa (1.2s)' },
@@ -40,6 +113,14 @@ const DEFAULT_AUTO_ACTION_BY_RARITY = {
     b: 'battle',
     c: 'battle',
     d: 'battle',
+}
+
+const isSameAutoActionByRarity = (left = {}, right = {}) => {
+    return AUTO_SEARCH_RARITY_KEYS.every((rarityKey) => {
+        const leftValue = String(left?.[rarityKey] || '').trim().toLowerCase()
+        const rightValue = String(right?.[rarityKey] || '').trim().toLowerCase()
+        return leftValue === rightValue
+    })
 }
 
 const isSearchDebugModeEnabled = () => {
@@ -78,24 +159,6 @@ const isEventMapLike = (mapLike = null) => {
     return EVENT_MAP_PATTERN.test(slug) || EVENT_MAP_PATTERN.test(name)
 }
 
-const normalizeRarityToken = (value = '') => {
-    const normalized = String(value || '').trim().toLowerCase()
-    return AUTO_SEARCH_RARITY_KEYS.includes(normalized) ? normalized : 'd'
-}
-
-const resolveEncounterFormId = (encounterLike = null) => {
-    return normalizeFormId(encounterLike?.pokemon?.formId || encounterLike?.pokemon?.form?.formId || 'normal')
-}
-
-const isFormAllowedForCatch = (formId = 'normal', mode = 'all') => {
-    const normalizedFormId = normalizeFormId(formId)
-    const normalizedMode = String(mode || 'all').trim().toLowerCase()
-    if (normalizedMode === 'all') return true
-    if (normalizedMode === 'normal') return normalizedFormId === 'normal'
-    if (normalizedMode === 'variant') return normalizedFormId !== 'normal'
-    return true
-}
-
 export default function MapPage() {
     const { slug } = useParams()
     const { user } = useAuth()
@@ -127,12 +190,17 @@ export default function MapPage() {
         totalSearches: 0,
     })
     const [autoSearchEnabled, setAutoSearchEnabled] = useState(false)
-    const [autoSearchStartedAtMs, setAutoSearchStartedAtMs] = useState(0)
     const [autoSearchIntervalMs, setAutoSearchIntervalMs] = useState(DEFAULT_AUTO_SEARCH_INTERVAL_MS)
     const [autoActionByRarity, setAutoActionByRarity] = useState(DEFAULT_AUTO_ACTION_BY_RARITY)
     const [autoCatchFormMode, setAutoCatchFormMode] = useState('all')
     const [autoCatchBallId, setAutoCatchBallId] = useState('')
+    const [autoSearchServerStatus, setAutoSearchServerStatus] = useState('')
+    const [autoSearchServerLogs, setAutoSearchServerLogs] = useState([])
+    const [autoSearchUsageToday, setAutoSearchUsageToday] = useState(0)
+    const [autoSearchUsesPerDayLimit, setAutoSearchUsesPerDayLimit] = useState(0)
     const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
+    const [searchChallenge, setSearchChallenge] = useState(null)
+    const [searchChallengeError, setSearchChallengeError] = useState('')
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
     const searchScrollYRef = useRef(0)
     const shouldRestoreSearchScrollRef = useRef(false)
@@ -164,19 +232,22 @@ export default function MapPage() {
     const unlockRemainingLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
     const isCurrentMapEvent = isEventMapLike(map)
     const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
-    const normalizedAuthUserId = String(user?.id || user?._id || '').trim()
     const autoSearchLimitConfig = getVipAutoLimitConfig(user, 'map-search')
     const autoSearchDurationLimitMinutes = autoSearchLimitConfig.durationMinutes
-    const autoSearchUsesPerDayLimit = autoSearchLimitConfig.usesPerDay
-    const autoSearchUsageToday = getVipAutoUsageToday(normalizedAuthUserId, 'map-search').used
     const availablePokeballs = (Array.isArray(inventory) ? inventory : [])
         .filter((entry) => entry?.item?.type === 'pokeball' && Number(entry?.quantity) > 0)
-    const resolvedAutoCatchBallEntry = availablePokeballs.find((entry) => String(entry?.item?._id || '') === String(autoCatchBallId || ''))
+    const resolvedAutoCatchBallEntry = availablePokeballs.find((entry) => {
+        return extractObjectIdLike(entry?.item?._id || entry?.item?.id || entry?.item) === String(autoCatchBallId || '').trim()
+    })
         || availablePokeballs[0]
         || null
     const hasCatchActionConfigured = AUTO_SEARCH_RARITY_KEYS.some((rarityKey) => {
         return String(autoActionByRarity?.[rarityKey] || '').trim().toLowerCase() === 'catch'
     })
+
+    useEffect(() => {
+        setAutoSearchUsesPerDayLimit(autoSearchLimitConfig.usesPerDay)
+    }, [autoSearchLimitConfig.usesPerDay])
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -211,6 +282,8 @@ export default function MapPage() {
         setAutoSearchEnabled(false)
         searchSpamCountRef.current = 0
         setSearchButtonOffset({ x: 0, y: 0 })
+        setSearchChallenge(null)
+        setSearchChallengeError('')
     }, [slug])
 
     useEffect(() => {
@@ -320,6 +393,34 @@ export default function MapPage() {
         setSearchButtonOffset({ x: 0, y: 0 })
     }
 
+    const shouldUseSearchChallenge = () => {
+        return !autoSearchEnabled && isMobileClient()
+    }
+
+    const openSearchChallenge = () => {
+        setSearchChallenge(createSearchChallenge())
+        setSearchChallengeError('')
+    }
+
+    const handleSearchChallengeAnswer = (selectedValue) => {
+        if (!searchChallenge) return
+
+        const numericChoice = Number(selectedValue)
+        const correctAnswer = Number(searchChallenge.answer)
+
+        if (numericChoice === correctAnswer) {
+            setSearchChallenge(null)
+            setSearchChallengeError('')
+            searchSpamCountRef.current = 0
+            resetSearchButtonOffset()
+            setLastResult({ encountered: false, message: 'Chú ý: Xác minh thành công, bạn có thể tiếp tục tìm kiếm.' })
+            return
+        }
+
+        setSearchChallengeError('Sai mật mã. Hãy thử lại câu khác.')
+        setSearchChallenge(createSearchChallenge())
+    }
+
     const scheduleSearchButtonReposition = () => {
         if (typeof window === 'undefined') return
 
@@ -356,6 +457,18 @@ export default function MapPage() {
         const nextSpamCount = searchSpamCountRef.current + 1
         searchSpamCountRef.current = nextSpamCount
 
+        if (shouldUseSearchChallenge()) {
+            const shouldTriggerChallenge = nextSpamCount % SEARCH_MOBILE_CHALLENGE_THRESHOLD === 0
+            if (!searchChallenge && shouldTriggerChallenge) {
+                openSearchChallenge()
+            }
+
+            if (searchChallenge || shouldTriggerChallenge) {
+                setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
+                return
+            }
+        }
+
         const isButtonCurrentlyShifted = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
         if (!isButtonCurrentlyShifted && (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
             nudgeSearchButton()
@@ -371,6 +484,11 @@ export default function MapPage() {
     }
 
     const handleSearch = async () => {
+        if (searchChallenge) {
+            setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
+            return
+        }
+
         if (searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0) {
             resetSearchButtonOffset()
         }
@@ -408,6 +526,8 @@ export default function MapPage() {
                 setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
                 searchSpamCountRef.current = 0
                 resetSearchButtonOffset()
+                setSearchChallenge(null)
+                setSearchChallengeError('')
                 return
             }
 
@@ -417,6 +537,8 @@ export default function MapPage() {
 
             setLastResult(res)
             if (res.encountered) {
+                setSearchChallenge(null)
+                setSearchChallengeError('')
                 const encounterSummary = buildEncounterSummary(res)
                 if (encounterSummary) {
                     setLastEncounterSummary(encounterSummary)
@@ -471,97 +593,84 @@ export default function MapPage() {
         }
     }
 
-    const resolveAutoActionForEncounter = (encounterLike = null) => {
-        const rarity = normalizeRarityToken(encounterLike?.pokemon?.rarity)
-        const configuredAction = String(autoActionByRarity?.[rarity] || 'battle').trim().toLowerCase()
-        const encounterFormId = resolveEncounterFormId(encounterLike)
-        const catchAllowedByForm = isFormAllowedForCatch(encounterFormId, autoCatchFormMode)
-
-        if (configuredAction === 'catch' && !catchAllowedByForm) {
-            return 'battle'
+    const applyAutoSearchStatus = (status = {}) => {
+        setAutoSearchEnabled(Boolean(status?.enabled))
+        setAutoSearchIntervalMs(Math.max(900, Number(status?.searchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS))
+        const nextActionByRarity = {
+            ...DEFAULT_AUTO_ACTION_BY_RARITY,
+            ...(status?.actionByRarity || {}),
         }
-        if (configuredAction === 'run') return 'run'
-        if (configuredAction === 'catch') return 'catch'
-        return 'battle'
+        setAutoActionByRarity((prev) => (isSameAutoActionByRarity(prev, nextActionByRarity) ? prev : nextActionByRarity))
+        setAutoCatchFormMode(String(status?.catchFormMode || 'all').trim().toLowerCase() || 'all')
+        setAutoCatchBallId(String(status?.catchBallItemId || '').trim())
+        setAutoSearchUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
+        setAutoSearchUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || autoSearchLimitConfig.usesPerDay || 0))
+
+        const logs = Array.isArray(status?.logs) ? status.logs : []
+        setAutoSearchServerLogs(logs)
+        setAutoSearchServerStatus(
+            String(logs[0]?.message || '').trim()
+            || (Boolean(status?.enabled)
+                ? 'Auto tìm kiếm đang chạy ngầm ở server.'
+                : 'Auto tìm kiếm đang tắt.')
+        )
     }
 
     useEffect(() => {
-        if (!autoSearchEnabled || !isCurrentMapEvent) return
-        setAutoSearchEnabled(false)
-        setLastResult({
-            encountered: false,
-            message: 'Auto tìm kiếm không áp dụng cho bản đồ event.',
-        })
-    }, [autoSearchEnabled, isCurrentMapEvent])
+        if (!user) return undefined
+        let cancelled = false
 
-    useEffect(() => {
-        if (!autoSearchEnabled || canUseVipAutoSearch) return
-        setAutoSearchEnabled(false)
-        setActionMessage('Tài khoản hiện không có quyền lợi VIP để dùng auto tìm kiếm.')
-    }, [autoSearchEnabled, canUseVipAutoSearch])
-
-    useEffect(() => {
-        if (!autoSearchEnabled) {
-            if (autoSearchStartedAtMs !== 0) {
-                setAutoSearchStartedAtMs(0)
+        const syncAutoSearchStatus = async () => {
+            try {
+                const statusRes = await gameApi.getAutoSearchStatus()
+                if (cancelled) return
+                applyAutoSearchStatus(statusRes?.autoSearch || {})
+            } catch (error) {
+                if (!cancelled) {
+                    setAutoSearchServerStatus(String(error?.message || 'Không thể tải trạng thái auto tìm kiếm.'))
+                }
             }
-            return
         }
 
-        if (!autoSearchStartedAtMs) {
-            setAutoSearchStartedAtMs(Date.now())
-        }
-    }, [autoSearchEnabled, autoSearchStartedAtMs])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return undefined
-        if (!autoSearchEnabled) return undefined
-        if (autoSearchDurationLimitMinutes <= 0) return undefined
-
-        const startedAt = autoSearchStartedAtMs || Date.now()
-        const limitMs = autoSearchDurationLimitMinutes * 60 * 1000
-        const elapsedMs = Date.now() - startedAt
-        const remainingMs = limitMs - elapsedMs
-
-        if (remainingMs <= 0) {
-            setAutoSearchEnabled(false)
-            setActionMessage('Đã hết thời gian dùng auto tìm kiếm theo gói VIP.')
-            return undefined
-        }
-
-        const timer = window.setTimeout(() => {
-            setAutoSearchEnabled(false)
-            setActionMessage('Đã hết thời gian dùng auto tìm kiếm theo gói VIP.')
-        }, remainingMs)
+        syncAutoSearchStatus()
+        const timer = window.setInterval(syncAutoSearchStatus, 5000)
 
         return () => {
-            window.clearTimeout(timer)
+            cancelled = true
+            window.clearInterval(timer)
         }
-    }, [autoSearchEnabled, autoSearchStartedAtMs, autoSearchDurationLimitMinutes])
+    }, [user?.id, slug])
 
     useEffect(() => {
-        if (typeof window === 'undefined') return undefined
-        if (!canUseVipAutoSearch || !autoSearchEnabled || isCurrentMapEvent || isLocked || searching || encounter || actionLoading) return undefined
+        if (!user || !autoSearchEnabled) return undefined
 
-        const normalizedDelay = Math.max(900, Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS)
-        const timer = window.setTimeout(() => {
-            handleSearch()
-        }, normalizedDelay)
+        const timer = window.setTimeout(async () => {
+            try {
+                const res = await gameApi.updateAutoSearchSettings({
+                    enabled: true,
+                    mapSlug: slug,
+                    searchIntervalMs: Math.max(900, Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
+                    actionByRarity: autoActionByRarity,
+                    catchFormMode: autoCatchFormMode,
+                    catchBallItemId: String(autoCatchBallId || '').trim(),
+                })
+                applyAutoSearchStatus(res?.autoSearch || {})
+            } catch (error) {
+                setActionMessage(String(error?.message || 'Không thể đồng bộ cấu hình auto tìm kiếm.'))
+            }
+        }, 500)
 
         return () => {
             window.clearTimeout(timer)
         }
     }, [
+        user?.id,
         autoSearchEnabled,
-        canUseVipAutoSearch,
-        autoSearchIntervalMs,
-        isCurrentMapEvent,
-        isLocked,
-        searching,
-        encounter,
-        actionLoading,
         slug,
-        handleSearch,
+        autoSearchIntervalMs,
+        autoActionByRarity,
+        autoCatchFormMode,
+        autoCatchBallId,
     ])
 
     const handleAttack = async () => {
@@ -609,10 +718,8 @@ export default function MapPage() {
     }
 
     const handleUseBall = async (forcedBallId = '') => {
-        const normalizedForcedBallId = (typeof forcedBallId === 'string' || typeof forcedBallId === 'number')
-            ? String(forcedBallId).trim()
-            : ''
-        const resolvedBallId = normalizedForcedBallId || String(selectedBallId || '').trim()
+        const normalizedForcedBallId = extractObjectIdLike(forcedBallId)
+        const resolvedBallId = normalizedForcedBallId || extractObjectIdLike(selectedBallId)
         if (!encounter?.id || !resolvedBallId) return
         try {
             setActionLoading(true)
@@ -659,62 +766,6 @@ export default function MapPage() {
             setActionLoading(false)
         }
     }
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return undefined
-        if (!canUseVipAutoSearch || !autoSearchEnabled || isCurrentMapEvent || isLocked || searching || actionLoading || !encounter) return undefined
-
-        const resolvedAction = resolveAutoActionForEncounter(encounter)
-        const actionDelay = Math.max(320, Math.floor((Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS) * 0.5))
-
-        const timer = window.setTimeout(() => {
-            if (resolvedAction === 'catch') {
-                if (!resolvedAutoCatchBallEntry?.item?._id) {
-                    setAutoSearchEnabled(false)
-                    setActionMessage('Đã hết bóng để auto bắt. Auto tìm kiếm tự dừng.')
-                    return
-                }
-
-                const ballId = String(resolvedAutoCatchBallEntry.item._id)
-                setSelectedBallId(ballId)
-                handleUseBall(ballId)
-                return
-            }
-
-            if (resolvedAction === 'run') {
-                handleRun()
-                return
-            }
-
-            if (!playerBattle) {
-                setAutoSearchEnabled(false)
-                setActionMessage('Không có Pokemon trong đội để auto chiến đấu. Auto tìm kiếm tự dừng.')
-                return
-            }
-
-            handleAttack()
-        }, actionDelay)
-
-        return () => {
-            window.clearTimeout(timer)
-        }
-    }, [
-        autoSearchEnabled,
-        canUseVipAutoSearch,
-        isCurrentMapEvent,
-        isLocked,
-        searching,
-        actionLoading,
-        encounter,
-        autoSearchIntervalMs,
-        autoActionByRarity,
-        autoCatchFormMode,
-        resolvedAutoCatchBallEntry,
-        playerBattle,
-        handleUseBall,
-        handleRun,
-        handleAttack,
-    ])
 
 
     if (loading) return <div className="text-center py-8 text-blue-900 font-bold">Loading...</div>
@@ -1034,54 +1085,65 @@ export default function MapPage() {
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        if (autoSearchEnabled) {
-                                            setAutoSearchEnabled(false)
-                                            setActionMessage('Đã tắt auto tìm kiếm.')
-                                            return
-                                        }
+                                    onClick={async () => {
+                                        try {
+                                            if (autoSearchEnabled) {
+                                                const res = await gameApi.updateAutoSearchSettings({
+                                                    enabled: false,
+                                                    mapSlug: slug,
+                                                    searchIntervalMs: Math.max(900, Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
+                                                    actionByRarity: autoActionByRarity,
+                                                    catchFormMode: autoCatchFormMode,
+                                                    catchBallItemId: String(autoCatchBallId || '').trim(),
+                                                })
+                                                applyAutoSearchStatus(res?.autoSearch || {})
+                                                setActionMessage('Đã tắt auto tìm kiếm.')
+                                                return
+                                            }
 
-                                        if (!canUseVipAutoSearch) {
-                                            setActionMessage('Chỉ tài khoản VIP mới có thể bật auto tìm kiếm.')
-                                            return
-                                        }
+                                            if (!canUseVipAutoSearch) {
+                                                setActionMessage('Chỉ tài khoản VIP mới có thể bật auto tìm kiếm.')
+                                                return
+                                            }
 
-                                        if (isCurrentMapEvent) {
-                                            setLastResult({ encountered: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
-                                            return
-                                        }
+                                            if (isCurrentMapEvent) {
+                                                setLastResult({ encountered: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
+                                                return
+                                            }
 
-                                        if (isLocked) {
-                                            setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Không thể bật auto.' })
-                                            return
-                                        }
+                                            if (isLocked) {
+                                                setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Không thể bật auto.' })
+                                                return
+                                            }
 
-                                        if (encounter) {
-                                            setActionMessage('Đang có Pokemon hoang dã. Hãy xử lý trận hiện tại trước khi bật auto.')
-                                            return
-                                        }
+                                            if (encounter) {
+                                                setActionMessage('Đang có Pokemon hoang dã. Hãy xử lý trận hiện tại trước khi bật auto.')
+                                                return
+                                            }
 
-                                        if (hasCatchActionConfigured && !resolvedAutoCatchBallEntry?.item?._id) {
-                                            setActionMessage('Có cấu hình auto bắt nhưng không có bóng. Vui lòng chuẩn bị bóng trước khi bật auto.')
-                                            return
-                                        }
+                                            if (hasCatchActionConfigured && !resolvedAutoCatchBallEntry?.item?._id && !autoCatchBallId) {
+                                                setActionMessage('Có cấu hình auto bắt nhưng không có bóng. Vui lòng chuẩn bị bóng trước khi bật auto.')
+                                                return
+                                            }
 
-                                        const consumeResult = consumeVipAutoUse(
-                                            normalizedAuthUserId,
-                                            'map-search',
-                                            autoSearchUsesPerDayLimit
-                                        )
-                                        if (!consumeResult.ok) {
-                                            setActionMessage(`Đã hết lượt dùng auto tìm kiếm trong hôm nay (${consumeResult.used}/${consumeResult.limit}).`)
-                                            return
-                                        }
+                                            const res = await gameApi.updateAutoSearchSettings({
+                                                enabled: true,
+                                                mapSlug: slug,
+                                                searchIntervalMs: Math.max(900, Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
+                                                actionByRarity: autoActionByRarity,
+                                                catchFormMode: autoCatchFormMode,
+                                                catchBallItemId: String(autoCatchBallId || '').trim(),
+                                            })
+                                            applyAutoSearchStatus(res?.autoSearch || {})
 
-                                        setAutoSearchEnabled(true)
-                                        setAutoSearchStartedAtMs(Date.now())
-                                        if (Number.isFinite(consumeResult.remaining)) {
-                                            setActionMessage(`Đã bật auto tìm kiếm. Còn ${consumeResult.remaining} lượt trong hôm nay.`)
-                                        } else {
-                                            setActionMessage('Đã bật auto tìm kiếm.')
+                                            const remaining = Number(res?.autoSearch?.daily?.remaining)
+                                            if (Number.isFinite(remaining)) {
+                                                setActionMessage(`Đã bật auto tìm kiếm. Còn ${remaining} lượt trong hôm nay.`)
+                                            } else {
+                                                setActionMessage('Đã bật auto tìm kiếm. Auto sẽ chạy ngầm ở server.')
+                                            }
+                                        } catch (error) {
+                                            setActionMessage(String(error?.message || 'Không thể cập nhật auto tìm kiếm.'))
                                         }
                                     }}
                                     disabled={isLocked || !canUseVipAutoSearch}
@@ -1192,6 +1254,24 @@ export default function MapPage() {
                                             ? `Đang auto: tìm mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng nếu gặp rule auto bắt.`
                                             : 'Auto đang tắt. Bạn vẫn có thể tìm thủ công.'))}
                             </div>
+
+                            {autoSearchServerStatus && (
+                                <div className="text-[10px] font-semibold text-slate-600">
+                                    Trạng thái auto ngầm: {autoSearchServerStatus}
+                                </div>
+                            )}
+
+                            {autoSearchServerLogs.length > 0 && (
+                                <div className="border border-slate-200 rounded bg-white p-2 space-y-1 max-h-24 overflow-y-auto">
+                                    {autoSearchServerLogs.slice(0, 4).map((entry) => (
+                                        <div key={entry._id || entry.id} className={`text-[10px] ${entry.type === 'success'
+                                            ? 'text-emerald-700'
+                                            : (entry.type === 'error' ? 'text-rose-700' : (entry.type === 'warn' ? 'text-amber-700' : 'text-slate-600'))}`}>
+                                            • {entry.message}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1239,6 +1319,8 @@ export default function MapPage() {
                                     {inventory
                                         .filter((entry) => entry.item?.type === 'pokeball' && entry.quantity > 0)
                                         .map((entry) => {
+                                            const optionBallId = extractObjectIdLike(entry?.item?._id || entry?.item?.id || entry?.item)
+                                            if (!optionBallId) return null
                                             const baseChance = calcCatchChance({
                                                 catchRate: encounter?.pokemon?.catchRate,
                                                 hp: encounter?.hp,
@@ -1247,7 +1329,7 @@ export default function MapPage() {
                                             const finalChance = getBallCatchChance(entry.item, baseChance)
                                             const percent = Math.round(finalChance * 100)
                                             return (
-                                                <option key={entry.item._id} value={entry.item._id}>
+                                                <option key={optionBallId} value={optionBallId}>
                                                     {entry.item.name} (x{entry.quantity}) - ~{percent}%
                                                 </option>
                                             )
@@ -1292,11 +1374,43 @@ export default function MapPage() {
                 </div>
 
             </div>
+
+            {searchChallenge && (
+                <Modal
+                    isOpen
+                    onClose={() => {}}
+                    title="Xác minh thao tác"
+                    maxWidth="sm"
+                    showCloseButton={false}
+                >
+                    <div className="space-y-4" key={searchChallenge.id}>
+                        <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-3 text-center">
+                            <div className="text-[11px] font-black uppercase tracking-wide text-blue-700">Kiểm tra anti auto click</div>
+                            <div className="mt-2 text-sm font-bold text-slate-800">{searchChallenge.prompt}</div>
+                            <div className="mt-1 text-xs text-slate-600">Chọn đáp án đúng để tiếp tục tìm kiếm.</div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            {searchChallenge.options.map((option) => (
+                                <button
+                                    key={`${searchChallenge.id}-${option}`}
+                                    type="button"
+                                    onClick={() => handleSearchChallengeAnswer(option)}
+                                    className="rounded border-2 border-slate-300 bg-white py-2 text-sm font-bold text-slate-800 hover:border-blue-400 hover:bg-blue-50"
+                                >
+                                    {option}
+                                </button>
+                            ))}
+                        </div>
+
+                        {searchChallengeError && (
+                            <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">
+                                {searchChallengeError}
+                            </div>
+                        )}
+                    </div>
+                </Modal>
+            )}
         </div>
     )
 }
-
-
-
-
-

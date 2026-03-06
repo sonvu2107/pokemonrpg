@@ -30,6 +30,11 @@ export const getVipTitle = (userLike) => {
     return String(userLike?.vipBenefits?.title || '').trim().slice(0, 80)
 }
 
+export const getVipTitleImageUrl = (userLike) => {
+    if (!isVipRole(userLike)) return ''
+    return String(userLike?.vipBenefits?.titleImageUrl || '').trim()
+}
+
 export const getVipAvatarFrameUrl = (userLike) => {
     if (!isVipRole(userLike)) return ''
     return String(userLike?.vipBenefits?.avatarFrameUrl || '').trim()

@@ -2,9 +2,9 @@ import { Link } from 'react-router-dom'
 import Modal from './Modal'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import VipAvatar from './VipAvatar'
-import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
+import { getPublicRoleLabel, getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
-const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png'
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const PARTY_SLOT_TOTAL = 6
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
@@ -71,6 +71,21 @@ export default function TrainerProfileModal({
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(trainer?.signature || '').trim()
     const vipTitle = getVipTitle(trainer)
+    const vipTitleImageUrl = getVipTitleImageUrl(trainer)
+    const vipTitleValue = vipTitleImageUrl
+        ? (
+            <div className="flex items-center">
+                <img
+                    src={vipTitleImageUrl}
+                    alt={vipTitle || 'Danh hiệu VIP'}
+                    className="h-7 max-w-[180px] object-contain"
+                    onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                    }}
+                />
+            </div>
+        )
+        : '--'
 
     const selectedParty = Array.isArray(trainer?.party)
         ? trainer.party.slice(0, PARTY_SLOT_TOTAL)
@@ -102,10 +117,23 @@ export default function TrainerProfileModal({
                                 alt={trainer.username || 'Huấn luyện viên'}
                                 wrapperClassName="w-full h-full"
                                 imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
-                                frameClassName="h-full w-full object-contain"
+                                frameClassName="h-full w-full object-cover rounded-full"
                                 loading="eager"
                             />
                         </div>
+                        {vipTitleImageUrl && (
+                            <div className="mb-3 flex flex-col items-center gap-1">
+                                <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wide">Danh hiệu VIP</div>
+                                <img
+                                    src={vipTitleImageUrl}
+                                    alt={vipTitle || 'Danh hiệu VIP'}
+                                    className="h-9 max-w-[240px] object-contain"
+                                    onError={(event) => {
+                                        event.currentTarget.style.display = 'none'
+                                    }}
+                                />
+                            </div>
+                        )}
                         <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                             Hành động
                         </div>
@@ -170,7 +198,7 @@ export default function TrainerProfileModal({
                         <ProfileInfoRow label="ID Người Chơi" value={trainer.userIdLabel || '???'} isOdd={false} />
                         <ProfileInfoRow label="Tên Nhân Vật" value={trainer.username || 'Huấn Luyện Viên'} isOdd={true} />
                         <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(trainer)} isOdd={false} />
-                        <ProfileInfoRow label="Danh hiệu VIP" value={vipTitle || '--'} isOdd={true} />
+                        <ProfileInfoRow label="Danh hiệu VIP" value={vipTitleValue} isOdd={true} />
                         <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />
                         <ProfileInfoRow
                             label="Kinh Nghiệm"

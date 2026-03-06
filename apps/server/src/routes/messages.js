@@ -5,6 +5,9 @@ import PlayerState from '../models/PlayerState.js'
 import { authMiddleware as auth } from '../middleware/auth.js'
 
 const router = express.Router()
+const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+
+const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
 const normalizeVipBenefits = (vipBenefitsLike = {}) => {
   const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
@@ -118,7 +121,7 @@ router.post('/global', auth, async (req, res) => {
         username: user.username,
         role: user.role || 'user',
         level: playerState?.level || 1,
-        avatar: user.avatar || '',
+        avatar: normalizeAvatarUrl(user?.avatar),
         vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
         vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
         vipBenefits: normalizeVipBenefits(user?.vipBenefits),

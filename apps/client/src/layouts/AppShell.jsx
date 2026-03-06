@@ -189,18 +189,18 @@ export default function AppShell() {
                             {user && (
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
                                     <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-b from-blue-100 to-white flex items-center justify-center shadow-md overflow-hidden border-2 border-blue-300 shrink-0 p-0.5">
-                                            <VipAvatar
-                                                userLike={user}
-                                                avatar={mobileProfile.avatar}
-                                                fallback={DEFAULT_AVATAR}
-                                                alt="Avatar"
-                                                wrapperClassName="w-full h-full"
-                                                imageClassName="w-full h-full object-contain pixelated"
-                                                frameClassName="w-full h-full object-contain"
-                                                loading="eager"
-                                            />
-                                        </div>
+                                    <div className="w-14 h-14 rounded-full flex items-center justify-center shadow-md overflow-hidden shrink-0">
+                                        <VipAvatar
+                                            userLike={user}
+                                            avatar={mobileProfile.avatar}
+                                            fallback={DEFAULT_AVATAR}
+                                            alt="Avatar"
+                                            wrapperClassName="w-full h-full"
+                                            imageClassName="w-full h-full object-cover rounded-full pixelated"
+                                            frameClassName="w-full h-full object-cover rounded-full scale-[1.35]"
+                                            loading="eager"
+                                        />
+                                    </div>
                                         <div>
                                             <div className="font-bold text-slate-800 text-base">{user.username}</div>
                                             <div className="flex gap-2 text-xs">

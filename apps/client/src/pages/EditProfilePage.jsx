@@ -177,6 +177,7 @@ export default function EditProfilePage() {
                             <ImageUpload
                                 label="Ảnh Đại Diện"
                                 currentImage={formData.avatar}
+                                previewRounded
                                 onUploadSuccess={(url) => setFormData({ ...formData, avatar: url })}
                             />
                         </div>

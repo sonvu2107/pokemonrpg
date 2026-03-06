@@ -169,6 +169,199 @@ const userSchema = new mongoose.Schema(
             type: [String],
             default: [],
         },
+        autoSearch: {
+            enabled: {
+                type: Boolean,
+                default: false,
+            },
+            mapSlug: {
+                type: String,
+                default: '',
+                trim: true,
+                lowercase: true,
+            },
+            searchIntervalMs: {
+                type: Number,
+                default: 1200,
+                min: 900,
+                max: 10000,
+            },
+            actionByRarity: {
+                sss: { type: String, default: 'catch', trim: true, lowercase: true },
+                ss: { type: String, default: 'catch', trim: true, lowercase: true },
+                s: { type: String, default: 'catch', trim: true, lowercase: true },
+                a: { type: String, default: 'battle', trim: true, lowercase: true },
+                b: { type: String, default: 'battle', trim: true, lowercase: true },
+                c: { type: String, default: 'battle', trim: true, lowercase: true },
+                d: { type: String, default: 'battle', trim: true, lowercase: true },
+            },
+            catchFormMode: {
+                type: String,
+                default: 'all',
+                trim: true,
+                lowercase: true,
+            },
+            catchBallItemId: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            startedAt: {
+                type: Date,
+                default: null,
+            },
+            dayKey: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            dayCount: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000000,
+            },
+            dayLimit: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000000,
+            },
+            lastAction: {
+                action: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                result: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                reason: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                targetId: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                at: {
+                    type: Date,
+                    default: null,
+                },
+            },
+            logs: {
+                type: [
+                    {
+                        message: {
+                            type: String,
+                            default: '',
+                            trim: true,
+                            maxlength: 300,
+                        },
+                        type: {
+                            type: String,
+                            default: 'info',
+                            trim: true,
+                        },
+                        at: {
+                            type: Date,
+                            default: Date.now,
+                        },
+                    },
+                ],
+                default: [],
+            },
+        },
+        autoTrainer: {
+            enabled: {
+                type: Boolean,
+                default: false,
+            },
+            trainerId: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            attackIntervalMs: {
+                type: Number,
+                default: 700,
+                min: 450,
+                max: 10000,
+            },
+            startedAt: {
+                type: Date,
+                default: null,
+            },
+            dayKey: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            dayCount: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000000,
+            },
+            dayLimit: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000000,
+            },
+            lastAction: {
+                action: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                result: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                reason: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                targetId: {
+                    type: String,
+                    default: '',
+                    trim: true,
+                },
+                at: {
+                    type: Date,
+                    default: null,
+                },
+            },
+            logs: {
+                type: [
+                    {
+                        message: {
+                            type: String,
+                            default: '',
+                            trim: true,
+                            maxlength: 300,
+                        },
+                        type: {
+                            type: String,
+                            default: 'info',
+                            trim: true,
+                        },
+                        at: {
+                            type: Date,
+                            default: Date.now,
+                        },
+                    },
+                ],
+                default: [],
+            },
+        },
     },
     {
         timestamps: true,
@@ -204,5 +397,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 userSchema.index({ isOnline: 1, createdAt: 1, _id: 1 })
 userSchema.index({ isOnline: 1, lastActive: -1, _id: 1 })
 userSchema.index({ registrationIp: 1, createdAt: -1 })
+userSchema.index({ 'autoSearch.enabled': 1, isBanned: 1, _id: 1 })
+userSchema.index({ 'autoTrainer.enabled': 1, isBanned: 1, _id: 1 })
 
 export default mongoose.model('User', userSchema)

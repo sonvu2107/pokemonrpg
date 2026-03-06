@@ -126,6 +126,10 @@ const limiter = rateLimit({
     },
     // Skip rate limiting for certain public endpoints
     skip: (req) => {
+        const internalWorkerHeader = String(req.headers['x-internal-worker'] || '').trim().toLowerCase()
+        if (internalWorkerHeader.startsWith('auto-')) {
+            return true
+        }
         const path = req.path
         return path === '/stats' || path === '/stats/' ||
             path === '/game/maps' || path === '/game/maps/'

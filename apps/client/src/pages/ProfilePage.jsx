@@ -5,7 +5,7 @@ import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import VipAvatar from '../components/VipAvatar'
-import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
+import { getPublicRoleLabel, getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const SectionHeader = ({ title }) => (
@@ -116,6 +116,21 @@ export default function ProfilePage() {
     const avatarSrc = String(user?.avatar || '').trim() || DEFAULT_AVATAR
     const signature = String(user?.signature || '').trim()
     const vipTitle = getVipTitle(user)
+    const vipTitleImageUrl = getVipTitleImageUrl(user)
+    const vipTitleDisplay = vipTitleImageUrl
+        ? (
+            <div className="flex items-center">
+                <img
+                    src={vipTitleImageUrl}
+                    alt={vipTitle || 'Danh hiệu VIP'}
+                    className="h-8 max-w-[220px] object-contain"
+                    onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                    }}
+                />
+            </div>
+        )
+        : '--'
     const profileTabs = [
         { label: 'Cá Nhân', to: '/profile', enabled: true },
         { label: 'Đội Hình', to: '/party', enabled: true },
@@ -181,10 +196,23 @@ export default function ProfilePage() {
                                         alt="Trainer Avatar"
                                         wrapperClassName="w-full h-full"
                                         imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
-                                        frameClassName="h-full w-full object-contain"
+                                        frameClassName="h-full w-full object-cover rounded-full"
                                         loading="eager"
                                     />
                                 </div>
+                                {vipTitleImageUrl && (
+                                    <div className="mb-4 flex flex-col items-center gap-1">
+                                        <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wide">Danh hiệu VIP</div>
+                                        <img
+                                            src={vipTitleImageUrl}
+                                            alt={vipTitle || 'Danh hiệu VIP'}
+                                            className="h-10 max-w-[260px] object-contain"
+                                            onError={(event) => {
+                                                event.currentTarget.style.display = 'none'
+                                            }}
+                                        />
+                                    </div>
+                                )}
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
                                     Hành Động
                                 </div>
@@ -284,7 +312,7 @@ export default function ProfilePage() {
                             <InfoRow label="ID Người Chơi" value={`#${user?.id ? user.id.slice(-7).toUpperCase() : '???'}`} isOdd={false} />
                             <InfoRow label="Tên Nhân Vật" value={username} isOdd={true} />
                             <InfoRow label="Nhóm" value={getPublicRoleLabel(user)} isOdd={false} />
-                            <InfoRow label="Danh hiệu VIP" value={vipTitle || '--'} isOdd={true} />
+                            <InfoRow label="Danh hiệu VIP" value={vipTitleDisplay} isOdd={true} />
                             <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={false} />
                             <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (Thiếu ${expToNext(level).toLocaleString()} EXP để lên cấp)`} isOdd={true} />
                             <InfoRow label="HP" value={`${hp}/${maxHp} HP`} isOdd={false} />

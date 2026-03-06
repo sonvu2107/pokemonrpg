@@ -4,13 +4,15 @@ import { authMiddleware } from '../middleware/auth.js'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import Friendship, { FRIENDSHIP_STATUS, buildFriendPairKey } from '../models/Friendship.js'
 import { emitToUser } from '../socket/index.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
+const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
-const USER_SELECT_FIELDS = 'username avatar role vipTierLevel vipTierCode vipBenefits isOnline createdAt lastActive signature'
+const USER_SELECT_FIELDS = 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits isOnline createdAt lastActive signature'
 const PARTY_SLOT_TOTAL = 6
 
 const toSafeIsoDate = (value) => {
@@ -128,10 +130,129 @@ const getRefUserId = (value) => {
     return String(value)
 }
 
-const serializeUser = (userLike) => ({
-    userId: getRefUserId(userLike),
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        autoSearchEnabled: source?.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+    }
+}
+
+const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
+
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipBenefits(currentBenefitsLike)
+    const tier = normalizeVipBenefits(tierBenefitsLike)
+    return {
+        ...current,
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+        avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+    }
+}
+
+const buildVipTierLookup = async (users = []) => {
+    const tierIdSet = new Set()
+    const tierLevelSet = new Set()
+
+    for (const entry of users) {
+        const vipTierId = String(entry?.vipTierId || '').trim()
+        if (vipTierId) {
+            tierIdSet.add(vipTierId)
+            continue
+        }
+        const vipTierLevel = Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0)
+        if (vipTierLevel > 0) {
+            tierLevelSet.add(vipTierLevel)
+        }
+    }
+
+    const conditions = []
+    if (tierIdSet.size > 0) {
+        conditions.push({ _id: { $in: Array.from(tierIdSet) } })
+    }
+    if (tierLevelSet.size > 0) {
+        conditions.push({ level: { $in: Array.from(tierLevelSet) } })
+    }
+
+    if (conditions.length === 0) {
+        return {
+            tierById: new Map(),
+            tierByLevel: new Map(),
+        }
+    }
+
+    const tiers = await VipPrivilegeTier.find({ $or: conditions }).select('_id level benefits').lean()
+    const tierById = new Map()
+    const tierByLevel = new Map()
+
+    for (const tier of tiers) {
+        const idKey = String(tier?._id || '').trim()
+        if (idKey) {
+            tierById.set(idKey, tier)
+        }
+        const levelKey = Math.max(0, parseInt(tier?.level, 10) || 0)
+        if (levelKey > 0) {
+            tierByLevel.set(levelKey, tier)
+        }
+    }
+
+    return { tierById, tierByLevel }
+}
+
+const resolveTierBenefitsForUser = (userLike, tierById, tierByLevel) => {
+    const vipTierId = String(userLike?.vipTierId || '').trim()
+    if (vipTierId && tierById.has(vipTierId)) {
+        return normalizeVipBenefits(tierById.get(vipTierId)?.benefits)
+    }
+
+    const vipTierLevel = Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0)
+    if (vipTierLevel > 0 && tierByLevel.has(vipTierLevel)) {
+        return normalizeVipBenefits(tierByLevel.get(vipTierLevel)?.benefits)
+    }
+
+    return normalizeVipBenefits({})
+}
+
+const buildEffectiveVipBenefitsByUserId = async (users = []) => {
+    const normalizedUsers = Array.isArray(users) ? users.filter(Boolean) : []
+    if (normalizedUsers.length === 0) return new Map()
+
+    const { tierById, tierByLevel } = await buildVipTierLookup(normalizedUsers)
+    const benefitsByUserId = new Map()
+
+    for (const entry of normalizedUsers) {
+        const userId = getRefUserId(entry)
+        if (!userId) continue
+        benefitsByUserId.set(
+            userId,
+            mergeVipVisualBenefits(
+                entry?.vipBenefits,
+                resolveTierBenefitsForUser(entry, tierById, tierByLevel)
+            )
+        )
+    }
+
+    return benefitsByUserId
+}
+
+const serializeUser = (userLike, benefitsByUserId = null) => {
+    const userId = getRefUserId(userLike)
+    const effectiveVipBenefits = benefitsByUserId instanceof Map
+        ? (benefitsByUserId.get(userId) || userLike?.vipBenefits)
+        : userLike?.vipBenefits
+
+    return {
+    userId,
     username: String(userLike?.username || '').trim() || 'Huấn Luyện Viên',
-    avatar: String(userLike?.avatar || '').trim(),
+    avatar: normalizeAvatarUrl(userLike?.avatar),
     role: String(userLike?.role || 'user'),
     vipTierLevel: Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0),
     vipTierCode: String(userLike?.vipTierCode || '').trim().toUpperCase(),
@@ -140,18 +261,9 @@ const serializeUser = (userLike) => ({
     lastActive: toSafeIsoDate(userLike?.lastActive),
     playTime: formatPlayTime(userLike?.createdAt),
     signature: String(userLike?.signature || '').trim(),
-    vipBenefits: {
-        title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
-        titleImageUrl: String(userLike?.vipBenefits?.titleImageUrl || '').trim(),
-        avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
-        autoSearchEnabled: userLike?.vipBenefits?.autoSearchEnabled !== false,
-        autoSearchDurationMinutes: Math.max(0, parseInt(userLike?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
-        autoSearchUsesPerDay: Math.max(0, parseInt(userLike?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
-        autoBattleTrainerEnabled: userLike?.vipBenefits?.autoBattleTrainerEnabled !== false,
-        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(userLike?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
-        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(userLike?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
-    },
-})
+    vipBenefits: normalizeVipBenefits(effectiveVipBenefits),
+}
+}
 
 const buildTrainerDetail = async (targetUserId) => {
     const [user, playerState, partyRows] = await Promise.all([
@@ -175,6 +287,19 @@ const buildTrainerDetail = async (targetUserId) => {
     ])
 
     if (!user) return null
+
+    const vipTier = (() => {
+        if (user?.vipTierId) {
+            return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
+        }
+        const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
+        if (vipTierLevel > 0) {
+            return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
+        }
+        return Promise.resolve(null)
+    })()
+
+    const effectiveVipBenefits = mergeVipVisualBenefits(user?.vipBenefits, (await vipTier)?.benefits)
 
     const slots = createEmptyPartySlots()
     for (const entry of partyRows) {
@@ -212,24 +337,14 @@ const buildTrainerDetail = async (targetUserId) => {
         userId: String(user?._id || ''),
         userIdLabel: `#${String(user?._id || '').slice(-7).toUpperCase()}`,
         username: String(user?.username || '').trim() || 'Huấn Luyện Viên',
-        avatar: String(user?.avatar || '').trim(),
+        avatar: normalizeAvatarUrl(user?.avatar),
         signature: String(user?.signature || '').trim(),
         createdAt: toSafeIsoDate(user?.createdAt),
         lastActive: toSafeIsoDate(user?.lastActive),
         role: String(user?.role || 'user'),
         vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
         vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
-        vipBenefits: {
-            title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
-            titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),
-            avatarFrameUrl: String(user?.vipBenefits?.avatarFrameUrl || '').trim(),
-            autoSearchEnabled: user?.vipBenefits?.autoSearchEnabled !== false,
-            autoSearchDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
-            autoSearchUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
-            autoBattleTrainerEnabled: user?.vipBenefits?.autoBattleTrainerEnabled !== false,
-            autoBattleTrainerDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
-            autoBattleTrainerUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
-        },
+        vipBenefits: effectiveVipBenefits,
         isOnline: Boolean(user?.isOnline),
         playTime: formatPlayTime(user?.createdAt, now),
         profile,
@@ -237,7 +352,7 @@ const buildTrainerDetail = async (targetUserId) => {
     }
 }
 
-const serializeFriendEntry = (entry, currentUserId) => {
+const serializeFriendEntry = (entry, currentUserId, benefitsByUserId = null) => {
     const requesterId = getRefUserId(entry?.requesterId)
     const isRequester = requesterId === currentUserId
     const friend = isRequester ? entry?.addresseeId : entry?.requesterId
@@ -248,11 +363,11 @@ const serializeFriendEntry = (entry, currentUserId) => {
         createdAt: toSafeIsoDate(entry?.createdAt),
         updatedAt: toSafeIsoDate(entry?.updatedAt),
         acceptedAt: toSafeIsoDate(entry?.acceptedAt),
-        user: serializeUser(friend),
+        user: serializeUser(friend, benefitsByUserId),
     }
 }
 
-const serializeRequestEntry = (entry, currentUserId) => {
+const serializeRequestEntry = (entry, currentUserId, benefitsByUserId = null) => {
     const requesterId = getRefUserId(entry?.requesterId)
     const direction = requesterId === currentUserId ? 'outgoing' : 'incoming'
     const counterpart = direction === 'outgoing' ? entry?.addresseeId : entry?.requesterId
@@ -263,7 +378,7 @@ const serializeRequestEntry = (entry, currentUserId) => {
         direction,
         createdAt: toSafeIsoDate(entry?.createdAt),
         updatedAt: toSafeIsoDate(entry?.updatedAt),
-        user: serializeUser(counterpart),
+        user: serializeUser(counterpart, benefitsByUserId),
     }
 }
 
@@ -300,9 +415,11 @@ router.get('/suggestions', authMiddleware, async (req, res) => {
             .limit(limit)
             .lean()
 
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(suggestedUsers)
+
         return res.json({
             ok: true,
-            users: suggestedUsers.map((entry) => serializeUser(entry)),
+            users: suggestedUsers.map((entry) => serializeUser(entry, benefitsByUserId)),
         })
     } catch (error) {
         console.error('GET /api/friends/suggestions error:', error)
@@ -353,8 +470,12 @@ router.get('/', authMiddleware, async (req, res) => {
             .sort({ updatedAt: -1, _id: -1 })
             .lean()
 
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(
+            rows.flatMap((entry) => [entry?.requesterId, entry?.addresseeId])
+        )
+
         const friends = rows
-            .map((entry) => serializeFriendEntry(entry, currentUserId))
+            .map((entry) => serializeFriendEntry(entry, currentUserId, benefitsByUserId))
             .sort((a, b) => {
                 const onlineDiff = Number(b?.user?.isOnline) - Number(a?.user?.isOnline)
                 if (onlineDiff !== 0) return onlineDiff
@@ -388,7 +509,11 @@ router.get('/requests', authMiddleware, async (req, res) => {
             .sort({ createdAt: -1, _id: -1 })
             .lean()
 
-        const requests = rows.map((entry) => serializeRequestEntry(entry, currentUserId))
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(
+            rows.flatMap((entry) => [entry?.requesterId, entry?.addresseeId])
+        )
+
+        const requests = rows.map((entry) => serializeRequestEntry(entry, currentUserId, benefitsByUserId))
         const incoming = requests.filter((entry) => entry.direction === 'incoming')
         const outgoing = requests.filter((entry) => entry.direction === 'outgoing')
 
@@ -453,8 +578,13 @@ router.post('/requests', authMiddleware, async (req, res) => {
                 await existing.save()
                 await existing.populate(populateFriendUsers)
 
-                const friendshipForCurrent = serializeFriendEntry(existing.toObject(), currentUserId)
-                const friendshipForTarget = serializeFriendEntry(existing.toObject(), targetUserId)
+                const normalizedExisting = existing.toObject()
+                const benefitsByUserId = await buildEffectiveVipBenefitsByUserId([
+                    normalizedExisting?.requesterId,
+                    normalizedExisting?.addresseeId,
+                ])
+                const friendshipForCurrent = serializeFriendEntry(normalizedExisting, currentUserId, benefitsByUserId)
+                const friendshipForTarget = serializeFriendEntry(normalizedExisting, targetUserId, benefitsByUserId)
 
                 emitToUser(targetUserId, 'friends:request_accepted', { friendship: friendshipForTarget })
                 emitToUser(currentUserId, 'friends:request_accepted', { friendship: friendshipForCurrent })
@@ -476,8 +606,12 @@ router.post('/requests', authMiddleware, async (req, res) => {
 
         await created.populate(populateFriendUsers)
         const normalized = created.toObject()
-        const requestForCurrent = serializeRequestEntry(normalized, currentUserId)
-        const requestForTarget = serializeRequestEntry(normalized, targetUserId)
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId([
+            normalized?.requesterId,
+            normalized?.addresseeId,
+        ])
+        const requestForCurrent = serializeRequestEntry(normalized, currentUserId, benefitsByUserId)
+        const requestForTarget = serializeRequestEntry(normalized, targetUserId, benefitsByUserId)
 
         emitToUser(targetUserId, 'friends:request_received', { request: requestForTarget })
 
@@ -523,8 +657,12 @@ router.post('/requests/:id/accept', authMiddleware, async (req, res) => {
         const normalized = requestDoc.toObject()
         const requesterId = getRefUserId(normalized.requesterId)
         const addresseeId = getRefUserId(normalized.addresseeId)
-        const friendshipForCurrent = serializeFriendEntry(normalized, currentUserId)
-        const friendshipForRequester = serializeFriendEntry(normalized, requesterId)
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId([
+            normalized?.requesterId,
+            normalized?.addresseeId,
+        ])
+        const friendshipForCurrent = serializeFriendEntry(normalized, currentUserId, benefitsByUserId)
+        const friendshipForRequester = serializeFriendEntry(normalized, requesterId, benefitsByUserId)
 
         emitToUser(requesterId, 'friends:request_accepted', { friendship: friendshipForRequester })
         emitToUser(addresseeId, 'friends:request_accepted', { friendship: friendshipForCurrent })
@@ -698,9 +836,11 @@ router.get('/search', authMiddleware, async (req, res) => {
             .limit(limit)
             .lean()
 
+        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(users)
+
         return res.json({
             ok: true,
-            users: users.map((entry) => serializeUser(entry)),
+            users: users.map((entry) => serializeUser(entry, benefitsByUserId)),
         })
     } catch (error) {
         console.error('GET /api/friends/search error:', error)
