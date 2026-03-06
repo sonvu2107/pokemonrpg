@@ -533,7 +533,7 @@ export const gameApi = {
         return res.json()
     },
 
-    // GET /api/rankings/pokemon - Pokemon leaderboard with filters
+    // GET /api/rankings/pokemon - Pokemon collection leaderboard by user
     async getPokemonRankings(params = {}) {
         const searchParams = new URLSearchParams()
         Object.entries(params).forEach(([key, value]) => {

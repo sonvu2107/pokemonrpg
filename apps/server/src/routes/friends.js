@@ -6,6 +6,7 @@ import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import Friendship, { FRIENDSHIP_STATUS, buildFriendPairKey } from '../models/Friendship.js'
 import { emitToUser } from '../socket/index.js'
+import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 
@@ -33,20 +34,84 @@ const formatPlayTime = (createdAt, nowDate = new Date()) => {
 
 const createEmptyPartySlots = () => Array.from({ length: PARTY_SLOT_TOTAL }, () => null)
 
+const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
+
+const resolveSpeciesForm = (species = {}, formId = 'normal') => {
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const normalizedFormId = normalizeFormId(formId)
+    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
+    return forms.find((entry) => normalizeFormId(entry?.formId) === normalizedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+}
+
+const resolveSpeciesBaseStats = (species = {}, formId = 'normal') => {
+    const form = resolveSpeciesForm(species, formId)
+    return form?.stats || species?.baseStats || {}
+}
+
+const toStatNumber = (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+const toSafePositiveInt = (value, fallback = 1) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
+    return Math.max(1, Math.floor(parsed))
+}
+
+const calcPartyCombatPower = (entry, species) => {
+    const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+    const baseStats = resolveSpeciesBaseStats(species, entry?.formId)
+    const scaledStats = calcStatsForLevel(baseStats, level, species?.rarity || 'd')
+    const ivs = entry?.ivs && typeof entry.ivs === 'object' ? entry.ivs : {}
+    const evs = entry?.evs && typeof entry.evs === 'object' ? entry.evs : {}
+
+    const resolveStat = (key, aliases = []) => {
+        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
+        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
+        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
+        return Math.max(1, Math.floor(base + iv + (ev / 8)))
+    }
+
+    const hp = resolveStat('hp')
+    const atk = resolveStat('atk')
+    const def = resolveStat('def')
+    const spatk = resolveStat('spatk')
+    const spdef = resolveStat('spdef', ['spldef'])
+    const spd = resolveStat('spd')
+
+    const rawPower = (hp * 1.2)
+        + (atk * 1.8)
+        + (def * 1.45)
+        + (spatk * 1.8)
+        + (spdef * 1.45)
+        + (spd * 1.35)
+        + (level * 2)
+    const shinyBonus = entry?.isShiny ? 1.03 : 1
+    return toSafePositiveInt(rawPower * shinyBonus, Math.max(1, level * 10))
+}
+
 const serializePartyPokemon = (entry) => {
     if (!entry?._id || !entry?.pokemonId) return null
     const species = entry.pokemonId
+    const combatPower = calcPartyCombatPower(entry, species)
     return {
         _id: String(entry._id),
         nickname: String(entry?.nickname || '').trim(),
         level: Math.max(1, Number(entry?.level || 1)),
         formId: String(entry?.formId || 'normal').trim() || 'normal',
         isShiny: Boolean(entry?.isShiny),
+        combatPower,
+        power: combatPower,
         partyIndex: Number.isFinite(Number(entry?.partyIndex)) ? Number(entry.partyIndex) : null,
         pokemonId: {
             _id: String(species?._id || ''),
             name: String(species?.name || '').trim(),
             types: Array.isArray(species?.types) ? species.types : [],
+            rarity: String(species?.rarity || 'd').trim() || 'd',
             baseStats: species?.baseStats && typeof species.baseStats === 'object' ? species.baseStats : {},
             imageUrl: String(species?.imageUrl || '').trim(),
             sprites: species?.sprites && typeof species.sprites === 'object' ? species.sprites : {},
@@ -87,10 +152,10 @@ const buildTrainerDetail = async (targetUserId) => {
             userId: targetUserId,
             location: 'party',
         })
-            .select('_id userId pokemonId nickname level formId isShiny partyIndex')
+            .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs')
             .populate({
                 path: 'pokemonId',
-                select: 'name types baseStats imageUrl sprites defaultFormId forms',
+                select: 'name types rarity baseStats imageUrl sprites defaultFormId forms',
             })
             .sort({ partyIndex: 1, _id: 1 })
             .lean(),

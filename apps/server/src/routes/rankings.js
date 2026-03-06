@@ -4,107 +4,13 @@ import UserPokemon from '../models/UserPokemon.js'
 import DailyActivity from '../models/DailyActivity.js'
 import User from '../models/User.js'
 import Pokemon from '../models/Pokemon.js'
+import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 
-const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const getAdminUserIds = async () => {
     const admins = await User.find({ role: 'admin' }).select('_id').lean()
     return admins.map((entry) => entry._id)
-}
-
-const buildPokemonSort = (order = 'level_desc') => {
-    switch (order) {
-        case 'level_asc':
-            return { level: 1, experience: 1, _id: 1 }
-        case 'exp_desc':
-            return { experience: -1, level: -1, _id: -1 }
-        case 'exp_asc':
-            return { experience: 1, level: 1, _id: 1 }
-        case 'newest':
-            return { obtainedAt: -1, _id: -1 }
-        case 'oldest':
-            return { obtainedAt: 1, _id: 1 }
-        case 'level_desc':
-        default:
-            return { level: -1, experience: -1, _id: -1 }
-    }
-}
-
-const pokemonLookupStage = {
-    $lookup: {
-        from: 'pokemons',
-        let: { pokemonId: '$pokemonId' },
-        pipeline: [
-            {
-                $match: {
-                    $expr: { $eq: ['$_id', '$$pokemonId'] },
-                },
-            },
-            {
-                $project: {
-                    name: 1,
-                    pokedexNumber: 1,
-                    types: 1,
-                    forms: 1,
-                    sprites: 1,
-                    imageUrl: 1,
-                },
-            },
-        ],
-        as: 'pokemon',
-    },
-}
-
-const ownerLookupStage = {
-    $lookup: {
-        from: 'users',
-        let: { ownerId: '$userId' },
-        pipeline: [
-            {
-                $match: {
-                    $expr: { $eq: ['$_id', '$$ownerId'] },
-                },
-            },
-            {
-                $project: {
-                    username: 1,
-                    avatar: 1,
-                },
-            },
-        ],
-        as: 'owner',
-    },
-}
-
-const pokemonLeaderboardProjection = {
-    $project: {
-        level: 1,
-        experience: 1,
-        nickname: 1,
-        originalTrainer: 1,
-        isShiny: 1,
-        formId: 1,
-        pokemon: 1,
-        owner: 1,
-    },
-}
-
-const resolvePokemonSprite = (entry) => {
-    const pokemon = entry.pokemon || {}
-    const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
-    const resolvedForm = forms.find((form) => form.formId === entry.formId) || null
-    const formSprites = resolvedForm?.sprites || {}
-    const pokedexNumber = pokemon.pokedexNumber || 0
-    const fallbackSprite = pokedexNumber
-        ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNumber}.png`
-        : ''
-
-    const baseNormal = pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || fallbackSprite
-    const formNormal = resolvedForm?.imageUrl || formSprites.normal || formSprites.icon || baseNormal
-    const shinySprite = formSprites.shiny || pokemon.sprites?.shiny || formNormal
-
-    return entry.isShiny ? shinySprite : formNormal
 }
 
 const toDailyDateKey = (date = new Date()) => {
@@ -129,6 +35,92 @@ const buildDailySort = (type = 'search') => {
         return { moonPoints: -1, mapExp: -1, searches: -1, userId: 1 }
     }
     return { searches: -1, mapExp: -1, moonPoints: -1, userId: 1 }
+}
+
+const normalizeRankingMode = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'power' || normalized === 'combat' || normalized === 'combat_power' || normalized === 'lucchien') {
+        return 'power'
+    }
+    return 'collection'
+}
+
+const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
+
+const resolvePokemonForm = (pokemon = {}, formId = 'normal') => {
+    const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
+    const normalizedFormId = normalizeFormId(formId)
+    const defaultFormId = normalizeFormId(pokemon.defaultFormId || 'normal')
+    return forms.find((entry) => normalizeFormId(entry?.formId) === normalizedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+}
+
+const resolvePokemonSprite = (entry) => {
+    const pokemon = entry?.pokemon || {}
+    const resolvedForm = resolvePokemonForm(pokemon, entry?.formId)
+    const formSprites = resolvedForm?.sprites || {}
+    const pokedexNumber = Number(pokemon?.pokedexNumber || 0)
+    const fallbackSprite = pokedexNumber > 0
+        ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNumber}.png`
+        : 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+
+    const baseNormal = pokemon.imageUrl || pokemon.sprites?.normal || pokemon.sprites?.icon || fallbackSprite
+    const formNormal = resolvedForm?.imageUrl || formSprites.normal || formSprites.icon || baseNormal
+    const shinySprite = formSprites.shiny || pokemon.sprites?.shiny || formNormal
+
+    return entry?.isShiny ? shinySprite : formNormal
+}
+
+const resolvePokemonBaseStats = (entry) => {
+    const pokemon = entry?.pokemon || {}
+    const resolvedForm = resolvePokemonForm(pokemon, entry?.formId)
+    return resolvedForm?.stats || pokemon.baseStats || {}
+}
+
+const toStatNumber = (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+const toSafePositiveInt = (value, fallback = 1) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
+    return Math.max(1, Math.floor(parsed))
+}
+
+const calcPokemonCombatPower = (entry) => {
+    const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+    const pokemon = entry?.pokemon || {}
+    const baseStats = resolvePokemonBaseStats(entry)
+    const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity || 'd')
+    const ivs = entry?.ivs && typeof entry.ivs === 'object' ? entry.ivs : {}
+    const evs = entry?.evs && typeof entry.evs === 'object' ? entry.evs : {}
+
+    const resolveStat = (key, aliases = []) => {
+        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
+        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
+        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
+        return Math.max(1, Math.floor(base + iv + (ev / 8)))
+    }
+
+    const hp = resolveStat('hp')
+    const atk = resolveStat('atk')
+    const def = resolveStat('def')
+    const spatk = resolveStat('spatk')
+    const spdef = resolveStat('spdef', ['spldef'])
+    const spd = resolveStat('spd')
+
+    const rawPower = (hp * 1.2)
+        + (atk * 1.8)
+        + (def * 1.45)
+        + (spatk * 1.8)
+        + (spdef * 1.45)
+        + (spd * 1.35)
+        + (level * 2)
+    const shinyBonus = entry?.isShiny ? 1.03 : 1
+    return toSafePositiveInt(rawPower * shinyBonus, 1)
 }
 
 // GET /api/rankings/daily - Daily rankings by searches/map exp/moon points
@@ -250,180 +242,215 @@ router.get('/overall', async (req, res, next) => {
     }
 })
 
-// GET /api/rankings/pokemon - Pokemon leaderboard with filters
+// GET /api/rankings/pokemon - Pokemon collection leaderboard by user
 router.get('/pokemon', async (req, res, next) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
         const adminUserIds = await getAdminUserIds()
-
-        const pokemonName = String(req.query.pokemonName || '').trim()
-        const username = String(req.query.username || '').trim()
-        const type = String(req.query.type || '').trim().toLowerCase()
-        const ot = String(req.query.ot || '').trim()
-        const order = String(req.query.order || 'level_desc').trim()
-
-        const minLevelRaw = Number.parseInt(req.query.minLevel, 10)
-        const maxLevelRaw = Number.parseInt(req.query.maxLevel, 10)
-        const hasMinLevel = Number.isFinite(minLevelRaw)
-        const hasMaxLevel = Number.isFinite(maxLevelRaw)
-        const minLevel = hasMinLevel ? Math.max(1, minLevelRaw) : null
-        const maxLevel = hasMaxLevel ? Math.max(1, maxLevelRaw) : null
-        const normalizedMinLevel = minLevel != null && maxLevel != null ? Math.min(minLevel, maxLevel) : minLevel
-        const normalizedMaxLevel = minLevel != null && maxLevel != null ? Math.max(minLevel, maxLevel) : maxLevel
+        const rankingMode = normalizeRankingMode(req.query.mode)
 
         const baseMatch = {}
         if (adminUserIds.length > 0) {
             baseMatch.userId = { $nin: adminUserIds }
         }
-        if (normalizedMinLevel != null || normalizedMaxLevel != null) {
-            baseMatch.level = {}
-            if (normalizedMinLevel != null) baseMatch.level.$gte = normalizedMinLevel
-            if (normalizedMaxLevel != null) baseMatch.level.$lte = normalizedMaxLevel
-        }
-        if (ot) {
-            baseMatch.originalTrainer = { $regex: escapeRegExp(ot), $options: 'i' }
-        }
 
-        if (pokemonName || type) {
-            const pokemonFilter = {}
-            if (pokemonName) {
-                pokemonFilter.name = { $regex: escapeRegExp(pokemonName), $options: 'i' }
-            }
-            if (type) {
-                pokemonFilter.types = type
-            }
-
-            const pokemonMatches = await Pokemon.find(pokemonFilter).select('_id').lean()
-            const pokemonIds = pokemonMatches.map((entry) => entry._id)
-            if (pokemonIds.length === 0) {
-                return res.json({
-                    ok: true,
-                    rankings: [],
-                    filters: {
-                        pokemonName,
-                        type,
-                        minLevel: normalizedMinLevel,
-                        maxLevel: normalizedMaxLevel,
-                        username,
-                        ot,
-                        order,
-                    },
-                    pagination: {
-                        currentPage: page,
-                        totalPages: 1,
-                        total: 0,
-                        limit,
-                        hasNextPage: false,
-                        hasPrevPage: page > 1,
-                    },
-                })
-            }
-            baseMatch.pokemonId = { $in: pokemonIds }
-        }
-
-        if (username) {
-            const ownerMatches = await User.find({
-                username: { $regex: escapeRegExp(username), $options: 'i' },
-                role: { $ne: 'admin' },
-            })
-                .select('_id')
-                .lean()
-            const ownerIds = ownerMatches.map((entry) => entry._id)
-            if (ownerIds.length === 0) {
-                return res.json({
-                    ok: true,
-                    rankings: [],
-                    filters: {
-                        pokemonName,
-                        type,
-                        minLevel: normalizedMinLevel,
-                        maxLevel: normalizedMaxLevel,
-                        username,
-                        ot,
-                        order,
-                    },
-                    pagination: {
-                        currentPage: page,
-                        totalPages: 1,
-                        total: 0,
-                        limit,
-                        hasNextPage: false,
-                        hasPrevPage: page > 1,
-                    },
-                })
-            }
-            if (baseMatch.userId?.$nin) {
-                baseMatch.userId = { $in: ownerIds, $nin: baseMatch.userId.$nin }
-            } else {
-                baseMatch.userId = { $in: ownerIds }
-            }
-        }
-
-        const sortOptions = buildPokemonSort(order)
-
-        const [rows, total] = await Promise.all([
-            UserPokemon.aggregate([
+        if (rankingMode === 'power') {
+            const rows = await UserPokemon.aggregate([
                 { $match: baseMatch },
-                { $sort: sortOptions },
-                { $skip: skip },
-                { $limit: limit },
-                pokemonLookupStage,
+                {
+                    $lookup: {
+                        from: 'pokemons',
+                        localField: 'pokemonId',
+                        foreignField: '_id',
+                        as: 'pokemon',
+                    },
+                },
                 { $unwind: '$pokemon' },
-                ownerLookupStage,
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: 'userId',
+                        foreignField: '_id',
+                        as: 'owner',
+                    },
+                },
                 {
                     $unwind: {
                         path: '$owner',
                         preserveNullAndEmptyArrays: true,
                     },
                 },
-                pokemonLeaderboardProjection,
+                {
+                    $project: {
+                        level: 1,
+                        experience: 1,
+                        nickname: 1,
+                        isShiny: 1,
+                        formId: 1,
+                        ivs: 1,
+                        evs: 1,
+                        pokemon: {
+                            _id: '$pokemon._id',
+                            name: '$pokemon.name',
+                            pokedexNumber: '$pokemon.pokedexNumber',
+                            types: '$pokemon.types',
+                            rarity: '$pokemon.rarity',
+                            forms: '$pokemon.forms',
+                            baseStats: '$pokemon.baseStats',
+                            defaultFormId: '$pokemon.defaultFormId',
+                            imageUrl: '$pokemon.imageUrl',
+                            sprites: '$pokemon.sprites',
+                        },
+                        owner: {
+                            _id: '$owner._id',
+                            username: '$owner.username',
+                            avatar: '$owner.avatar',
+                        },
+                    },
+                },
+            ]).allowDiskUse(true)
+
+            const sortedRows = rows
+                .map((entry) => {
+                    const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+                    const experience = Math.max(0, Number(entry?.experience || 0))
+                    const combatPower = toSafePositiveInt(calcPokemonCombatPower(entry), Math.max(1, level * 10))
+                    return {
+                        ...entry,
+                        level,
+                        experience,
+                        combatPower,
+                    }
+                })
+                .sort((a, b) => {
+                    if (b.combatPower !== a.combatPower) return b.combatPower - a.combatPower
+                    if (b.level !== a.level) return b.level - a.level
+                    if (b.experience !== a.experience) return b.experience - a.experience
+                    return String(a._id || '').localeCompare(String(b._id || ''))
+                })
+
+            const total = sortedRows.length
+            const totalPages = Math.max(1, Math.ceil(total / limit))
+            const pageRows = sortedRows.slice(skip, skip + limit)
+            const rankings = pageRows.map((entry, index) => ({
+                rank: skip + index + 1,
+                userPokemonId: entry._id,
+                level: entry.level,
+                experience: entry.experience,
+                nickname: entry.nickname || '',
+                isShiny: Boolean(entry.isShiny),
+                formId: entry.formId || 'normal',
+                combatPower: entry.combatPower,
+                power: entry.combatPower,
+                sprite: resolvePokemonSprite(entry),
+                pokemon: {
+                    _id: entry.pokemon?._id,
+                    name: entry.pokemon?.name || 'Unknown',
+                    pokedexNumber: entry.pokemon?.pokedexNumber || 0,
+                    types: Array.isArray(entry.pokemon?.types) ? entry.pokemon.types : [],
+                },
+                owner: {
+                    _id: entry.owner?._id || null,
+                    username: entry.owner?.username || 'Unknown',
+                    avatar: entry.owner?.avatar || '',
+                },
+            }))
+
+            return res.json({
+                ok: true,
+                mode: rankingMode,
+                rankings,
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    total,
+                    limit,
+                    hasNextPage: page < totalPages,
+                    hasPrevPage: page > 1,
+                },
+            })
+        }
+
+        const [rows, totalUsers, totalSpecies] = await Promise.all([
+            UserPokemon.aggregate([
+                { $match: baseMatch },
+                {
+                    $group: {
+                        _id: '$userId',
+                        totalPokemon: { $sum: 1 },
+                        uniquePokemonIds: { $addToSet: '$pokemonId' },
+                    },
+                },
+                {
+                    $project: {
+                        totalPokemon: 1,
+                        collectedCount: {
+                            $size: {
+                                $ifNull: ['$uniquePokemonIds', []],
+                            },
+                        },
+                    },
+                },
+                { $sort: { collectedCount: -1, totalPokemon: -1, _id: 1 } },
+                { $skip: skip },
+                { $limit: limit },
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: '_id',
+                        foreignField: '_id',
+                        as: 'user',
+                    },
+                },
+                {
+                    $unwind: {
+                        path: '$user',
+                        preserveNullAndEmptyArrays: true,
+                    },
+                },
             ]).allowDiskUse(true),
-            UserPokemon.countDocuments(baseMatch),
+            UserPokemon.aggregate([
+                { $match: baseMatch },
+                {
+                    $group: {
+                        _id: '$userId',
+                    },
+                },
+                {
+                    $count: 'total',
+                },
+            ]).allowDiskUse(true),
+            Pokemon.countDocuments(),
         ])
 
-        const totalPages = Math.max(1, Math.ceil(total / limit))
+        const normalizedTotalUsers = Math.max(0, Number(totalUsers?.[0]?.total || 0))
+        const totalPages = Math.max(1, Math.ceil(normalizedTotalUsers / limit))
+        const normalizedTotalSpecies = Math.max(0, Number(totalSpecies || 0))
 
         const rankings = rows.map((entry, index) => ({
             rank: skip + index + 1,
-            userPokemonId: entry._id,
-            level: entry.level || 1,
-            experience: entry.experience || 0,
-            nickname: entry.nickname || '',
-            originalTrainer: entry.originalTrainer || '',
-            isShiny: Boolean(entry.isShiny),
-            formId: entry.formId || 'normal',
-            sprite: resolvePokemonSprite(entry),
-            pokemon: {
-                _id: entry.pokemon?._id,
-                name: entry.pokemon?.name || 'Unknown',
-                pokedexNumber: entry.pokemon?.pokedexNumber || 0,
-                types: Array.isArray(entry.pokemon?.types) ? entry.pokemon.types : [],
-            },
-            owner: {
-                _id: entry.owner?._id || null,
-                username: entry.owner?.username || 'Unknown',
-                avatar: entry.owner?.avatar || '',
-            },
+            userId: entry._id || null,
+            username: entry.user?.username || 'Unknown',
+            avatar: entry.user?.avatar || '',
+            collectedCount: Math.max(0, Number(entry.collectedCount || 0)),
+            totalPokemon: Math.max(0, Number(entry.totalPokemon || 0)),
+            completionPercent: normalizedTotalSpecies > 0
+                ? Math.round((Math.max(0, Number(entry.collectedCount || 0)) / normalizedTotalSpecies) * 100)
+                : 0,
         }))
 
         res.json({
             ok: true,
+            mode: rankingMode,
             rankings,
-            filters: {
-                pokemonName,
-                type,
-                minLevel: normalizedMinLevel,
-                maxLevel: normalizedMaxLevel,
-                username,
-                ot,
-                order,
-            },
+            totalSpecies: normalizedTotalSpecies,
             pagination: {
                 currentPage: page,
                 totalPages,
-                total,
+                total: normalizedTotalUsers,
+                totalUsers: normalizedTotalUsers,
                 limit,
                 hasNextPage: page < totalPages,
                 hasPrevPage: page > 1,

@@ -180,6 +180,46 @@ const resolveFormStats = (pokemonLike, requestedFormId = null) => {
     return resolvedForm?.stats || pokemonLike?.baseStats || {}
 }
 
+const toStatNumber = (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+const toSafePositiveInt = (value, fallback = 1) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
+    return Math.max(1, Math.floor(parsed))
+}
+
+const calcPokemonCombatPower = ({ userPokemon, scaledStats, level }) => {
+    const ivs = userPokemon?.ivs && typeof userPokemon.ivs === 'object' ? userPokemon.ivs : {}
+    const evs = userPokemon?.evs && typeof userPokemon.evs === 'object' ? userPokemon.evs : {}
+
+    const resolveStat = (key, aliases = []) => {
+        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
+        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
+        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
+        return Math.max(1, Math.floor(base + iv + (ev / 8)))
+    }
+
+    const hp = resolveStat('hp')
+    const atk = resolveStat('atk')
+    const def = resolveStat('def')
+    const spatk = resolveStat('spatk')
+    const spdef = resolveStat('spdef', ['spldef'])
+    const spd = resolveStat('spd')
+
+    const rawPower = (hp * 1.2)
+        + (atk * 1.8)
+        + (def * 1.45)
+        + (spatk * 1.8)
+        + (spdef * 1.45)
+        + (spd * 1.35)
+        + (Math.max(1, Number(level || 1)) * 2)
+    const shinyBonus = userPokemon?.isShiny ? 1.03 : 1
+    return toSafePositiveInt(rawPower * shinyBonus, Math.max(1, Number(level || 1) * 10))
+}
+
 const POKEMON_SERVER_STATS_CACHE_TTL_MS = 30 * 1000
 
 let pokemonServerStatsCache = {
@@ -461,6 +501,14 @@ router.get('/:id', async (req, res) => {
         // Base stats from species/form
         const stats = calcStatsForLevel(resolvedStatsSource, level, rarity)
         const maxHp = calcMaxHp(resolvedStatsSource?.hp, level, rarity)
+        const combatPower = calcPokemonCombatPower({
+            userPokemon,
+            scaledStats: {
+                ...stats,
+                hp: maxHp,
+            },
+            level,
+        })
 
         // Enhance response with calculated stats
         const responseData = {
@@ -473,6 +521,8 @@ router.get('/:id', async (req, res) => {
                 maxHp,
                 currentHp: maxHp // Assuming full health for display or retrieve from separate state if tracked
             },
+            combatPower,
+            power: combatPower,
         }
 
         const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)

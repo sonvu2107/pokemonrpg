@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
-import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
@@ -14,32 +13,42 @@ const SectionHeader = ({ title }) => (
 )
 
 export default function PokemonRankingsPage() {
-    const navigate = useNavigate()
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
+    const [totalSpecies, setTotalSpecies] = useState(0)
+    const [rankingMode, setRankingMode] = useState('collection')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
-    const [featureNotice, setFeatureNotice] = useState('')
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: '/rankings/pokemon' })
+
+    const isPowerMode = rankingMode === 'power'
+    const pageTitle = isPowerMode ? 'BXH Lực Chiến Pokémon' : 'BXH Thu Thập Pokémon'
+    const sectionTitle = isPowerMode ? 'Xếp Hạng Lực Chiến Pokémon' : 'Xếp Hạng Sưu Tập Pokémon'
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [rankingMode])
 
     useEffect(() => {
         loadRankings(currentPage)
-    }, [currentPage])
+    }, [currentPage, rankingMode])
 
     const loadRankings = async (page) => {
         try {
             setLoading(true)
-            setFeatureNotice('')
-            const data = await gameApi.getPokemonRankings({ page, limit: 35 })
-            setRankings(data.rankings || [])
-            setPagination(data.pagination)
+            setError('')
+            const data = await gameApi.getPokemonRankings({ page, limit: 35, mode: rankingMode })
+            setRankings(Array.isArray(data.rankings) ? data.rankings : [])
+            setPagination(data.pagination || null)
+            setTotalSpecies(Math.max(0, Number(data.totalSpecies || 0)))
         } catch (err) {
             setError(err.message || 'Không thể tải bảng xếp hạng Pokémon')
         } finally {
             setLoading(false)
         }
     }
+
     const renderPagination = () => {
         if (!pagination) return null
         const { currentPage, totalPages } = pagination
@@ -91,48 +100,14 @@ export default function PokemonRankingsPage() {
         return colors[(rank - 1) % colors.length] || 'text-blue-700'
     }
 
-    const getMasterTitleColor = (pokemon) => {
-        if (!pokemon || !pokemon.types || pokemon.types.length === 0) return 'text-slate-500'
-
-        const typeColors = {
-            fire: 'text-red-500',
-            water: 'text-blue-500',
-            grass: 'text-green-500',
-            electric: 'text-yellow-500',
-            psychic: 'text-pink-500',
-            ghost: 'text-purple-600',
-            dragon: 'text-indigo-600',
-            dark: 'text-slate-800',
-            steel: 'text-slate-500',
-            fairy: 'text-pink-400',
+    const numberFormat = (value) => Number(value || 0).toLocaleString('vi-VN')
+    const resolveCombatPower = (entry) => {
+        const raw = Number(entry?.combatPower ?? entry?.power)
+        if (Number.isFinite(raw) && raw > 0) {
+            return Math.floor(raw)
         }
-
-        return typeColors[pokemon.types[0].toLowerCase()] || 'text-slate-500'
-    }
-
-    const getPokemonTitleByLevel = (level) => {
-        const normalizedLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1
-
-        if (normalizedLevel >= 900) return 'Nhà Vô Địch Thế Giới'
-        if (normalizedLevel >= 800) return 'Huyền Thoại Liên Minh'
-        if (normalizedLevel >= 700) return 'Bậc Thầy Pokémon'
-        if (normalizedLevel >= 600) return 'Quán Quân'
-        if (normalizedLevel >= 500) return 'Tứ Đại Thiên Vương'
-        if (normalizedLevel >= 400) return 'Thủ Lĩnh Nhà Thi Đấu'
-        if (normalizedLevel >= 300) return 'Huấn Luyện Viên Tinh Anh'
-        if (normalizedLevel >= 200) return 'Ace Trainer'
-        if (normalizedLevel >= 100) return 'Huấn Luyện Viên Kỳ Cựu'
-        return 'Tân Huấn Luyện Viên'
-    }
-
-    const handleChallengeFromRanking = (userPokemonId) => {
-        const normalizedId = String(userPokemonId || '').trim()
-        if (!normalizedId) {
-            setFeatureNotice('Không tìm thấy ID Pokemon để khiêu chiến.')
-            return
-        }
-
-        navigate(`/battle?challengePokemonId=${encodeURIComponent(normalizedId)}&returnTo=${encodeURIComponent('rankings/pokemon')}`)
+        const level = Math.max(1, Number(entry?.level || 1))
+        return level * 10
     }
 
     if (loading && rankings.length === 0) {
@@ -158,131 +133,189 @@ export default function PokemonRankingsPage() {
     return (
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
-                <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">Bảng Xếp Hạng Pokémon</h1>
+                <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">{pageTitle}</h1>
                 <div className="flex items-center justify-center gap-2 text-sm font-bold">
                     <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Chung</Link>
                     <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-600 text-white">Pokémon</Link>
                     <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Hàng Ngày</Link>
                 </div>
+                <div className="mt-3 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold">
+                    <button
+                        type="button"
+                        onClick={() => setRankingMode('collection')}
+                        className={`px-3 py-1 rounded border ${!isPowerMode
+                            ? 'bg-cyan-600 border-cyan-700 text-white'
+                            : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
+                            }`}
+                    >
+                        Thu Thập
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setRankingMode('power')}
+                        className={`px-3 py-1 rounded border ${isPowerMode
+                            ? 'bg-cyan-600 border-cyan-700 text-white'
+                            : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
+                            }`}
+                    >
+                        Lực Chiến
+                    </button>
+                </div>
             </div>
 
-            {featureNotice && (
-                <FeatureUnavailableNotice
-                    compact
-                    className="mb-4"
-                    message={featureNotice}
-                />
-            )}
-
             <div className="border-2 border-slate-800 bg-white shadow-lg">
-                <SectionHeader title="Bảng Xếp Hạng Pokémon Chung" />
-                <div className="grid grid-cols-12 bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold text-sm py-2">
-                    <div className="col-span-3 sm:col-span-2 text-center border-r border-slate-400 flex items-center justify-center">Hạng</div>
-                    <div className="col-span-3 sm:col-span-2 text-center border-r border-slate-400 flex items-center justify-center">Hình Ảnh</div>
-                    <div className="col-span-3 sm:col-span-4 text-center border-r border-slate-400 flex items-center justify-center">Pokémon</div>
-                    <div className="col-span-3 sm:col-span-4 text-center flex items-center justify-center">Người Chơi</div>
-                </div>
-                <div className="divide-y divide-slate-400">
-                    {rankings.length === 0 ? (
-                        <div className="py-8 text-center text-slate-400 italic">
-                            Chưa có dữ liệu
-                        </div>
+                <SectionHeader title={sectionTitle} />
+                <div className="overflow-x-auto">
+                    {isPowerMode ? (
+                        <table className="w-full text-sm sm:text-base">
+                            <thead>
+                                <tr className="bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold">
+                                    <th className="px-3 py-2 text-left w-20 border-r border-slate-400">Hạng</th>
+                                    <th className="px-3 py-2 text-left border-r border-slate-400">Pokémon</th>
+                                    <th className="px-3 py-2 text-right w-40 border-r border-slate-400">Lực Chiến</th>
+                                    <th className="px-3 py-2 text-right w-28 border-r border-slate-400">Cấp</th>
+                                    <th className="px-3 py-2 text-left w-56">Người Chơi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rankings.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                                            Chưa có dữ liệu
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    rankings.map((entry) => {
+                                        const detailId = entry.userPokemonId || entry.id
+                                        const hasProfile = Boolean(entry.owner?._id)
+                                        const displayName = entry.nickname || entry.pokemon?.name || 'Pokemon'
+                                        const combatPower = resolveCombatPower(entry)
+                                        return (
+                                            <tr key={`${detailId || 'unknown'}-${entry.rank}`} className="border-b border-slate-200 hover:bg-blue-50 transition-colors">
+                                                <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
+                                                <td className="px-3 py-3 border-r border-slate-200">
+                                                    <div className="flex items-center gap-2">
+                                                        <Link to={`/pokemon/${detailId}`}>
+                                                            <img
+                                                                src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                                alt={displayName}
+                                                                className="w-12 h-12 object-contain pixelated"
+                                                            />
+                                                        </Link>
+                                                        <div>
+                                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline">
+                                                                {displayName}
+                                                            </Link>
+                                                            <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-extrabold text-rose-700 border-r border-slate-200">
+                                                    {numberFormat(combatPower)}
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">
+                                                    {numberFormat(entry.level)}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <img
+                                                            src={resolveAvatarUrl(entry.owner?.avatar, DEFAULT_AVATAR)}
+                                                            className="w-8 h-8 rounded object-cover border border-slate-300"
+                                                            alt={entry.owner?.username || 'Người Chơi'}
+                                                            onError={(event) => {
+                                                                event.currentTarget.onerror = null
+                                                                event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            disabled={!hasProfile}
+                                                            onClick={() => openTrainerProfile({
+                                                                userId: entry.owner?._id,
+                                                                username: entry.owner?.username,
+                                                                avatar: entry.owner?.avatar,
+                                                            }, { returnTo: '/rankings/pokemon' })}
+                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
+                                                        >
+                                                            {entry.owner?.username || 'Không rõ'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })
+                                )}
+                            </tbody>
+                        </table>
                     ) : (
-                        rankings.map((entry, index) => {
-                            const detailId = entry.userPokemonId || entry.id
-                            const pokemonName = entry.pokemon?.name || 'Không rõ'
-                            const level = entry.level || entry.pokemon?.level || 1
-                            const pokemonTitle = getPokemonTitleByLevel(level)
-                            const sprite = entry.sprite || entry.pokemon?.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                            return (
-                                <div
-                                    key={detailId}
-                                    className="grid grid-cols-12 items-center min-h-[120px] bg-white hover:bg-blue-50 transition-colors"
-                                >
-                                    <div className="col-span-3 sm:col-span-2 text-center text-base sm:text-lg md:text-xl font-extrabold text-slate-800 h-full flex items-center justify-center border-r border-slate-300 px-1 overflow-hidden">
-                                        {entry.rank}
-                                    </div>
-                                    <div className="col-span-3 sm:col-span-2 flex justify-center h-full items-center border-r border-slate-300 p-2">
-                                        <Link to={`/pokemon/${detailId}`}>
-                                            <img
-                                                src={sprite}
-                                                alt={pokemonName}
-                                                className="w-20 h-20 object-contain pixelated hover:scale-110 transition-transform cursor-pointer"
-                                                loading="lazy"
-                                                onError={(e) => {
-                                                    e.target.onerror = null
-                                                    e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                }}
-                                            />
-                                        </Link>
-                                    </div>
-                                    <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center border-r border-slate-300 p-2 gap-2">
-                                        <div className="text-center">
-                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 text-sm sm:text-base hover:underline flex items-center gap-1 justify-center flex-wrap">
-                                                {entry.nickname || pokemonName}
-                                                {entry.isShiny && <span className="text-yellow-500 text-xs" title="Shiny">✨</span>}
-                                            </Link>
-                                            <div className="text-xs sm:text-sm text-slate-600 font-medium">
-                                                Lv. {level.toLocaleString()}
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-wrap justify-center gap-1 sm:gap-2 w-full mt-1">
-                                            <button
-                                                className="bg-white hover:bg-slate-100 text-slate-800 text-[10px] sm:text-xs font-bold py-1 px-1.5 sm:px-3 border border-slate-400 rounded shadow-sm disabled:opacity-50 whitespace-nowrap"
-                                                onClick={() => handleChallengeFromRanking(detailId)}
-                                            >
-                                                Khiêu Chiến
-                                            </button>
-                                            <Link
-                                                to={`/pokemon/${detailId}`}
-                                                className="bg-white hover:bg-slate-100 text-slate-800 text-[10px] sm:text-xs font-bold py-1 px-1.5 sm:px-3 border border-slate-400 rounded shadow-sm inline-block whitespace-nowrap"
-                                            >
-                                                Chỉ Số
-                                            </Link>
-                                        </div>
-                                    </div>
-                                    <div className="col-span-3 sm:col-span-4 h-full flex flex-col justify-center items-center p-2 gap-1">
-                                        <div className="w-10 h-10 rounded overflow-hidden mb-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => openTrainerProfile({
-                                                    userId: entry.owner?._id,
-                                                    username: entry.owner?.username,
-                                                    avatar: entry.owner?.avatar,
-                                                }, { returnTo: '/rankings/pokemon' })}
-                                                className="w-10 h-10 rounded overflow-hidden"
-                                            >
-                                                <img
-                                                    src={resolveAvatarUrl(entry.owner?.avatar, DEFAULT_AVATAR)}
-                                                    className="w-full h-full object-cover"
-                                                    alt="Avatar"
-                                                    onError={(e) => {
-                                                        e.currentTarget.onerror = null
-                                                        e.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                                    }}
-                                                />
-                                            </button>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => openTrainerProfile({
-                                                userId: entry.owner?._id,
-                                                username: entry.owner?.username,
-                                                avatar: entry.owner?.avatar,
-                                            }, { returnTo: '/rankings/pokemon' })}
-                                            className={`font-bold text-sm sm:text-base hover:underline ${getUsernameColor(entry.rank)}`}
-                                        >
-                                            {entry.owner?.username || 'Không rõ'}
-                                        </button>
-                                        <div className={`text-xs ${getMasterTitleColor(entry.pokemon)} font-medium`}>
-                                            {pokemonTitle} {pokemonName}
-                                        </div>
-                                    </div>
-                                </div>
-                            )
-                        })
+                        <table className="w-full text-sm sm:text-base">
+                            <thead>
+                                <tr className="bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold">
+                                    <th className="px-3 py-2 text-left w-20 border-r border-slate-400">Hạng</th>
+                                    <th className="px-3 py-2 text-left border-r border-slate-400">Người Chơi</th>
+                                    <th className="px-3 py-2 text-right w-52 border-r border-slate-400">Pokemon / Tổng số</th>
+                                    <th className="px-3 py-2 text-right w-40">Hoàn Thành</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rankings.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="py-8 text-center text-slate-400 italic">
+                                            Chưa có dữ liệu
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    rankings.map((entry) => {
+                                        const collectedCount = Math.max(0, Number(entry.collectedCount || 0))
+                                        const totalPokemon = Math.max(0, Number(entry.totalPokemon || 0))
+                                        const completionPercent = Math.max(0, Number(entry.completionPercent || 0))
+                                        const hasProfile = Boolean(entry.userId)
+                                        return (
+                                            <tr key={`${entry.userId || 'unknown'}-${entry.rank}`} className="border-b border-slate-200 hover:bg-blue-50 transition-colors">
+                                                <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
+                                                <td className="px-3 py-3 border-r border-slate-200">
+                                                    <div className="flex items-center gap-3">
+                                                        <img
+                                                            src={resolveAvatarUrl(entry.avatar, DEFAULT_AVATAR)}
+                                                            className="w-10 h-10 rounded object-cover border border-slate-300"
+                                                            alt={entry.username || 'Người Chơi'}
+                                                            onError={(event) => {
+                                                                event.currentTarget.onerror = null
+                                                                event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            disabled={!hasProfile}
+                                                            onClick={() => openTrainerProfile({
+                                                                userId: entry.userId,
+                                                                username: entry.username,
+                                                                avatar: entry.avatar,
+                                                            }, { returnTo: '/rankings/pokemon' })}
+                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
+                                                        >
+                                                            {entry.username || 'Không rõ'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">
+                                                    <div>Pokemon: {numberFormat(collectedCount)}{totalSpecies > 0 ? `/${numberFormat(totalSpecies)}` : ''}</div>
+                                                    <div className="text-xs font-medium text-slate-500">
+                                                        Tổng số đã có: {numberFormat(totalPokemon)}
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right">
+                                                    <div className="font-bold text-blue-700">{numberFormat(completionPercent)}%</div>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })
+                                )}
+                            </tbody>
+                        </table>
                     )}
                 </div>
+
                 {pagination && pagination.totalPages > 1 && (
                     <div className="bg-slate-100 border-t-2 border-slate-800 p-2">
                         {renderPagination()}

@@ -20,6 +20,31 @@ const toOptionalNumber = (value) => {
     return Number.isFinite(parsed) ? parsed : null
 }
 
+const resolvePokemonCombatPower = (pokemonLike, statsLike = {}) => {
+    const directPower = Number(pokemonLike?.combatPower ?? pokemonLike?.power)
+    if (Number.isFinite(directPower) && directPower > 0) {
+        return Math.floor(directPower)
+    }
+
+    const level = Math.max(1, Number(pokemonLike?.level || 1))
+    const hp = Math.max(1, Number((statsLike?.maxHp ?? statsLike?.hp) || 1))
+    const atk = Math.max(1, Number(statsLike?.atk || 1))
+    const def = Math.max(1, Number(statsLike?.def || 1))
+    const spatk = Math.max(1, Number(statsLike?.spatk || 1))
+    const spdef = Math.max(1, Number(statsLike?.spdef || statsLike?.spldef || 1))
+    const spd = Math.max(1, Number(statsLike?.spd || 1))
+
+    const rawPower = (hp * 1.2)
+        + (atk * 1.8)
+        + (def * 1.45)
+        + (spatk * 1.8)
+        + (spdef * 1.45)
+        + (spd * 1.35)
+        + (level * 2)
+    const shinyBonus = pokemonLike?.isShiny ? 1.03 : 1
+    return Math.max(1, Math.floor(rawPower * shinyBonus))
+}
+
 const normalizeMoveKey = (value = '') => String(value || '').trim().toLowerCase()
 
 const InfoRow = ({ label, value, valueClass = '' }) => (
@@ -410,6 +435,7 @@ export default function PokemonInfoPage() {
     const formNormalSprite = resolvedForm?.imageUrl || resolvedForm?.sprites?.normal || resolvedForm?.sprites?.icon || base?.imageUrl || base?.sprites?.normal || base?.sprites?.icon || ''
     const formShinySprite = resolvedForm?.sprites?.shiny || base?.sprites?.shiny || formNormalSprite
     const stats = pokemon.stats
+    const combatPower = resolvePokemonCombatPower(pokemon, stats)
     const sprite = pokemon.isShiny ? formShinySprite : formNormalSprite
     const previousPokemon = pokemon.evolution?.previousPokemon || null
     const previousSprite = previousPokemon?.sprites?.normal || ''
@@ -539,6 +565,7 @@ export default function PokemonInfoPage() {
 
                         <div className="text-xs font-bold mt-1 flex gap-2">
                             <span className="bg-slate-200 px-2 py-0.5 rounded text-slate-700">Lv. {pokemon.level}</span>
+                            <span className="bg-rose-100 px-2 py-0.5 rounded text-rose-700">LC {combatPower.toLocaleString('vi-VN')}</span>
                             <span className={`bg-slate-100 px-2 py-0.5 rounded uppercase ${rarityColor}`}>
                                 {base.rarity.toUpperCase()}
                             </span>
@@ -597,6 +624,10 @@ export default function PokemonInfoPage() {
                         <StatRow
                             label="Sp. Def" value={stats.spdef}
                             label2="Speed" value2={stats.spd}
+                        />
+                        <StatRow
+                            label="Lực Chiến" value={combatPower.toLocaleString('vi-VN')}
+                            label2="Cấp" value2={`Lv. ${pokemon.level}`}
                         />
 
                         {/* Extra info row */}

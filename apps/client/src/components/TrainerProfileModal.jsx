@@ -7,6 +7,12 @@ const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master
 const PARTY_SLOT_TOTAL = 6
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
+const resolvePokemonCombatPower = (entry) => {
+    const raw = Number(entry?.combatPower ?? entry?.power)
+    if (Number.isFinite(raw) && raw > 0) return Math.floor(raw)
+    const level = Math.max(1, Number(entry?.level || 1))
+    return level * 10
+}
 
 const formatProfileDate = (value, withTime = false) => {
     if (!value) return 'Không rõ'
@@ -203,6 +209,7 @@ export default function TrainerProfileModal({
                                 fallback: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
                             })
                             const displayName = p.nickname || species.name || 'Unknown'
+                            const combatPower = resolvePokemonCombatPower(p)
 
                             return (
                                 <Link
@@ -234,6 +241,7 @@ export default function TrainerProfileModal({
                                         )}
                                     </div>
                                     <span className="text-xs text-amber-600 font-bold">Lv. {formatNumber(p.level)}</span>
+                                    <span className="text-[11px] text-rose-600 font-bold">LC: {formatNumber(combatPower)}</span>
                                 </Link>
                             )
                         })}
