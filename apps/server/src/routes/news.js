@@ -6,18 +6,52 @@ import { ADMIN_PERMISSIONS } from '../constants/adminPermissions.js'
 
 const router = express.Router()
 
+const normalizeTags = (value) => {
+    if (!Array.isArray(value)) return []
+    const seen = new Set()
+    const tags = []
+
+    for (const entry of value) {
+        const normalized = String(entry || '').trim().toLowerCase()
+        if (!normalized || seen.has(normalized)) continue
+        seen.add(normalized)
+        tags.push(normalized)
+    }
+
+    return tags
+}
+
+const normalizeImageUrls = (value) => {
+    if (!Array.isArray(value)) return []
+    const seen = new Set()
+    const imageUrls = []
+
+    for (const entry of value) {
+        const normalized = String(entry || '').trim()
+        if (!normalized || seen.has(normalized)) continue
+        seen.add(normalized)
+        imageUrls.push(normalized)
+    }
+
+    return imageUrls
+}
+
 // GET /api/news - Get latest published posts (public)
 router.get('/', async (req, res) => {
     try {
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10))
-        const allowedTypes = ['news', 'event', 'maintenance', 'update']
+        const allowedTypes = ['news', 'event', 'maintenance', 'update', 'notification', 'guide']
         const requestedType = String(req.query.type || '').trim().toLowerCase()
+        const requestedTag = String(req.query.tag || '').trim().toLowerCase()
         const query = { isPublished: true }
         if (requestedType) {
             if (!allowedTypes.includes(requestedType)) {
                 return res.status(400).json({ ok: false, message: 'Bộ lọc loại bài viết không hợp lệ' })
             }
             query.type = requestedType
+        }
+        if (requestedTag) {
+            query.tags = requestedTag
         }
 
         const posts = await Post.find(query)
@@ -71,8 +105,15 @@ router.get('/:id', async (req, res) => {
 // POST /api/news - Create post (admin only)
 router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
-        const { title, content, type, isPublished, mapId } = req.body
+        const { title, content, type, isPublished, mapId, imageUrl, imageUrls, tags } = req.body
         const normalizedMapId = typeof mapId === 'string' ? mapId.trim() : ''
+        const normalizedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : ''
+        const normalizedImageUrls = normalizeImageUrls(imageUrls)
+        const resolvedImageUrls = normalizedImageUrls.length > 0
+            ? normalizedImageUrls
+            : (normalizedImageUrl ? [normalizedImageUrl] : [])
+        const resolvedImageUrl = resolvedImageUrls[0] || ''
+        const normalizedTags = normalizeTags(tags)
 
         if (!title || !content) {
             return res.status(400).json({ ok: false, message: 'Tiêu đề và nội dung là bắt buộc' })
@@ -92,6 +133,9 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
             type: type || 'news',
             isPublished: isPublished !== undefined ? isPublished : true,
             mapId: normalizedMapId || null,
+            imageUrl: resolvedImageUrl,
+            imageUrls: resolvedImageUrls,
+            tags: normalizedTags,
         })
 
         await post.save()
@@ -110,7 +154,7 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
 // PUT /api/news/:id - Update post (admin only)
 router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
-        const { title, content, type, isPublished, mapId } = req.body
+        const { title, content, type, isPublished, mapId, imageUrl, imageUrls, tags } = req.body
 
         const post = await Post.findById(req.params.id)
 
@@ -122,6 +166,18 @@ router.put('/:id', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PE
         if (content) post.content = content
         if (type) post.type = type
         if (isPublished !== undefined) post.isPublished = isPublished
+        if (imageUrls !== undefined) {
+            const normalizedImageUrls = normalizeImageUrls(imageUrls)
+            post.imageUrls = normalizedImageUrls
+            post.imageUrl = normalizedImageUrls[0] || ''
+        } else if (imageUrl !== undefined) {
+            const normalizedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : ''
+            post.imageUrl = normalizedImageUrl
+            post.imageUrls = normalizedImageUrl ? [normalizedImageUrl] : []
+        }
+        if (tags !== undefined) {
+            post.tags = normalizeTags(tags)
+        }
         if (mapId !== undefined) {
             const normalizedMapId = typeof mapId === 'string' ? mapId.trim() : ''
             if (!normalizedMapId) {

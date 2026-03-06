@@ -23,8 +23,21 @@ const postSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ['news', 'event', 'maintenance', 'update'],
+            enum: ['news', 'event', 'maintenance', 'update', 'notification', 'guide'],
             default: 'news',
+        },
+        imageUrl: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        imageUrls: {
+            type: [String],
+            default: [],
+        },
+        tags: {
+            type: [String],
+            default: [],
         },
         isPublished: {
             type: Boolean,
@@ -38,6 +51,7 @@ const postSchema = new mongoose.Schema(
 
 // Index for efficient querying
 postSchema.index({ isPublished: 1, createdAt: -1 })
+postSchema.index({ isPublished: 1, tags: 1, createdAt: -1 })
 
 const Post = mongoose.model('Post', postSchema)
 

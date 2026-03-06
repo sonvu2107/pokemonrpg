@@ -14,9 +14,13 @@ const newsApi = {
             : (options || {})
         const limit = Number.isFinite(Number(normalized.limit)) ? Number(normalized.limit) : 10
         const type = String(normalized.type || '').trim().toLowerCase()
+        const tag = String(normalized.tag || '').trim().toLowerCase()
         const searchParams = new URLSearchParams({ limit: String(limit) })
         if (type) {
             searchParams.set('type', type)
+        }
+        if (tag) {
+            searchParams.set('tag', tag)
         }
 
         const res = await fetch(`${API_URL}/news?${searchParams.toString()}`)

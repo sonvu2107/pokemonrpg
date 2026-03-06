@@ -56,6 +56,7 @@ export default function LeftColumn() {
     const [legendaryMaps, setLegendaryMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
     const [eventPosts, setEventPosts] = useState([])
+    const [notificationPosts, setNotificationPosts] = useState([])
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
 
@@ -149,8 +150,9 @@ export default function LeftColumn() {
     useEffect(() => {
         const loadHighlights = async () => {
             try {
-                const [eventRes, newsRes, updateRes] = await Promise.all([
+                const [eventRes, notificationRes, newsRes, updateRes] = await Promise.all([
                     newsApi.getNews({ limit: 5, type: 'event' }),
+                    newsApi.getNews({ limit: 5, type: 'notification' }),
                     newsApi.getNews({ limit: 10, type: 'news' }),
                     newsApi.getNews({ limit: 5, type: 'update' }),
                 ])
@@ -161,10 +163,12 @@ export default function LeftColumn() {
                 ]).slice(0, 5)
 
                 setEventPosts(eventRes?.ok ? (eventRes.posts || []) : [])
+                setNotificationPosts(sortPostsByDate(notificationRes?.ok ? (notificationRes.posts || []) : []).slice(0, 5))
                 setUpdatePosts(mergedUpdates)
             } catch (err) {
                 console.error('Không thể tải điểm nhấn:', err)
                 setEventPosts([])
+                setNotificationPosts([])
                 setUpdatePosts([])
             } finally {
                 setLoadingHighlights(false)
@@ -186,6 +190,21 @@ export default function LeftColumn() {
                 ) : (
                     eventPosts.map((post) => (
                         <SidebarLink key={post._id} to={resolveEventTarget(post)} isSpecial>
+                            {post.title}
+                        </SidebarLink>
+                    ))
+                )}
+            </SidebarSection>
+
+            {/* NOTIFICATIONS */}
+            <SidebarSection title="Thông Báo" iconId={120}>
+                {loadingHighlights ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
+                ) : notificationPosts.length === 0 ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Chưa có thông báo mới.</div>
+                ) : (
+                    notificationPosts.map((post) => (
+                        <SidebarLink key={post._id} to={resolveNewsTarget(post)} isSpecial>
                             {post.title}
                         </SidebarLink>
                     ))

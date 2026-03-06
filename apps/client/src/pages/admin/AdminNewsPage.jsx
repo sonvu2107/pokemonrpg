@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import newsApi from '../../services/newsApi'
+import ImageUpload from '../../components/ImageUpload'
 import { mapApi as publicMapApi } from '../../services/mapApi'
 import { mapApi as adminMapApi } from '../../services/adminApi'
 import { useAuth } from '../../context/AuthContext'
@@ -12,6 +13,9 @@ const createDefaultFormData = (isEventManager) => ({
     type: isEventManager ? 'event' : 'news',
     isPublished: true,
     mapId: '',
+    imageUrl: '',
+    imageUrls: [],
+    tagsText: '',
 })
 
 const createDefaultMapFormData = () => ({
@@ -21,6 +25,53 @@ const createDefaultMapFormData = () => ({
     levelMax: 10,
     mapImageUrl: '',
 })
+
+const normalizeImageUrls = (imageUrls = []) => {
+    if (!Array.isArray(imageUrls)) return []
+    const normalized = []
+    const seen = new Set()
+
+    for (const imageUrl of imageUrls) {
+        const nextImageUrl = String(imageUrl || '').trim()
+        if (!nextImageUrl || seen.has(nextImageUrl)) continue
+        seen.add(nextImageUrl)
+        normalized.push(nextImageUrl)
+    }
+
+    return normalized
+}
+
+const normalizeTags = (tags = []) => {
+    if (!Array.isArray(tags)) return []
+    const normalized = []
+    const seen = new Set()
+
+    for (const tag of tags) {
+        const nextTag = String(tag || '').trim().toLowerCase()
+        if (!nextTag || seen.has(nextTag)) continue
+        seen.add(nextTag)
+        normalized.push(nextTag)
+    }
+
+    return normalized
+}
+
+const parseTagsInput = (value = '') => {
+    return normalizeTags(String(value || '').split(','))
+}
+
+const resolvePostImages = (post) => {
+    const normalized = normalizeImageUrls(post?.imageUrls)
+    if (normalized.length > 0) return normalized
+    const legacyImage = String(post?.imageUrl || '').trim()
+    return legacyImage ? [legacyImage] : []
+}
+
+const resolvePostTags = (post) => normalizeTags(post?.tags)
+
+const resolveFilterType = (type) => (type === 'maintenance' ? 'update' : type)
+
+const PAGE_SIZE = 8
 
 export default function AdminNewsPage({ mode = 'all' }) {
     const { canAccessAdminModule } = useAuth()
@@ -36,6 +87,8 @@ export default function AdminNewsPage({ mode = 'all' }) {
     const [showForm, setShowForm] = useState(false)
     const [editingPost, setEditingPost] = useState(null)
     const [formData, setFormData] = useState(createDefaultFormData(mode === 'events'))
+    const [selectedTypeFilter, setSelectedTypeFilter] = useState('all')
+    const [currentPage, setCurrentPage] = useState(1)
 
     const isEventManager = mode === 'events'
     const canManageMaps = canAccessAdminModule(ADMIN_PERMISSIONS.MAPS)
@@ -57,6 +110,10 @@ export default function AdminNewsPage({ mode = 'all' }) {
         }
     }, [isEventManager])
 
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [selectedTypeFilter, isEventManager])
+
     const loadPosts = async () => {
         try {
             const response = await newsApi.getAllNews()
@@ -64,7 +121,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                 const allPosts = response.posts || []
                 const filteredPosts = isEventManager
                     ? allPosts.filter((post) => post.type === 'event' || post.type === 'update')
-                    : allPosts
+                    : allPosts.filter((post) => post.type !== 'event')
                 setPosts(filteredPosts)
             }
         } catch (error) {
@@ -142,12 +199,22 @@ export default function AdminNewsPage({ mode = 'all' }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
+        const normalizedImageUrls = normalizeImageUrls(formData.imageUrls)
+        const { tagsText, ...baseFormData } = formData
+        const payload = {
+            ...baseFormData,
+            title: String(formData.title || '').trim(),
+            content: String(formData.content || '').trim(),
+            imageUrls: normalizedImageUrls,
+            imageUrl: normalizedImageUrls[0] || String(formData.imageUrl || '').trim(),
+            tags: parseTagsInput(tagsText),
+        }
 
         try {
             if (editingPost) {
-                await newsApi.updateNews(editingPost._id, formData)
+                await newsApi.updateNews(editingPost._id, payload)
             } else {
-                await newsApi.createNews(formData)
+                await newsApi.createNews(payload)
             }
 
             setShowForm(false)
@@ -168,6 +235,9 @@ export default function AdminNewsPage({ mode = 'all' }) {
             type: post.type,
             isPublished: post.isPublished,
             mapId: post.mapId?._id || '',
+            imageUrls: resolvePostImages(post),
+            imageUrl: String(post.imageUrl || '').trim(),
+            tagsText: resolvePostTags(post).join(', '),
         })
         setShowForm(true)
     }
@@ -197,13 +267,30 @@ export default function AdminNewsPage({ mode = 'all' }) {
 
     const getTypeLabel = (type) => {
         const labels = {
-            news: 'Tin tức',
+            news: 'Tin tức game',
             event: 'Sự kiện',
-            maintenance: 'Bảo trì',
-            update: 'Cập nhật',
+            maintenance: 'Cập nhật game',
+            update: 'Cập nhật game',
+            notification: 'Thông báo',
+            guide: 'Guide game',
         }
-        return labels[type] || 'Tin tức'
+        return labels[type] || 'Tin tức game'
     }
+
+    const availableTypes = Array.from(new Set(
+        posts.map((post) => resolveFilterType(post.type)).filter(Boolean)
+    )).sort((a, b) => getTypeLabel(a).localeCompare(getTypeLabel(b), 'vi'))
+
+    const filteredPosts = posts.filter((post) => {
+        if (selectedTypeFilter === 'all') return true
+        return resolveFilterType(post.type) === selectedTypeFilter
+    })
+
+    const totalPages = Math.max(1, Math.ceil(filteredPosts.length / PAGE_SIZE))
+    const safeCurrentPage = Math.min(currentPage, totalPages)
+    const startIndex = filteredPosts.length === 0 ? 0 : ((safeCurrentPage - 1) * PAGE_SIZE) + 1
+    const endIndex = Math.min(filteredPosts.length, safeCurrentPage * PAGE_SIZE)
+    const paginatedPosts = filteredPosts.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE)
 
     return (
         <div className="space-y-4">
@@ -253,6 +340,35 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                 />
                             </div>
 
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">
+                                    Tags (phân cách bằng dấu phẩy)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formData.tagsText}
+                                    onChange={(e) => setFormData({ ...formData, tagsText: e.target.value })}
+                                    placeholder="vd: quan-trong, vip, su-kien"
+                                    className="w-full px-3 py-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div className="rounded border border-blue-200 bg-white p-3">
+                                <ImageUpload
+                                    currentImage={formData.imageUrls[0] || formData.imageUrl}
+                                    multiple
+                                    onUploadSuccess={(urls) => {
+                                        const normalizedUrls = normalizeImageUrls(urls)
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            imageUrls: normalizedUrls,
+                                            imageUrl: normalizedUrls[0] || '',
+                                        }))
+                                    }}
+                                    label="Ảnh tin tức (nhiều ảnh)"
+                                />
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-1">
@@ -263,10 +379,12 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                         onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                         className="w-full px-3 py-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        {!isEventManager && <option value="news">Tin tức</option>}
-                                        <option value="event">Sự kiện</option>
-                                        {!isEventManager && <option value="maintenance">Bảo trì</option>}
-                                        <option value="update">Cập nhật</option>
+                                        {!isEventManager && <option value="notification">Thông báo</option>}
+                                        {!isEventManager && <option value="update">Cập nhật game</option>}
+                                        {!isEventManager && <option value="guide">Guide game</option>}
+                                        {!isEventManager && <option value="news">Tin tức game</option>}
+                                        {isEventManager && <option value="event">Sự kiện</option>}
+                                        {isEventManager && <option value="update">Cập nhật game</option>}
                                     </select>
                                 </div>
 
@@ -436,63 +554,141 @@ export default function AdminNewsPage({ mode = 'all' }) {
                 )}
 
                 <div className="p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded border border-blue-100 bg-blue-50 px-3 py-2">
+                        <div className="text-xs font-medium text-blue-800">
+                            Hiển thị {startIndex}-{endIndex} / {filteredPosts.length} bài
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-slate-700">Lọc theo loại</label>
+                            <select
+                                value={selectedTypeFilter}
+                                onChange={(e) => setSelectedTypeFilter(e.target.value)}
+                                className="px-2 py-1 text-xs border border-blue-200 rounded bg-white text-slate-700"
+                            >
+                                <option value="all">Tất cả</option>
+                                {availableTypes.map((type) => (
+                                    <option key={type} value={type}>{getTypeLabel(type)}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
                     {loading ? (
                         <div className="text-center py-8 text-slate-500">Đang tải...</div>
-                    ) : posts.length === 0 ? (
+                    ) : filteredPosts.length === 0 ? (
                         <div className="text-center py-8 text-slate-500">
-                            {isEventManager ? 'Chưa có sự kiện/cập nhật nào.' : 'Chưa có tin tức nào.'}
+                            {selectedTypeFilter === 'all'
+                                ? (isEventManager ? 'Chưa có sự kiện/cập nhật nào.' : 'Chưa có tin tức nào.')
+                                : 'Không có bài viết nào khớp loại đã chọn.'}
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {posts.map((post) => (
-                                <div
-                                    key={post._id}
-                                    className="border border-blue-200 rounded bg-white shadow-sm overflow-hidden"
-                                >
-                                    <div className="bg-blue-50 border-b border-blue-100 px-3 py-2 flex justify-between items-center">
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-blue-800">{post.title}</h3>
-                                            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
-                                                {getTypeLabel(post.type)}
-                                            </span>
-                                            {!post.isPublished && (
-                                                <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
-                                                    Nháp
+                            {paginatedPosts.map((post) => {
+                                const postImages = resolvePostImages(post)
+                                const postTags = resolvePostTags(post)
+                                return (
+                                    <div
+                                        key={post._id}
+                                        className="border border-blue-200 rounded bg-white shadow-sm overflow-hidden"
+                                    >
+                                        <div className="bg-blue-50 border-b border-blue-100 px-3 py-2 flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-bold text-blue-800">{post.title}</h3>
+                                                <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
+                                                    {getTypeLabel(post.type)}
                                                 </span>
+                                                {post.type === 'notification' && (
+                                                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
+                                                        Thông báo
+                                                    </span>
+                                                )}
+                                                {!post.isPublished && (
+                                                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
+                                                        Nháp
+                                                    </span>
+                                                )}
+                                                {postTags.map((tag) => (
+                                                    <span
+                                                        key={`${post._id}-${tag}`}
+                                                        className="text-[10px] bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-300"
+                                                    >
+                                                        #{tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleEdit(post)}
+                                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold"
+                                                >
+                                                    Sửa
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(post._id)}
+                                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold"
+                                                >
+                                                    Xóa
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="p-3">
+                                            <p className="text-sm text-slate-700 mb-2 line-clamp-2">{post.content}</p>
+                                            {postImages.length > 0 && (
+                                                <div className="mb-3 mt-2">
+                                                    <div className="relative overflow-hidden rounded border border-blue-100">
+                                                        <img
+                                                            src={postImages[0]}
+                                                            alt={`${post.title} - 1`}
+                                                            className="w-full h-36 object-cover"
+                                                        />
+                                                        {postImages.length > 1 && (
+                                                            <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
+                                                                +{postImages.length - 1} ảnh
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             )}
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleEdit(post)}
-                                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold"
-                                            >
-                                                Sửa
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(post._id)}
-                                                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold"
-                                            >
-                                                Xóa
-                                            </button>
+                                            {post.mapId?.slug && (
+                                                <Link
+                                                    to={`/map/${post.mapId.slug}`}
+                                                    className="inline-flex items-center text-xs text-blue-700 hover:text-blue-800 font-bold mb-2"
+                                                >
+                                                    Map: {post.mapId.name}
+                                                </Link>
+                                            )}
+                                            <div className="flex justify-between items-center text-xs text-slate-500">
+                                                <span>Đăng bởi: {post.author?.username || 'Unknown'}</span>
+                                                <span>{formatDate(post.createdAt)}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="p-3">
-                                        <p className="text-sm text-slate-700 mb-2 line-clamp-2">{post.content}</p>
-                                        {post.mapId?.slug && (
-                                            <Link
-                                                to={`/map/${post.mapId.slug}`}
-                                                className="inline-flex items-center text-xs text-blue-700 hover:text-blue-800 font-bold mb-2"
-                                            >
-                                                Map: {post.mapId.name}
-                                            </Link>
-                                        )}
-                                        <div className="flex justify-between items-center text-xs text-slate-500">
-                                            <span>Đăng bởi: {post.author?.username || 'Unknown'}</span>
-                                            <span>{formatDate(post.createdAt)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                )
+                            })}
+                        </div>
+                    )}
+
+                    {!loading && filteredPosts.length > 0 && (
+                        <div className="mt-4 flex items-center justify-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                disabled={safeCurrentPage <= 1}
+                                className="px-3 py-1 text-xs font-bold rounded border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                ← Trước
+                            </button>
+                            <span className="text-xs font-bold text-slate-700 px-2">
+                                Trang {safeCurrentPage}/{totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                disabled={safeCurrentPage >= totalPages}
+                                className="px-3 py-1 text-xs font-bold rounded border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Sau →
+                            </button>
                         </div>
                     )}
                 </div>

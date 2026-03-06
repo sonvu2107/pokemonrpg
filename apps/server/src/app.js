@@ -66,7 +66,7 @@ app.use(
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 700, // limit each IP to 700 requests per windowMs
+    max: 500, // limit each IP to 500 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
     // Return JSON instead of plain text

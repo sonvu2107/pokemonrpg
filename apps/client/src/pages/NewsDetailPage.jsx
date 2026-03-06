@@ -4,12 +4,14 @@ import newsApi from '../services/newsApi'
 
 const getTypeLabel = (type) => {
     const labels = {
-        news: 'Tin tức',
+        news: 'Tin tức game',
         event: 'Sự kiện',
-        maintenance: 'Bảo trì',
-        update: 'Cập nhật',
+        maintenance: 'Cập nhật game',
+        update: 'Cập nhật game',
+        notification: 'Thông báo',
+        guide: 'Guide game',
     }
-    return labels[type] || 'Tin tức'
+    return labels[type] || 'Tin tức game'
 }
 
 const formatDateTime = (dateString) => {
@@ -23,11 +25,23 @@ const formatDateTime = (dateString) => {
     })
 }
 
+const resolvePostImages = (post) => {
+    if (Array.isArray(post?.imageUrls) && post.imageUrls.length > 0) {
+        return post.imageUrls
+            .map((imageUrl) => String(imageUrl || '').trim())
+            .filter(Boolean)
+    }
+
+    const legacyImage = String(post?.imageUrl || '').trim()
+    return legacyImage ? [legacyImage] : []
+}
+
 export default function NewsDetailPage() {
     const { id } = useParams()
     const [post, setPost] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const postImages = resolvePostImages(post)
 
     useEffect(() => {
         let cancelled = false
@@ -87,6 +101,11 @@ export default function NewsDetailPage() {
                             <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
                                 {getTypeLabel(post.type)}
                             </span>
+                            {post.type === 'notification' && (
+                                <span className="text-xs bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded">
+                                    Thông báo
+                                </span>
+                            )}
                         </div>
                         <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span>{formatDateTime(post.createdAt)}</span>
@@ -96,6 +115,34 @@ export default function NewsDetailPage() {
 
                     <div className="p-4 text-slate-700">
                         <p className="whitespace-pre-wrap">{post.content}</p>
+                        {postImages.length > 0 && (
+                            <div className="mt-4 space-y-3">
+                                <div className="relative overflow-hidden rounded border border-blue-100">
+                                    <img
+                                        src={postImages[0]}
+                                        alt={`${post.title} - 1`}
+                                        className="w-full max-h-[420px] object-cover"
+                                    />
+                                    {postImages.length > 1 && (
+                                        <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
+                                            +{postImages.length - 1} ảnh
+                                        </span>
+                                    )}
+                                </div>
+                                {postImages.length > 1 && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                        {postImages.slice(1).map((imageUrl, index) => (
+                                            <img
+                                                key={`${post._id}-${index + 1}`}
+                                                src={imageUrl}
+                                                alt={`${post.title} - ${index + 2}`}
+                                                className="w-full h-32 sm:h-40 object-cover rounded border border-blue-100"
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         {post.mapId?.slug && (
                             <div className="mt-4">
                                 <Link

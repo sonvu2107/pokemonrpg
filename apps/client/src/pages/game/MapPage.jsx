@@ -8,7 +8,12 @@ import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 10
+const SEARCH_BUTTON_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 650
+
+const isSearchDebugModeEnabled = () => {
+    return Boolean(import.meta.env.DEV)
+}
 
 const getLastEncounterStorageKey = (slug = '') => `${LAST_ENCOUNTER_STORAGE_PREFIX}${String(slug || '').trim().toLowerCase()}`
 
@@ -35,6 +40,7 @@ const buildEncounterSummary = (result = {}) => {
 
 export default function MapPage() {
     const { slug } = useParams()
+    const isSearchDebugMode = isSearchDebugModeEnabled()
     const [map, setMap] = useState(null)
     const [dropRates, setDropRates] = useState([])
     const [loading, setLoading] = useState(true)
@@ -67,6 +73,7 @@ export default function MapPage() {
     const shouldRestoreSearchScrollRef = useRef(false)
     const searchSpamCountRef = useRef(0)
     const lastSearchRequestAtRef = useRef(0)
+    const searchButtonRepositionTimerRef = useRef(null)
     const formattedGold = Number(playerState.platinumCoins || 0).toLocaleString('vi-VN')
     const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
@@ -124,6 +131,14 @@ export default function MapPage() {
         searchSpamCountRef.current = 0
         setSearchButtonOffset({ x: 0, y: 0 })
     }, [slug])
+
+    useEffect(() => () => {
+        if (typeof window === 'undefined') return
+        if (searchButtonRepositionTimerRef.current) {
+            window.clearTimeout(searchButtonRepositionTimerRef.current)
+            searchButtonRepositionTimerRef.current = null
+        }
+    }, [])
 
     useEffect(() => {
         if (searching || !shouldRestoreSearchScrollRef.current) return
@@ -205,7 +220,23 @@ export default function MapPage() {
     }
 
     const resetSearchButtonOffset = () => {
+        if (typeof window !== 'undefined' && searchButtonRepositionTimerRef.current) {
+            window.clearTimeout(searchButtonRepositionTimerRef.current)
+            searchButtonRepositionTimerRef.current = null
+        }
         setSearchButtonOffset({ x: 0, y: 0 })
+    }
+
+    const scheduleSearchButtonReposition = () => {
+        if (typeof window === 'undefined') return
+
+        if (searchButtonRepositionTimerRef.current) {
+            window.clearTimeout(searchButtonRepositionTimerRef.current)
+        }
+
+        searchButtonRepositionTimerRef.current = window.setTimeout(() => {
+            nudgeSearchButton()
+        }, SEARCH_BUTTON_REPOSITION_INTERVAL_MS)
     }
 
     const nudgeSearchButton = () => {
@@ -225,6 +256,7 @@ export default function MapPage() {
         const nextY = randomFarOffset(minY, maxY)
 
         setSearchButtonOffset({ x: nextX, y: nextY })
+        scheduleSearchButtonReposition()
     }
 
     const registerSearchSpamAttempt = (retryAfterMs = 0) => {
@@ -232,7 +264,7 @@ export default function MapPage() {
         searchSpamCountRef.current = nextSpamCount
 
         const isButtonCurrentlyShifted = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
-        if (isButtonCurrentlyShifted || (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
+        if (!isButtonCurrentlyShifted && (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
             nudgeSearchButton()
         }
 
@@ -746,6 +778,16 @@ export default function MapPage() {
                     >
                         Tìm kiếm{searching ? '...' : ''}
                     </button>
+
+                    {isSearchDebugMode && (
+                        <button
+                            type="button"
+                            onClick={nudgeSearchButton}
+                            className="px-4 py-1.5 rounded border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold"
+                        >
+                            Debug: Di chuyển nút tìm kiếm
+                        </button>
+                    )}
                 </div>
 
                 {/* Footer / Results Log */}

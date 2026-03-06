@@ -8,6 +8,8 @@ import { resolveAvatarUrl } from '../utils/avatarUrl'
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
+const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 10
+const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
 const normalizeEntityId = (value = '') => String(value || '').trim()
@@ -429,6 +431,8 @@ const ActiveBattleView = ({
     isAttacking,
     activePartyIndex,
     partyHpState,
+    allowAttackSpamClicks,
+    attackButtonOffset,
 }) => {
     const resolvedActiveIndex = Number.isInteger(activePartyIndex)
         ? activePartyIndex
@@ -551,6 +555,16 @@ const ActiveBattleView = ({
             if (!entry?.item?._id || Number(entry?.quantity) <= 0) return false
             return itemType === 'healing'
         })
+    const safeAttackButtonOffset = (attackButtonOffset && typeof attackButtonOffset === 'object')
+        ? attackButtonOffset
+        : { x: 0, y: 0 }
+    const attackButtonStyle = allowAttackSpamClicks
+        ? {
+            transform: `translate(${safeAttackButtonOffset.x}px, ${safeAttackButtonOffset.y}px)`,
+            position: 'relative',
+            zIndex: 40,
+        }
+        : undefined
 
     return (
         <div className="space-y-3 animate-fadeIn">
@@ -636,7 +650,7 @@ const ActiveBattleView = ({
                 </div>
             </div>
 
-            <div className="border border-slate-400 bg-white rounded overflow-hidden">
+            <div className={`border border-slate-400 bg-white rounded ${allowAttackSpamClicks ? 'overflow-visible' : 'overflow-hidden'}`}>
                 <div className="flex border-b border-slate-300 text-xs font-bold bg-slate-50">
                     <button
                         onClick={() => onSelectTab('fight')}
@@ -818,8 +832,9 @@ const ActiveBattleView = ({
                         </div>
                         <button
                             onClick={() => onAttack?.(selectedMove)}
-                            disabled={!playerMon || isAttacking}
+                            disabled={!playerMon || (isAttacking && !allowAttackSpamClicks)}
                             className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm text-sm mx-auto disabled:opacity-50"
+                            style={attackButtonStyle}
                         >
                             {isAttacking ? 'Đang tấn công...' : 'Tấn Công'}
                         </button>
@@ -893,8 +908,29 @@ export function BattlePage() {
     const [isStartingRankedDuel, setIsStartingRankedDuel] = useState(false)
     const [isStartingOnlineChallenge, setIsStartingOnlineChallenge] = useState(false)
     const [shouldResetTrainerSession, setShouldResetTrainerSession] = useState(false)
+    const [trainerAttackButtonOffset, setTrainerAttackButtonOffset] = useState({ x: 0, y: 0 })
     const rankedChallengeLockRef = useRef('')
     const didInitLoadRef = useRef(false)
+    const trainerAttackSpamCountRef = useRef(0)
+    const trainerAttackRepositionTimerRef = useRef(null)
+
+    useEffect(() => () => {
+        if (typeof window === 'undefined') return
+        if (trainerAttackRepositionTimerRef.current) {
+            window.clearTimeout(trainerAttackRepositionTimerRef.current)
+            trainerAttackRepositionTimerRef.current = null
+        }
+    }, [])
+
+    useEffect(() => {
+        if (activeBattleMode === 'trainer') return
+        if (typeof window !== 'undefined' && trainerAttackRepositionTimerRef.current) {
+            window.clearTimeout(trainerAttackRepositionTimerRef.current)
+            trainerAttackRepositionTimerRef.current = null
+        }
+        trainerAttackSpamCountRef.current = 0
+        setTrainerAttackButtonOffset({ x: 0, y: 0 })
+    }, [activeBattleMode])
 
     const completedSlides = []
     for (let index = 0; index < completedEntries.length; index += completedEntriesPerView) {
@@ -1204,8 +1240,85 @@ export function BattlePage() {
         navigateBackToRankingsAfterDuel()
     }
 
+    const clearTrainerAttackRepositionTimer = () => {
+        if (typeof window === 'undefined') return
+        if (trainerAttackRepositionTimerRef.current) {
+            window.clearTimeout(trainerAttackRepositionTimerRef.current)
+            trainerAttackRepositionTimerRef.current = null
+        }
+    }
+
+    const isTrainerAttackButtonShifted = () => {
+        return trainerAttackButtonOffset.x !== 0 || trainerAttackButtonOffset.y !== 0
+    }
+
+    const resetTrainerAttackButtonOffset = () => {
+        clearTrainerAttackRepositionTimer()
+        setTrainerAttackButtonOffset({ x: 0, y: 0 })
+    }
+
+    const resolveTrainerAttackButtonOffset = () => {
+        if (typeof window === 'undefined') return { x: 0, y: 0 }
+
+        const viewportWidth = Number(window.innerWidth || 1024)
+        const minX = viewportWidth < 640 ? 26 : 90
+        const maxX = viewportWidth < 640 ? 50 : 150
+        const minY = viewportWidth < 640 ? 12 : 28
+        const maxY = viewportWidth < 640 ? 30 : 70
+        const randomFarOffset = (min, max) => {
+            const distance = min + Math.floor(Math.random() * Math.max(1, (max - min + 1)))
+            return (Math.random() < 0.5 ? -1 : 1) * distance
+        }
+
+        return {
+            x: randomFarOffset(minX, maxX),
+            y: randomFarOffset(minY, maxY),
+        }
+    }
+
+    const scheduleTrainerAttackButtonReposition = () => {
+        if (typeof window === 'undefined') return
+        clearTrainerAttackRepositionTimer()
+        trainerAttackRepositionTimerRef.current = window.setTimeout(() => {
+            setTrainerAttackButtonOffset(resolveTrainerAttackButtonOffset())
+            scheduleTrainerAttackButtonReposition()
+        }, TRAINER_ATTACK_REPOSITION_INTERVAL_MS)
+    }
+
+    const nudgeTrainerAttackButton = () => {
+        if (typeof window === 'undefined') return
+
+        setTrainerAttackButtonOffset(resolveTrainerAttackButtonOffset())
+        scheduleTrainerAttackButtonReposition()
+    }
+
+    const registerTrainerAttackSpamAttempt = () => {
+        const nextSpamCount = trainerAttackSpamCountRef.current + 1
+        trainerAttackSpamCountRef.current = nextSpamCount
+
+        if (!isTrainerAttackButtonShifted() && (nextSpamCount % TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD === 0)) {
+            nudgeTrainerAttackButton()
+        }
+
+        if (isTrainerAttackButtonShifted()) {
+            setActionMessage('Chú ý: Nút tấn công đã đổi vị trí do thao tác quá nhanh.')
+        }
+    }
+
     const handleAttack = async (selectedMove) => {
-        if (isAttacking || duelResultModal || !battleOpponent?.team?.length) return
+        const isTrainerBattle = activeBattleMode === 'trainer'
+
+        if (isTrainerBattle && isTrainerAttackButtonShifted()) {
+            resetTrainerAttackButtonOffset()
+            trainerAttackSpamCountRef.current = 0
+        }
+
+        if (isAttacking || duelResultModal || !battleOpponent?.team?.length) {
+            if (isTrainerBattle && isAttacking) {
+                registerTrainerAttackSpamAttempt()
+            }
+            return
+        }
 
         const currentIndex = battleOpponent.currentIndex || 0
         const target = battleOpponent.team[currentIndex]
@@ -1741,6 +1854,12 @@ export function BattlePage() {
             }
         } catch (err) {
             setActionMessage(err.message)
+            if (activeBattleMode === 'trainer') {
+                const isCooldownError = err?.code === 'ACTION_COOLDOWN' || /quá nhanh/i.test(String(err?.message || ''))
+                if (isCooldownError) {
+                    registerTrainerAttackSpamAttempt()
+                }
+            }
             if (String(err?.message || '').toLowerCase().includes('bại trận')) {
                 if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
                     showRankedDuelResultModal({
@@ -2434,6 +2553,8 @@ export function BattlePage() {
                     isAttacking={isAttacking}
                     activePartyIndex={battlePlayerIndex}
                     partyHpState={battlePartyHpState}
+                    allowAttackSpamClicks={activeBattleMode === 'trainer'}
+                    attackButtonOffset={activeBattleMode === 'trainer' ? trainerAttackButtonOffset : { x: 0, y: 0 }}
                 />
                 {(activeBattleMode === 'duel' || activeBattleMode === 'online') && duelResultModal && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

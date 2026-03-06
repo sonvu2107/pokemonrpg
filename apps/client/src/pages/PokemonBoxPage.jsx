@@ -12,7 +12,22 @@ const SectionHeader = ({ title }) => (
     </div>
 )
 
+const NEW_POKEMON_TAG_TTL_MS = 5 * 60 * 1000
+const NEW_POKEMON_BADGE_REFRESH_MS = 15 * 1000
+
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const getPokemonCaughtAtMs = (entry) => {
+    const source = entry?.obtainedAt || entry?.createdAt
+    const parsed = source ? new Date(source).getTime() : NaN
+    return Number.isFinite(parsed) ? parsed : 0
+}
+
+const isRecentlyCaughtPokemon = (entry, nowMs = Date.now()) => {
+    const caughtAtMs = getPokemonCaughtAtMs(entry)
+    if (!caughtAtMs) return false
+    return nowMs - caughtAtMs <= NEW_POKEMON_TAG_TTL_MS
+}
 
 const resolvePokemonDisplay = (entry) => {
     const species = entry?.pokemonId || {}
@@ -42,6 +57,7 @@ export default function PokemonBoxPage() {
     const [filter, setFilter] = useState('all')
     const [search, setSearch] = useState('')
     const [sort, setSort] = useState('id')
+    const [nowMs, setNowMs] = useState(() => Date.now())
     const [page, setPage] = useState(1)
     const [debouncedSearch, setDebouncedSearch] = useState('')
     const wallet = {
@@ -57,6 +73,14 @@ export default function PokemonBoxPage() {
     useEffect(() => {
         setPage(1)
     }, [filter, debouncedSearch, sort])
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNowMs(Date.now())
+        }, NEW_POKEMON_BADGE_REFRESH_MS)
+
+        return () => clearInterval(timer)
+    }, [])
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -277,10 +301,16 @@ export default function PokemonBoxPage() {
                                     const rarity = species.rarity || 'd'
                                     const style = getRarityStyle(rarity)
                                     const isEvolvable = canEvolve(p)
+                                    const isNewlyCaught = isRecentlyCaughtPokemon(p, nowMs)
                                     const showFormLabel = Boolean(display.formName) && display.formId !== 'normal'
 
                                     return (
                                         <div key={p._id} className={`group relative flex flex-col items-center p-2 rounded cursor-pointer transition-all hover:scale-105 ${style.border} ${style.bg} ${style.shadow} ${style.frameClass}`}>
+                                            {isNewlyCaught && (
+                                                <span className="pointer-events-none absolute top-0 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-full bg-rose-600 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wide text-white shadow-sm">
+                                                    NEW
+                                                </span>
+                                            )}
                                             {isEvolvable && (
                                                 <Link
                                                     to={`/pokemon/${p._id}/evolve`}
