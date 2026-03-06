@@ -235,6 +235,8 @@ export default function PokemonRankingsPage() {
                                                                 username: entry.owner?.username,
                                                                 avatar: entry.owner?.avatar,
                                                                 role: entry.owner?.role,
+                                                                vipTierLevel: entry.owner?.vipTierLevel,
+                                                                vipTierCode: entry.owner?.vipTierCode,
                                                                 vipBenefits: entry.owner?.vipBenefits,
                                                             }, { returnTo: '/rankings/pokemon' })}
                                                             className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
@@ -299,6 +301,8 @@ export default function PokemonRankingsPage() {
                                                                 username: entry.username,
                                                                 avatar: entry.avatar,
                                                                 role: entry.role,
+                                                                vipTierLevel: entry.vipTierLevel,
+                                                                vipTierCode: entry.vipTierCode,
                                                                 vipBenefits: entry.vipBenefits,
                                                             }, { returnTo: '/rankings/pokemon' })}
                                                             className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}

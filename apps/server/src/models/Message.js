@@ -23,6 +23,19 @@ const messageSchema = new mongoose.Schema({
       enum: ['user', 'vip', 'admin'],
       default: 'user'
     },
+    vipTierLevel: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 9999,
+    },
+    vipTierCode: {
+      type: String,
+      default: '',
+      trim: true,
+      uppercase: true,
+      maxlength: 32,
+    },
     level: {
       type: Number,
       default: 1

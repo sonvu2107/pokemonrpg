@@ -3,7 +3,7 @@ import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { api } from "../services/api"
 import VipAvatar from "../components/VipAvatar"
-import { isVipRole, getVipTitle } from "../utils/vip"
+import { isVipRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
@@ -63,6 +63,7 @@ export default function AppShell() {
     }, [user?.id, user?.avatar, user?.level])
 
     const vipTitle = getVipTitle(user)
+    const vipBadgeLabel = getVipBadgeLabel(user)
 
 
     return (
@@ -106,7 +107,7 @@ export default function AppShell() {
                                         <div className="text-xs">
                                             {isVipRole(user) ? (
                                                 <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase tracking-wider">
-                                                    VIP
+                                                    {vipBadgeLabel}
                                                 </span>
                                             ) : null}
                                         </div>
@@ -204,7 +205,7 @@ export default function AppShell() {
                                             <div className="font-bold text-slate-800 text-base">{user.username}</div>
                                             <div className="flex gap-2 text-xs">
                                                 {isVipRole(user) && (
-                                                    <span className="px-1.5 py-0.5 bg-amber-500 rounded text-white font-bold uppercase">VIP</span>
+                                                    <span className="px-1.5 py-0.5 bg-amber-500 rounded text-white font-bold uppercase">{vipBadgeLabel}</span>
                                                 )}
                                                 <span className="text-slate-500">Level {mobileProfile.level}</span>
                                             </div>

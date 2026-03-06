@@ -300,6 +300,8 @@ export default function RankingsPage() {
                                                                     username: player.username,
                                                                     avatar: player.avatar,
                                                                     role: player.role,
+                                                                    vipTierLevel: player.vipTierLevel,
+                                                                    vipTierCode: player.vipTierCode,
                                                                     vipBenefits: player.vipBenefits,
                                                                 }, { returnTo: defaultReturnTo })}
                                                                 className={`font-bold hover:underline ${getUsernameColor(player.rank)}`}
@@ -340,6 +342,8 @@ export default function RankingsPage() {
                                                                     username: player.username,
                                                                     avatar: player.avatar,
                                                                     role: player.role,
+                                                                    vipTierLevel: player.vipTierLevel,
+                                                                    vipTierCode: player.vipTierCode,
                                                                     vipBenefits: player.vipBenefits,
                                                                 }, { returnTo: defaultReturnTo })}
                                                                 className={`hover:underline ${getUsernameColor(player.rank)}`}

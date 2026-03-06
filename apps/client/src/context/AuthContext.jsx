@@ -10,24 +10,57 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        // Load user from localStorage/token on mount
+        // Load user from localStorage/token on mount, then refresh from /auth/me
         const storedToken = getValidTokenFromStorage()
         const userData = localStorage.getItem('user')
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
-        if (storedToken && userData) {
-            try {
-                setUser(JSON.parse(userData))
-                setToken(storedToken)
-            } catch (err) {
-                console.error('Phân tích dữ liệu người dùng thất bại:', err)
-                clearAuthSession('Dữ liệu phiên người dùng không hợp lệ')
+        const hydrateAuth = async () => {
+            if (storedToken && userData) {
+                try {
+                    const parsedUser = JSON.parse(userData)
+                    setUser(parsedUser)
+                    setToken(storedToken)
+
+                    try {
+                        const res = await fetch(`${API_URL}/auth/me`, {
+                            headers: {
+                                Authorization: `Bearer ${storedToken}`,
+                            },
+                        })
+                        const data = await res.json().catch(() => null)
+
+                        if (!res.ok) {
+                            if (res.status === 401) {
+                                clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
+                                setUser(null)
+                                setToken(null)
+                            }
+                            return
+                        }
+
+                        if (data?.user) {
+                            localStorage.setItem('user', JSON.stringify(data.user))
+                            setUser(data.user)
+                        }
+                    } catch {
+                        // Keep cached session if refresh request fails
+                    }
+                } catch (err) {
+                    console.error('Phân tích dữ liệu người dùng thất bại:', err)
+                    clearAuthSession('Dữ liệu phiên người dùng không hợp lệ')
+                    setUser(null)
+                    setToken(null)
+                }
+            } else {
+                setUser(null)
+                setToken(null)
             }
-        } else {
-            setUser(null)
-            setToken(null)
+
+            setLoading(false)
         }
 
-        setLoading(false)
+        hydrateAuth()
     }, [])
 
     useEffect(() => {

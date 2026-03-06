@@ -343,7 +343,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
 
         const [user, playerState, partyRows] = await Promise.all([
             User.findById(targetUserId)
-                .select('username avatar signature createdAt lastActive role vipBenefits isOnline')
+                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
                 .lean(),
             PlayerState.findOne({ userId: targetUserId })
                 .select('level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
@@ -412,6 +412,8 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 createdAt: toSafeIsoDate(user?.createdAt),
                 lastActive: toSafeIsoDate(user?.lastActive),
                 role: String(user?.role || 'user'),
+                vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
+                vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
                 vipBenefits: {
                     title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
                     titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),
@@ -448,7 +450,7 @@ router.get('/online', authMiddleware, async (req, res) => {
         const [totalOnline, users] = await Promise.all([
             User.countDocuments({ isOnline: true }),
             User.find({ isOnline: true })
-                .select('username avatar signature createdAt lastActive role vipBenefits isOnline')
+                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
                 .sort({ createdAt: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -533,6 +535,8 @@ router.get('/online', authMiddleware, async (req, res) => {
             createdAt: toSafeIsoDate(entry?.createdAt),
             lastActive: toSafeIsoDate(entry?.lastActive),
             role: String(entry?.role || 'user'),
+            vipTierLevel: Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0),
+            vipTierCode: String(entry?.vipTierCode || '').trim().toUpperCase(),
             vipBenefits: {
                 title: String(entry?.vipBenefits?.title || '').trim().slice(0, 80),
                 titleImageUrl: String(entry?.vipBenefits?.titleImageUrl || '').trim(),

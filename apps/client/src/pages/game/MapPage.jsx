@@ -1027,171 +1027,171 @@ export default function MapPage() {
 
                     {canUseVipAutoSearch && (
                         <div className="w-full max-w-[420px] border border-slate-300 rounded bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <div>
-                                <div className="font-bold text-slate-800">Auto tìm kiếm nâng cao</div>
-                                <div className="text-[10px] text-slate-500">Theo rarity/form: bắt bằng bóng, chiến đấu hoặc bỏ qua.</div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (autoSearchEnabled) {
-                                        setAutoSearchEnabled(false)
-                                        setActionMessage('Đã tắt auto tìm kiếm.')
-                                        return
-                                    }
-
-                                    if (!canUseVipAutoSearch) {
-                                        setActionMessage('Chỉ tài khoản VIP mới có thể bật auto tìm kiếm.')
-                                        return
-                                    }
-
-                                    if (isCurrentMapEvent) {
-                                        setLastResult({ encountered: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
-                                        return
-                                    }
-
-                                    if (isLocked) {
-                                        setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Không thể bật auto.' })
-                                        return
-                                    }
-
-                                    if (encounter) {
-                                        setActionMessage('Đang có Pokemon hoang dã. Hãy xử lý trận hiện tại trước khi bật auto.')
-                                        return
-                                    }
-
-                                    if (hasCatchActionConfigured && !resolvedAutoCatchBallEntry?.item?._id) {
-                                        setActionMessage('Có cấu hình auto bắt nhưng không có bóng. Vui lòng chuẩn bị bóng trước khi bật auto.')
-                                        return
-                                    }
-
-                                    const consumeResult = consumeVipAutoUse(
-                                        normalizedAuthUserId,
-                                        'map-search',
-                                        autoSearchUsesPerDayLimit
-                                    )
-                                    if (!consumeResult.ok) {
-                                        setActionMessage(`Đã hết lượt dùng auto tìm kiếm trong hôm nay (${consumeResult.used}/${consumeResult.limit}).`)
-                                        return
-                                    }
-
-                                    setAutoSearchEnabled(true)
-                                    setAutoSearchStartedAtMs(Date.now())
-                                    if (Number.isFinite(consumeResult.remaining)) {
-                                        setActionMessage(`Đã bật auto tìm kiếm. Còn ${consumeResult.remaining} lượt trong hôm nay.`)
-                                    } else {
-                                        setActionMessage('Đã bật auto tìm kiếm.')
-                                    }
-                                }}
-                                disabled={isLocked || !canUseVipAutoSearch}
-                                className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoSearchEnabled
-                                    ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
-                                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
-                            >
-                                {autoSearchEnabled ? 'Đang bật' : 'Bật auto'}
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold text-slate-700">Tốc độ tìm</span>
-                                <select
-                                    value={autoSearchIntervalMs}
-                                    onChange={(e) => {
-                                        const nextValue = Number.parseInt(e.target.value, 10)
-                                        setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
-                                    }}
-                                    disabled={!canUseVipAutoSearch}
-                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
-                                >
-                                    {AUTO_SEARCH_INTERVAL_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold text-slate-700">Form auto bắt</span>
-                                <select
-                                    value={autoCatchFormMode}
-                                    onChange={(e) => setAutoCatchFormMode(String(e.target.value || 'all'))}
-                                    disabled={!canUseVipAutoSearch}
-                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
-                                >
-                                    {AUTO_CATCH_FORM_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-slate-700">Bóng dùng auto bắt</span>
-                            <select
-                                value={autoCatchBallId}
-                                onChange={(e) => setAutoCatchBallId(String(e.target.value || ''))}
-                                disabled={!canUseVipAutoSearch}
-                                className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
-                            >
-                                {availablePokeballs.length === 0 && <option value="">Hết bóng</option>}
-                                {availablePokeballs.map((entry) => (
-                                    <option key={entry.item._id} value={entry.item._id}>
-                                        {entry.item.name} (x{entry.quantity})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="rounded border border-slate-200 bg-white p-2">
-                            <div className="text-[11px] font-semibold text-slate-700 mb-2">Hành động theo rarity</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {AUTO_SEARCH_RARITY_KEYS.map((rarityKey) => {
-                                    const rarityMeta = getRarityStyle(rarityKey)
-                                    const currentAction = String(autoActionByRarity?.[rarityKey] || 'battle')
-                                    return (
-                                        <div key={rarityKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded p-1.5">
-                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${rarityMeta.badge}`}>
-                                                {rarityMeta.label}
-                                            </span>
-                                            <select
-                                                value={currentAction}
-                                                onChange={(e) => {
-                                                    const nextAction = String(e.target.value || 'battle')
-                                                    setAutoActionByRarity((prev) => ({
-                                                        ...prev,
-                                                        [rarityKey]: nextAction,
-                                                    }))
-                                                }}
-                                                disabled={!canUseVipAutoSearch}
-                                                className="px-2 py-1 border border-slate-300 rounded bg-white text-[11px]"
-                                            >
-                                                {AUTO_SEARCH_ACTION_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-
-                        <div className="text-[10px] text-slate-500">
-                            {canUseVipAutoSearch && (
                                 <div>
-                                    Giới hạn auto tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
-                                    {' · '}
-                                    Lượt hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                                    <div className="font-bold text-slate-800">Auto tìm kiếm nâng cao</div>
+                                    <div className="text-[10px] text-slate-500">Theo rank/dạng: bắt bằng bóng, chiến đấu hoặc bỏ qua.</div>
                                 </div>
-                            )}
-                            {isCurrentMapEvent
-                                ? 'Map này đang được đánh dấu event nên auto bị khóa.'
-                                : (!canUseVipAutoSearch
-                                    ? 'Auto tìm kiếm là quyền lợi dành cho tài khoản VIP.'
-                                    : (autoSearchEnabled
-                                    ? `Đang auto: tìm mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng nếu gặp rule auto bắt.`
-                                    : 'Auto đang tắt. Bạn vẫn có thể tìm thủ công.'))}
-                        </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (autoSearchEnabled) {
+                                            setAutoSearchEnabled(false)
+                                            setActionMessage('Đã tắt auto tìm kiếm.')
+                                            return
+                                        }
+
+                                        if (!canUseVipAutoSearch) {
+                                            setActionMessage('Chỉ tài khoản VIP mới có thể bật auto tìm kiếm.')
+                                            return
+                                        }
+
+                                        if (isCurrentMapEvent) {
+                                            setLastResult({ encountered: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
+                                            return
+                                        }
+
+                                        if (isLocked) {
+                                            setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Không thể bật auto.' })
+                                            return
+                                        }
+
+                                        if (encounter) {
+                                            setActionMessage('Đang có Pokemon hoang dã. Hãy xử lý trận hiện tại trước khi bật auto.')
+                                            return
+                                        }
+
+                                        if (hasCatchActionConfigured && !resolvedAutoCatchBallEntry?.item?._id) {
+                                            setActionMessage('Có cấu hình auto bắt nhưng không có bóng. Vui lòng chuẩn bị bóng trước khi bật auto.')
+                                            return
+                                        }
+
+                                        const consumeResult = consumeVipAutoUse(
+                                            normalizedAuthUserId,
+                                            'map-search',
+                                            autoSearchUsesPerDayLimit
+                                        )
+                                        if (!consumeResult.ok) {
+                                            setActionMessage(`Đã hết lượt dùng auto tìm kiếm trong hôm nay (${consumeResult.used}/${consumeResult.limit}).`)
+                                            return
+                                        }
+
+                                        setAutoSearchEnabled(true)
+                                        setAutoSearchStartedAtMs(Date.now())
+                                        if (Number.isFinite(consumeResult.remaining)) {
+                                            setActionMessage(`Đã bật auto tìm kiếm. Còn ${consumeResult.remaining} lượt trong hôm nay.`)
+                                        } else {
+                                            setActionMessage('Đã bật auto tìm kiếm.')
+                                        }
+                                    }}
+                                    disabled={isLocked || !canUseVipAutoSearch}
+                                    className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoSearchEnabled
+                                        ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
+                                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
+                                >
+                                    {autoSearchEnabled ? 'Đang bật' : 'Bật auto'}
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[11px] font-semibold text-slate-700">Tốc độ tìm kiếm</span>
+                                    <select
+                                        value={autoSearchIntervalMs}
+                                        onChange={(e) => {
+                                            const nextValue = Number.parseInt(e.target.value, 10)
+                                            setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
+                                        }}
+                                        disabled={!canUseVipAutoSearch}
+                                        className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
+                                    >
+                                        {AUTO_SEARCH_INTERVAL_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[11px] font-semibold text-slate-700">Dạng auto sẽ bắt</span>
+                                    <select
+                                        value={autoCatchFormMode}
+                                        onChange={(e) => setAutoCatchFormMode(String(e.target.value || 'all'))}
+                                        disabled={!canUseVipAutoSearch}
+                                        className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
+                                    >
+                                        {AUTO_CATCH_FORM_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold text-slate-700">Bóng dùng auto bắt</span>
+                                <select
+                                    value={autoCatchBallId}
+                                    onChange={(e) => setAutoCatchBallId(String(e.target.value || ''))}
+                                    disabled={!canUseVipAutoSearch}
+                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
+                                >
+                                    {availablePokeballs.length === 0 && <option value="">Hết bóng</option>}
+                                    {availablePokeballs.map((entry) => (
+                                        <option key={entry.item._id} value={entry.item._id}>
+                                            {entry.item.name} (x{entry.quantity})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="rounded border border-slate-200 bg-white p-2">
+                                <div className="text-[11px] font-semibold text-slate-700 mb-2">Tùy chỉnh hành động theo rank pokemon</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {AUTO_SEARCH_RARITY_KEYS.map((rarityKey) => {
+                                        const rarityMeta = getRarityStyle(rarityKey)
+                                        const currentAction = String(autoActionByRarity?.[rarityKey] || 'battle')
+                                        return (
+                                            <div key={rarityKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded p-1.5">
+                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${rarityMeta.badge}`}>
+                                                    {rarityMeta.label}
+                                                </span>
+                                                <select
+                                                    value={currentAction}
+                                                    onChange={(e) => {
+                                                        const nextAction = String(e.target.value || 'battle')
+                                                        setAutoActionByRarity((prev) => ({
+                                                            ...prev,
+                                                            [rarityKey]: nextAction,
+                                                        }))
+                                                    }}
+                                                    disabled={!canUseVipAutoSearch}
+                                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-[11px]"
+                                                >
+                                                    {AUTO_SEARCH_ACTION_OPTIONS.map((option) => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="text-[10px] text-slate-500">
+                                {canUseVipAutoSearch && (
+                                    <div>
+                                        Giới hạn auto tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
+                                        {' · '}
+                                        Lượt hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                                    </div>
+                                )}
+                                {isCurrentMapEvent
+                                    ? 'Map này đang được đánh dấu event nên auto bị khóa.'
+                                    : (!canUseVipAutoSearch
+                                        ? 'Auto tìm kiếm là quyền lợi dành cho tài khoản VIP.'
+                                        : (autoSearchEnabled
+                                            ? `Đang auto: tìm mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng nếu gặp rule auto bắt.`
+                                            : 'Auto đang tắt. Bạn vẫn có thể tìm thủ công.'))}
+                            </div>
                         </div>
                     )}
 

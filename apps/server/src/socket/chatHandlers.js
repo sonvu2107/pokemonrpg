@@ -170,7 +170,7 @@ const attachChatHandlers = (socket, io) => {
       try {
         // Get user info and player state
         const [user, playerState] = await Promise.all([
-          User.findById(userId).select('username role avatar vipBenefits').lean(),
+          User.findById(userId).select('username role avatar vipTierLevel vipTierCode vipBenefits').lean(),
           PlayerState.findOne({ userId }).select('level').lean(),
         ])
         
@@ -223,6 +223,8 @@ const attachChatHandlers = (socket, io) => {
             role: user.role || 'user',
             level: playerState?.level || 1,
             avatar: user.avatar || '',
+            vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
+            vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
             vipBenefits: normalizeVipBenefits(user?.vipBenefits),
           },
           content: content.trim(),

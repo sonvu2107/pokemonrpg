@@ -86,7 +86,7 @@ router.post('/global', auth, async (req, res) => {
     }
 
     const [user, playerState] = await Promise.all([
-      User.findById(currentUserId).select('username role avatar vipBenefits').lean(),
+      User.findById(currentUserId).select('username role avatar vipTierLevel vipTierCode vipBenefits').lean(),
       PlayerState.findOne({ userId: currentUserId }).select('level').lean(),
     ])
 
@@ -119,6 +119,8 @@ router.post('/global', auth, async (req, res) => {
         role: user.role || 'user',
         level: playerState?.level || 1,
         avatar: user.avatar || '',
+        vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
+        vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
         vipBenefits: normalizeVipBenefits(user?.vipBenefits),
       },
       content: content.trim(),

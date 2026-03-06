@@ -1,8 +1,29 @@
 const normalizeRole = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeVipTierCode = (value = '') => String(value || '').trim().toUpperCase()
+
+export const getVipTierLevel = (userLike) => {
+    const directLevel = Number.parseInt(userLike?.vipTierLevel, 10)
+    if (Number.isFinite(directLevel) && directLevel > 0) return directLevel
+
+    const code = normalizeVipTierCode(userLike?.vipTierCode)
+    const matched = code.match(/^VIP\s*[-_]?\s*(\d{1,4})$/)
+    if (matched) {
+        const fromCode = Number.parseInt(matched[1], 10)
+        if (Number.isFinite(fromCode) && fromCode > 0) return fromCode
+    }
+
+    return 0
+}
+
+export const getVipBadgeLabel = (userLike) => {
+    if (!isVipRole(userLike)) return ''
+    const level = getVipTierLevel(userLike)
+    return level > 0 ? `VIP ${level}` : 'VIP'
+}
 
 export const isVipRole = (userLike) => normalizeRole(userLike?.role) === 'vip'
 
-export const getPublicRoleLabel = (userLike) => (isVipRole(userLike) ? 'VIP' : '--')
+export const getPublicRoleLabel = (userLike) => (isVipRole(userLike) ? getVipBadgeLabel(userLike) : '--')
 
 export const getVipTitle = (userLike) => {
     if (!isVipRole(userLike)) return ''

@@ -10,7 +10,7 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 
-const USER_SELECT_FIELDS = 'username avatar role vipBenefits isOnline createdAt lastActive signature'
+const USER_SELECT_FIELDS = 'username avatar role vipTierLevel vipTierCode vipBenefits isOnline createdAt lastActive signature'
 const PARTY_SLOT_TOTAL = 6
 
 const toSafeIsoDate = (value) => {
@@ -133,6 +133,8 @@ const serializeUser = (userLike) => ({
     username: String(userLike?.username || '').trim() || 'Huấn Luyện Viên',
     avatar: String(userLike?.avatar || '').trim(),
     role: String(userLike?.role || 'user'),
+    vipTierLevel: Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0),
+    vipTierCode: String(userLike?.vipTierCode || '').trim().toUpperCase(),
     isOnline: Boolean(userLike?.isOnline),
     createdAt: toSafeIsoDate(userLike?.createdAt),
     lastActive: toSafeIsoDate(userLike?.lastActive),
@@ -215,6 +217,8 @@ const buildTrainerDetail = async (targetUserId) => {
         createdAt: toSafeIsoDate(user?.createdAt),
         lastActive: toSafeIsoDate(user?.lastActive),
         role: String(user?.role || 'user'),
+        vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
+        vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
         vipBenefits: {
             title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
             titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),

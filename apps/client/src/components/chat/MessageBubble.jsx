@@ -1,7 +1,7 @@
 import { getUserPokemonId, getPokemonSpriteUrl, formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
 import VipAvatar from '../VipAvatar'
-import { isVipRole, getVipTitle } from '../../utils/vip'
+import { isVipRole, getVipTitle, getVipBadgeLabel } from '../../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png' // Ditto
 
@@ -50,6 +50,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
   // Other users' messages (left aligned, white background)
   const isVip = isVipRole(message?.sender)
   const vipTitle = getVipTitle(message?.sender)
+  const vipBadgeLabel = getVipBadgeLabel(message?.sender)
   const senderUserId = String(message?.sender?._id || '').trim()
   const canOpenProfile = Boolean(senderUserId && typeof onOpenProfile === 'function')
   
@@ -67,6 +68,8 @@ export default function MessageBubble({ message, onOpenProfile }) {
       username: message?.sender?.username,
       avatar: message?.sender?.avatar,
       role: message?.sender?.role,
+      vipTierLevel: message?.sender?.vipTierLevel,
+      vipTierCode: message?.sender?.vipTierCode,
       vipBenefits: message?.sender?.vipBenefits,
     })
   }
@@ -105,7 +108,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
           {/* VIP badge */}
           {isVip && (
             <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase">
-              VIP
+              {vipBadgeLabel}
             </span>
           )}
 

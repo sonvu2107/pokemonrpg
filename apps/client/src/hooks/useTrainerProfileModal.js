@@ -30,8 +30,11 @@ const buildSeedTrainer = (userLike = {}) => {
         avatar: String(userLike?.avatar || '').trim(),
         signature: String(userLike?.signature || '').trim(),
         role: String(userLike?.role || 'user').trim() || 'user',
+        vipTierLevel: Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0),
+        vipTierCode: String(userLike?.vipTierCode || '').trim().toUpperCase(),
         vipBenefits: {
             title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
+            titleImageUrl: String(userLike?.vipBenefits?.titleImageUrl || '').trim(),
             avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
         },
         isOnline: Boolean(userLike?.isOnline),

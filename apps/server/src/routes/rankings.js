@@ -180,7 +180,7 @@ router.get('/daily', async (req, res, next) => {
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username avatar role vipBenefits')
+                .populate('userId', 'username avatar role vipTierLevel vipTierCode vipBenefits')
                 .lean(),
         ])
 
@@ -198,6 +198,8 @@ router.get('/daily', async (req, res, next) => {
             username: activity.userId?.username || 'Unknown',
             avatar: activity.userId?.avatar || '',
             role: String(activity?.userId?.role || 'user').trim() || 'user',
+            vipTierLevel: Math.max(0, parseInt(activity?.userId?.vipTierLevel, 10) || 0),
+            vipTierCode: String(activity?.userId?.vipTierCode || '').trim().toUpperCase(),
             vipBenefits: normalizeVipBenefits(activity?.userId?.vipBenefits),
             level: activity.userId?._id ? (playerLevelByUserId.get(activity.userId._id.toString()) || 1) : 1,
             searches: activity.searches || 0,
@@ -244,7 +246,7 @@ router.get('/overall', async (req, res, next) => {
                 .sort({ experience: -1, level: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username avatar role vipBenefits')
+                .populate('userId', 'username avatar role vipTierLevel vipTierCode vipBenefits')
                 .lean(),
         ])
 
@@ -255,6 +257,8 @@ router.get('/overall', async (req, res, next) => {
             username: state.userId?.username || 'Unknown',
             avatar: state.userId?.avatar || '',
             role: String(state?.userId?.role || 'user').trim() || 'user',
+            vipTierLevel: Math.max(0, parseInt(state?.userId?.vipTierLevel, 10) || 0),
+            vipTierCode: String(state?.userId?.vipTierCode || '').trim().toUpperCase(),
             vipBenefits: normalizeVipBenefits(state?.userId?.vipBenefits),
             experience: state.experience || 0,
             level: state.level || 1,
@@ -346,6 +350,8 @@ router.get('/pokemon', async (req, res, next) => {
                             username: '$owner.username',
                             avatar: '$owner.avatar',
                             role: '$owner.role',
+                            vipTierLevel: '$owner.vipTierLevel',
+                            vipTierCode: '$owner.vipTierCode',
                             vipBenefits: '$owner.vipBenefits',
                         },
                     },
@@ -396,6 +402,8 @@ router.get('/pokemon', async (req, res, next) => {
                     username: entry.owner?.username || 'Unknown',
                     avatar: entry.owner?.avatar || '',
                     role: String(entry?.owner?.role || 'user').trim() || 'user',
+                    vipTierLevel: Math.max(0, parseInt(entry?.owner?.vipTierLevel, 10) || 0),
+                    vipTierCode: String(entry?.owner?.vipTierCode || '').trim().toUpperCase(),
                     vipBenefits: normalizeVipBenefits(entry?.owner?.vipBenefits),
                 },
             }))
@@ -502,6 +510,8 @@ router.get('/pokemon', async (req, res, next) => {
             username: entry.user?.username || 'Unknown',
             avatar: entry.user?.avatar || '',
             role: String(entry?.user?.role || 'user').trim() || 'user',
+            vipTierLevel: Math.max(0, parseInt(entry?.user?.vipTierLevel, 10) || 0),
+            vipTierCode: String(entry?.user?.vipTierCode || '').trim().toUpperCase(),
             vipBenefits: normalizeVipBenefits(entry?.user?.vipBenefits),
             collectedCount: Math.max(0, Number(entry.collectedCount || 0)),
             totalPokemon: Math.max(0, Number(entry.totalPokemon || 0)),
