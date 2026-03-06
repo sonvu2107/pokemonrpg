@@ -51,6 +51,8 @@ export default function UserManagementPage() {
     const [updatingPermissionUserId, setUpdatingPermissionUserId] = useState(null)
     const [updatingBanUserId, setUpdatingBanUserId] = useState(null)
     const [updatingVipBenefitUserId, setUpdatingVipBenefitUserId] = useState(null)
+    const [assigningVipTierUserId, setAssigningVipTierUserId] = useState(null)
+    const [quickVipTierByUserId, setQuickVipTierByUserId] = useState({})
     const [grantModal, setGrantModal] = useState({ type: '', user: null })
     const [grantError, setGrantError] = useState('')
     const [granting, setGranting] = useState(false)
@@ -203,6 +205,17 @@ export default function UserManagementPage() {
         setUsers((prev) => prev.map((user) => (user._id === updatedUser._id ? { ...user, ...updatedUser } : user)))
     }
 
+    const resolveVipTierIdForUser = (userLike) => {
+        const directTierId = String(userLike?.vipTierId || '').trim()
+        if (directTierId) return directTierId
+
+        const level = Number(userLike?.vipTierLevel || 0)
+        if (level <= 0) return ''
+
+        const tierByLevel = vipTiers.find((entry) => Number(entry?.level || 0) === level)
+        return String(tierByLevel?._id || '').trim()
+    }
+
     const openVipBenefitModal = (user) => {
         const normalizedUserTierId = String(user?.vipTierId || '').trim()
         const tierByLevel = vipTiers.find((entry) => Number(entry?.level || 0) === Number(user?.vipTierLevel || 0))
@@ -290,6 +303,47 @@ export default function UserManagementPage() {
             }))
         } finally {
             setUpdatingVipBenefitUserId(null)
+        }
+    }
+
+    const handleQuickVipTierChange = (userId, tierId) => {
+        const normalizedUserId = String(userId || '').trim()
+        if (!normalizedUserId) return
+        setQuickVipTierByUserId((prev) => ({
+            ...prev,
+            [normalizedUserId]: String(tierId || '').trim(),
+        }))
+    }
+
+    const handleQuickAssignVipTier = async (user) => {
+        const userId = String(user?._id || '').trim()
+        if (!userId) return
+
+        const selectedTierId = String(
+            quickVipTierByUserId?.[userId]
+            || resolveVipTierIdForUser(user)
+            || ''
+        ).trim()
+
+        if (!selectedTierId) {
+            alert('Vui lòng chọn cấp VIP trước khi set cho user.')
+            return
+        }
+
+        try {
+            setAssigningVipTierUserId(userId)
+            const res = await userApi.updateVipTier(userId, {
+                tierId: selectedTierId,
+                applyBenefits: true,
+            })
+
+            if (res?.user) {
+                updateUserInState(res.user)
+            }
+        } catch (err) {
+            alert('Set VIP cho user thất bại: ' + (err.message || 'Lỗi không xác định'))
+        } finally {
+            setAssigningVipTierUserId(null)
         }
     }
 
@@ -841,11 +895,17 @@ export default function UserManagementPage() {
                         <tbody className="divide-y divide-slate-100">
                             {users.map((user) => {
                                 const roleUpdating = updatingRoleUserId === user._id
+                                const tierAssigning = assigningVipTierUserId === user._id
                                 const permissionUpdating = updatingPermissionUserId === user._id
                                 const isAdmin = user.role === 'admin'
                                 const userPermissions = Array.isArray(user.adminPermissions) ? user.adminPermissions : []
                                 const normalizedUserId = String(user._id || '').trim()
                                 const isSelected = selectedIdSet.has(normalizedUserId)
+                                const quickSelectedVipTierId = String(
+                                    quickVipTierByUserId?.[normalizedUserId]
+                                    || resolveVipTierIdForUser(user)
+                                    || ''
+                                ).trim()
 
                                 return (
                                     <tr key={user._id} className="hover:bg-blue-50/30 transition-colors align-top">
@@ -919,6 +979,30 @@ export default function UserManagementPage() {
                                                 ) : (
                                                     <span className="text-[10px] text-slate-400">--</span>
                                                 )}
+
+                                                <div className="inline-flex items-center gap-1 mt-1">
+                                                    <select
+                                                        value={quickSelectedVipTierId}
+                                                        onChange={(e) => handleQuickVipTierChange(normalizedUserId, e.target.value)}
+                                                        disabled={tierAssigning || vipTiers.length === 0}
+                                                        className="px-1.5 py-1 rounded border border-slate-300 text-[10px] bg-white max-w-[118px]"
+                                                    >
+                                                        <option value="">Set VIP</option>
+                                                        {vipTiers.map((tier) => (
+                                                            <option key={tier._id} value={tier._id}>
+                                                                VIP {tier.level}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleQuickAssignVipTier(user)}
+                                                        disabled={!quickSelectedVipTierId || tierAssigning || vipTiers.length === 0}
+                                                        className="px-1.5 py-1 rounded bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {tierAssigning ? 'Set...' : 'Set'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-3 py-2">

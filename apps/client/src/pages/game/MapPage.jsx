@@ -609,7 +609,10 @@ export default function MapPage() {
     }
 
     const handleUseBall = async (forcedBallId = '') => {
-        const resolvedBallId = String(forcedBallId || selectedBallId || '').trim()
+        const normalizedForcedBallId = (typeof forcedBallId === 'string' || typeof forcedBallId === 'number')
+            ? String(forcedBallId).trim()
+            : ''
+        const resolvedBallId = normalizedForcedBallId || String(selectedBallId || '').trim()
         if (!encounter?.id || !resolvedBallId) return
         try {
             setActionLoading(true)
@@ -1251,7 +1254,7 @@ export default function MapPage() {
                                         })}
                                 </select>
                                 <button
-                                    onClick={handleUseBall}
+                                    onClick={() => handleUseBall()}
                                     disabled={actionLoading || !selectedBallId}
                                     className="px-4 py-2 bg-emerald-600 text-white rounded font-bold disabled:opacity-50 w-full sm:w-auto"
                                 >

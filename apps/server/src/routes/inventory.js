@@ -49,6 +49,18 @@ const getHealAmounts = (item) => {
     return { hpAmount: 0, ppAmount: 0 }
 }
 
+const normalizeObjectIdInput = (value) => {
+    if (typeof value === 'string') return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (value && typeof value === 'object') {
+        if (typeof value._id === 'string') return value._id.trim()
+        if (typeof value.id === 'string') return value.id.trim()
+    }
+    return ''
+}
+
+const isValidObjectIdLike = (value = '') => /^[a-f\d]{24}$/i.test(String(value || '').trim())
+
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const resolvePokemonImageForEncounter = (pokemon, formId, isShiny = false) => {
     const forms = Array.isArray(pokemon?.forms) ? pokemon.forms : []
@@ -108,13 +120,16 @@ router.post('/use', useItemActionGuard, async (req, res) => {
         const { itemId, quantity = 1, encounterId, activePokemonId = null, moveName = '' } = req.body
         const qty = Number(quantity)
         const userId = req.user.userId
+        const normalizedItemId = normalizeObjectIdInput(itemId)
+        const normalizedEncounterId = normalizeObjectIdInput(encounterId)
+        const normalizedActivePokemonId = normalizeObjectIdInput(activePokemonId)
 
-        if (!itemId || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
+        if (!normalizedItemId || !isValidObjectIdLike(normalizedItemId) || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
             return res.status(400).json({ ok: false, message: 'Vật phẩm hoặc số lượng không hợp lệ' })
         }
 
         const Item = (await import('../models/Item.js')).default
-        const item = await Item.findById(itemId).lean()
+        const item = await Item.findById(normalizedItemId).lean()
 
         if (!item) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
@@ -125,11 +140,11 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Pokeball chỉ được dùng từng quả một' })
             }
 
-            if (!encounterId) {
+            if (!normalizedEncounterId || !isValidObjectIdLike(normalizedEncounterId)) {
                 return res.status(400).json({ ok: false, message: 'Cần trong trận chiến để dùng pokeball' })
             }
 
-            const encounter = await Encounter.findOne({ _id: encounterId, userId, isActive: true })
+            const encounter = await Encounter.findOne({ _id: normalizedEncounterId, userId, isActive: true })
                 .select('pokemonId level hp maxHp isShiny formId')
                 .lean()
             if (!encounter) {
@@ -139,7 +154,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             const consumedEntry = await UserInventory.findOneAndUpdate(
                 {
                     userId,
-                    itemId,
+                    itemId: normalizedItemId,
                     quantity: { $gte: qty },
                 },
                 { $inc: { quantity: -qty } },
@@ -161,7 +176,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             if (!pokemon) {
                 await UserInventory.updateOne(
-                    { userId, itemId },
+                    { userId, itemId: normalizedItemId },
                     { $inc: { quantity: qty } },
                     { upsert: true }
                 )
@@ -178,14 +193,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             if (caught) {
                 const resolvedEncounter = await Encounter.findOneAndUpdate(
-                    { _id: encounterId, userId, isActive: true },
+                    { _id: normalizedEncounterId, userId, isActive: true },
                     { $set: { isActive: false, endedAt: new Date() } },
                     { new: true }
                 )
 
                 if (!resolvedEncounter) {
                     await UserInventory.updateOne(
-                        { userId, itemId },
+                        { userId, itemId: normalizedItemId },
                         { $inc: { quantity: qty } },
                         { upsert: true }
                     )
@@ -248,10 +263,10 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 })
             }
 
-            const isStillActive = await Encounter.exists({ _id: encounterId, userId, isActive: true })
+            const isStillActive = await Encounter.exists({ _id: normalizedEncounterId, userId, isActive: true })
             if (!isStillActive) {
                 await UserInventory.updateOne(
-                    { userId, itemId },
+                    { userId, itemId: normalizedItemId },
                     { $inc: { quantity: qty } },
                     { upsert: true }
                 )
@@ -261,14 +276,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             return res.json({
                 ok: true,
                 caught: false,
-                encounterId,
+                encounterId: normalizedEncounterId,
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
                 message: 'Pokemon đã thoát khỏi bóng!',
             })
         }
 
-        const entry = await UserInventory.findOne({ userId, itemId })
+        const entry = await UserInventory.findOne({ userId, itemId: normalizedItemId })
 
         if (!entry || entry.quantity < qty) {
             return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
@@ -290,9 +305,12 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             let nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
 
             let targetPokemon = null
-            if (activePokemonId) {
+            if (normalizedActivePokemonId) {
+                if (!isValidObjectIdLike(normalizedActivePokemonId)) {
+                    return res.status(400).json({ ok: false, message: 'Pokemon đang chọn không hợp lệ' })
+                }
                 targetPokemon = await UserPokemon.findOne({
-                    _id: activePokemonId,
+                    _id: normalizedActivePokemonId,
                     userId,
                 }).populate('pokemonId', 'levelUpMoves')
             }
@@ -304,7 +322,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             }
 
             let activeBattleSession = null
-            if (!encounterId && targetPokemon) {
+            if (!normalizedEncounterId && targetPokemon) {
                 activeBattleSession = await BattleSession.findOne({
                     userId,
                     playerPokemonId: targetPokemon._id,
@@ -414,7 +432,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             return res.json({
                 ok: true,
                 message: `Đã hồi ${healedHp} HP, ${healedPp} PP`,
-                itemId,
+                itemId: normalizedItemId,
                 quantity: qty,
                 effect: {
                     type: 'healing',
