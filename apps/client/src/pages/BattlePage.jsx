@@ -2064,7 +2064,7 @@ export function BattlePage() {
         setDuelOpponentMoveCursor(0)
         setDuelResultModal(null)
         setBattleOpponent(nextOpponent)
-        setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot) => {
+        const preparedParty = (Array.isArray(party) ? party : []).map((slot) => {
             if (!slot) return slot
             const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
             const refilledMoveData = buildRefilledBattleMoves(slot)
@@ -2081,14 +2081,11 @@ export function BattlePage() {
                 battleCurrentHp: maxHp,
                 battleMaxHp: maxHp,
             }
-        }) : prevParty))
-        const initialPartyState = (Array.isArray(party) ? party : []).map((slot) => {
-            if (!slot) return null
-            const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-            return { currentHp: maxHp, maxHp }
         })
+        setParty(preparedParty)
+        const initialPartyState = buildBattlePartyState(preparedParty)
         setBattlePartyHpState(initialPartyState)
-        const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
+        const initialIndex = getNextAlivePartyIndex(preparedParty, initialPartyState, -1)
         setBattlePlayerIndex(Math.max(0, initialIndex))
         setView('battle')
     }
@@ -2182,17 +2179,26 @@ export function BattlePage() {
                 fieldState: {},
             }
 
-            setParty((prevParty) => (Array.isArray(prevParty) ? prevParty.map((slot, index) => {
+            const preparedParty = (Array.isArray(party) ? party : []).map((slot, index) => {
                 if (!slot) return slot
                 const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
+                const refilledMoveData = buildRefilledBattleMoves(slot)
                 if (index !== attackerCandidate.index) {
                     return {
                         ...slot,
+                        moves: refilledMoveData.moves,
+                        movePpState: refilledMoveData.movePpState,
+                        status: '',
+                        statusTurns: 0,
+                        statStages: {},
+                        damageGuards: {},
+                        wasDamagedLastTurn: false,
+                        volatileState: {},
                         battleCurrentHp: 0,
                         battleMaxHp: maxHp,
                     }
                 }
-                const refilledMoveData = buildRefilledBattleMoves(slot)
+
                 return {
                     ...slot,
                     moves: refilledMoveData.moves,
@@ -2206,22 +2212,10 @@ export function BattlePage() {
                     battleCurrentHp: maxHp,
                     battleMaxHp: maxHp,
                 }
-            }) : prevParty))
-
-            const initialPartyState = (Array.isArray(party) ? party : []).map((slot, index) => {
-                if (!slot) return null
-                const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-                if (index !== attackerCandidate.index) {
-                    return {
-                        maxHp,
-                        currentHp: 0,
-                    }
-                }
-                return {
-                    maxHp,
-                    currentHp: maxHp,
-                }
             })
+            setParty(preparedParty)
+
+            const initialPartyState = buildBattlePartyState(preparedParty)
 
             setBattleResults(null)
             setBattleLog([])
@@ -2329,30 +2323,28 @@ export function BattlePage() {
                 fieldState: {},
             }
 
-            setParty((prevParty) => (Array.isArray(prevParty)
-                ? prevParty.map((slot) => {
-                    if (!slot) return slot
-                    const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-                    return {
-                        ...slot,
-                        status: '',
-                        statusTurns: 0,
-                        statStages: {},
-                        damageGuards: {},
-                        wasDamagedLastTurn: false,
-                        volatileState: {},
-                        battleCurrentHp: maxHp,
-                        battleMaxHp: maxHp,
-                    }
-                })
-                : prevParty))
-
-            const initialPartyState = (Array.isArray(party) ? party : []).map((slot) => {
-                if (!slot) return null
+            const preparedParty = (Array.isArray(party) ? party : []).map((slot) => {
+                if (!slot) return slot
                 const maxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-                return { currentHp: maxHp, maxHp }
+                const refilledMoveData = buildRefilledBattleMoves(slot)
+                return {
+                    ...slot,
+                    moves: refilledMoveData.moves,
+                    movePpState: refilledMoveData.movePpState,
+                    status: '',
+                    statusTurns: 0,
+                    statStages: {},
+                    damageGuards: {},
+                    wasDamagedLastTurn: false,
+                    volatileState: {},
+                    battleCurrentHp: maxHp,
+                    battleMaxHp: maxHp,
+                }
             })
-            const initialIndex = getNextAlivePartyIndex(party, initialPartyState, -1)
+            setParty(preparedParty)
+
+            const initialPartyState = buildBattlePartyState(preparedParty)
+            const initialIndex = getNextAlivePartyIndex(preparedParty, initialPartyState, -1)
 
             setBattleResults(null)
             setBattleLog([])
