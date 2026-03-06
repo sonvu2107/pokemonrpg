@@ -1674,6 +1674,12 @@ const normalizeLevelExpState = (level = 1, exp = 0, gain = 0) => {
 }
 
 const isDuplicateKeyError = (error) => Number(error?.code) === 11000
+const isVersionConflictError = (error) => {
+    if (!error) return false
+    if (String(error?.name || '').trim() === 'VersionError') return true
+    const message = String(error?.message || '').trim().toLowerCase()
+    return message.includes('no matching document found for id')
+}
 
 const updateMapProgress = async (userId, mapId) => {
     const maxAttempts = 6
@@ -4788,7 +4794,18 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         if (trainerSessionDirty && trainerSession) {
-            await trainerSession.save()
+            try {
+                await trainerSession.save()
+            } catch (error) {
+                if (isVersionConflictError(error)) {
+                    return res.status(409).json({
+                        ok: false,
+                        code: 'BATTLE_SESSION_CONFLICT',
+                        message: 'Phiên battle đang được xử lý ở luồng khác. Vui lòng thử lại ngay.',
+                    })
+                }
+                throw error
+            }
         }
 
         const currentMovePpState = Array.isArray(activePokemon.movePpState) ? activePokemon.movePpState : []

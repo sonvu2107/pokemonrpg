@@ -24,6 +24,37 @@ const emptyTrainer = {
 const PRIZE_POKEMON_MODAL_PAGE_SIZE = 40
 const PRIZE_POKEMON_FORM_PAGE_SIZE = 18
 const TRAINER_PAGE_SIZE = 20
+const AUTO_PRIZE_POKEMON_PAGE_SIZE = 24
+
+const normalizeAutoPrizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+
+const buildAutoPrizeSelectionKey = (pokemonId, formId = 'normal') => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) return ''
+    return `${normalizedPokemonId}:${normalizeAutoPrizeFormId(formId)}`
+}
+
+const normalizeAutoPrizeLevel = (value) => {
+    const parsed = Number.parseInt(value, 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0
+    return Math.min(1000, parsed)
+}
+
+const parseAutoPrizeSelectionKey = (selectionKey) => {
+    const normalizedKey = String(selectionKey || '').trim()
+    if (!normalizedKey) {
+        return { pokemonId: '', formId: 'normal', key: '' }
+    }
+
+    const [pokemonId, rawFormId] = normalizedKey.split(':')
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    const normalizedFormId = normalizeAutoPrizeFormId(rawFormId)
+    return {
+        pokemonId: normalizedPokemonId,
+        formId: normalizedFormId,
+        key: normalizedPokemonId ? `${normalizedPokemonId}:${normalizedFormId}` : '',
+    }
+}
 
 export default function BattleTrainerPage() {
     const [trainers, setTrainers] = useState([])
@@ -59,6 +90,12 @@ export default function BattleTrainerPage() {
     const [autoLevelStep, setAutoLevelStep] = useState(10)
     const [autoCoinsReward, setAutoCoinsReward] = useState('')
     const [autoExpReward, setAutoExpReward] = useState('')
+    const [autoPrizePokemonSearchTerm, setAutoPrizePokemonSearchTerm] = useState('')
+    const [autoPrizePokemonSelections, setAutoPrizePokemonSelections] = useState([])
+    const [autoPrizePokemonLevels, setAutoPrizePokemonLevels] = useState({})
+    const [autoPrizePokemonPage, setAutoPrizePokemonPage] = useState(1)
+    const [autoPrizePokemonEveryTrainer, setAutoPrizePokemonEveryTrainer] = useState(0)
+    const [showAutoPrizePokemonModal, setShowAutoPrizePokemonModal] = useState(false)
     const [autoTrainerImageUrl, setAutoTrainerImageUrl] = useState('')
     const [autoTrainerImageUrls, setAutoTrainerImageUrls] = useState([])
     const [autoGenerating, setAutoGenerating] = useState(false)
@@ -432,6 +469,23 @@ export default function BattleTrainerPage() {
                 payload.expReward = Math.max(0, Number.parseInt(normalizedExpReward, 10) || 0)
             }
 
+            const normalizedPrizeEveryTrainer = Math.max(0, Number.parseInt(autoPrizePokemonEveryTrainer, 10) || 0)
+            if (autoPrizePokemonSelectionSet.size > 0 && normalizedPrizeEveryTrainer < 1) {
+                throw new Error('Hãy nhập số trainer cách nhau để nhận Pokemon thưởng (>= 1).')
+            }
+
+            if (autoPrizePokemonSelectionSet.size > 0 && normalizedPrizeEveryTrainer > 0) {
+                payload.prizePokemonEveryTrainer = normalizedPrizeEveryTrainer
+                payload.prizePokemonPool = [...autoPrizePokemonSelectionSet]
+                    .map((selectionKey) => parseAutoPrizeSelectionKey(selectionKey))
+                    .filter((entry) => entry.pokemonId)
+                    .map((entry) => ({
+                        pokemonId: entry.pokemonId,
+                        formId: entry.formId,
+                        level: normalizeAutoPrizeLevel(autoPrizePokemonLevels[entry.key]),
+                    }))
+            }
+
             await battleTrainerApi.autoGenerate(payload)
             setTrainerPagination((prev) => ({ ...prev, page: 1 }))
             await loadTrainers(1)
@@ -440,6 +494,78 @@ export default function BattleTrainerPage() {
         } finally {
             setAutoGenerating(false)
         }
+    }
+
+    const toggleAutoPrizePokemon = (pokemonId, formId = 'normal') => {
+        const selectionKey = buildAutoPrizeSelectionKey(pokemonId, formId)
+        if (!selectionKey) return
+        const isSelected = autoPrizePokemonSelectionSet.has(selectionKey)
+
+        setAutoPrizePokemonSelections((prev) => {
+            const normalizedPrev = Array.isArray(prev)
+                ? prev.map((entry) => String(entry || '').trim()).filter(Boolean)
+                : []
+            if (normalizedPrev.includes(selectionKey)) {
+                return normalizedPrev.filter((entry) => entry !== selectionKey)
+            }
+            return [...normalizedPrev, selectionKey]
+        })
+
+        setAutoPrizePokemonLevels((prev) => {
+            const next = { ...(prev || {}) }
+            if (isSelected) {
+                delete next[selectionKey]
+                return next
+            }
+            if (next[selectionKey] === undefined || next[selectionKey] === null || next[selectionKey] === '') {
+                next[selectionKey] = 0
+            }
+            return next
+        })
+    }
+
+    const selectAllFilteredAutoPrizePokemon = () => {
+        const filteredSelectionKeys = autoPrizePokemonFilteredRows
+            .map((row) => String(row?.selectionKey || '').trim())
+            .filter(Boolean)
+        if (filteredSelectionKeys.length === 0) return
+
+        setAutoPrizePokemonSelections((prev) => {
+            const merged = new Set((Array.isArray(prev) ? prev : []).map((entry) => String(entry || '').trim()).filter(Boolean))
+            filteredSelectionKeys.forEach((selectionKey) => merged.add(selectionKey))
+            return [...merged]
+        })
+
+        setAutoPrizePokemonLevels((prev) => {
+            const next = { ...(prev || {}) }
+            filteredSelectionKeys.forEach((selectionKey) => {
+                if (next[selectionKey] === undefined || next[selectionKey] === null || next[selectionKey] === '') {
+                    next[selectionKey] = 0
+                }
+            })
+            return next
+        })
+    }
+
+    const clearAutoPrizePokemon = () => {
+        setAutoPrizePokemonSelections([])
+        setAutoPrizePokemonLevels({})
+    }
+
+    const updateAutoPrizePokemonLevel = (selectionKey, levelLike) => {
+        const normalizedKey = String(selectionKey || '').trim()
+        if (!normalizedKey) return
+        const normalizedLevel = normalizeAutoPrizeLevel(levelLike)
+        setAutoPrizePokemonLevels((prev) => ({
+            ...(prev || {}),
+            [normalizedKey]: normalizedLevel,
+        }))
+    }
+
+    const handleOpenAutoPrizePokemonModal = () => {
+        setAutoPrizePokemonSearchTerm('')
+        setAutoPrizePokemonPage(1)
+        setShowAutoPrizePokemonModal(true)
     }
 
     const handleOpenPrizePokemonModal = () => {
@@ -537,6 +663,89 @@ export default function BattleTrainerPage() {
     const selectedTeamPokemonForm = selectedTeamPokemonForms.find((entry) => entry.formId === normalizedTeamPokemonFormId)
         || selectedTeamPokemonForms[0]
         || null
+
+    const allPokemonLookup = useMemo(() => {
+        const lookup = {}
+        const mergedRows = [...pokemon, ...Object.values(prizePokemonLookup), ...Object.values(teamPokemonLookup)]
+        mergedRows.forEach((entry) => {
+            const id = String(entry?._id || '').trim()
+            if (!id) return
+            if (!lookup[id]) lookup[id] = entry
+        })
+        return lookup
+    }, [pokemon, prizePokemonLookup, teamPokemonLookup])
+
+    const autoPrizePokemonSelectionSet = useMemo(
+        () => new Set((Array.isArray(autoPrizePokemonSelections) ? autoPrizePokemonSelections : []).map((entry) => String(entry || '').trim()).filter(Boolean)),
+        [autoPrizePokemonSelections]
+    )
+
+    const autoPrizePokemonFilteredRows = useMemo(() => {
+        const normalizedSearch = String(autoPrizePokemonSearchTerm || '').trim().toLowerCase()
+        const speciesRows = pokemon.filter((entry) => {
+            const id = String(entry?._id || '').trim()
+            if (!id) return false
+            if (!normalizedSearch) return true
+            const name = String(entry?.name || '').trim().toLowerCase()
+            const pokedexNumber = String(entry?.pokedexNumber || '').trim().toLowerCase()
+            const formsText = (Array.isArray(entry?.forms) ? entry.forms : [])
+                .map((formEntry) => String(formEntry?.formName || formEntry?.formId || '').trim().toLowerCase())
+                .join(' ')
+            return name.includes(normalizedSearch)
+                || pokedexNumber.includes(normalizedSearch)
+                || id.toLowerCase().includes(normalizedSearch)
+                || formsText.includes(normalizedSearch)
+        })
+
+        const formRows = speciesRows.flatMap((entry) => {
+            const forms = getPokemonFormsForDisplay(entry)
+            return forms.map((rowForm) => ({
+                key: `${entry._id}:${rowForm.formId}`,
+                selectionKey: buildAutoPrizeSelectionKey(entry._id, rowForm.formId),
+                pokemon: entry,
+                form: rowForm,
+            }))
+        })
+
+        return formRows
+    }, [pokemon, autoPrizePokemonSearchTerm])
+
+    const autoPrizePokemonTotal = autoPrizePokemonFilteredRows.length
+    const autoPrizePokemonTotalPages = Math.max(1, Math.ceil(autoPrizePokemonTotal / AUTO_PRIZE_POKEMON_PAGE_SIZE))
+    const safeAutoPrizePokemonPage = Math.min(Math.max(1, autoPrizePokemonPage), autoPrizePokemonTotalPages)
+    const autoPrizePokemonSliceStart = (safeAutoPrizePokemonPage - 1) * AUTO_PRIZE_POKEMON_PAGE_SIZE
+    const autoPrizePokemonPageRows = autoPrizePokemonFilteredRows.slice(
+        autoPrizePokemonSliceStart,
+        autoPrizePokemonSliceStart + AUTO_PRIZE_POKEMON_PAGE_SIZE
+    )
+    const autoPrizePokemonPageStart = autoPrizePokemonTotal > 0
+        ? autoPrizePokemonSliceStart + 1
+        : 0
+    const autoPrizePokemonPageEnd = autoPrizePokemonTotal > 0
+        ? Math.min(autoPrizePokemonTotal, autoPrizePokemonSliceStart + AUTO_PRIZE_POKEMON_PAGE_SIZE)
+        : 0
+
+    const autoPrizePokemonSelectedRows = useMemo(
+        () => [...autoPrizePokemonSelectionSet]
+            .map((selectionKey) => {
+                const parsed = parseAutoPrizeSelectionKey(selectionKey)
+                if (!parsed.pokemonId) return null
+                const selectedPokemon = allPokemonLookup[parsed.pokemonId]
+                if (!selectedPokemon) return null
+                const forms = getPokemonFormsForDisplay(selectedPokemon)
+                const selectedForm = forms.find((entry) => entry.formId === parsed.formId)
+                    || forms[0]
+                    || null
+                return {
+                    selectionKey: parsed.key || selectionKey,
+                    pokemon: selectedPokemon,
+                    form: selectedForm,
+                    level: normalizeAutoPrizeLevel(autoPrizePokemonLevels[parsed.key || selectionKey]),
+                }
+            })
+            .filter(Boolean),
+        [autoPrizePokemonSelectionSet, allPokemonLookup, autoPrizePokemonLevels]
+    )
 
     const allPrizePokemonFormRows = prizePokemonOptions.flatMap((entry) => {
         const forms = getPokemonFormsForDisplay(entry)
@@ -639,6 +848,13 @@ export default function BattleTrainerPage() {
             return normalized === prev ? prev : normalized
         })
     }, [teamPokemonFormTotalPages])
+
+    useEffect(() => {
+        setAutoPrizePokemonPage((prev) => {
+            const normalized = Math.max(1, Math.min(prev, autoPrizePokemonTotalPages))
+            return normalized === prev ? prev : normalized
+        })
+    }, [autoPrizePokemonTotalPages])
 
     const isEditingTrainer = Boolean(editingId)
 
@@ -750,8 +966,69 @@ export default function BattleTrainerPage() {
                             />
                         </div>
                     </div>
+                    <div className="mt-3 border border-emerald-200 rounded bg-white/80 p-3">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                            <div>
+                                <div className="text-slate-700 text-xs font-bold uppercase">Pool Pokemon thưởng ngẫu nhiên</div>
+                                <div className="text-[11px] text-slate-500 mt-1">
+                                    Chọn nhiều Pokemon để random làm thưởng cho trainer auto-generated.
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-slate-700 text-[11px] font-semibold mb-1 uppercase">Cách nhau bao nhiêu trainer</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={autoPrizePokemonEveryTrainer}
+                                    onChange={(e) => setAutoPrizePokemonEveryTrainer(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+                                    className="w-40 px-2 py-1.5 bg-white border border-slate-300 rounded text-sm"
+                                    placeholder="0 = tắt thưởng Pokemon"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <button
+                                type="button"
+                                onClick={handleOpenAutoPrizePokemonModal}
+                                className="px-3 py-2 border border-emerald-300 rounded bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                            >
+                                Chọn Pokémon bằng modal
+                            </button>
+                            <button
+                                type="button"
+                                onClick={clearAutoPrizePokemon}
+                                disabled={autoPrizePokemonSelectionSet.size === 0}
+                                className="px-3 py-2 border border-slate-300 rounded bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
+                            >
+                                Bỏ chọn hết
+                            </button>
+                        </div>
+
+                        <div className="mt-2 text-[11px] text-slate-600">
+                            Đang chọn {autoPrizePokemonSelectionSet.size} lựa chọn Pokemon thưởng.
+                            {autoPrizePokemonSelectedRows.length > 0 && (
+                                <span>
+                                    {' '}Ví dụ: {autoPrizePokemonSelectedRows
+                                        .slice(0, 4)
+                                        .map((entry) => {
+                                            const pokemonName = String(entry?.pokemon?.name || '').trim()
+                                            const formLabel = String(entry?.form?.formName || entry?.form?.formId || 'normal').trim()
+                                            if (!pokemonName) return ''
+                                            const baseLabel = formLabel && formLabel.toLowerCase() !== 'normal'
+                                                ? `${pokemonName} (${formLabel})`
+                                                : pokemonName
+                                            return `${baseLabel} - Lv ${Math.max(0, Number(entry?.level) || 0)}`
+                                        })
+                                        .filter(Boolean)
+                                        .join(', ')}
+                                    {autoPrizePokemonSelectedRows.length > 4 ? ', ...' : ''}
+                                </span>
+                            )}
+                        </div>
+                    </div>
                     <p className="mt-2 text-[11px] text-emerald-800">
-                        Nếu để trống phần thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó.
+                        Nếu để trống phần thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó. Pokémon thưởng chỉ áp dụng khi có pool Pokémon và "cách nhau bao nhiêu trainer" lớn hơn 0.
                     </p>
                 </div>
                 <div className="mb-4 border border-blue-200 rounded bg-blue-50/50 p-3">
@@ -1244,6 +1521,175 @@ export default function BattleTrainerPage() {
                     ← Quay lại Dashboard
                 </Link>
             </div>
+
+            {showAutoPrizePokemonModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[65] p-4 animate-fadeIn"
+                    onClick={() => setShowAutoPrizePokemonModal(false)}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Chọn Pokémon thưởng random</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Chọn nhiều Pokémon để làm pool random cho trainer auto-generated</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowAutoPrizePokemonModal(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokémon</label>
+                                <input
+                                    type="text"
+                                    value={autoPrizePokemonSearchTerm}
+                                    onChange={(e) => {
+                                        setAutoPrizePokemonSearchTerm(e.target.value)
+                                        setAutoPrizePokemonPage(1)
+                                    }}
+                                    placeholder="Nhập tên, số Pokedex hoặc ID"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
+                                />
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={selectAllFilteredAutoPrizePokemon}
+                                    className="px-3 py-1.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                                >
+                                    Chọn tất cả theo lọc
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={clearAutoPrizePokemon}
+                                    disabled={autoPrizePokemonSelectionSet.size === 0}
+                                    className="px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
+                                >
+                                    Bỏ chọn hết
+                                </button>
+                                <span className="text-xs text-slate-500">Đang chọn: {autoPrizePokemonSelectionSet.size}</span>
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                {autoPrizePokemonTotal === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy Pokémon phù hợp</div>
+                                ) : (
+                                    autoPrizePokemonPageRows.map((row) => {
+                                        const { pokemon: entry, form: rowForm } = row
+                                        const pokemonId = String(entry?._id || '').trim()
+                                        if (!pokemonId) return null
+                                        const selectionKey = String(row?.selectionKey || '').trim()
+                                        const selected = selectionKey && autoPrizePokemonSelectionSet.has(selectionKey)
+                                        return (
+                                            <label key={`auto-prize-${row.key}`} className={`w-full px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors ${selected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selected}
+                                                    onChange={() => toggleAutoPrizePokemon(pokemonId, rowForm?.formId)}
+                                                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                />
+                                                <div className="w-10 h-10 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+                                                    <img
+                                                        src={rowForm?.resolvedImageUrl || getPokemonImageUrl(entry)}
+                                                        alt={entry?.name || pokemonId}
+                                                        className="w-8 h-8 object-contain pixelated"
+                                                    />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="font-semibold text-slate-700 truncate">#{String(entry?.pokedexNumber || 0).padStart(3, '0')} - {entry?.name || pokemonId}</div>
+                                                    <div className="mt-1">
+                                                        <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide border ${rowForm?.isDefault
+                                                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                                            : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                                            {rowForm?.formName || rowForm?.formId || 'normal'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[11px] font-bold rounded px-2 py-0.5 border ${selected ? 'text-emerald-700 bg-emerald-100 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
+                                                    {selected ? 'Đã chọn' : 'Chọn'}
+                                                </span>
+                                            </label>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 flex-wrap text-xs text-slate-500">
+                                <span>
+                                    Kết quả: {autoPrizePokemonPageStart}-{autoPrizePokemonPageEnd} / {autoPrizePokemonTotal}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAutoPrizePokemonPage((prev) => Math.max(1, prev - 1))}
+                                        disabled={safeAutoPrizePokemonPage <= 1}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Trước
+                                    </button>
+                                    <span className="font-semibold text-slate-600">Trang {safeAutoPrizePokemonPage}/{autoPrizePokemonTotalPages}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAutoPrizePokemonPage((prev) => Math.min(autoPrizePokemonTotalPages, prev + 1))}
+                                        disabled={safeAutoPrizePokemonPage >= autoPrizePokemonTotalPages}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-xs font-semibold text-slate-700">Thiết lập level cho Pokémon đã chọn</div>
+                                {autoPrizePokemonSelectedRows.length === 0 ? (
+                                    <div className="mt-1 text-xs text-slate-500">Chưa chọn Pokémon nào trong pool random.</div>
+                                ) : (
+                                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1.5">
+                                        {autoPrizePokemonSelectedRows.map((entry) => {
+                                            const selectionKey = String(entry?.selectionKey || '').trim()
+                                            if (!selectionKey) return null
+                                            const pokemonName = String(entry?.pokemon?.name || '').trim() || 'Pokemon'
+                                            const formLabel = String(entry?.form?.formName || entry?.form?.formId || 'normal').trim()
+                                            const levelValue = Math.max(0, Number(entry?.level) || 0)
+                                            return (
+                                                <div key={`auto-prize-level-${selectionKey}`} className="flex items-center justify-between gap-2 text-xs">
+                                                    <div className="min-w-0 text-slate-700 truncate">
+                                                        {pokemonName}
+                                                        {formLabel && formLabel.toLowerCase() !== 'normal' ? ` (${formLabel})` : ''}
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <span className="text-slate-500">Lv</span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="1000"
+                                                            value={levelValue}
+                                                            onChange={(e) => updateAutoPrizePokemonLevel(selectionKey, e.target.value)}
+                                                            className="w-20 px-2 py-1 border border-slate-300 rounded bg-white text-slate-700"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                                <div className="mt-2 text-[11px] text-slate-500">Lv 0 = giữ mặc định hệ thống (Auto Lv 5).</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showPrizePokemonModal && (
                 <div

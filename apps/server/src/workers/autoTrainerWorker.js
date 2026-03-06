@@ -4,6 +4,7 @@ import User from '../models/User.js'
 import BattleTrainer from '../models/BattleTrainer.js'
 import WorkerLock from '../models/WorkerLock.js'
 import {
+    getGameDayKey,
     hasVipAutoTrainerAccess,
     normalizeAutoTrainerState,
     normalizeId,
@@ -12,7 +13,7 @@ import {
     toSafeInt,
 } from '../utils/autoTrainerUtils.js'
 
-const WORKER_LOCK_KEY = 'auto-trainer:tick-lock'
+const WORKER_LOCK_KEY_PREFIX = 'auto-trainer:tick-lock'
 const OWNER_ID = `auto-trainer-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
 
 const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_TRAINER_TICK_MS, 7000, 3000, 60000)
@@ -21,7 +22,7 @@ const BATCH_SIZE = toSafeInt(process.env.AUTO_TRAINER_BATCH_SIZE, 100, 10, 500)
 const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 8, 1, 50)
 const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 18000, 1000, 120000)
 const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 260, 60, 1000)
-const BETWEEN_BATTLE_DELAY_MS = 900
+const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const AUTO_TRAINER_LOGS_LIMIT = 12
 
 let intervalRef = null
@@ -47,16 +48,54 @@ const buildUrl = (path) => {
     return `${base}${normalizedPath}`
 }
 
-const callApi = async ({ token, path, method = 'GET', body = null }) => {
-    const response = await fetch(buildUrl(path), {
-        method,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'x-internal-worker': 'auto-trainer',
-            ...(body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: body ? JSON.stringify(body) : undefined,
-    })
+const createBudgetError = (message = 'TIME_BUDGET') => {
+    const error = new Error(message)
+    error.code = 'TIME_BUDGET'
+    return error
+}
+
+const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = null, timeoutMs = 6000 }) => {
+    const hasDeadline = Number.isFinite(Number(deadlineAt))
+    const remainingBudgetMs = hasDeadline ? (Number(deadlineAt) - Date.now()) : Infinity
+    if (hasDeadline && remainingBudgetMs <= 150) {
+        throw createBudgetError('TIME_BUDGET')
+    }
+
+    const rawTimeout = Math.max(300, Number(timeoutMs) || 6000)
+    const effectiveTimeoutMs = hasDeadline
+        ? Math.max(250, Math.min(rawTimeout, remainingBudgetMs))
+        : rawTimeout
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+        controller.abort()
+    }, effectiveTimeoutMs)
+
+    let response
+    try {
+        response = await fetch(buildUrl(path), {
+            method,
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'x-internal-worker': 'auto-trainer',
+                ...(body ? { 'Content-Type': 'application/json' } : {}),
+            },
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+        })
+    } catch (error) {
+        clearTimeout(timeoutId)
+        if (error?.name === 'AbortError') {
+            if (hasDeadline && Date.now() >= Number(deadlineAt)) {
+                throw createBudgetError('TIME_BUDGET')
+            }
+            const timeoutError = new Error(`Request timeout for ${path}`)
+            timeoutError.code = 'REQUEST_TIMEOUT'
+            throw timeoutError
+        }
+        throw error
+    }
+    clearTimeout(timeoutId)
 
     let data = null
     try {
@@ -222,7 +261,7 @@ const updateAutoTrainerState = async ({ userId, setPatch = {}, lastAction = null
 }
 
 const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs, resetTrainerSession, deadlineAt }) => {
-    const partyResponse = await callApi({ token, path: '/api/party' })
+    const partyResponse = await callApi({ token, path: '/api/party', deadlineAt })
     const partyData = Array.isArray(partyResponse?.party) ? partyResponse.party : []
 
     const partyState = partyData
@@ -323,6 +362,7 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
                     },
                     resetTrainerSession: shouldResetTrainerSession,
                 },
+                deadlineAt,
             })
 
             shouldResetTrainerSession = false
@@ -375,8 +415,12 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
         } catch (error) {
             const message = String(error?.message || '').trim()
             const normalized = normalizeSearchText(message)
+            const errorCode = String(error?.code || '').trim().toUpperCase()
             if (normalized.includes('doi hinh huan luyen vien da bi danh bai') || normalized.includes('nhan ket qua tran dau')) {
                 return { ok: true, code: 'WIN' }
+            }
+            if (Number(error?.status) === 409 && (errorCode === 'BATTLE_SESSION_CONFLICT' || normalized.includes('phien battle dang duoc xu ly'))) {
+                return { ok: false, code: 'SESSION_CONFLICT', reason: 'SESSION_CONFLICT' }
             }
             if (normalized.includes('pokemon cua ban da bai tran')) {
                 return { ok: false, code: 'PLAYER_DEFEATED', reason: message || 'Pokemon của bạn đã bại trận.' }
@@ -421,7 +465,7 @@ const runAutoTrainerBattleFlow = async ({ token, trainerId, trainerMeta, attackI
     }
 
     try {
-        await callApi({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId } })
+        await callApi({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
     } catch (error) {
         const normalized = normalizeSearchText(error?.message || '')
         if (!normalized.includes('da duoc nhan') && !normalized.includes('phan thuong battle da duoc nhan')) {
@@ -659,6 +703,25 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
+    if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'SESSION_CONFLICT') {
+        await updateAutoTrainerState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+            },
+            lastAction: {
+                action: 'tick',
+                result: 'skipped',
+                reason: 'SESSION_CONFLICT',
+                targetId: trainerId,
+                at: now,
+            },
+        })
+        stats.skipped += 1
+        stats.skippedReasons.SESSION_CONFLICT = (stats.skippedReasons.SESSION_CONFLICT || 0) + 1
+        return
+    }
+
     if (!outcome.ok) {
         const shouldDisable = shouldDisableOnFailureCode(outcome.code)
         const normalizedErrorCode = String(outcome.code || 'BATTLE_ERROR').trim().toUpperCase() || 'BATTLE_ERROR'
@@ -774,13 +837,14 @@ const runWithConcurrency = async (items, limit, handler) => {
 }
 
 const acquireDistributedLock = async () => {
+    const lockKey = `${WORKER_LOCK_KEY_PREFIX}:${getGameDayKey()}`
     const now = new Date()
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS)
 
     try {
         const lock = await WorkerLock.findOneAndUpdate(
             {
-                key: WORKER_LOCK_KEY,
+                key: lockKey,
                 $or: [
                     { expiresAt: { $lte: now } },
                     { ownerId: OWNER_ID },
@@ -793,7 +857,7 @@ const acquireDistributedLock = async () => {
                     touchedAt: now,
                 },
                 $setOnInsert: {
-                    key: WORKER_LOCK_KEY,
+                    key: lockKey,
                 },
             },
             {
@@ -812,7 +876,8 @@ const acquireDistributedLock = async () => {
 }
 
 const releaseDistributedLock = async () => {
-    await WorkerLock.deleteOne({ key: WORKER_LOCK_KEY, ownerId: OWNER_ID })
+    const lockKey = `${WORKER_LOCK_KEY_PREFIX}:${getGameDayKey()}`
+    await WorkerLock.deleteOne({ key: lockKey, ownerId: OWNER_ID })
 }
 
 const runTick = async () => {
@@ -844,8 +909,17 @@ const runTick = async () => {
             await runWithConcurrency(users, CONCURRENCY, async (user) => {
                 try {
                     await processUser(user, deadlineAt, stats)
-                    await sleep(BETWEEN_BATTLE_DELAY_MS)
+                    if (POST_USER_COOLDOWN_MS > 0) {
+                        await sleep(POST_USER_COOLDOWN_MS)
+                    }
                 } catch (error) {
+                    const normalizedCode = String(error?.code || '').trim().toUpperCase()
+                    if (normalizedCode === 'TIME_BUDGET' || normalizedCode === 'REQUEST_TIMEOUT') {
+                        stats.skipped += 1
+                        stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] = (stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] || 0) + 1
+                        return
+                    }
+
                     stats.errors += 1
                     stats.errorReasons.EXCEPTION = (stats.errorReasons.EXCEPTION || 0) + 1
                     console.error('[auto-trainer-worker] process user failed:', {

@@ -39,6 +39,11 @@ const parseOptionalPrizeLevel = (value) => {
     return clampNumber(value, 1, 1000)
 }
 
+const parsePoolPrizeLevel = (value) => {
+    if (value === undefined || value === null || value === '') return 0
+    return clampNumber(value, 0, 1000)
+}
+
 const normalizeTeam = (team) => {
     if (!Array.isArray(team)) return []
     return team
@@ -98,6 +103,88 @@ const resolvePrizePokemonSelection = async (pokemonId, formId) => {
     return {
         prizePokemonId: prizePokemon._id,
         prizePokemonFormId: resolvedFormId,
+        error: null,
+    }
+}
+
+const resolvePrizePokemonPoolSelections = async (poolLike = []) => {
+    const rawEntries = Array.isArray(poolLike) ? poolLike : []
+    const normalizedEntries = rawEntries
+        .map((entry) => {
+            if (typeof entry === 'string') {
+                return {
+                    pokemonId: String(entry || '').trim(),
+                    formId: 'normal',
+                    level: 0,
+                }
+            }
+
+            if (!entry || typeof entry !== 'object') return null
+
+            return {
+                pokemonId: String(entry?.pokemonId || entry?._id || entry?.id || '').trim(),
+                formId: normalizeFormId(entry?.formId || 'normal'),
+                level: parsePoolPrizeLevel(entry?.level),
+            }
+        })
+        .filter((entry) => entry && entry.pokemonId)
+
+    if (normalizedEntries.length === 0) {
+        return {
+            selections: [],
+            error: null,
+        }
+    }
+
+    const resolvedEntries = await Promise.all(
+        normalizedEntries.map(async (entry) => {
+            const resolved = await resolvePrizePokemonSelection(entry.pokemonId, entry.formId)
+            if (resolved.error || !resolved.prizePokemonId) {
+                return {
+                    error: resolved.error || `Pokemon phần thưởng không hợp lệ (${entry.pokemonId})`,
+                    value: null,
+                }
+            }
+
+            return {
+                error: null,
+                value: {
+                    prizePokemonId: resolved.prizePokemonId,
+                    prizePokemonFormId: resolved.prizePokemonFormId,
+                    prizePokemonLevel: entry.level,
+                },
+            }
+        })
+    )
+
+    const failedEntry = resolvedEntries.find((entry) => entry?.error)
+    if (failedEntry) {
+        return {
+            selections: [],
+            error: failedEntry.error,
+        }
+    }
+
+    const dedupMap = new Map()
+    resolvedEntries.forEach((entry) => {
+        const value = entry?.value
+        if (!value?.prizePokemonId) return
+        const key = [
+            String(value.prizePokemonId),
+            String(value.prizePokemonFormId || 'normal').trim().toLowerCase(),
+            Math.max(0, Number(value.prizePokemonLevel) || 0),
+        ].join(':')
+        if (!dedupMap.has(key)) {
+            dedupMap.set(key, {
+                prizePokemonId: value.prizePokemonId,
+                prizePokemonFormId: String(value.prizePokemonFormId || 'normal').trim().toLowerCase() || 'normal',
+                prizePokemonLevel: Math.max(0, Number(value.prizePokemonLevel) || 0),
+            })
+        }
+    })
+
+    return {
+        selections: [...dedupMap.values()],
         error: null,
     }
 }
@@ -387,6 +474,13 @@ router.post('/auto-generate', async (req, res) => {
         const teamSize = clampNumber(req.body?.teamSize, 1, 6)
         const configuredCoinsReward = parseOptionalRewardNumber(req.body?.platinumCoinsReward)
         const configuredExpReward = parseOptionalRewardNumber(req.body?.expReward)
+        const configuredPrizeEveryTrainer = clampNumber(req.body?.prizePokemonEveryTrainer, 0, 100000)
+        const resolvedPrizePoolResult = await resolvePrizePokemonPoolSelections(req.body?.prizePokemonPool)
+        if (resolvedPrizePoolResult.error) {
+            return res.status(400).json({ ok: false, message: resolvedPrizePoolResult.error })
+        }
+        const resolvedPrizePool = resolvedPrizePoolResult.selections
+        const shouldAssignRandomPrize = resolvedPrizePool.length > 0 && configuredPrizeEveryTrainer > 0
         const autoImageUrl = String(req.body?.imageUrl || '').trim()
         const requestedImageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : []
         const autoImagePool = requestedImageUrls
@@ -415,21 +509,29 @@ router.post('/auto-generate', async (req, res) => {
 
         await normalizeAutoTrainerMoonPointsRewards()
 
+        const rewardedTrainerCount = shouldAssignRandomPrize
+            ? levels.reduce((count, _level, index) => (index % configuredPrizeEveryTrainer === 0 ? count + 1 : count), 0)
+            : 0
+
         const upsertResults = await Promise.all(
             levels.map(async (level, index) => {
                 const rewardValue = Math.max(10, level * 10)
                 const platinumCoinsReward = configuredCoinsReward !== null ? configuredCoinsReward : rewardValue
                 const expReward = configuredExpReward !== null ? configuredExpReward : rewardValue
                 const team = buildAutoTeam(pokemonPool, level, index * 17 + level, teamSize)
+                const shouldRewardTrainer = shouldAssignRandomPrize && (index % configuredPrizeEveryTrainer === 0)
+                const selectedPrize = shouldRewardTrainer
+                    ? resolvedPrizePool[Math.floor(Math.random() * resolvedPrizePool.length)]
+                    : null
                 const trainerPatch = {
                     name: `HLV Mốc Lv ${level}`,
                     quote: `Vượt qua mốc sức mạnh cấp ${level}!`,
                     isActive: true,
                     orderIndex: level,
                     team,
-                    prizePokemonId: null,
-                    prizePokemonFormId: 'normal',
-                    prizePokemonLevel: 0,
+                    prizePokemonId: selectedPrize?.prizePokemonId || null,
+                    prizePokemonFormId: selectedPrize?.prizePokemonFormId || 'normal',
+                    prizePokemonLevel: selectedPrize ? selectedPrize.prizePokemonLevel : 0,
                     prizeItemId: null,
                     prizeItemQuantity: 1,
                     platinumCoinsReward,
@@ -464,7 +566,12 @@ router.post('/auto-generate', async (req, res) => {
             ok: true,
             message: `Đã tạo/cập nhật ${upsertResults.length} trainer theo mốc cấp`,
             generatedCount: upsertResults.length,
+            rewardedTrainerCount,
             levels,
+            randomPrizeConfig: {
+                rewardEveryTrainer: configuredPrizeEveryTrainer,
+                poolSize: resolvedPrizePool.length,
+            },
             trainers: upsertResults,
         })
     } catch (error) {

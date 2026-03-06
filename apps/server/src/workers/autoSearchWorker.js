@@ -4,6 +4,7 @@ import User from '../models/User.js'
 import MapModel from '../models/Map.js'
 import WorkerLock from '../models/WorkerLock.js'
 import {
+    getGameDayKey,
     hasVipAutoSearchAccess,
     isEventMapLike,
     isFormAllowedForCatch,
@@ -16,7 +17,7 @@ import {
     toSafeInt,
 } from '../utils/autoTrainerUtils.js'
 
-const WORKER_LOCK_KEY = 'auto-search:tick-lock'
+const WORKER_LOCK_KEY_PREFIX = 'auto-search:tick-lock'
 const OWNER_ID = `auto-search-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
 
 const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_SEARCH_TICK_MS, 6000, 3000, 60000)
@@ -24,6 +25,7 @@ const LOCK_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_LOCK_TTL_MS, 25000, 5000, 
 const BATCH_SIZE = toSafeInt(process.env.AUTO_SEARCH_BATCH_SIZE, 120, 10, 500)
 const CONCURRENCY = toSafeInt(process.env.AUTO_SEARCH_CONCURRENCY, 10, 1, 50)
 const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_SEARCH_TIME_BUDGET_MS, 14000, 1000, 120000)
+const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_SEARCH_POST_USER_COOLDOWN_MS, 80, 0, 5000)
 const AUTO_SEARCH_LOGS_LIMIT = 12
 
 let intervalRef = null
@@ -49,16 +51,54 @@ const buildUrl = (path) => {
     return `${base}${normalizedPath}`
 }
 
-const callApi = async ({ token, path, method = 'GET', body = null }) => {
-    const response = await fetch(buildUrl(path), {
-        method,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'x-internal-worker': 'auto-search',
-            ...(body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: body ? JSON.stringify(body) : undefined,
-    })
+const createBudgetError = (message = 'TIME_BUDGET') => {
+    const error = new Error(message)
+    error.code = 'TIME_BUDGET'
+    return error
+}
+
+const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = null, timeoutMs = 6000 }) => {
+    const hasDeadline = Number.isFinite(Number(deadlineAt))
+    const remainingBudgetMs = hasDeadline ? (Number(deadlineAt) - Date.now()) : Infinity
+    if (hasDeadline && remainingBudgetMs <= 150) {
+        throw createBudgetError('TIME_BUDGET')
+    }
+
+    const rawTimeout = Math.max(300, Number(timeoutMs) || 6000)
+    const effectiveTimeoutMs = hasDeadline
+        ? Math.max(250, Math.min(rawTimeout, remainingBudgetMs))
+        : rawTimeout
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+        controller.abort()
+    }, effectiveTimeoutMs)
+
+    let response
+    try {
+        response = await fetch(buildUrl(path), {
+            method,
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'x-internal-worker': 'auto-search',
+                ...(body ? { 'Content-Type': 'application/json' } : {}),
+            },
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+        })
+    } catch (error) {
+        clearTimeout(timeoutId)
+        if (error?.name === 'AbortError') {
+            if (hasDeadline && Date.now() >= Number(deadlineAt)) {
+                throw createBudgetError('TIME_BUDGET')
+            }
+            const timeoutError = new Error(`Request timeout for ${path}`)
+            timeoutError.code = 'REQUEST_TIMEOUT'
+            throw timeoutError
+        }
+        throw error
+    }
+    clearTimeout(timeoutId)
 
     let data = null
     try {
@@ -152,9 +192,9 @@ const buildEncounterLogLabel = (encounterLike = null) => {
     return label
 }
 
-const findAutoCatchBallItemId = async (token, preferredBallId = '') => {
+const findAutoCatchBallItemId = async (token, preferredBallId = '', deadlineAt = null) => {
     const preferred = normalizeId(preferredBallId)
-    const inventoryRes = await callApi({ token, path: '/api/inventory' })
+    const inventoryRes = await callApi({ token, path: '/api/inventory', deadlineAt })
     const entries = Array.isArray(inventoryRes?.inventory) ? inventoryRes.inventory : []
     const pokeballs = entries.filter((entry) => {
         const itemType = String(entry?.item?.type || '').trim().toLowerCase()
@@ -342,7 +382,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     const token = createInternalToken(userId)
 
     try {
-        await callApi({ token, path: `/api/game/map/${encodeURIComponent(mapSlug)}/state` })
+        await callApi({ token, path: `/api/game/map/${encodeURIComponent(mapSlug)}/state`, deadlineAt })
     } catch (error) {
         if (Number(error?.status) === 403) {
             await updateAutoSearchState({
@@ -369,7 +409,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     let activeEncounter = null
     try {
-        const encounterRes = await callApi({ token, path: '/api/game/encounter/active' })
+        const encounterRes = await callApi({ token, path: '/api/game/encounter/active', deadlineAt })
         activeEncounter = encounterRes?.encounter || null
     } catch (error) {
         if (Number(error?.status) !== 404) {
@@ -384,6 +424,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 path: '/api/game/search',
                 method: 'POST',
                 body: { mapSlug },
+                deadlineAt,
             })
 
             if (Boolean(searchRes?.encountered)) {
@@ -448,7 +489,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     if (action === 'run') {
         try {
-            await callApi({ token, path: `/api/game/encounter/${encounterId}/run`, method: 'POST' })
+            await callApi({ token, path: `/api/game/encounter/${encounterId}/run`, method: 'POST', deadlineAt })
             await updateAutoSearchState({
                 userId,
                 setPatch: {
@@ -477,7 +518,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     if (action === 'catch') {
-        const ballItemId = await findAutoCatchBallItemId(token, autoState.catchBallItemId)
+        const ballItemId = await findAutoCatchBallItemId(token, autoState.catchBallItemId, deadlineAt)
         if (!ballItemId) {
             await updateAutoSearchState({
                 userId,
@@ -510,6 +551,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     quantity: 1,
                     encounterId,
                 },
+                deadlineAt,
             })
 
             const isCaught = Boolean(catchRes?.caught)
@@ -568,7 +610,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     try {
-        const attackRes = await callApi({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST' })
+        const attackRes = await callApi({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
         const playerDefeated = Boolean(attackRes?.playerDefeated)
         const defeated = Boolean(attackRes?.defeated)
         if (playerDefeated) {
@@ -677,13 +719,14 @@ const runWithConcurrency = async (items, limit, handler) => {
 }
 
 const acquireDistributedLock = async () => {
+    const lockKey = `${WORKER_LOCK_KEY_PREFIX}:${getGameDayKey()}`
     const now = new Date()
     const expiresAt = new Date(now.getTime() + LOCK_TTL_MS)
 
     try {
         const lock = await WorkerLock.findOneAndUpdate(
             {
-                key: WORKER_LOCK_KEY,
+                key: lockKey,
                 $or: [
                     { expiresAt: { $lte: now } },
                     { ownerId: OWNER_ID },
@@ -696,7 +739,7 @@ const acquireDistributedLock = async () => {
                     touchedAt: now,
                 },
                 $setOnInsert: {
-                    key: WORKER_LOCK_KEY,
+                    key: lockKey,
                 },
             },
             {
@@ -715,7 +758,8 @@ const acquireDistributedLock = async () => {
 }
 
 const releaseDistributedLock = async () => {
-    await WorkerLock.deleteOne({ key: WORKER_LOCK_KEY, ownerId: OWNER_ID })
+    const lockKey = `${WORKER_LOCK_KEY_PREFIX}:${getGameDayKey()}`
+    await WorkerLock.deleteOne({ key: lockKey, ownerId: OWNER_ID })
 }
 
 const runTick = async () => {
@@ -745,9 +789,16 @@ const runTick = async () => {
             await runWithConcurrency(users, CONCURRENCY, async (user) => {
                 try {
                     await processUser(user, deadlineAt, stats)
-                    await sleep(180)
+                    if (POST_USER_COOLDOWN_MS > 0) {
+                        await sleep(POST_USER_COOLDOWN_MS)
+                    }
                 } catch (error) {
                     const normalizedErrorCode = String(error?.code || 'EXCEPTION').trim().toUpperCase() || 'EXCEPTION'
+                    if (normalizedErrorCode === 'TIME_BUDGET' || normalizedErrorCode === 'REQUEST_TIMEOUT') {
+                        stats.skipped += 1
+                        stats.skippedReasons[normalizedErrorCode] = (stats.skippedReasons[normalizedErrorCode] || 0) + 1
+                        return
+                    }
                     stats.errors += 1
                     stats.errorReasons[normalizedErrorCode] = (stats.errorReasons[normalizedErrorCode] || 0) + 1
 
