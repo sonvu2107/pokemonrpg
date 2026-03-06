@@ -13,6 +13,8 @@ export default function UserManagementPage() {
     const [search, setSearch] = useState('')
     const [page, setPage] = useState(1)
     const [pagination, setPagination] = useState(null)
+    const [selectedUserIds, setSelectedUserIds] = useState([])
+    const [bulkDeleting, setBulkDeleting] = useState(false)
     const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null)
     const [updatingPermissionUserId, setUpdatingPermissionUserId] = useState(null)
     const [grantModal, setGrantModal] = useState({ type: '', user: null })
@@ -127,6 +129,59 @@ export default function UserManagementPage() {
     const handleSearchChange = (e) => {
         setSearch(e.target.value)
         setPage(1)
+        setSelectedUserIds([])
+    }
+
+    const toggleUserSelection = (userId, checked) => {
+        const normalizedId = String(userId || '').trim()
+        if (!normalizedId) return
+
+        setSelectedUserIds((prev) => {
+            const set = new Set(prev)
+            if (checked) {
+                set.add(normalizedId)
+            } else {
+                set.delete(normalizedId)
+            }
+            return [...set]
+        })
+    }
+
+    const toggleSelectCurrentPage = (checked) => {
+        const pageIds = users.map((user) => String(user._id || '').trim()).filter(Boolean)
+        setSelectedUserIds((prev) => {
+            const set = new Set(prev)
+            if (checked) {
+                pageIds.forEach((id) => set.add(id))
+            } else {
+                pageIds.forEach((id) => set.delete(id))
+            }
+            return [...set]
+        })
+    }
+
+    const handleBulkDelete = async () => {
+        if (selectedUserIds.length === 0) return
+
+        const confirmed = confirm(`Xóa ${selectedUserIds.length} tài khoản đã chọn? Thao tác này sẽ xóa luôn dữ liệu người chơi liên quan.`)
+        if (!confirmed) return
+
+        try {
+            setBulkDeleting(true)
+            const res = await userApi.bulkDelete(selectedUserIds)
+            alert(res?.message || 'Đã xóa tài khoản thành công')
+            setSelectedUserIds([])
+
+            if (users.length === selectedUserIds.length && page > 1) {
+                setPage((prev) => Math.max(1, prev - 1))
+            } else {
+                await loadUsers()
+            }
+        } catch (err) {
+            alert('Xóa tài khoản thất bại: ' + (err.message || 'Lỗi không xác định'))
+        } finally {
+            setBulkDeleting(false)
+        }
     }
 
     const loadPokemonLookup = async (searchText = '') => {
@@ -254,6 +309,11 @@ export default function UserManagementPage() {
         ? selectedPokemon.forms
         : [{ formId: selectedPokemon?.defaultFormId || 'normal', formName: selectedPokemon?.defaultFormId || 'normal' }]
     const selectedItem = itemLookup.find((entry) => entry._id === itemForm.itemId) || null
+    const selectedIdSet = new Set(selectedUserIds)
+    const selectedOnCurrentPageCount = users.reduce((count, user) => {
+        return count + (selectedIdSet.has(String(user._id || '').trim()) ? 1 : 0)
+    }, 0)
+    const allCurrentPageSelected = users.length > 0 && selectedOnCurrentPageCount === users.length
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
@@ -280,6 +340,29 @@ export default function UserManagementPage() {
                     onChange={handleSearchChange}
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs text-slate-500">
+                        Đã chọn: <span className="font-bold text-blue-700">{selectedUserIds.length}</span> tài khoản
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedUserIds([])}
+                            disabled={selectedUserIds.length === 0 || bulkDeleting}
+                            className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Bỏ chọn
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleBulkDelete}
+                            disabled={selectedUserIds.length === 0 || bulkDeleting}
+                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {bulkDeleting ? 'Đang xóa...' : `Xóa hàng loạt (${selectedUserIds.length})`}
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-md px-4 py-3 text-xs text-blue-800">
@@ -297,6 +380,16 @@ export default function UserManagementPage() {
                     <table className="w-full text-sm min-w-[980px] lg:min-w-[1280px]">
                         <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
+                                <th className="px-4 py-3 text-center font-bold w-14">
+                                    <input
+                                        type="checkbox"
+                                        checked={allCurrentPageSelected}
+                                        onChange={(e) => toggleSelectCurrentPage(e.target.checked)}
+                                        disabled={users.length === 0 || bulkDeleting}
+                                        className="accent-blue-600"
+                                        title="Chọn tất cả tài khoản trong trang hiện tại"
+                                    />
+                                </th>
                                 <th className="px-4 py-3 text-left font-bold min-w-[180px] sm:min-w-[220px]">Email</th>
                                 <th className="px-4 py-3 text-left font-bold min-w-[140px] sm:min-w-[180px]">Username</th>
                                 <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Role</th>
@@ -311,9 +404,20 @@ export default function UserManagementPage() {
                                 const permissionUpdating = updatingPermissionUserId === user._id
                                 const isAdmin = user.role === 'admin'
                                 const userPermissions = Array.isArray(user.adminPermissions) ? user.adminPermissions : []
+                                const normalizedUserId = String(user._id || '').trim()
+                                const isSelected = selectedIdSet.has(normalizedUserId)
 
                                 return (
                                     <tr key={user._id} className="hover:bg-blue-50/30 transition-colors align-top">
+                                        <td className="px-4 py-3 text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => toggleUserSelection(normalizedUserId, e.target.checked)}
+                                                disabled={bulkDeleting}
+                                                className="accent-blue-600"
+                                            />
+                                        </td>
                                         <td className="px-4 py-3 font-medium text-slate-800">{user.email}</td>
                                         <td className="px-4 py-3 text-slate-600">{user.username || '-'}</td>
                                         <td className="px-4 py-3 text-center">

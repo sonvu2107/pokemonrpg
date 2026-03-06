@@ -5,6 +5,19 @@ import Pokemon from '../../models/Pokemon.js'
 import Item from '../../models/Item.js'
 import UserPokemon from '../../models/UserPokemon.js'
 import UserInventory from '../../models/UserInventory.js'
+import UserMoveInventory from '../../models/UserMoveInventory.js'
+import PlayerState from '../../models/PlayerState.js'
+import MapProgress from '../../models/MapProgress.js'
+import Encounter from '../../models/Encounter.js'
+import DailyActivity from '../../models/DailyActivity.js'
+import DailyCheckIn from '../../models/DailyCheckIn.js'
+import PromoCodeClaim from '../../models/PromoCodeClaim.js'
+import Friendship from '../../models/Friendship.js'
+import BattleSession from '../../models/BattleSession.js'
+import Message from '../../models/Message.js'
+import MarketListing from '../../models/MarketListing.js'
+import ItemPurchaseLog from '../../models/ItemPurchaseLog.js'
+import MovePurchaseLog from '../../models/MovePurchaseLog.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, buildMovesForLevel } from '../../utils/movePpUtils.js'
 import {
     ADMIN_PERMISSIONS,
@@ -173,6 +186,120 @@ router.get('/lookup/items', async (req, res) => {
         res.json({ ok: true, items })
     } catch (error) {
         console.error('GET /api/admin/users/lookup/items error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/bulk-delete - Delete multiple user accounts
+router.post('/bulk-delete', async (req, res) => {
+    try {
+        const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds : []
+        const normalizedIds = [...new Set(
+            userIds
+                .map((entry) => String(entry || '').trim())
+                .filter((entry) => mongoose.Types.ObjectId.isValid(entry))
+        )]
+
+        if (normalizedIds.length === 0) {
+            return res.status(400).json({ ok: false, message: 'Danh sách user cần xóa không hợp lệ' })
+        }
+
+        if (normalizedIds.length > 200) {
+            return res.status(400).json({ ok: false, message: 'Mỗi lần chỉ được xóa tối đa 200 user' })
+        }
+
+        const requesterUserId = String(req.user?.userId || '').trim()
+        if (requesterUserId && normalizedIds.includes(requesterUserId)) {
+            return res.status(400).json({ ok: false, message: 'Không thể tự xóa tài khoản đang đăng nhập' })
+        }
+
+        const usersToDelete = await User.find({ _id: { $in: normalizedIds } })
+            .select('_id role adminPermissions username email')
+            .lean()
+
+        if (usersToDelete.length === 0) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tài khoản nào để xóa' })
+        }
+
+        const deleteObjectIds = usersToDelete.map((entry) => entry._id)
+        const deleteIdStrings = deleteObjectIds.map((entry) => String(entry))
+        const deletingAdmins = usersToDelete.filter((entry) => entry.role === 'admin')
+
+        if (deletingAdmins.length > 0) {
+            const [totalAdminCount, remainingAdminUsers] = await Promise.all([
+                User.countDocuments({ role: 'admin' }),
+                User.find({
+                    role: 'admin',
+                    _id: { $nin: deleteObjectIds },
+                })
+                    .select('role adminPermissions')
+                    .lean(),
+            ])
+
+            const remainingAdminCount = totalAdminCount - deletingAdmins.length
+            if (remainingAdminCount < 1) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Không thể xóa admin cuối cùng của hệ thống.',
+                })
+            }
+
+            const remainingUsersManagers = remainingAdminUsers.filter((admin) =>
+                hasAdminPermission(admin, ADMIN_PERMISSIONS.USERS)
+            )
+            if (remainingUsersManagers.length === 0) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Không thể xóa toàn bộ admin có quyền quản lý tài khoản người dùng.',
+                })
+            }
+        }
+
+        await Promise.all([
+            User.deleteMany({ _id: { $in: deleteObjectIds } }),
+            PlayerState.deleteMany({ userId: { $in: deleteObjectIds } }),
+            UserPokemon.deleteMany({ userId: { $in: deleteObjectIds } }),
+            UserInventory.deleteMany({ userId: { $in: deleteObjectIds } }),
+            UserMoveInventory.deleteMany({ userId: { $in: deleteObjectIds } }),
+            MapProgress.deleteMany({ userId: { $in: deleteObjectIds } }),
+            Encounter.deleteMany({ userId: { $in: deleteObjectIds } }),
+            DailyActivity.deleteMany({ userId: { $in: deleteObjectIds } }),
+            DailyCheckIn.deleteMany({ userId: { $in: deleteObjectIds } }),
+            PromoCodeClaim.deleteMany({ userId: { $in: deleteObjectIds } }),
+            BattleSession.deleteMany({ userId: { $in: deleteObjectIds } }),
+            Friendship.deleteMany({
+                $or: [
+                    { requesterId: { $in: deleteObjectIds } },
+                    { addresseeId: { $in: deleteObjectIds } },
+                    { blockedBy: { $in: deleteObjectIds } },
+                ],
+            }),
+            Message.deleteMany({ 'sender._id': { $in: deleteObjectIds } }),
+            Message.updateMany(
+                { deletedBy: { $in: deleteObjectIds } },
+                { $set: { deletedBy: null } }
+            ),
+            MarketListing.deleteMany({ sellerId: { $in: deleteObjectIds } }),
+            MarketListing.updateMany(
+                { buyerId: { $in: deleteObjectIds } },
+                { $set: { buyerId: null } }
+            ),
+            MarketListing.updateMany(
+                { reservedForUserId: { $in: deleteObjectIds } },
+                { $set: { reservedForUserId: null } }
+            ),
+            ItemPurchaseLog.deleteMany({ buyerId: { $in: deleteObjectIds } }),
+            MovePurchaseLog.deleteMany({ buyerId: { $in: deleteObjectIds } }),
+        ])
+
+        res.json({
+            ok: true,
+            deletedCount: deleteIdStrings.length,
+            deletedUserIds: deleteIdStrings,
+            message: `Đã xóa ${deleteIdStrings.length} tài khoản và dữ liệu liên quan`,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/bulk-delete error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })

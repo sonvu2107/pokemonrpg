@@ -1,11 +1,30 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import rateLimit from 'express-rate-limit'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 
 const router = express.Router()
+
+const registerLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        const resetTimeMs = req.rateLimit?.resetTime ? new Date(req.rateLimit.resetTime).getTime() : (Date.now() + 15 * 60 * 1000)
+        const retryAfterSeconds = Math.max(1, Math.ceil((resetTimeMs - Date.now()) / 1000))
+        res.setHeader('Retry-After', String(retryAfterSeconds))
+        res.status(429).json({
+            ok: false,
+            code: 'REGISTER_RATE_LIMIT',
+            retryAfterSeconds,
+            message: 'Bạn đăng ký quá nhanh. Vui lòng thử lại sau ít phút.',
+        })
+    },
+})
 
 const serializePlayerState = (playerStateLike = null) => {
     const playerState = playerStateLike?.toObject ? playerStateLike.toObject() : (playerStateLike || {})
@@ -26,7 +45,7 @@ const serializePlayerState = (playerStateLike = null) => {
 }
 
 // POST /api/auth/register
-router.post('/register', async (req, res, next) => {
+router.post('/register', registerLimiter, async (req, res, next) => {
     try {
         const { email, username, password } = req.body
         const normalizedEmail = String(email || '').trim().toLowerCase()

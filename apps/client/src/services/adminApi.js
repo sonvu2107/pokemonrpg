@@ -767,6 +767,20 @@ export const userApi = {
         return res.json()
     },
 
+    // POST /api/admin/users/bulk-delete
+    async bulkDelete(userIds = []) {
+        const res = await fetch(`${API_URL}/admin/users/bulk-delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ userIds }),
+        })
+        if (!res.ok) await throwApiError(res, 'Xóa tài khoản hàng loạt thất bại')
+        return res.json()
+    },
+
     // GET /api/admin/users/lookup/pokemon
     async lookupPokemon(params = {}) {
         const query = new URLSearchParams(params).toString()
