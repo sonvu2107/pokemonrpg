@@ -2691,7 +2691,7 @@ export function BattlePage() {
                     </div>
                 </div>
 
-                {activeBattleMode === 'trainer' && (
+                {activeBattleMode === 'trainer' && canUseVipAutoTrainer && (
                     <div className="border border-slate-300 bg-slate-50 rounded p-3 text-xs text-slate-700 space-y-2 max-w-xl mx-auto w-full">
                         <div className="flex items-center justify-between gap-2">
                             <div>
@@ -2769,12 +2769,6 @@ export function BattlePage() {
                                 Giới hạn auto battle: {autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
                                 {' · '}
                                 Lượt hôm nay: {autoTrainerUsageToday}/{autoTrainerUsesPerDayLimit > 0 ? autoTrainerUsesPerDayLimit : '∞'}
-                            </div>
-                        )}
-
-                        {!canUseVipAutoTrainer && (
-                            <div className="text-[10px] text-slate-500">
-                                Auto battle trainer là quyền lợi dành cho tài khoản VIP.
                             </div>
                         )}
                     </div>

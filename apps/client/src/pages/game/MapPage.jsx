@@ -1022,7 +1022,8 @@ export default function MapPage() {
                         Tìm kiếm{searching ? '...' : ''}
                     </button>
 
-                    <div className="w-full max-w-[420px] border border-slate-300 rounded bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
+                    {canUseVipAutoSearch && (
+                        <div className="w-full max-w-[420px] border border-slate-300 rounded bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                             <div>
                                 <div className="font-bold text-slate-800">Auto tìm kiếm nâng cao</div>
@@ -1188,7 +1189,8 @@ export default function MapPage() {
                                     ? `Đang auto: tìm mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng nếu gặp rule auto bắt.`
                                     : 'Auto đang tắt. Bạn vẫn có thể tìm thủ công.'))}
                         </div>
-                    </div>
+                        </div>
+                    )}
 
                     {isSearchDebugMode && (
                         <button
