@@ -70,6 +70,8 @@ const resolvePokemonSprite = (pokemonLike) => {
 
 const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    const platinumCoinBonusPercent = Math.max(0, Number(source?.platinumCoinBonusPercent ?? source?.moonPointBonusPercent ?? 0) || 0)
+    const ssCatchRateBonusPercent = Math.max(0, Number(source?.ssCatchRateBonusPercent ?? source?.catchRateBonusPercent ?? 0) || 0)
     return {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
@@ -80,6 +82,13 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
         autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
         autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+        expBonusPercent: Math.max(0, Number(source?.expBonusPercent || 0) || 0),
+        platinumCoinBonusPercent,
+        moonPointBonusPercent: platinumCoinBonusPercent,
+        ssCatchRateBonusPercent,
+        catchRateBonusPercent: ssCatchRateBonusPercent,
+        itemDropBonusPercent: Math.max(0, Number(source?.itemDropBonusPercent || 0) || 0),
+        dailyRewardBonusPercent: Math.max(0, Number(source?.dailyRewardBonusPercent || 0) || 0),
     }
 }
 
@@ -108,6 +117,15 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
     const toCustomBenefits = Array.isArray(source.customBenefits)
         ? source.customBenefits
         : (Array.isArray(fallback.customBenefits) ? fallback.customBenefits : [])
+
+    const platinumCoinBonusPercent = parseNonNegativePercent(
+        source.platinumCoinBonusPercent ?? source.moonPointBonusPercent ?? fallback.platinumCoinBonusPercent ?? fallback.moonPointBonusPercent ?? 0,
+        0
+    )
+    const ssCatchRateBonusPercent = parseNonNegativePercent(
+        source.ssCatchRateBonusPercent ?? source.catchRateBonusPercent ?? fallback.ssCatchRateBonusPercent ?? fallback.catchRateBonusPercent ?? 0,
+        0
+    )
 
     return {
         title: String(source.title ?? fallback.title ?? '').trim().slice(0, 80),
@@ -140,8 +158,10 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
             100000
         ),
         expBonusPercent: parseNonNegativePercent(source.expBonusPercent ?? fallback.expBonusPercent ?? 0, 0),
-        moonPointBonusPercent: parseNonNegativePercent(source.moonPointBonusPercent ?? fallback.moonPointBonusPercent ?? 0, 0),
-        catchRateBonusPercent: parseNonNegativePercent(source.catchRateBonusPercent ?? fallback.catchRateBonusPercent ?? 0, 0),
+        platinumCoinBonusPercent,
+        moonPointBonusPercent: platinumCoinBonusPercent,
+        ssCatchRateBonusPercent,
+        catchRateBonusPercent: ssCatchRateBonusPercent,
         itemDropBonusPercent: parseNonNegativePercent(source.itemDropBonusPercent ?? fallback.itemDropBonusPercent ?? 0, 0),
         dailyRewardBonusPercent: parseNonNegativePercent(source.dailyRewardBonusPercent ?? fallback.dailyRewardBonusPercent ?? 0, 0),
         customBenefits: [...new Set(

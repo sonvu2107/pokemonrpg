@@ -85,6 +85,48 @@ const userSchema = new mongoose.Schema(
                 min: 0,
                 max: 100000,
             },
+            expBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            platinumCoinBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            moonPointBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            ssCatchRateBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            catchRateBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            itemDropBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            dailyRewardBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
         },
         vipTierId: {
             type: mongoose.Schema.Types.ObjectId,

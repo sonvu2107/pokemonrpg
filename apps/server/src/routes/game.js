@@ -13,6 +13,7 @@ import BattleTrainer from '../models/BattleTrainer.js'
 import BattleSession from '../models/BattleSession.js'
 import DailyActivity from '../models/DailyActivity.js'
 import Pokemon from '../models/Pokemon.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 
 const router = express.Router()
 
@@ -117,6 +118,67 @@ const calcWildRewardPlatinumCoins = ({ level = 1, wildDefeatsToday = 0 } = {}) =
         multiplier,
         platinumCoins: Math.max(1, Math.floor(basePlatinumCoins * multiplier)),
     }
+}
+
+const normalizeVipBonusBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    const platinumCoinBonusPercent = Math.max(
+        0,
+        Number(source?.platinumCoinBonusPercent ?? source?.moonPointBonusPercent ?? 0) || 0
+    )
+    const ssCatchRateBonusPercent = Math.max(
+        0,
+        Number(source?.ssCatchRateBonusPercent ?? source?.catchRateBonusPercent ?? 0) || 0
+    )
+
+    return {
+        platinumCoinBonusPercent,
+        ssCatchRateBonusPercent,
+    }
+}
+
+const mergeVipBonusBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipBonusBenefits(currentBenefitsLike)
+    const tier = normalizeVipBonusBenefits(tierBenefitsLike)
+
+    return {
+        platinumCoinBonusPercent: current.platinumCoinBonusPercent || tier.platinumCoinBonusPercent,
+        ssCatchRateBonusPercent: current.ssCatchRateBonusPercent || tier.ssCatchRateBonusPercent,
+    }
+}
+
+const resolveVipTierBenefitsForUser = async (userLike) => {
+    if (!userLike) return {}
+
+    if (userLike?.vipTierId) {
+        const tier = await VipPrivilegeTier.findById(userLike.vipTierId)
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    const vipTierLevel = Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
+    if (vipTierLevel > 0) {
+        const tier = await VipPrivilegeTier.findOne({ level: vipTierLevel })
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    return {}
+}
+
+const resolveEffectiveVipBonusBenefits = async (userLike) => {
+    if (!userLike) return normalizeVipBonusBenefits({})
+    const tierBenefits = await resolveVipTierBenefitsForUser(userLike)
+    return mergeVipBonusBenefits(userLike?.vipBenefits, tierBenefits)
+}
+
+const applyPercentBonus = (baseValue = 0, bonusPercent = 0) => {
+    const normalizedBase = Math.max(0, Math.floor(Number(baseValue) || 0))
+    const normalizedPercent = Math.max(0, Number(bonusPercent) || 0)
+    if (normalizedBase <= 0 || normalizedPercent <= 0) return normalizedBase
+    return Math.max(1, Math.floor(normalizedBase * (1 + (normalizedPercent / 100))))
 }
 
 const resolveWildPlayerBattleSnapshot = async (userId) => {
@@ -3051,6 +3113,15 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
                 wildDefeatsToday,
             })
 
+            const currentUser = await User.findById(userId)
+                .select('vipTierId vipTierLevel vipBenefits')
+                .lean()
+            const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(currentUser)
+            const baseRewardPlatinumCoins = Math.max(0, Number(reward?.platinumCoins || 0))
+            reward.basePlatinumCoinsBeforeVip = baseRewardPlatinumCoins
+            reward.platinumCoinBonusPercent = Math.max(0, Number(effectiveVipBonusBenefits?.platinumCoinBonusPercent || 0))
+            reward.platinumCoins = applyPercentBonus(baseRewardPlatinumCoins, reward.platinumCoinBonusPercent)
+
             if (reward.platinumCoins > 0) {
                 playerState = await PlayerState.findOneAndUpdate(
                     { userId },
@@ -3120,11 +3191,23 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
-        const chance = calcCatchChance({
+        const currentUser = await User.findById(userId)
+            .select('vipTierId vipTierLevel vipBenefits')
+            .lean()
+        const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(currentUser)
+        const pokemonRarity = String(pokemon?.rarity || '').trim().toLowerCase()
+
+        const baseChance = calcCatchChance({
             catchRate: pokemon.catchRate,
             hp: encounter.hp,
             maxHp: encounter.maxHp,
         })
+        const ssCatchBonusPercent = pokemonRarity === 'ss'
+            ? Math.max(0, Number(effectiveVipBonusBenefits?.ssCatchRateBonusPercent || 0))
+            : 0
+        const chance = ssCatchBonusPercent > 0
+            ? Math.min(0.95, baseChance * (1 + (ssCatchBonusPercent / 100)))
+            : baseChance
 
         const caught = Math.random() < chance
 
@@ -4917,12 +5000,19 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             return res.status(400).json({ ok: false, message: 'Cần có đội hình đối thủ' })
         }
 
+        const rewardUser = await User.findById(userId)
+            .select('vipTierId vipTierLevel vipBenefits')
+            .lean()
+        const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(rewardUser)
+
         const totalLevel = sourceTeam.reduce((sum, mon) => sum + (Number(mon.level) || 1), 0)
         const averageLevel = Math.max(1, Math.round(totalLevel / Math.max(1, sourceTeam.length)))
         const defaultScaledReward = Math.max(10, averageLevel * 10)
-        const coinsAwarded = trainerRewardCoins > 0
+        const baseCoinsAwarded = trainerRewardCoins > 0
             ? Math.floor(trainerRewardCoins)
             : defaultScaledReward
+        const coinBonusPercent = Math.max(0, Number(effectiveVipBonusBenefits?.platinumCoinBonusPercent || 0))
+        const coinsAwarded = applyPercentBonus(baseCoinsAwarded, coinBonusPercent)
         const expAwarded = trainerExpReward > 0
             ? Math.floor(trainerExpReward)
             : defaultScaledReward
@@ -5196,6 +5286,8 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 pokemonRewards,
                 rewards: {
                     coins: coinsAwarded,
+                    baseCoins: baseCoinsAwarded,
+                    coinBonusPercent,
                     trainerExp: trainerExpAwarded,
                     moonPoints: moonPointsAwarded,
                     prizePokemon,

@@ -19,8 +19,8 @@ const createDefaultTierForm = () => ({
     autoBattleTrainerDurationMinutes: '0',
     autoBattleTrainerUsesPerDay: '0',
     expBonusPercent: '0',
-    moonPointBonusPercent: '0',
-    catchRateBonusPercent: '0',
+    platinumCoinBonusPercent: '0',
+    ssCatchRateBonusPercent: '0',
     itemDropBonusPercent: '0',
     dailyRewardBonusPercent: '0',
     customBenefitsText: '',
@@ -56,8 +56,16 @@ const normalizeTierToForm = (tierLike = null) => {
         autoBattleTrainerDurationMinutes: String(benefits?.autoBattleTrainerDurationMinutes ?? base.autoBattleTrainerDurationMinutes),
         autoBattleTrainerUsesPerDay: String(benefits?.autoBattleTrainerUsesPerDay ?? base.autoBattleTrainerUsesPerDay),
         expBonusPercent: String(benefits?.expBonusPercent ?? base.expBonusPercent),
-        moonPointBonusPercent: String(benefits?.moonPointBonusPercent ?? base.moonPointBonusPercent),
-        catchRateBonusPercent: String(benefits?.catchRateBonusPercent ?? base.catchRateBonusPercent),
+        platinumCoinBonusPercent: String(
+            benefits?.platinumCoinBonusPercent
+            ?? benefits?.moonPointBonusPercent
+            ?? base.platinumCoinBonusPercent
+        ),
+        ssCatchRateBonusPercent: String(
+            benefits?.ssCatchRateBonusPercent
+            ?? benefits?.catchRateBonusPercent
+            ?? base.ssCatchRateBonusPercent
+        ),
         itemDropBonusPercent: String(benefits?.itemDropBonusPercent ?? base.itemDropBonusPercent),
         dailyRewardBonusPercent: String(benefits?.dailyRewardBonusPercent ?? base.dailyRewardBonusPercent),
         customBenefitsText: Array.isArray(benefits?.customBenefits)
@@ -91,8 +99,8 @@ const buildPayloadFromForm = (form) => {
             autoBattleTrainerDurationMinutes: Math.max(0, parseInt(form.autoBattleTrainerDurationMinutes, 10) || 0),
             autoBattleTrainerUsesPerDay: Math.max(0, parseInt(form.autoBattleTrainerUsesPerDay, 10) || 0),
             expBonusPercent: parsePercent(form.expBonusPercent),
-            moonPointBonusPercent: parsePercent(form.moonPointBonusPercent),
-            catchRateBonusPercent: parsePercent(form.catchRateBonusPercent),
+            platinumCoinBonusPercent: parsePercent(form.platinumCoinBonusPercent),
+            ssCatchRateBonusPercent: parsePercent(form.ssCatchRateBonusPercent),
             itemDropBonusPercent: parsePercent(form.itemDropBonusPercent),
             dailyRewardBonusPercent: parsePercent(form.dailyRewardBonusPercent),
             customBenefits,
@@ -517,24 +525,24 @@ export default function VipPrivilegePage() {
                                     />
                                 </label>
                                 <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng điểm Nguyệt Các %</div>
+                                    <div className="font-semibold text-slate-700 mb-1">Thưởng Xu Bạch Kim %</div>
                                     <input
                                         type="number"
                                         min="0"
                                         step="0.1"
-                                        value={form.moonPointBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, moonPointBonusPercent: e.target.value }))}
+                                        value={form.platinumCoinBonusPercent}
+                                        onChange={(e) => setForm((prev) => ({ ...prev, platinumCoinBonusPercent: e.target.value }))}
                                         className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
                                     />
                                 </label>
                                 <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng tỉ lệ bắt Pokémon %</div>
+                                    <div className="font-semibold text-slate-700 mb-1">Thưởng tỉ lệ bắt SS %</div>
                                     <input
                                         type="number"
                                         min="0"
                                         step="0.1"
-                                        value={form.catchRateBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, catchRateBonusPercent: e.target.value }))}
+                                        value={form.ssCatchRateBonusPercent}
+                                        onChange={(e) => setForm((prev) => ({ ...prev, ssCatchRateBonusPercent: e.target.value }))}
                                         className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
                                     />
                                 </label>
@@ -683,8 +691,8 @@ export default function VipPrivilegePage() {
                                                     </td>
                                                     <td className="px-3 py-2 text-xs text-slate-700">
                                                         <div>EXP: <span className="font-semibold">+{benefits.expBonusPercent || 0}%</span></div>
-                                                        <div>Moon: <span className="font-semibold">+{benefits.moonPointBonusPercent || 0}%</span></div>
-                                                        <div>Catch: <span className="font-semibold">+{benefits.catchRateBonusPercent || 0}%</span></div>
+                                                        <div>Xu Bạch Kim: <span className="font-semibold">+{benefits.platinumCoinBonusPercent ?? benefits.moonPointBonusPercent ?? 0}%</span></div>
+                                                        <div>Bắt SS: <span className="font-semibold">+{benefits.ssCatchRateBonusPercent ?? benefits.catchRateBonusPercent ?? 0}%</span></div>
                                                         <div>Drop: <span className="font-semibold">+{benefits.itemDropBonusPercent || 0}%</span></div>
                                                         <div>Daily: <span className="font-semibold">+{benefits.dailyRewardBonusPercent || 0}%</span></div>
                                                     </td>
@@ -791,12 +799,12 @@ export default function VipPrivilegePage() {
                                                             <span className="font-bold text-emerald-600 text-right shrink-0">+{benefits.expBonusPercent || 0}%</span>
                                                         </div>
                                                         <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
-                                                            <span className="text-slate-500 font-medium tracking-tight">Moon:</span>
-                                                            <span className="font-bold text-blue-600 text-right shrink-0">+{benefits.moonPointBonusPercent || 0}%</span>
+                                                            <span className="text-slate-500 font-medium tracking-tight">Xu Bạch Kim:</span>
+                                                            <span className="font-bold text-blue-600 text-right shrink-0">+{benefits.platinumCoinBonusPercent ?? benefits.moonPointBonusPercent ?? 0}%</span>
                                                         </div>
                                                         <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
-                                                            <span className="text-slate-500 font-medium tracking-tight">Catch:</span>
-                                                            <span className="font-bold text-purple-600 text-right shrink-0">+{benefits.catchRateBonusPercent || 0}%</span>
+                                                            <span className="text-slate-500 font-medium tracking-tight">Bắt SS:</span>
+                                                            <span className="font-bold text-purple-600 text-right shrink-0">+{benefits.ssCatchRateBonusPercent ?? benefits.catchRateBonusPercent ?? 0}%</span>
                                                         </div>
                                                         <div className="bg-white px-2 py-1.5 rounded flex justify-between items-center border border-slate-100">
                                                             <span className="text-slate-500 font-medium tracking-tight">Drop:</span>

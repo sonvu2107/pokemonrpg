@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { validateMessage } from '../../utils/chatUtils'
 
 export default function ChatInput({ onSendMessage, onTyping, disabled = false }) {
@@ -6,13 +6,6 @@ export default function ChatInput({ onSendMessage, onTyping, disabled = false })
   const [error, setError] = useState('')
   const inputRef = useRef(null)
   const typingTimeoutRef = useRef(null)
-
-  // Auto-focus input when component mounts
-  useEffect(() => {
-    if (inputRef.current && !disabled) {
-      inputRef.current.focus()
-    }
-  }, [disabled])
 
   const handleInputChange = (e) => {
     const value = e.target.value

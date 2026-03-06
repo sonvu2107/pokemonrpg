@@ -88,7 +88,19 @@ const vipPrivilegeTierSchema = new mongoose.Schema(
                 min: 0,
                 max: 1000,
             },
+            platinumCoinBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
             moonPointBonusPercent: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 1000,
+            },
+            ssCatchRateBonusPercent: {
                 type: Number,
                 default: 0,
                 min: 0,

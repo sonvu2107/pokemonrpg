@@ -136,6 +136,22 @@ const resolveAutoActionForEncounter = (encounterLike = null, autoSearchState = {
     return 'battle'
 }
 
+const buildEncounterLogLabel = (encounterLike = null) => {
+    const pokemonName = String(encounterLike?.pokemon?.name || '').trim() || 'Pokemon hoang dã'
+    const level = Math.max(1, Number(encounterLike?.level || 1))
+    const rarity = String(encounterLike?.pokemon?.rarity || '').trim().toUpperCase()
+    const formId = normalizeFormId(encounterLike?.pokemon?.formId || encounterLike?.pokemon?.form?.formId || 'normal')
+
+    let label = `${pokemonName} Lv ${level}`
+    if (rarity) {
+        label += ` [${rarity}]`
+    }
+    if (formId !== 'normal') {
+        label += ` (${formId})`
+    }
+    return label
+}
+
 const findAutoCatchBallItemId = async (token, preferredBallId = '') => {
     const preferred = normalizeId(preferredBallId)
     const inventoryRes = await callApi({ token, path: '/api/inventory' })
@@ -378,6 +394,22 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     level: searchRes?.level,
                     pokemon: searchRes?.pokemon || null,
                 }
+
+                await updateAutoSearchState({
+                    userId,
+                    setPatch: {
+                        ...baseSyncPatch,
+                    },
+                    lastAction: {
+                        action: 'search',
+                        result: 'success',
+                        reason: 'ENCOUNTER_FOUND',
+                        targetId: mapSlug,
+                        at: now,
+                    },
+                    logMessage: `Tìm thấy ${buildEncounterLogLabel(activeEncounter)}.`,
+                    logType: 'info',
+                })
             } else {
                 await updateAutoSearchState({
                     userId,
@@ -407,6 +439,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     const action = resolveAutoActionForEncounter(activeEncounter, autoState)
     const encounterId = String(activeEncounter?._id || '').trim()
+    const encounterLabel = buildEncounterLogLabel(activeEncounter)
     if (!encounterId) {
         stats.skipped += 1
         stats.skippedReasons.NO_ENCOUNTER_ID = (stats.skippedReasons.NO_ENCOUNTER_ID || 0) + 1
@@ -428,6 +461,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     targetId: mapSlug,
                     at: now,
                 },
+                logMessage: `Tìm thấy ${encounterLabel} và đã bỏ qua.`,
+                logType: 'info',
             })
             stats.success += 1
             return
@@ -458,7 +493,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     targetId: mapSlug,
                     at: now,
                 },
-                logMessage: 'Đã dừng auto tìm kiếm: hết bóng để auto bắt.',
+                logMessage: `Tìm thấy ${encounterLabel} nhưng đã hết bóng, auto tìm kiếm tạm dừng.`,
                 logType: 'warn',
             })
             stats.skipped += 1
@@ -478,7 +513,6 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             })
 
             const isCaught = Boolean(catchRes?.caught)
-            const pokemonName = String(activeEncounter?.pokemon?.name || '').trim() || 'Pokemon hoang dã'
             await updateAutoSearchState({
                 userId,
                 setPatch: {
@@ -493,8 +527,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     at: now,
                 },
                 logMessage: isCaught
-                    ? `Auto bắt thành công ${pokemonName}.`
-                    : `Auto bắt thất bại với ${pokemonName}.`,
+                    ? `Tìm thấy ${encounterLabel} và đã bắt thành công.`
+                    : `Tìm thấy ${encounterLabel} nhưng bắt chưa thành công.`,
                 logType: isCaught ? 'success' : 'info',
             })
             stats.success += 1
@@ -522,7 +556,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                         targetId: mapSlug,
                         at: now,
                     },
-                    logMessage: 'Đã dừng auto tìm kiếm: không đủ bóng để auto bắt.',
+                    logMessage: `Tìm thấy ${encounterLabel} nhưng không đủ bóng, auto tìm kiếm tạm dừng.`,
                     logType: 'warn',
                 })
                 stats.skipped += 1
@@ -537,8 +571,6 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         const attackRes = await callApi({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST' })
         const playerDefeated = Boolean(attackRes?.playerDefeated)
         const defeated = Boolean(attackRes?.defeated)
-        const pokemonName = String(activeEncounter?.pokemon?.name || '').trim() || 'Pokemon hoang dã'
-
         if (playerDefeated) {
             await updateAutoSearchState({
                 userId,
@@ -554,7 +586,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     targetId: mapSlug,
                     at: now,
                 },
-                logMessage: 'Đã dừng auto tìm kiếm: Pokemon của bạn đã kiệt sức khi chiến đấu.',
+                logMessage: `Tìm thấy ${encounterLabel} nhưng Pokemon của bạn đã kiệt sức, auto tìm kiếm tạm dừng.`,
                 logType: 'warn',
             })
             stats.errors += 1
@@ -575,7 +607,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 at: now,
             },
             logMessage: defeated
-                ? `Đã đánh bại ${pokemonName} Lv ${Math.max(1, Number(activeEncounter?.level || 1))}.`
+                ? `Đã đánh bại ${encounterLabel}.`
                 : '',
             logType: defeated ? 'success' : 'info',
         })
