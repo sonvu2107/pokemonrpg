@@ -210,20 +210,22 @@ export default function HomePage() {
                                 </span>
                             </div>
                             <div className="p-4 text-slate-700">
-                                <ArticleContentRenderer content={post.content} title={post.title} />
+                                <ArticleContentRenderer content={post.content} title={post.title} framedImages />
                                 {!hasInlineImage && postImages.length > 0 && (
                                     <div className="mt-3">
-                                        <div className="relative overflow-hidden rounded border border-blue-100">
-                                            <img
-                                                src={postImages[0]}
-                                                alt={`${post.title} - 1`}
-                                                className="w-full max-h-80 object-cover"
-                                            />
-                                            {postImages.length > 1 && (
-                                                <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
-                                                    +{postImages.length - 1} ảnh
-                                                </span>
-                                            )}
+                                        <div className="rounded-xl bg-gradient-to-b from-blue-400 to-cyan-400 p-1 shadow-md">
+                                            <div className="relative overflow-hidden rounded border-2 border-white">
+                                                <img
+                                                    src={postImages[0]}
+                                                    alt={`${post.title} - 1`}
+                                                    className="w-full max-h-80 object-cover"
+                                                />
+                                                {postImages.length > 1 && (
+                                                    <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
+                                                        +{postImages.length - 1} ảnh
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}

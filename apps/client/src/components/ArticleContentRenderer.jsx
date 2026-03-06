@@ -158,7 +158,7 @@ export const hasInlineImageInContent = (content = '') => {
     return lines.some((line) => IMAGE_LINE_PATTERN.test(String(line || '').trim()))
 }
 
-export default function ArticleContentRenderer({ content, title = '' }) {
+export default function ArticleContentRenderer({ content, title = '', framedImages = false }) {
     const blocks = parseContentBlocks(content)
 
     return (
@@ -166,12 +166,14 @@ export default function ArticleContentRenderer({ content, title = '' }) {
             {blocks.map((block, index) => {
                 if (block.type === 'image' && block.imageUrl) {
                     return (
-                        <div key={`image-${index}`} className="overflow-hidden rounded border border-blue-100">
-                            <img
-                                src={block.imageUrl}
-                                alt={block.altText || `${title} - ảnh minh họa`}
-                                className="w-full max-h-[420px] object-cover"
-                            />
+                        <div key={`image-${index}`} className={framedImages ? 'rounded-xl bg-gradient-to-b from-blue-400 to-cyan-400 p-1 shadow-md' : ''}>
+                            <div className={`overflow-hidden rounded ${framedImages ? 'border-2 border-white' : 'border border-blue-100'}`}>
+                                <img
+                                    src={block.imageUrl}
+                                    alt={block.altText || `${title} - ảnh minh họa`}
+                                    className="w-full max-h-[420px] object-cover"
+                                />
+                            </div>
                         </div>
                     )
                 }

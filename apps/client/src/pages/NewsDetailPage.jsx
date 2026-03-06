@@ -116,31 +116,40 @@ export default function NewsDetailPage() {
                     </header>
 
                     <div className="p-4 text-slate-700">
-                        <ArticleContentRenderer content={post.content} title={post.title} />
+                        <ArticleContentRenderer content={post.content} title={post.title} framedImages />
                         {!hasInlineImage && postImages.length > 0 && (
                             <div className="mt-4 space-y-3">
-                                <div className="relative overflow-hidden rounded border border-blue-100">
-                                    <img
-                                        src={postImages[0]}
-                                        alt={`${post.title} - 1`}
-                                        className="w-full max-h-[420px] object-cover"
-                                    />
-                                    {postImages.length > 1 && (
-                                        <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
-                                            +{postImages.length - 1} ảnh
-                                        </span>
-                                    )}
+                                <div className="rounded-xl bg-gradient-to-b from-blue-400 to-cyan-400 p-1 shadow-md">
+                                    <div className="relative overflow-hidden rounded border-2 border-white">
+                                        <img
+                                            src={postImages[0]}
+                                            alt={`${post.title} - 1`}
+                                            className="w-full max-h-[420px] object-cover"
+                                        />
+                                        {postImages.length > 1 && (
+                                            <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
+                                                +{postImages.length - 1} ảnh
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 {postImages.length > 1 && (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                        {postImages.slice(1).map((imageUrl, index) => (
-                                            <img
-                                                key={`${post._id}-${index + 1}`}
-                                                src={imageUrl}
-                                                alt={`${post.title} - ${index + 2}`}
-                                                className="w-full h-32 sm:h-40 object-cover rounded border border-blue-100"
-                                            />
-                                        ))}
+                                        {postImages.slice(1).map((imageUrl, index) => {
+                                            const imageOrder = index + 2
+                                            return (
+                                                <div
+                                                    key={`${post._id}-${index + 1}`}
+                                                    className="rounded-lg bg-gradient-to-b from-blue-400 to-cyan-400 p-1 shadow-sm"
+                                                >
+                                                    <img
+                                                        src={imageUrl}
+                                                        alt={`${post.title} - ${imageOrder}`}
+                                                        className="w-full h-32 sm:h-40 object-cover rounded border-2 border-white"
+                                                    />
+                                                </div>
+                                            )
+                                        })}
                                     </div>
                                 )}
                             </div>

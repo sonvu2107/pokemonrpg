@@ -601,6 +601,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                 <ImageUpload
                                     currentImage={formData.imageUrls[0] || formData.imageUrl}
                                     multiple
+                                    previewFramed
                                     onUploadSuccess={(urls) => {
                                         const normalizedUrls = normalizeImageUrls(urls)
                                         setFormData((prev) => ({
