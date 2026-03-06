@@ -6,10 +6,17 @@ import UserPokemon from '../models/UserPokemon.js'
 import BattleSession from '../models/BattleSession.js'
 import User from '../models/User.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 
 const router = express.Router()
+const useItemActionGuard = createActionGuard({
+    actionKey: 'inventory:use',
+    cooldownMs: 350,
+    message: 'Dùng vật phẩm quá nhanh. Vui lòng đợi một chút.',
+})
+
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
 const serializePlayerWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
@@ -26,11 +33,11 @@ const calcCatchChance = ({ catchRate, hp, maxHp }) => {
     return clampChance(raw, 0.02, 0.95)
 }
 
-const getBallMultiplier = (item) => {
-    if (item?.effectType === 'catchMultiplier' && Number.isFinite(item.effectValue)) {
-        return item.effectValue || 1
+const getBallCatchChance = ({ item, baseChance }) => {
+    if (item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))) {
+        return clampChance(Number(item.effectValue) / 100, 0, 1)
     }
-    return 1
+    return clampChance(baseChance, 0.02, 0.99)
 }
 
 const getHealAmounts = (item) => {
@@ -96,7 +103,7 @@ router.get('/', async (req, res) => {
     }
 })
 
-router.post('/use', async (req, res) => {
+router.post('/use', useItemActionGuard, async (req, res) => {
     try {
         const { itemId, quantity = 1, encounterId, activePokemonId = null, moveName = '' } = req.body
         const qty = Number(quantity)
@@ -166,8 +173,7 @@ router.post('/use', async (req, res) => {
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
             })
-            const multiplier = getBallMultiplier(item)
-            const chance = clampChance(baseChance * multiplier, 0.02, 0.99)
+            const chance = getBallCatchChance({ item, baseChance })
             const caught = Math.random() < chance
 
             if (caught) {

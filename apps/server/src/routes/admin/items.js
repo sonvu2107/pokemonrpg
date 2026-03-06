@@ -219,6 +219,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
+        if (effectValue !== undefined && !Number.isFinite(Number(effectValue))) {
+            return res.status(400).json({ ok: false, message: 'Giá trị hiệu ứng không hợp lệ' })
+        }
+
+        if (effectValueMp !== undefined && !Number.isFinite(Number(effectValueMp))) {
+            return res.status(400).json({ ok: false, message: 'Giá trị PP không hợp lệ' })
+        }
+
+        const resolvedEffectType = effectType || 'none'
+        if (resolvedEffectType === 'catchMultiplier') {
+            const catchChancePercent = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
+            if (catchChancePercent < 0 || catchChancePercent > 100) {
+                return res.status(400).json({ ok: false, message: 'Tỉ lệ bắt phải nằm trong khoảng 0-100%' })
+            }
+        }
+
         const existing = await Item.findOne({ name })
 
         if (existing) {
@@ -233,9 +249,11 @@ router.post('/', async (req, res) => {
             description: description || '',
             shopPrice: Number.isFinite(Number(shopPrice)) ? Number(shopPrice) : 0,
             isShopEnabled: toBoolean(isShopEnabled, false),
-            effectType: effectType || 'none',
-            effectValue: effectValue !== undefined ? effectValue : 0,
-            effectValueMp: effectValueMp !== undefined ? effectValueMp : 0,
+            effectType: resolvedEffectType,
+            effectValue: resolvedEffectType === 'catchMultiplier'
+                ? Math.min(100, Math.max(0, Number(effectValue) || 0))
+                : (effectValue !== undefined ? Number(effectValue) : 0),
+            effectValueMp: effectValueMp !== undefined ? Number(effectValueMp) : 0,
         })
 
         await item.save()
@@ -270,6 +288,22 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
         }
 
+        if (effectValue !== undefined && !Number.isFinite(Number(effectValue))) {
+            return res.status(400).json({ ok: false, message: 'Giá trị hiệu ứng không hợp lệ' })
+        }
+
+        if (effectValueMp !== undefined && !Number.isFinite(Number(effectValueMp))) {
+            return res.status(400).json({ ok: false, message: 'Giá trị PP không hợp lệ' })
+        }
+
+        const nextEffectType = effectType !== undefined ? effectType : item.effectType
+        if (nextEffectType === 'catchMultiplier' && effectValue !== undefined) {
+            const catchChancePercent = Number(effectValue)
+            if (catchChancePercent < 0 || catchChancePercent > 100) {
+                return res.status(400).json({ ok: false, message: 'Tỉ lệ bắt phải nằm trong khoảng 0-100%' })
+            }
+        }
+
         if (name && name !== item.name) {
             const conflict = await Item.findOne({ _id: { $ne: item._id }, name })
             if (conflict) {
@@ -285,8 +319,14 @@ router.put('/:id', async (req, res) => {
         if (shopPrice !== undefined) item.shopPrice = Number(shopPrice)
         if (isShopEnabled !== undefined) item.isShopEnabled = toBoolean(isShopEnabled, item.isShopEnabled)
         if (effectType !== undefined) item.effectType = effectType
-        if (effectValue !== undefined) item.effectValue = effectValue
-        if (effectValueMp !== undefined) item.effectValueMp = effectValueMp
+        if (effectValue !== undefined) {
+            item.effectValue = nextEffectType === 'catchMultiplier'
+                ? Math.min(100, Math.max(0, Number(effectValue) || 0))
+                : Number(effectValue)
+        } else if (nextEffectType === 'catchMultiplier') {
+            item.effectValue = Math.min(100, Math.max(0, Number(item.effectValue) || 0))
+        }
+        if (effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
 
         await item.save()
 

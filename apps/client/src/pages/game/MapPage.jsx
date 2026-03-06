@@ -7,6 +7,8 @@ import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
+const SEARCH_SPAM_REPOSITION_THRESHOLD = 10
+const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 650
 
 const getLastEncounterStorageKey = (slug = '') => `${LAST_ENCOUNTER_STORAGE_PREFIX}${String(slug || '').trim().toLowerCase()}`
 
@@ -59,9 +61,12 @@ export default function MapPage() {
         expToNext: 250,
         totalSearches: 0,
     })
+    const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
     const searchScrollYRef = useRef(0)
     const shouldRestoreSearchScrollRef = useRef(false)
+    const searchSpamCountRef = useRef(0)
+    const lastSearchRequestAtRef = useRef(0)
     const formattedGold = Number(playerState.platinumCoins || 0).toLocaleString('vi-VN')
     const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
@@ -116,6 +121,8 @@ export default function MapPage() {
         setPlayerBattle(null)
         setActionMessage('')
         setFeatureNotice('')
+        searchSpamCountRef.current = 0
+        setSearchButtonOffset({ x: 0, y: 0 })
     }, [slug])
 
     useEffect(() => {
@@ -137,9 +144,10 @@ export default function MapPage() {
         try {
             setLoading(true)
             setError('')
-            const [mapData, stateData] = await Promise.all([
+            const [mapData, stateData, activeEncounterData] = await Promise.all([
                 mapApi.getBySlug(slug),
                 gameApi.getMapState(slug).catch(() => null),
+                gameApi.getActiveEncounter().catch(() => null),
             ])
             setMap(mapData.map)
             setDropRates(mapData.dropRates)
@@ -164,6 +172,22 @@ export default function MapPage() {
                     totalSearches: 0,
                 }))
             }
+
+            const activeEncounter = activeEncounterData?.encounter || null
+            const activeEncounterMapId = String(activeEncounter?.mapId || '')
+            const currentMapId = String(mapData?.map?._id || '')
+            if (activeEncounter && activeEncounterMapId && currentMapId && activeEncounterMapId === currentMapId) {
+                setEncounter({
+                    id: activeEncounter._id,
+                    pokemon: activeEncounter.pokemon,
+                    level: activeEncounter.level,
+                    hp: activeEncounter.hp,
+                    maxHp: activeEncounter.maxHp,
+                })
+                setPlayerBattle(activeEncounter.playerBattle || null)
+                setActionMessage('Đã khôi phục Pokemon hoang dã bạn đang gặp.')
+                await loadInventory()
+            }
         } catch (err) {
             setError(err.message)
         } finally {
@@ -180,11 +204,71 @@ export default function MapPage() {
         }
     }
 
+    const resetSearchButtonOffset = () => {
+        setSearchButtonOffset({ x: 0, y: 0 })
+    }
+
+    const nudgeSearchButton = () => {
+        if (typeof window === 'undefined') return
+
+        const viewportWidth = Number(window.innerWidth || 1024)
+        const minX = viewportWidth < 640 ? 26 : 90
+        const maxX = viewportWidth < 640 ? 50 : 150
+        const minY = viewportWidth < 640 ? 12 : 28
+        const maxY = viewportWidth < 640 ? 30 : 70
+        const randomFarOffset = (min, max) => {
+            const distance = min + Math.floor(Math.random() * Math.max(1, (max - min + 1)))
+            return (Math.random() < 0.5 ? -1 : 1) * distance
+        }
+
+        const nextX = randomFarOffset(minX, maxX)
+        const nextY = randomFarOffset(minY, maxY)
+
+        setSearchButtonOffset({ x: nextX, y: nextY })
+    }
+
+    const registerSearchSpamAttempt = (retryAfterMs = 0) => {
+        const nextSpamCount = searchSpamCountRef.current + 1
+        searchSpamCountRef.current = nextSpamCount
+
+        const isButtonCurrentlyShifted = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
+        if (isButtonCurrentlyShifted || (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
+            nudgeSearchButton()
+        }
+
+        if (retryAfterMs > 0) {
+            const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000))
+            setLastResult({ encountered: false, message: `Chú ý: Tìm kiếm quá nhanh. Vui lòng đợi ${retryAfterSec}s.` })
+            return
+        }
+
+        setLastResult({ encountered: false, message: 'Chú ý: Tìm kiếm quá nhanh. Vui lòng đợi một chút.' })
+    }
+
     const handleSearch = async () => {
+        if (searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0) {
+            resetSearchButtonOffset()
+        }
+
         if (isLocked) {
             setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
             return
         }
+
+        if (searching) {
+            registerSearchSpamAttempt(LOCAL_SEARCH_SPAM_COOLDOWN_MS)
+            return
+        }
+
+        const nowMs = Date.now()
+        const elapsedSinceLastRequest = nowMs - Number(lastSearchRequestAtRef.current || 0)
+        if (lastSearchRequestAtRef.current > 0 && elapsedSinceLastRequest < LOCAL_SEARCH_SPAM_COOLDOWN_MS) {
+            registerSearchSpamAttempt(LOCAL_SEARCH_SPAM_COOLDOWN_MS - elapsedSinceLastRequest)
+            return
+        }
+
+        lastSearchRequestAtRef.current = nowMs
+
         try {
             if (typeof window !== 'undefined') {
                 searchScrollYRef.current = window.scrollY || window.pageYOffset || 0
@@ -197,10 +281,14 @@ export default function MapPage() {
                 setUnlockInfo(res.unlock || null)
                 setIsLocked(true)
                 setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
+                searchSpamCountRef.current = 0
+                resetSearchButtonOffset()
                 return
             }
 
             setIsLocked(false)
+            searchSpamCountRef.current = 0
+            resetSearchButtonOffset()
 
             setLastResult(res)
             if (res.encountered) {
@@ -245,7 +333,14 @@ export default function MapPage() {
                 window.dispatchEvent(new CustomEvent('game:map-progress-updated'))
             }
         } catch (err) {
-            setLastResult({ encountered: false, message: 'Lỗi: ' + err.message })
+            const isCooldownError = err?.code === 'ACTION_COOLDOWN' || /quá nhanh/i.test(String(err?.message || ''))
+            if (isCooldownError) {
+                const retryAfterMs = Math.max(0, Number(err?.retryAfterMs || 0))
+                registerSearchSpamAttempt(retryAfterMs)
+            } else {
+                searchSpamCountRef.current = 0
+                setLastResult({ encountered: false, message: 'Chú ý: ' + err.message })
+            }
         } finally {
             setSearching(false)
         }
@@ -313,11 +408,12 @@ export default function MapPage() {
         }
     }
 
-    const getBallMultiplier = (item) => {
-        if (item?.effectType === 'catchMultiplier' && Number.isFinite(item.effectValue)) {
-            return item.effectValue || 1
+    const getBallCatchChance = (item, baseChance) => {
+        if (item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))) {
+            return Math.min(1, Math.max(0, Number(item.effectValue) / 100))
         }
-        return 1
+        const safeBaseChance = Number.isFinite(Number(baseChance)) ? Number(baseChance) : 0.02
+        return Math.min(0.99, Math.max(0.02, safeBaseChance))
     }
 
     const calcCatchChance = ({ catchRate, hp, maxHp }) => {
@@ -644,8 +740,9 @@ export default function MapPage() {
                     {/* Search Button */}
                     <button
                         onClick={handleSearch}
-                        disabled={searching || Boolean(encounter) || isLocked} // If found, force decision? Or just re-search as user requested simple loop
+                        disabled={Boolean(encounter) || isLocked} // Keep clickable while searching to detect UI spam attempts
                         className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded touch-manipulation"
+                        style={{ transform: `translate(${searchButtonOffset.x}px, ${searchButtonOffset.y}px)` }}
                     >
                         Tìm kiếm{searching ? '...' : ''}
                     </button>
@@ -689,8 +786,7 @@ export default function MapPage() {
                                                 hp: encounter?.hp,
                                                 maxHp: encounter?.maxHp,
                                             })
-                                            const multiplier = getBallMultiplier(entry.item)
-                                            const finalChance = Math.min(0.99, baseChance * multiplier)
+                                            const finalChance = getBallCatchChance(entry.item, baseChance)
                                             const percent = Math.round(finalChance * 100)
                                             return (
                                                 <option key={entry.item._id} value={entry.item._id}>

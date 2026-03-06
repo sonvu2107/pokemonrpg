@@ -51,6 +51,10 @@ export const apiLogger = (req, res, next) => {
             userId: req.user?.userId || null,
         }
 
+        if (req.actionGuardMeta && typeof req.actionGuardMeta === 'object') {
+            logEntry.actionGuard = req.actionGuardMeta
+        }
+
         logStream.write(`${JSON.stringify(logEntry)}\n`)
     })
 

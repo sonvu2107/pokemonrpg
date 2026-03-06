@@ -41,7 +41,7 @@ const ITEM_RARITY_META = {
 
 const EFFECT_TYPE_OPTIONS = [
     { value: 'none', label: 'Không có' },
-    { value: 'catchMultiplier', label: 'Tăng tỉ lệ bắt' },
+    { value: 'catchMultiplier', label: 'Đặt tỉ lệ bắt (%)' },
     { value: 'heal', label: 'Hồi HP/PP' },
     { value: 'healAmount', label: 'Hồi HP/PP (Legacy)' },
 ]
@@ -65,15 +65,16 @@ const InfoRow = ({ label, value }) => (
 
 const formatCurrency = (value) => Number(value || 0).toLocaleString('vi-VN')
 
-const formatMultiplier = (value) => {
+const formatCatchPercent = (value) => {
     const safeValue = Number(value)
-    if (!Number.isFinite(safeValue)) return 'x1'
-    return `x${safeValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}`
+    if (!Number.isFinite(safeValue)) return '0%'
+    const clampedValue = Math.min(100, Math.max(0, safeValue))
+    return `${clampedValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
 }
 
 const buildEffectSummary = (effectType, effectValue, effectValueMp) => {
     if (effectType === 'catchMultiplier') {
-        return `Tăng tỉ lệ bắt ${formatMultiplier(effectValue)}`
+        return `Tỉ lệ bắt cố định ${formatCatchPercent(effectValue)}`
     }
     if (effectType === 'heal' || effectType === 'healAmount') {
         const hp = Number(effectValue || 0)
@@ -157,6 +158,10 @@ export default function ItemFormPage() {
             if (payload.effectType === 'none') {
                 payload.effectValue = 0
                 payload.effectValueMp = 0
+            }
+
+            if (payload.effectType === 'catchMultiplier') {
+                payload.effectValue = Math.min(100, Math.max(0, Number(payload.effectValue) || 0))
             }
 
             if (!['heal', 'healAmount'].includes(payload.effectType)) {
@@ -299,14 +304,21 @@ export default function ItemFormPage() {
                                     </div>
                                     <div>
                                         <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
-                                            {formData.effectType === 'catchMultiplier' ? 'Tỉ lệ bắt (x)' : 'Giá trị HP'}
+                                            {formData.effectType === 'catchMultiplier' ? 'Tỉ lệ bắt (%)' : 'Giá trị HP'}
                                         </label>
                                         <input
                                             type="number"
                                             min="0"
-                                            step="0.01"
+                                            max={formData.effectType === 'catchMultiplier' ? 100 : undefined}
+                                            step={formData.effectType === 'catchMultiplier' ? '0.1' : '0.01'}
                                             value={formData.effectValue}
-                                            onChange={(e) => setFormData({ ...formData, effectValue: parseFloat(e.target.value) || 0 })}
+                                            onChange={(e) => {
+                                                const nextValue = parseFloat(e.target.value) || 0
+                                                const normalizedValue = formData.effectType === 'catchMultiplier'
+                                                    ? Math.min(100, Math.max(0, nextValue))
+                                                    : nextValue
+                                                setFormData({ ...formData, effectValue: normalizedValue })
+                                            }}
                                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                         />
                                     </div>

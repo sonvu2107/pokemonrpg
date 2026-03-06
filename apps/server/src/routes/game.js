@@ -1,5 +1,6 @@
 import express from 'express'
 import { authMiddleware } from '../middleware/auth.js'
+import { createActionGuard } from '../middleware/actionGuard.js'
 import PlayerState from '../models/PlayerState.js'
 import { emitPlayerState, getIO } from '../socket/index.js'
 import Encounter from '../models/Encounter.js'
@@ -51,6 +52,24 @@ const WILD_COUNTER_MOVE = {
     accuracy: 95,
     criticalChance: 0.0625,
 }
+
+const searchActionGuard = createActionGuard({
+    actionKey: 'game:search',
+    cooldownMs: 650,
+    message: 'Tìm kiếm quá nhanh. Vui lòng đợi một chút.',
+})
+
+const encounterAttackActionGuard = createActionGuard({
+    actionKey: 'game:encounter-attack',
+    cooldownMs: 550,
+    message: 'Tấn công quá nhanh. Vui lòng đợi một chút.',
+})
+
+const battleAttackActionGuard = createActionGuard({
+    actionKey: 'game:battle-attack',
+    cooldownMs: 350,
+    message: 'Ra đòn quá nhanh. Vui lòng đợi một chút.',
+})
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
     const normalizedLevel = Math.max(1, Number(level) || 1)
@@ -1963,41 +1982,16 @@ const unlockMapsInBulk = async (userId, mapIds = []) => {
 }
 
 // POST /api/game/click (protected)
-router.post('/click', authMiddleware, async (req, res, next) => {
-    try {
-        const userId = req.user.userId
-
-        const playerState = await PlayerState.findOneAndUpdate(
-            { userId },
-            {
-                $setOnInsert: { userId },
-                $inc: {
-                    gold: 10,
-                    clicks: 1,
-                },
-            },
-            { new: true, upsert: true }
-        )
-
-        // Emit updated state via Socket.io
-        emitPlayerState(userId.toString(), playerState)
-
-        res.json({
-            ok: true,
-            playerState: {
-                hp: playerState.hp,
-                maxHp: playerState.maxHp,
-                ...serializePlayerWallet(playerState),
-                clicks: playerState.clicks,
-            },
-        })
-    } catch (error) {
-        next(error)
-    }
+router.post('/click', authMiddleware, (req, res) => {
+    return res.status(410).json({
+        ok: false,
+        code: 'GAME_CLICK_DISABLED',
+        message: 'Tính năng click đã bị vô hiệu hóa. Hãy dùng các hoạt động map/battle để kiếm tài nguyên.',
+    })
 })
 
 // POST /api/game/search (protected)
-router.post('/search', authMiddleware, async (req, res, next) => {
+router.post('/search', authMiddleware, searchActionGuard, async (req, res, next) => {
     try {
         const { mapSlug } = req.body
         const userId = req.user.userId
@@ -2453,7 +2447,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
 })
 
 // POST /api/game/encounter/:id/attack (protected)
-router.post('/encounter/:id/attack', authMiddleware, async (req, res, next) => {
+router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
@@ -2779,7 +2773,7 @@ router.post('/encounter/:id/run', authMiddleware, async (req, res, next) => {
 })
 
 // POST /api/game/battle/attack (protected)
-router.post('/battle/attack', authMiddleware, async (req, res, next) => {
+router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const {

@@ -65,15 +65,20 @@ app.use(
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 500, // limit each IP to 500 requests per windowMs
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 700, // limit each IP to 700 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
     // Return JSON instead of plain text
     handler: (req, res) => {
+        const resetTimeMs = req.rateLimit?.resetTime ? new Date(req.rateLimit.resetTime).getTime() : (Date.now() + 5 * 60 * 1000)
+        const retryAfterSeconds = Math.max(1, Math.ceil((resetTimeMs - Date.now()) / 1000))
+        res.setHeader('Retry-After', String(retryAfterSeconds))
         res.status(429).json({
             ok: false,
-            message: 'Too many requests from this IP, please try again later.',
+            code: 'GLOBAL_RATE_LIMIT',
+            retryAfterSeconds,
+            message: 'Giáo sư Oak: Bạn thao tác hơi nhanh. Hãy nghỉ một chút rồi tiếp tục hành trình.',
         })
     },
     // Skip rate limiting for certain public endpoints

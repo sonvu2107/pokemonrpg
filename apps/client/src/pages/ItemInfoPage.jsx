@@ -40,16 +40,17 @@ const InfoRow = ({ label, value }) => (
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 
-const formatMultiplier = (value) => {
+const formatCatchPercent = (value) => {
     const safeValue = Number(value)
-    if (!Number.isFinite(safeValue) || safeValue <= 0) return 'x1'
-    return `x${safeValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}`
+    if (!Number.isFinite(safeValue)) return '0%'
+    const clampedValue = Math.min(100, Math.max(0, safeValue))
+    return `${clampedValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
 }
 
 const resolveEffectSummary = (item) => {
     const effectType = String(item?.effectType || 'none')
     if (effectType === 'catchMultiplier') {
-        return `Tăng tỉ lệ bắt ${formatMultiplier(item?.effectValue)}`
+        return `Tỉ lệ bắt cố định ${formatCatchPercent(item?.effectValue)}`
     }
     if (effectType === 'heal' || effectType === 'healAmount') {
         const hp = Number(item?.effectValue || 0)

@@ -51,18 +51,6 @@ export const api = {
     },
 
     // Game endpoints
-    async clickAttack() {
-        const res = await fetch(`${API_URL}/game/click`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...authHeaders(),
-            },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.message || 'Click thất bại')
-        return data
-    },
     async updateProfile(userData) {
         const res = await fetch(`${API_URL}/auth/profile`, {
             method: 'PUT',

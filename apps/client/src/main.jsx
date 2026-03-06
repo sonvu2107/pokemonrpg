@@ -6,7 +6,10 @@ import { ToastProvider } from './context/ToastContext'
 import { ChatProvider } from './context/ChatContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import App from './App.jsx'
+import { installGlobalRateLimitWatcher } from './utils/rateLimitWatcher'
 import './index.css'
+
+installGlobalRateLimitWatcher()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>

@@ -23,16 +23,6 @@ const throwApiError = async (res, fallbackMessage) => {
 }
 
 export const gameApi = {
-    // POST /api/game/click
-    async click() {
-        const res = await fetch(`${API_URL}/game/click`, {
-            method: 'POST',
-            headers: getAuthHeader(),
-        })
-        if (!res.ok) throw new Error('Click thất bại')
-        return res.json()
-    },
-
     // POST /api/game/search
     async searchMap(mapSlug) {
         const res = await fetch(`${API_URL}/game/search`, {
@@ -48,7 +38,10 @@ export const gameApi = {
             if (res.status === 403 && data.locked) {
                 return data
             }
-            throw new Error(data.message || 'Tìm kiếm bản đồ thất bại')
+            const error = new Error(data.message || 'Tìm kiếm bản đồ thất bại')
+            error.code = String(data?.code || '')
+            error.retryAfterMs = Number(data?.retryAfterMs || 0)
+            throw error
         }
         return data
     },
