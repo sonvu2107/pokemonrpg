@@ -43,6 +43,17 @@ export default function BattleTrainerPage() {
     const [prizePokemonTotal, setPrizePokemonTotal] = useState(0)
     const [prizePokemonLoading, setPrizePokemonLoading] = useState(false)
     const [prizePokemonLoadError, setPrizePokemonLoadError] = useState('')
+    const [showTeamPokemonModal, setShowTeamPokemonModal] = useState(false)
+    const [teamPokemonTargetIndex, setTeamPokemonTargetIndex] = useState(-1)
+    const [teamPokemonSearchTerm, setTeamPokemonSearchTerm] = useState('')
+    const [teamPokemonOptions, setTeamPokemonOptions] = useState([])
+    const [teamPokemonLookup, setTeamPokemonLookup] = useState({})
+    const [teamPokemonPage, setTeamPokemonPage] = useState(1)
+    const [teamPokemonFormPage, setTeamPokemonFormPage] = useState(1)
+    const [teamPokemonTotalPages, setTeamPokemonTotalPages] = useState(1)
+    const [teamPokemonTotal, setTeamPokemonTotal] = useState(0)
+    const [teamPokemonLoading, setTeamPokemonLoading] = useState(false)
+    const [teamPokemonLoadError, setTeamPokemonLoadError] = useState('')
     const [autoLevelStart, setAutoLevelStart] = useState(1)
     const [autoLevelMax, setAutoLevelMax] = useState(100)
     const [autoLevelStep, setAutoLevelStep] = useState(10)
@@ -74,6 +85,11 @@ export default function BattleTrainerPage() {
         if (!showPrizePokemonModal) return
         loadPrizePokemonOptions()
     }, [showPrizePokemonModal, prizePokemonPage, prizePokemonSearchTerm])
+
+    useEffect(() => {
+        if (!showTeamPokemonModal) return
+        loadTeamPokemonOptions()
+    }, [showTeamPokemonModal, teamPokemonPage, teamPokemonSearchTerm])
 
     const loadReferenceData = async () => {
         try {
@@ -166,9 +182,44 @@ export default function BattleTrainerPage() {
         }
     }
 
+    const loadTeamPokemonOptions = async () => {
+        try {
+            setTeamPokemonLoading(true)
+            setTeamPokemonLoadError('')
+
+            const normalizedSearch = String(teamPokemonSearchTerm || '').trim()
+            const data = await pokemonApi.list({
+                page: teamPokemonPage,
+                limit: PRIZE_POKEMON_MODAL_PAGE_SIZE,
+                ...(normalizedSearch ? { search: normalizedSearch } : {}),
+            })
+
+            const rows = Array.isArray(data?.pokemon) ? data.pokemon : []
+            setTeamPokemonOptions(rows)
+            setTeamPokemonTotalPages(Math.max(1, Number(data?.pagination?.pages) || 1))
+            setTeamPokemonTotal(Math.max(0, Number(data?.pagination?.total) || 0))
+            setTeamPokemonLookup((prev) => {
+                const next = { ...prev }
+                rows.forEach((entry) => {
+                    if (entry?._id) next[entry._id] = entry
+                })
+                return next
+            })
+        } catch (err) {
+            setTeamPokemonOptions([])
+            setTeamPokemonTotalPages(1)
+            setTeamPokemonTotal(0)
+            setTeamPokemonLoadError(err.message || 'Không thể tải danh sách Pokemon đội hình')
+        } finally {
+            setTeamPokemonLoading(false)
+        }
+    }
+
     const resetForm = () => {
         setForm({ ...emptyTrainer })
         setEditingId('')
+        setShowTeamPokemonModal(false)
+        setTeamPokemonTargetIndex(-1)
     }
 
     const handleAddTeam = () => {
@@ -176,6 +227,23 @@ export default function BattleTrainerPage() {
             ...prev,
             team: [...prev.team, { pokemonId: '', level: 5, formId: 'normal' }],
         }))
+    }
+
+    const handleOpenTeamPokemonModal = (targetIndex) => {
+        if (!Number.isInteger(targetIndex) || targetIndex < 0) return
+        const currentTeamEntry = form.team?.[targetIndex] || null
+        const currentPokemon = pokemon.find((entry) => entry._id === currentTeamEntry?.pokemonId)
+            || teamPokemonLookup[currentTeamEntry?.pokemonId]
+            || null
+        const suggestedSearch = currentPokemon?.name
+            || (currentPokemon?.pokedexNumber ? String(currentPokemon.pokedexNumber) : '')
+
+        setTeamPokemonTargetIndex(targetIndex)
+        setTeamPokemonSearchTerm(suggestedSearch)
+        setTeamPokemonPage(1)
+        setTeamPokemonFormPage(1)
+        setTeamPokemonLoadError('')
+        setShowTeamPokemonModal(true)
     }
 
     const buildRandomTeam = () => {
@@ -208,6 +276,39 @@ export default function BattleTrainerPage() {
             const team = prev.team.filter((_, i) => i !== index)
             return { ...prev, team }
         })
+        if (showTeamPokemonModal) {
+            setShowTeamPokemonModal(false)
+            setTeamPokemonTargetIndex(-1)
+        }
+    }
+
+    const handleClearTeamPokemon = (index) => {
+        if (!Number.isInteger(index) || index < 0) return
+        setForm((prev) => {
+            if (!prev.team[index]) return prev
+            const team = [...prev.team]
+            team[index] = { ...team[index], pokemonId: '', formId: 'normal' }
+            return { ...prev, team }
+        })
+    }
+
+    const handleSelectTeamPokemon = (pokemonId, formId = 'normal') => {
+        const targetIndex = Number(teamPokemonTargetIndex)
+        if (!Number.isInteger(targetIndex) || targetIndex < 0) return
+
+        setForm((prev) => {
+            if (!prev.team[targetIndex]) return prev
+            const team = [...prev.team]
+            team[targetIndex] = {
+                ...team[targetIndex],
+                pokemonId,
+                formId: String(formId || '').trim().toLowerCase() || 'normal',
+            }
+            return { ...prev, team }
+        })
+
+        setShowTeamPokemonModal(false)
+        setTeamPokemonTargetIndex(-1)
     }
 
     const handleSubmit = async (e) => {
@@ -425,6 +526,18 @@ export default function BattleTrainerPage() {
         || selectedPrizePokemonForms[0]
         || null
 
+    const activeTeamEntry = Number.isInteger(Number(teamPokemonTargetIndex))
+        ? form.team[Number(teamPokemonTargetIndex)]
+        : null
+    const selectedTeamPokemon = pokemon.find((entry) => entry._id === activeTeamEntry?.pokemonId)
+        || teamPokemonLookup[activeTeamEntry?.pokemonId]
+        || null
+    const selectedTeamPokemonForms = selectedTeamPokemon ? getPokemonFormsForDisplay(selectedTeamPokemon) : []
+    const normalizedTeamPokemonFormId = normalizePokemonFormId(activeTeamEntry?.formId)
+    const selectedTeamPokemonForm = selectedTeamPokemonForms.find((entry) => entry.formId === normalizedTeamPokemonFormId)
+        || selectedTeamPokemonForms[0]
+        || null
+
     const allPrizePokemonFormRows = prizePokemonOptions.flatMap((entry) => {
         const forms = getPokemonFormsForDisplay(entry)
         return forms.map((rowForm) => ({
@@ -443,6 +556,24 @@ export default function BattleTrainerPage() {
         prizePokemonFormSliceStart + PRIZE_POKEMON_FORM_PAGE_SIZE
     )
 
+    const allTeamPokemonFormRows = teamPokemonOptions.flatMap((entry) => {
+        const forms = getPokemonFormsForDisplay(entry)
+        return forms.map((rowForm) => ({
+            key: `${entry._id}:${rowForm.formId}`,
+            pokemon: entry,
+            form: rowForm,
+        }))
+    })
+
+    const teamPokemonFormTotal = allTeamPokemonFormRows.length
+    const teamPokemonFormTotalPages = Math.max(1, Math.ceil(teamPokemonFormTotal / PRIZE_POKEMON_FORM_PAGE_SIZE))
+    const safeTeamPokemonFormPage = Math.min(teamPokemonFormPage, teamPokemonFormTotalPages)
+    const teamPokemonFormSliceStart = (safeTeamPokemonFormPage - 1) * PRIZE_POKEMON_FORM_PAGE_SIZE
+    const teamPokemonFormRows = allTeamPokemonFormRows.slice(
+        teamPokemonFormSliceStart,
+        teamPokemonFormSliceStart + PRIZE_POKEMON_FORM_PAGE_SIZE
+    )
+
     const prizePokemonPageStart = prizePokemonTotal > 0
         ? ((prizePokemonPage - 1) * PRIZE_POKEMON_MODAL_PAGE_SIZE) + 1
         : 0
@@ -454,6 +585,18 @@ export default function BattleTrainerPage() {
         : 0
     const prizePokemonFormPageEnd = prizePokemonFormTotal > 0
         ? Math.min(prizePokemonFormTotal, prizePokemonFormSliceStart + PRIZE_POKEMON_FORM_PAGE_SIZE)
+        : 0
+    const teamPokemonPageStart = teamPokemonTotal > 0
+        ? ((teamPokemonPage - 1) * PRIZE_POKEMON_MODAL_PAGE_SIZE) + 1
+        : 0
+    const teamPokemonPageEnd = teamPokemonTotal > 0
+        ? Math.min(teamPokemonTotal, teamPokemonPage * PRIZE_POKEMON_MODAL_PAGE_SIZE)
+        : 0
+    const teamPokemonFormPageStart = teamPokemonFormTotal > 0
+        ? teamPokemonFormSliceStart + 1
+        : 0
+    const teamPokemonFormPageEnd = teamPokemonFormTotal > 0
+        ? Math.min(teamPokemonFormTotal, teamPokemonFormSliceStart + PRIZE_POKEMON_FORM_PAGE_SIZE)
         : 0
     const trainerPageStart = trainerPagination.total > 0
         ? ((trainerPagination.page - 1) * trainerPagination.limit) + 1
@@ -489,6 +632,13 @@ export default function BattleTrainerPage() {
             return normalized === prev ? prev : normalized
         })
     }, [prizePokemonFormTotalPages])
+
+    useEffect(() => {
+        setTeamPokemonFormPage((prev) => {
+            const normalized = Math.max(1, Math.min(prev, teamPokemonFormTotalPages))
+            return normalized === prev ? prev : normalized
+        })
+    }, [teamPokemonFormTotalPages])
 
     const isEditingTrainer = Boolean(editingId)
 
@@ -852,40 +1002,69 @@ export default function BattleTrainerPage() {
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        {form.team.map((entry, index) => (
-                                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                                <select
-                                                    value={entry.pokemonId}
-                                                    onChange={(e) => handleUpdateTeam(index, 'pokemonId', e.target.value)}
-                                                    className="px-2 py-1 border border-slate-300 rounded text-sm"
-                                                >
-                                                    <option value="">Chọn Pokémon</option>
-                                                    {pokemon.map((p) => (
-                                                        <option key={p._id} value={p._id}>{p.name}</option>
-                                                    ))}
-                                                </select>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={entry.level}
-                                                    onChange={(e) => handleUpdateTeam(index, 'level', parseInt(e.target.value) || 1)}
-                                                    className="px-2 py-1 border border-slate-300 rounded text-sm"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={entry.formId}
-                                                    onChange={(e) => handleUpdateTeam(index, 'formId', e.target.value)}
-                                                    className="px-2 py-1 border border-slate-300 rounded text-sm"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveTeam(index)}
-                                                    className="px-2 py-1 text-xs font-bold bg-red-500 text-white rounded"
-                                                >
-                                                    Xóa
-                                                </button>
-                                            </div>
-                                        ))}
+                                        {form.team.map((entry, index) => {
+                                            const selectedPokemon = pokemon.find((p) => p._id === entry.pokemonId)
+                                                || teamPokemonLookup[entry.pokemonId]
+                                                || null
+                                            const selectedForms = selectedPokemon ? getPokemonFormsForDisplay(selectedPokemon) : []
+                                            const normalizedFormId = normalizePokemonFormId(entry.formId)
+                                            const selectedForm = selectedForms.find((row) => row.formId === normalizedFormId)
+                                                || selectedForms[0]
+                                                || null
+
+                                            return (
+                                                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenTeamPokemonModal(index)}
+                                                        className="px-3 py-2 bg-white border border-slate-300 rounded text-sm text-left hover:border-blue-400 transition-colors"
+                                                    >
+                                                        {selectedPokemon
+                                                            ? `#${String(selectedPokemon.pokedexNumber || 0).padStart(3, '0')} - ${selectedPokemon.name}${selectedForm && !selectedForm.isDefault ? ` (${selectedForm.formName || selectedForm.formId})` : ''}`
+                                                            : 'Chọn Pokémon đội hình'}
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={entry.level}
+                                                        onChange={(e) => handleUpdateTeam(index, 'level', parseInt(e.target.value, 10) || 1)}
+                                                        className="px-2 py-2 border border-slate-300 rounded text-sm"
+                                                    />
+                                                    <div className="px-2 py-1 border border-slate-200 rounded bg-white flex items-center justify-between gap-2 min-h-[38px]">
+                                                        {selectedPokemon ? (
+                                                            <>
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <img
+                                                                        src={selectedForm?.resolvedImageUrl || getPokemonImageUrl(selectedPokemon)}
+                                                                        alt={selectedPokemon.name}
+                                                                        className="w-7 h-7 object-contain pixelated shrink-0"
+                                                                    />
+                                                                    <span className="text-[11px] text-slate-600 truncate">
+                                                                        {selectedForm?.formName || selectedForm?.formId || 'normal'}
+                                                                    </span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleClearTeamPokemon(index)}
+                                                                    className="px-1.5 py-0.5 text-[10px] font-bold bg-red-50 border border-red-200 text-red-700 rounded shrink-0"
+                                                                >
+                                                                    Bỏ
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400">Chưa chọn Pokémon</span>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveTeam(index)}
+                                                        className="px-2 py-1 text-xs font-bold bg-red-500 text-white rounded"
+                                                    >
+                                                        Xóa
+                                                    </button>
+                                                </div>
+                                            )
+                                        })}
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
@@ -1221,6 +1400,184 @@ export default function BattleTrainerPage() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTeamPokemonModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 animate-fadeIn"
+                    onClick={() => {
+                        setShowTeamPokemonModal(false)
+                        setTeamPokemonTargetIndex(-1)
+                    }}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[94vw] sm:max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Chọn Pokémon đội hình</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Slot #{Math.max(1, Number(teamPokemonTargetIndex) + 1)}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowTeamPokemonModal(false)
+                                    setTeamPokemonTargetIndex(-1)
+                                }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokémon đội hình</label>
+                                <input
+                                    type="text"
+                                    value={teamPokemonSearchTerm}
+                                    onChange={(e) => {
+                                        setTeamPokemonSearchTerm(e.target.value)
+                                        setTeamPokemonPage(1)
+                                        setTeamPokemonFormPage(1)
+                                    }}
+                                    placeholder="Nhập tên hoặc số Pokedex #"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                                />
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelectTeamPokemon('', 'normal')}
+                                    className={`w-full px-3 py-2 text-left text-sm font-semibold transition-colors ${!activeTeamEntry?.pokemonId ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                                >
+                                    Không chọn Pokémon cho slot này
+                                </button>
+
+                                {teamPokemonLoading ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải danh sách Pokémon...</div>
+                                ) : teamPokemonLoadError ? (
+                                    <div className="px-3 py-4 text-sm text-red-600 text-center">{teamPokemonLoadError}</div>
+                                ) : teamPokemonFormRows.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không tìm thấy Pokémon phù hợp</div>
+                                ) : (
+                                    teamPokemonFormRows.map((row) => {
+                                        const { pokemon: entry, form: rowForm } = row
+                                        const isSelected = activeTeamEntry?.pokemonId === entry._id
+                                            && normalizedTeamPokemonFormId === rowForm.formId
+                                        return (
+                                            <button
+                                                key={`team-${row.key}`}
+                                                type="button"
+                                                onClick={() => handleSelectTeamPokemon(entry._id, rowForm.formId)}
+                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                                            >
+                                                <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                    <img
+                                                        src={rowForm.resolvedImageUrl || getPokemonImageUrl(entry)}
+                                                        alt={entry.name}
+                                                        className="w-8 h-8 object-contain pixelated"
+                                                    />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="font-mono text-xs text-slate-500 flex-shrink-0">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</span>
+                                                        <span className="font-semibold text-slate-700 truncate">{entry.name}</span>
+                                                    </div>
+                                                    <div className="mt-1">
+                                                        <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide border ${rowForm.isDefault
+                                                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                                            : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                                            {rowForm.formName || rowForm.formId}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {isSelected && (
+                                                    <span className="text-[11px] font-bold text-blue-700 bg-blue-100 border border-blue-200 rounded px-2 py-0.5">Đã chọn</span>
+                                                )}
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            <div className="space-y-2 text-xs text-slate-500">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <span>
+                                        Dạng: {teamPokemonFormPageStart}-{teamPokemonFormPageEnd} / {teamPokemonFormTotal}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamPokemonFormPage((prev) => Math.max(1, prev - 1))}
+                                            disabled={safeTeamPokemonFormPage <= 1 || teamPokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Trước dạng
+                                        </button>
+                                        <span className="font-semibold text-slate-600">
+                                            Trang dạng {safeTeamPokemonFormPage}/{teamPokemonFormTotalPages}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamPokemonFormPage((prev) => Math.min(teamPokemonFormTotalPages, prev + 1))}
+                                            disabled={safeTeamPokemonFormPage >= teamPokemonFormTotalPages || teamPokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Sau dạng
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <span>
+                                        Loài: {teamPokemonPageStart}-{teamPokemonPageEnd} / {teamPokemonTotal}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTeamPokemonPage((prev) => Math.max(1, prev - 1))
+                                                setTeamPokemonFormPage(1)
+                                            }}
+                                            disabled={teamPokemonPage <= 1 || teamPokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Trước loài
+                                        </button>
+                                        <span className="font-semibold text-slate-600">
+                                            Trang loài {teamPokemonPage}/{teamPokemonTotalPages}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTeamPokemonPage((prev) => Math.min(teamPokemonTotalPages, prev + 1))
+                                                setTeamPokemonFormPage(1)
+                                            }}
+                                            disabled={teamPokemonPage >= teamPokemonTotalPages || teamPokemonLoading}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            Sau loài
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedTeamPokemon && (
+                                <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                    Đang chọn cho slot này: <span className="font-bold text-slate-800">{selectedTeamPokemon.name}</span>
+                                    {selectedTeamPokemonForm && (
+                                        <span className="ml-1">({selectedTeamPokemonForm.formName || selectedTeamPokemonForm.formId})</span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
