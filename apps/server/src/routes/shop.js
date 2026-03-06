@@ -859,6 +859,7 @@ router.get('/buy', async (req, res) => {
             ...(Object.keys(postLookupMatch).length > 0 ? [{ $match: postLookupMatch }] : []),
             {
                 $project: {
+                    userPokemonId: 1,
                     nickname: 1,
                     formId: 1,
                     level: 1,
@@ -921,6 +922,7 @@ router.get('/buy', async (req, res) => {
             const sprite = resolvePokemonSpriteByForm(row?.pokemon, resolvedForm.formId)
             return {
                 id: row._id,
+                userPokemonId: row.userPokemonId,
                 pokemonName: row.nickname || row?.pokemon?.name || 'Pokemon',
                 speciesName: row?.pokemon?.name || 'Pokemon',
                 type: row?.pokemon?.types || [],
