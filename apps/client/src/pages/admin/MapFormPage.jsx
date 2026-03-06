@@ -22,6 +22,7 @@ export default function MapFormPage() {
         levelMin: 1,
         levelMax: 10,
         isLegendary: false,
+        isEventMap: false,
         iconId: '',
         specialPokemonConfigs: [],
         specialPokemonEncounterRate: 0,
@@ -135,6 +136,7 @@ export default function MapFormPage() {
                 specialPokemonConfigs: normalizeSpecialPokemonConfigs(data.map.specialPokemonConfigs, data.map.specialPokemonIds),
                 specialPokemonEncounterRate: data.map.specialPokemonEncounterRate ?? 0,
                 isLegendary: data.map.isLegendary || false,
+                isEventMap: Boolean(data.map.isEventMap),
                 requiredSearches: data.map.requiredSearches || 0,
                 requiredPlayerLevel: Math.max(1, Number(data.map.requiredPlayerLevel) || 1),
                 encounterRate: data.map.encounterRate ?? 1,
@@ -556,6 +558,19 @@ export default function MapFormPage() {
                                 />
                                 <span className="ml-3 text-sm font-bold text-slate-700">Đây là Khu Vực Săn Bắt</span>
                             </label>
+
+                            <label className="flex items-center cursor-pointer mb-2">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(formData.isEventMap)}
+                                    onChange={(e) => setFormData({ ...formData, isEventMap: e.target.checked })}
+                                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="ml-3 text-sm font-bold text-slate-700">Đây là Bản Đồ Event (không cho phép auto tìm kiếm)</span>
+                            </label>
+                            <p className="pl-8 text-xs text-slate-500 mb-4">
+                                Khi bật, người chơi vẫn vào map bình thường nhưng sẽ không dùng được tính năng auto tìm kiếm.
+                            </p>
 
                             {formData.isLegendary && (
                                 <div className="pl-8 animate-fade-in">

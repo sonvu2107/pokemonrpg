@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import VipAvatar from '../components/VipAvatar'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
+import { getVipTitle } from '../utils/vip'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
@@ -216,6 +218,15 @@ export default function PokemonRankingsPage() {
                                                 </td>
                                                 <td className="px-2 py-2.5">
                                                     <div className="flex items-center gap-2">
+                                                        <VipAvatar
+                                                            userLike={entry.owner}
+                                                            avatar={entry.owner?.avatar}
+                                                            fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"
+                                                            alt={entry.owner?.username || 'Trainer'}
+                                                            wrapperClassName="h-8 w-8"
+                                                            imageClassName="h-8 w-8 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-8 w-8 rounded object-cover"
+                                                        />
                                                         <button
                                                             type="button"
                                                             disabled={!hasProfile}
@@ -223,11 +234,18 @@ export default function PokemonRankingsPage() {
                                                                 userId: entry.owner?._id,
                                                                 username: entry.owner?.username,
                                                                 avatar: entry.owner?.avatar,
+                                                                role: entry.owner?.role,
+                                                                vipBenefits: entry.owner?.vipBenefits,
                                                             }, { returnTo: '/rankings/pokemon' })}
                                                             className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
                                                         >
                                                             {entry.owner?.username || 'Không rõ'}
                                                         </button>
+                                                        {getVipTitle(entry.owner) && (
+                                                            <span className="text-[10px] font-bold text-amber-600 truncate max-w-[140px]">
+                                                                {getVipTitle(entry.owner)}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -264,6 +282,15 @@ export default function PokemonRankingsPage() {
                                                 <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
                                                 <td className="px-3 py-3 border-r border-slate-200">
                                                     <div className="flex items-center gap-3">
+                                                        <VipAvatar
+                                                            userLike={entry}
+                                                            avatar={entry.avatar}
+                                                            fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"
+                                                            alt={entry.username || 'Trainer'}
+                                                            wrapperClassName="h-8 w-8"
+                                                            imageClassName="h-8 w-8 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-8 w-8 rounded object-cover"
+                                                        />
                                                         <button
                                                             type="button"
                                                             disabled={!hasProfile}
@@ -271,11 +298,18 @@ export default function PokemonRankingsPage() {
                                                                 userId: entry.userId,
                                                                 username: entry.username,
                                                                 avatar: entry.avatar,
+                                                                role: entry.role,
+                                                                vipBenefits: entry.vipBenefits,
                                                             }, { returnTo: '/rankings/pokemon' })}
                                                             className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
                                                         >
                                                             {entry.username || 'Không rõ'}
                                                         </button>
+                                                        {getVipTitle(entry) && (
+                                                            <span className="text-[10px] font-bold text-amber-600 truncate max-w-[140px]">
+                                                                {getVipTitle(entry)}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">

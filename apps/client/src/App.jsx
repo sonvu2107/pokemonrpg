@@ -42,6 +42,7 @@ import MoveFormPage from './pages/admin/MoveFormPage'
 import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
 import AdminNewsPage from './pages/admin/AdminNewsPage'
 import UserManagementPage from './pages/admin/UserManagementPage'
+import VipPrivilegePage from './pages/admin/VipPrivilegePage'
 import BattleTrainerPage from './pages/admin/BattleTrainerPage'
 import DailyRewardManagerPage from './pages/admin/DailyRewardManagerPage'
 import PromoCodeManagerPage from './pages/admin/PromoCodeManagerPage'
@@ -55,6 +56,9 @@ export default function App() {
             <Routes>
                 {/* Login page - no AppShell */}
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<LoginPage />} />
+                <Route path="/forgot-password" element={<LoginPage />} />
+                <Route path="/reset-password" element={<LoginPage />} />
 
                 {/* Main app with AppShell */}
                 <Route element={<AppShell />}>
@@ -93,6 +97,7 @@ export default function App() {
                     <Route path="/admin/news" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.NEWS}><AdminNewsPage /></AdminRouteGuard>} />
                     <Route path="/admin/events" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.NEWS}><AdminNewsPage mode="events" /></AdminRouteGuard>} />
                     <Route path="/admin/users" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.USERS}><UserManagementPage /></AdminRouteGuard>} />
+                    <Route path="/admin/vip-privileges" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.USERS}><VipPrivilegePage /></AdminRouteGuard>} />
                     <Route path="/admin/pokemon" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonListPage /></AdminRouteGuard>} />
                     <Route path="/admin/pokemon/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonFormPage /></AdminRouteGuard>} />
                     <Route path="/admin/pokemon/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.POKEMON}><PokemonFormPage /></AdminRouteGuard>} />

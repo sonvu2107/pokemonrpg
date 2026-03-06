@@ -75,6 +75,11 @@ export default function MapListPage() {
                                                                 Săn Bắt
                                                             </span>
                                                         )}
+                                                        {map.isEventMap && (
+                                                            <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-[3px] text-[10px] font-bold uppercase border border-rose-200">
+                                                                Event
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <span className="text-slate-400 text-xs font-mono mt-0.5">{map.slug}</span>
                                                 </div>

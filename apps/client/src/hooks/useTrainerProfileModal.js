@@ -30,6 +30,10 @@ const buildSeedTrainer = (userLike = {}) => {
         avatar: String(userLike?.avatar || '').trim(),
         signature: String(userLike?.signature || '').trim(),
         role: String(userLike?.role || 'user').trim() || 'user',
+        vipBenefits: {
+            title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
+            avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
+        },
         isOnline: Boolean(userLike?.isOnline),
         createdAt: userLike?.createdAt || null,
         lastActive: userLike?.lastActive || null,

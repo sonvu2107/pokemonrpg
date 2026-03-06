@@ -9,11 +9,11 @@ const authHeaders = () => {
 
 export const api = {
     // Auth endpoints
-    async register(email, username, password) {
+    async register(email, username, password, recoveryPin) {
         const res = await fetch(`${API_URL}/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, username, password }),
+            body: JSON.stringify({ email, username, password, recoveryPin }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.message || 'Đăng ký thất bại')
@@ -28,6 +28,55 @@ export const api = {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.message || 'Đăng nhập thất bại')
+        return data
+    },
+
+    async forgotPassword(email, recoveryPin, newPassword) {
+        const res = await fetch(`${API_URL}/auth/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, recoveryPin, newPassword }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Không thể khôi phục mật khẩu')
+        return data
+    },
+
+    async resetPassword(email, recoveryPin, newPassword) {
+        return api.forgotPassword(email, recoveryPin, newPassword)
+    },
+
+    async changePassword(currentPassword, newPassword) {
+        const res = await fetch(`${API_URL}/auth/change-password`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders(),
+            },
+            body: JSON.stringify({ currentPassword, newPassword }),
+        })
+        const data = await res.json()
+        if (res.status === 401 && /token/i.test(String(data?.message || ''))) {
+            clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
+        }
+        if (!res.ok) throw new Error(data.message || 'Đổi mật khẩu thất bại')
+        return data
+    },
+
+    async updateRecoveryPin(currentPassword, recoveryPin) {
+        const res = await fetch(`${API_URL}/auth/recovery-pin`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders(),
+            },
+            body: JSON.stringify({ currentPassword, recoveryPin }),
+        })
+        const data = await res.json()
+        if (res.status === 401 && /token/i.test(String(data?.message || ''))) {
+            clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
+        }
+        if (!res.ok) throw new Error(data.message || 'Cập nhật mã PIN thất bại')
         return data
     },
 

@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import VipAvatar from '../components/VipAvatar'
+import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const SectionHeader = ({ title }) => (
@@ -113,6 +115,7 @@ export default function ProfilePage() {
     const winRate = totalBattles > 0 ? `${Math.round((wins / totalBattles) * 100)}%` : '0%'
     const avatarSrc = String(user?.avatar || '').trim() || DEFAULT_AVATAR
     const signature = String(user?.signature || '').trim()
+    const vipTitle = getVipTitle(user)
     const profileTabs = [
         { label: 'Cá Nhân', to: '/profile', enabled: true },
         { label: 'Đội Hình', to: '/party', enabled: true },
@@ -171,14 +174,15 @@ export default function ProfilePage() {
                                     Ảnh Đại Diện
                                 </div>
                                 <div className="mx-auto w-32 h-32 mb-6 flex items-center justify-center">
-                                    <img
-                                        src={avatarSrc}
+                                    <VipAvatar
+                                        userLike={user}
+                                        avatar={avatarSrc}
+                                        fallback={DEFAULT_AVATAR}
                                         alt="Trainer Avatar"
-                                        className="h-full object-contain pixelated drop-shadow-md"
-                                        onError={(e) => {
-                                            e.currentTarget.onerror = null
-                                            e.currentTarget.src = DEFAULT_AVATAR
-                                        }}
+                                        wrapperClassName="w-full h-full"
+                                        imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
+                                        frameClassName="h-full w-full object-contain"
+                                        loading="eager"
                                     />
                                 </div>
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
@@ -279,18 +283,19 @@ export default function ProfilePage() {
                         <div className="bg-white">
                             <InfoRow label="ID Người Chơi" value={`#${user?.id ? user.id.slice(-7).toUpperCase() : '???'}`} isOdd={false} />
                             <InfoRow label="Tên Nhân Vật" value={username} isOdd={true} />
-                            <InfoRow label="Nhóm" value={user?.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
-                            <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={true} />
-                            <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (Thiếu ${expToNext(level).toLocaleString()} EXP để lên cấp)`} isOdd={false} />
-                            <InfoRow label="HP" value={`${hp}/${maxHp} HP`} isOdd={true} />
-                            <InfoRow label="Thể Lực" value={`${stamina}/${maxStamina} AP`} isOdd={false} />
-                            <InfoRow label="Xu Bạch Kim" value={`${coins.toLocaleString()} Xu`} isOdd={true} />
-                            <InfoRow label="Điểm Nguyệt Các" value={`${moonPoints.toLocaleString()} Điểm`} isOdd={false} />
-                            <InfoRow label="Trận Đấu" value={`${wins} thắng - ${losses} thua`} isOdd={true} />
-                            <InfoRow label="Tỷ Lệ Thắng" value={winRate} isOdd={false} />
-                            <InfoRow label="Ngày Đăng Ký" value={joinDate} isOdd={true} />
-                            <InfoRow label="Hoạt Động Gần Nhất" value={lastActive} isOdd={false} />
-                            <InfoRow label="Phiên Bản" value="Beta 1.0" isOdd={true} />
+                            <InfoRow label="Nhóm" value={getPublicRoleLabel(user)} isOdd={false} />
+                            <InfoRow label="Danh hiệu VIP" value={vipTitle || '--'} isOdd={true} />
+                            <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={false} />
+                            <InfoRow label="Kinh Nghiệm" value={`${exp.toLocaleString()} EXP (Thiếu ${expToNext(level).toLocaleString()} EXP để lên cấp)`} isOdd={true} />
+                            <InfoRow label="HP" value={`${hp}/${maxHp} HP`} isOdd={false} />
+                            <InfoRow label="Thể Lực" value={`${stamina}/${maxStamina} AP`} isOdd={true} />
+                            <InfoRow label="Xu Bạch Kim" value={`${coins.toLocaleString()} Xu`} isOdd={false} />
+                            <InfoRow label="Điểm Nguyệt Các" value={`${moonPoints.toLocaleString()} Điểm`} isOdd={true} />
+                            <InfoRow label="Trận Đấu" value={`${wins} thắng - ${losses} thua`} isOdd={false} />
+                            <InfoRow label="Tỷ Lệ Thắng" value={winRate} isOdd={true} />
+                            <InfoRow label="Ngày Đăng Ký" value={joinDate} isOdd={false} />
+                            <InfoRow label="Hoạt Động Gần Nhất" value={lastActive} isOdd={true} />
+                            <InfoRow label="Phiên Bản" value="Beta 1.0" isOdd={false} />
                         </div>
                         <div className="bg-white border-t border-blue-200">
                             <SectionHeader title="Chữ Ký" />

@@ -1,35 +1,122 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import GuestRightColumn from '../layouts/GuestRightColumn'
 
+const resolveModeFromPath = (pathname) => {
+    if (pathname === '/register') return 'register'
+    if (pathname === '/forgot-password' || pathname === '/reset-password') return 'forgot'
+    return 'login'
+}
+
+const modeMeta = {
+    login: {
+        title: 'Đăng Nhập',
+        infoTitle: 'Yêu Cầu Đăng Nhập',
+        infoBody: 'Bạn vui lòng đăng nhập để truy cập trang này.',
+        submitLabel: 'Đăng Nhập',
+    },
+    register: {
+        title: 'Đăng Ký',
+        infoTitle: 'Tham Gia Ngay!',
+        infoBody: 'Tạo tài khoản mới để bắt đầu hành trình của bạn.',
+        submitLabel: 'Đăng Ký',
+    },
+    forgot: {
+        title: 'Quên Mật Khẩu',
+        infoTitle: 'Khôi Phục Tài Khoản',
+        infoBody: 'Nhập email, mã PIN khôi phục và mật khẩu mới để đặt lại tài khoản.',
+        submitLabel: 'Khôi Phục Mật Khẩu',
+    },
+}
+
 export default function LoginPage() {
     const navigate = useNavigate()
+    const location = useLocation()
     const { login } = useAuth()
 
-    const [isLogin, setIsLogin] = useState(true)
+    const [mode, setMode] = useState(resolveModeFromPath(location.pathname))
     const [email, setEmail] = useState('')
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
+    const [recoveryPin, setRecoveryPin] = useState('')
+    const [confirmRecoveryPin, setConfirmRecoveryPin] = useState('')
+    const [newPassword, setNewPassword] = useState('')
+    const [confirmPassword, setConfirmPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
+    const [message, setMessage] = useState('')
+
+    useEffect(() => {
+        setMode(resolveModeFromPath(location.pathname))
+        setError('')
+        setMessage('')
+    }, [location.pathname])
+
+    const meta = modeMeta[mode] || modeMeta.login
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
+        setMessage('')
         setLoading(true)
 
         try {
-            const data = isLogin
-                ? await api.login(email, password)
-                : await api.register(email, username, password)
+            if (mode === 'login') {
+                const data = await api.login(email, password)
 
-            // Save to AuthContext
-            login(data.user, data.token)
+                // Save to AuthContext
+                login(data.user, data.token)
 
-            // Navigate to home
-            navigate('/')
+                // Navigate to home
+                navigate('/')
+                return
+            }
+
+            if (mode === 'register') {
+                if (!recoveryPin || !confirmRecoveryPin) {
+                    throw new Error('Vui lòng nhập mã PIN khôi phục và xác nhận PIN')
+                }
+                if (!/^\d{6}$/.test(recoveryPin)) {
+                    throw new Error('Mã PIN khôi phục phải gồm đúng 6 chữ số')
+                }
+                if (recoveryPin !== confirmRecoveryPin) {
+                    throw new Error('Mã PIN xác nhận không khớp')
+                }
+
+                const data = await api.register(email, username, password, recoveryPin)
+
+                // Save to AuthContext
+                login(data.user, data.token)
+
+                // Navigate to home
+                navigate('/')
+                return
+            }
+
+            if (mode === 'forgot') {
+                if (!recoveryPin) {
+                    throw new Error('Mã PIN khôi phục là bắt buộc')
+                }
+                if (!/^\d{6}$/.test(recoveryPin)) {
+                    throw new Error('Mã PIN khôi phục phải gồm đúng 6 chữ số')
+                }
+                if (!newPassword || !confirmPassword) {
+                    throw new Error('Vui lòng nhập đầy đủ mật khẩu mới')
+                }
+                if (newPassword !== confirmPassword) {
+                    throw new Error('Mật khẩu xác nhận không khớp')
+                }
+
+                const data = await api.forgotPassword(email, recoveryPin, newPassword)
+                setPassword('')
+                setNewPassword('')
+                setConfirmPassword('')
+                setRecoveryPin('')
+                setConfirmRecoveryPin('')
+                setMessage(data.message || 'Đặt lại mật khẩu thành công. Bạn có thể đăng nhập ngay.')
+            }
         } catch (err) {
             setError(err.message)
         } finally {
@@ -65,7 +152,7 @@ export default function LoginPage() {
                             {/* Header */}
                             <div className="bg-gradient-to-t from-blue-100 to-white py-4 px-6 border-b border-blue-200 text-center">
                                 <h2 className="text-3xl font-bold text-blue-900 tracking-wide drop-shadow-sm">
-                                    {isLogin ? 'Đăng Nhập' : 'Đăng Ký'}
+                                    {meta.title}
                                 </h2>
                             </div>
 
@@ -73,15 +160,15 @@ export default function LoginPage() {
 
                                 {/* Info Box */}
                                 <div className="bg-blue-50 border border-blue-300 rounded p-3 mb-6 text-sm text-blue-900">
-                                    <strong>{isLogin ? 'Yêu Cầu Đăng Nhập' : 'Tham Gia Ngay!'}</strong>
-                                    <p>{isLogin ? 'Bạn vui lòng đăng nhập để truy cập trang này.' : 'Tạo tài khoản mới để bắt đầu hành trình của bạn.'}</p>
+                                    <strong>{meta.infoTitle}</strong>
+                                    <p>{meta.infoBody}</p>
                                 </div>
 
                                 {/* Form Grid Table Style */}
                                 <form onSubmit={handleSubmit} className="border border-blue-400 rounded overflow-hidden">
                                     {/* Table Header */}
                                     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold py-1 px-4 text-center border-b border-blue-600">
-                                        {isLogin ? 'Đăng Nhập' : 'Đăng Ký'}
+                                        {meta.title}
                                     </div>
 
                                     {/* Table Header Row */}
@@ -94,6 +181,12 @@ export default function LoginPage() {
                                     {error && (
                                         <div className="p-2 bg-red-100 text-center text-red-700 text-sm border-b border-blue-300">
                                             {error}
+                                        </div>
+                                    )}
+
+                                    {message && (
+                                        <div className="p-2 bg-green-100 text-center text-green-700 text-sm border-b border-blue-300">
+                                            {message}
                                         </div>
                                     )}
 
@@ -114,38 +207,124 @@ export default function LoginPage() {
                                     </div>
 
                                     {/* Username Input Row (Register only) */}
-                                    {!isLogin && (
+                                    {mode === 'register' && (
+                                        <>
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    Tên Người Dùng:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        value={username}
+                                                        onChange={(e) => setUsername(e.target.value)}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    PIN Khôi Phục:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={recoveryPin}
+                                                        onChange={(e) => setRecoveryPin(e.target.value.replace(/\D+/g, '').slice(0, 6))}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                        placeholder="6 chữ số"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    Xác Nhận PIN:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={confirmRecoveryPin}
+                                                        onChange={(e) => setConfirmRecoveryPin(e.target.value.replace(/\D+/g, '').slice(0, 6))}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                        placeholder="Nhập lại PIN"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Password Input Row */}
+                                    {(mode === 'login' || mode === 'register') && (
                                         <div className="flex border-b border-blue-200 bg-white">
                                             <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
-                                                Tên Người Dùng:
+                                                Mật Khẩu:
                                             </div>
                                             <div className="w-2/3 py-3 px-4">
                                                 <input
-                                                    type="text"
+                                                    type="password"
                                                     required
-                                                    value={username}
-                                                    onChange={(e) => setUsername(e.target.value)}
+                                                    value={password}
+                                                    onChange={(e) => setPassword(e.target.value)}
                                                     className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
                                                 />
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Password Input Row */}
-                                    <div className="flex border-b border-blue-200 bg-white">
-                                        <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
-                                            Mật Khẩu:
-                                        </div>
-                                        <div className="w-2/3 py-3 px-4">
-                                            <input
-                                                type="password"
-                                                required
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-                                    </div>
+                                    {mode === 'forgot' && (
+                                        <>
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    PIN Khôi Phục:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={recoveryPin}
+                                                        onChange={(e) => setRecoveryPin(e.target.value.replace(/\D+/g, '').slice(0, 6))}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                        placeholder="6 chữ số"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    Mật Khẩu Mới:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={newPassword}
+                                                        onChange={(e) => setNewPassword(e.target.value)}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex border-b border-blue-200 bg-white">
+                                                <div className="w-1/3 py-3 px-2 border-r border-blue-200 text-right font-bold text-sm text-slate-700 flex items-center justify-end">
+                                                    Xác Nhận MK:
+                                                </div>
+                                                <div className="w-2/3 py-3 px-4">
+                                                    <input
+                                                        type="password"
+                                                        required
+                                                        value={confirmPassword}
+                                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                                        className="w-full max-w-[250px] px-2 py-1 bg-white border border-slate-400 shadow-inner text-sm focus:outline-none focus:border-blue-500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
 
                                     {/* Submit Button Row */}
                                     <div className="bg-white p-3 text-center">
@@ -154,18 +333,45 @@ export default function LoginPage() {
                                             disabled={loading}
                                             className="px-6 py-1 bg-gradient-to-t from-slate-100 to-white border border-slate-400 hover:bg-slate-50 text-slate-800 text-sm font-bold rounded shadow-sm hover:shadow active:translate-y-px transition-all"
                                         >
-                                            {loading ? 'Đang xử lý...' : (isLogin ? 'Đăng Nhập' : 'Đăng Ký')}
+                                            {loading ? 'Đang xử lý...' : meta.submitLabel}
                                         </button>
                                     </div>
 
                                 </form>
 
                                 <div className="mt-4 text-center text-xs text-slate-500">
-                                    Nếu bạn quên mật khẩu, hãy khôi phục tại đây: <span className="font-bold text-blue-600 cursor-pointer hover:underline">quên mật khẩu</span>.
-                                    <br />
-                                    <button onClick={() => setIsLogin(!isLogin)} className="mt-2 text-blue-600 font-bold hover:underline">
-                                        {isLogin ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
-                                    </button>
+                                    {(mode === 'login' || mode === 'register') && (
+                                        <>
+                                            Nếu bạn quên mật khẩu, hãy khôi phục tại đây:{' '}
+                                            <Link to="/forgot-password" className="font-bold text-blue-600 hover:underline">quên mật khẩu</Link>.
+                                            <br />
+                                        </>
+                                    )}
+
+                                    {mode === 'login' && (
+                                        <Link to="/register" className="mt-2 inline-block text-blue-600 font-bold hover:underline">
+                                            Chưa có tài khoản? Đăng ký ngay
+                                        </Link>
+                                    )}
+
+                                    {mode === 'register' && (
+                                        <Link to="/login" className="mt-2 inline-block text-blue-600 font-bold hover:underline">
+                                            Đã có tài khoản? Đăng nhập
+                                        </Link>
+                                    )}
+
+                                    {mode === 'forgot' && (
+                                        <>
+                                            <Link to="/login" className="mt-2 inline-block text-blue-600 font-bold hover:underline">
+                                                Quay lại đăng nhập
+                                            </Link>
+                                            <br />
+                                            <Link to="/register" className="mt-1 inline-block text-blue-600 font-bold hover:underline">
+                                                Chưa có tài khoản? Đăng ký
+                                            </Link>
+                                        </>
+                                    )}
+
                                 </div>
                             </div>
                         </div>

@@ -10,7 +10,7 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 
-const USER_SELECT_FIELDS = 'username avatar role isOnline createdAt lastActive signature'
+const USER_SELECT_FIELDS = 'username avatar role vipBenefits isOnline createdAt lastActive signature'
 const PARTY_SLOT_TOTAL = 6
 
 const toSafeIsoDate = (value) => {
@@ -138,6 +138,17 @@ const serializeUser = (userLike) => ({
     lastActive: toSafeIsoDate(userLike?.lastActive),
     playTime: formatPlayTime(userLike?.createdAt),
     signature: String(userLike?.signature || '').trim(),
+    vipBenefits: {
+        title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(userLike?.vipBenefits?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
+        autoSearchEnabled: userLike?.vipBenefits?.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(userLike?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(userLike?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: userLike?.vipBenefits?.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(userLike?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(userLike?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
+    },
 })
 
 const buildTrainerDetail = async (targetUserId) => {
@@ -204,6 +215,17 @@ const buildTrainerDetail = async (targetUserId) => {
         createdAt: toSafeIsoDate(user?.createdAt),
         lastActive: toSafeIsoDate(user?.lastActive),
         role: String(user?.role || 'user'),
+        vipBenefits: {
+            title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
+            titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),
+            avatarFrameUrl: String(user?.vipBenefits?.avatarFrameUrl || '').trim(),
+            autoSearchEnabled: user?.vipBenefits?.autoSearchEnabled !== false,
+            autoSearchDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
+            autoSearchUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
+            autoBattleTrainerEnabled: user?.vipBenefits?.autoBattleTrainerEnabled !== false,
+            autoBattleTrainerDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
+            autoBattleTrainerUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
+        },
         isOnline: Boolean(user?.isOnline),
         playTime: formatPlayTime(user?.createdAt, now),
         profile,

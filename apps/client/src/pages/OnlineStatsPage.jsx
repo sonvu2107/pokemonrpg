@@ -4,8 +4,9 @@ import { gameApi } from '../services/gameApi'
 import { friendsApi } from '../services/friendsApi'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
+import VipAvatar from '../components/VipAvatar'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
-import { resolveAvatarUrl } from '../utils/avatarUrl'
+import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const resolvePokemonCombatPower = (entry) => {
@@ -112,6 +113,7 @@ export default function OnlineStatsPage() {
     const selectedWins = Number(selectedProfile.wins || 0)
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
+    const selectedVipTitle = getVipTitle(selectedTrainer)
     const selectedParty = Array.isArray(selectedTrainer?.party)
         ? selectedTrainer.party.slice(0, PARTY_SLOT_TOTAL)
         : []
@@ -225,6 +227,11 @@ export default function OnlineStatsPage() {
                                     >
                                         {entry.username}
                                     </button>
+                                    {getVipTitle(entry) && (
+                                        <div className="mt-0.5 text-[10px] font-bold text-amber-600 truncate">
+                                            {getVipTitle(entry)}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -264,6 +271,11 @@ export default function OnlineStatsPage() {
                                             >
                                                 {entry.username}
                                             </button>
+                                            {getVipTitle(entry) && (
+                                                <div className="mt-0.5 text-[10px] font-bold text-amber-600 truncate">
+                                                    {getVipTitle(entry)}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-3 py-3 text-center text-slate-700">{entry.playTime}</td>
                                     </tr>
@@ -289,14 +301,15 @@ export default function OnlineStatsPage() {
                                     Ảnh Đại Diện
                                 </div>
                                 <div className="mx-auto w-28 h-28 mb-4 flex items-center justify-center">
-                                    <img
-                                        src={resolveAvatarUrl(selectedTrainer.avatar, DEFAULT_AVATAR)}
+                                    <VipAvatar
+                                        userLike={selectedTrainer}
+                                        avatar={selectedTrainer.avatar}
+                                        fallback={DEFAULT_AVATAR}
                                         alt={selectedTrainer.username || 'Huấn luyện viên'}
-                                        className="h-full object-contain pixelated drop-shadow-md"
-                                        onError={(event) => {
-                                            event.currentTarget.onerror = null
-                                            event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                        }}
+                                        wrapperClassName="w-full h-full"
+                                        imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
+                                        frameClassName="h-full w-full object-contain"
+                                        loading="eager"
                                     />
                                 </div>
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
@@ -340,22 +353,23 @@ export default function OnlineStatsPage() {
                             <div className="bg-white">
                                 <ProfileInfoRow label="ID Người Chơi" value={trainerProfileId} isOdd={false} />
                                 <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
-                                <ProfileInfoRow label="Nhóm" value={selectedTrainer.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
-                                <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={true} />
+                                <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
+                                <ProfileInfoRow label="Danh hiệu VIP" value={selectedVipTitle || '--'} isOdd={true} />
+                                <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />
                                 <ProfileInfoRow
                                     label="Kinh Nghiệm"
                                     value={`${formatNumber(selectedExp)} EXP (Thiếu ${formatNumber(expToNext(selectedLevel))} EXP để lên cấp)`}
-                                    isOdd={false}
+                                    isOdd={true}
                                 />
-                                <ProfileInfoRow label="HP" value={`${formatNumber(selectedProfile.hp)}/${formatNumber(selectedProfile.maxHp)} HP`} isOdd={true} />
-                                <ProfileInfoRow label="Thể Lực" value={`${formatNumber(selectedProfile.stamina)}/${formatNumber(selectedProfile.maxStamina)} AP`} isOdd={false} />
-                                <ProfileInfoRow label="Xu Bạch Kim" value={`${formatNumber(selectedProfile.platinumCoins)} Xu`} isOdd={true} />
-                                <ProfileInfoRow label="Điểm Nguyệt Các" value={`${formatNumber(selectedProfile.moonPoints)} Điểm`} isOdd={false} />
-                                <ProfileInfoRow label="Trận Đấu" value={`${formatNumber(selectedWins)} thắng - ${formatNumber(selectedLosses)} thua`} isOdd={true} />
-                                <ProfileInfoRow label="Tỷ Lệ Thắng" value={formatWinRate(selectedWins, selectedLosses)} isOdd={false} />
-                                <ProfileInfoRow label="Thời Gian Chơi" value={selectedTrainer.playTime || 'Không rõ'} isOdd={true} />
-                                <ProfileInfoRow label="Ngày Đăng Ký" value={formatProfileDate(selectedTrainer.createdAt)} isOdd={false} />
-                                <ProfileInfoRow label="Hoạt Động Gần Nhất" value={formatProfileDate(selectedTrainer.lastActive, true)} isOdd={true} />
+                                <ProfileInfoRow label="HP" value={`${formatNumber(selectedProfile.hp)}/${formatNumber(selectedProfile.maxHp)} HP`} isOdd={false} />
+                                <ProfileInfoRow label="Thể Lực" value={`${formatNumber(selectedProfile.stamina)}/${formatNumber(selectedProfile.maxStamina)} AP`} isOdd={true} />
+                                <ProfileInfoRow label="Xu Bạch Kim" value={`${formatNumber(selectedProfile.platinumCoins)} Xu`} isOdd={false} />
+                                <ProfileInfoRow label="Điểm Nguyệt Các" value={`${formatNumber(selectedProfile.moonPoints)} Điểm`} isOdd={true} />
+                                <ProfileInfoRow label="Trận Đấu" value={`${formatNumber(selectedWins)} thắng - ${formatNumber(selectedLosses)} thua`} isOdd={false} />
+                                <ProfileInfoRow label="Tỷ Lệ Thắng" value={formatWinRate(selectedWins, selectedLosses)} isOdd={true} />
+                                <ProfileInfoRow label="Thời Gian Chơi" value={selectedTrainer.playTime || 'Không rõ'} isOdd={false} />
+                                <ProfileInfoRow label="Ngày Đăng Ký" value={formatProfileDate(selectedTrainer.createdAt)} isOdd={true} />
+                                <ProfileInfoRow label="Hoạt Động Gần Nhất" value={formatProfileDate(selectedTrainer.lastActive, true)} isOdd={false} />
                             </div>
                         </div>
 

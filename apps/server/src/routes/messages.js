@@ -1,8 +1,25 @@
 import express from 'express'
 import Message from '../models/Message.js'
+import User from '../models/User.js'
+import PlayerState from '../models/PlayerState.js'
 import { authMiddleware as auth } from '../middleware/auth.js'
 
 const router = express.Router()
+
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+  const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+  return {
+    title: String(source?.title || '').trim().slice(0, 80),
+    titleImageUrl: String(source?.titleImageUrl || '').trim(),
+    avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+    autoSearchEnabled: source?.autoSearchEnabled !== false,
+    autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+    autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+    autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+  }
+}
 
 /**
  * GET /api/messages/global
@@ -60,9 +77,29 @@ router.post('/global', auth, async (req, res) => {
       })
     }
 
+    const currentUserId = String(req.user?.userId || '').trim()
+    if (!currentUserId) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Không xác định được người dùng hiện tại'
+      })
+    }
+
+    const [user, playerState] = await Promise.all([
+      User.findById(currentUserId).select('username role avatar vipBenefits').lean(),
+      PlayerState.findOne({ userId: currentUserId }).select('level').lean(),
+    ])
+
+    if (!user) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Không tìm thấy thông tin người dùng'
+      })
+    }
+
     // Rate limiting check (basic - in production use Redis)
     const recentMessages = await Message.countDocuments({
-      'sender._id': req.user._id,
+      'sender._id': currentUserId,
       timestamp: { $gte: new Date(Date.now() - 60000) } // Last 1 minute
     })
 
@@ -77,10 +114,12 @@ router.post('/global', auth, async (req, res) => {
     const message = new Message({
       room: 'global',
       sender: {
-        _id: req.user._id,
-        username: req.user.username,
-        role: req.user.role || 'user',
-        level: req.user.level || 1
+        _id: user._id,
+        username: user.username,
+        role: user.role || 'user',
+        level: playerState?.level || 1,
+        avatar: user.avatar || '',
+        vipBenefits: normalizeVipBenefits(user?.vipBenefits),
       },
       content: content.trim(),
       type: 'text'
@@ -130,7 +169,7 @@ router.delete('/:messageId', auth, async (req, res) => {
       })
     }
 
-    await message.softDelete(req.user._id)
+    await message.softDelete(req.user.userId)
 
     // Broadcast deletion
     if (req.app.get('io')) {

@@ -3,7 +3,8 @@ const getCloudinaryConfig = () => {
     const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || process.env.VITE_CLOUDINARY_UPLOAD_PRESET
     const specialPokemonFolder = process.env.CLOUDINARY_SPECIAL_POKEMON_FOLDER || 'pokemon/special-pokemon'
     const mapImageFolder = process.env.CLOUDINARY_MAP_IMAGE_FOLDER || 'pokemon/map-images'
-    return { cloudName, uploadPreset, specialPokemonFolder, mapImageFolder }
+    const vipAssetFolder = process.env.CLOUDINARY_VIP_ASSET_FOLDER || 'pokemon/vip-assets'
+    return { cloudName, uploadPreset, specialPokemonFolder, mapImageFolder, vipAssetFolder }
 }
 
 const parseCloudinaryError = async (response) => {
@@ -71,5 +72,15 @@ export const uploadMapImageToCloudinary = async ({ buffer, mimetype, originalnam
         mimetype,
         originalname,
         folder: mapImageFolder,
+    })
+}
+
+export const uploadVipAssetImageToCloudinary = async ({ buffer, mimetype, originalname }) => {
+    const { vipAssetFolder } = getCloudinaryConfig()
+    return uploadImageToCloudinary({
+        buffer,
+        mimetype,
+        originalname,
+        folder: vipAssetFolder,
     })
 }

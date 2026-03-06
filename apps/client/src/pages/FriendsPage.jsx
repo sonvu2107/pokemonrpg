@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Modal from '../components/Modal'
+import VipAvatar from '../components/VipAvatar'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { friendsApi } from '../services/friendsApi'
-import { resolveAvatarUrl } from '../utils/avatarUrl'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import { getPublicRoleLabel, getVipTitle } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png'
 const PARTY_SLOT_TOTAL = 6
@@ -89,6 +90,10 @@ const toSeedTrainer = (userLike = {}) => ({
     avatar: String(userLike?.avatar || '').trim(),
     signature: String(userLike?.signature || '').trim(),
     role: String(userLike?.role || 'user').trim() || 'user',
+    vipBenefits: {
+        title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
+        avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
+    },
     isOnline: Boolean(userLike?.isOnline),
     createdAt: userLike?.createdAt || null,
     lastActive: userLike?.lastActive || null,
@@ -411,6 +416,7 @@ export default function FriendsPage() {
     const selectedWins = Number(selectedProfile.wins || 0)
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
+    const selectedVipTitle = getVipTitle(selectedTrainer)
     const selectedUserId = normalizeUserId(selectedTrainer?.userId)
     const selectedParty = Array.isArray(selectedTrainer?.party)
         ? selectedTrainer.party.slice(0, PARTY_SLOT_TOTAL)
@@ -467,6 +473,7 @@ export default function FriendsPage() {
 
     const renderTrainerIdentity = (userLike = {}, className = '') => {
         const userId = normalizeUserId(userLike?.userId)
+        const vipTitle = getVipTitle(userLike)
 
         return (
             <div className={`flex items-center gap-2 min-w-0 ${className}`}>
@@ -476,14 +483,14 @@ export default function FriendsPage() {
                     className="w-9 h-9 rounded-full bg-blue-50 border border-blue-200 p-1 overflow-hidden shrink-0 hover:border-blue-400"
                     disabled={!userId}
                 >
-                    <img
-                        src={resolveAvatarUrl(userLike?.avatar, DEFAULT_AVATAR)}
+                    <VipAvatar
+                        userLike={userLike}
+                        avatar={userLike?.avatar}
+                        fallback={DEFAULT_AVATAR}
                         alt={userLike?.username || 'Trainer'}
-                        className="w-full h-full object-contain pixelated"
-                        onError={(event) => {
-                            event.currentTarget.onerror = null
-                            event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                        }}
+                        wrapperClassName="w-full h-full"
+                        imageClassName="w-full h-full object-contain pixelated"
+                        frameClassName="w-full h-full object-contain"
                     />
                 </button>
                 <button
@@ -495,6 +502,11 @@ export default function FriendsPage() {
                     <div className="text-sm font-bold text-slate-800 truncate hover:text-blue-700 hover:underline">
                         {userLike?.username || 'Huấn Luyện Viên'}
                     </div>
+                    {vipTitle && (
+                        <div className="text-[10px] font-bold text-amber-600 truncate max-w-[180px]">
+                            {vipTitle}
+                        </div>
+                    )}
                     <div className="mt-0.5">
                         <PresenceBadge isOnline={Boolean(userLike?.isOnline)} />
                     </div>
@@ -794,14 +806,15 @@ export default function FriendsPage() {
                                     Ảnh đại diện
                                 </div>
                                 <div className="mx-auto w-28 h-28 mb-4 flex items-center justify-center">
-                                    <img
-                                        src={resolveAvatarUrl(selectedTrainer.avatar, DEFAULT_AVATAR)}
+                                    <VipAvatar
+                                        userLike={selectedTrainer}
+                                        avatar={selectedTrainer.avatar}
+                                        fallback={DEFAULT_AVATAR}
                                         alt={selectedTrainer.username || 'Huấn luyện viên'}
-                                        className="h-full object-contain pixelated drop-shadow-md"
-                                        onError={(event) => {
-                                            event.currentTarget.onerror = null
-                                            event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                        }}
+                                        wrapperClassName="w-full h-full"
+                                        imageClassName="h-full w-full object-contain pixelated drop-shadow-md"
+                                        frameClassName="h-full w-full object-contain"
+                                        loading="eager"
                                     />
                                 </div>
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
@@ -896,22 +909,23 @@ export default function FriendsPage() {
                             <div className="bg-white">
                                 <ProfileInfoRow label="ID Người Chơi" value={selectedTrainer.userIdLabel || '???'} isOdd={false} />
                                 <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
-                                <ProfileInfoRow label="Nhóm" value={selectedTrainer.role === 'admin' ? 'Quản Trị Viên' : 'Thành Viên'} isOdd={false} />
-                                <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={true} />
+                                <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
+                                <ProfileInfoRow label="Danh hiệu VIP" value={selectedVipTitle || '--'} isOdd={true} />
+                                <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />
                                 <ProfileInfoRow
                                     label="Kinh Nghiệm"
                                     value={`${formatNumber(selectedExp)} EXP (Thiếu ${formatNumber(expToNext(selectedLevel))} EXP để lên cấp)`}
-                                    isOdd={false}
+                                    isOdd={true}
                                 />
-                                <ProfileInfoRow label="HP" value={`${formatNumber(selectedProfile.hp)}/${formatNumber(selectedProfile.maxHp)} HP`} isOdd={true} />
-                                <ProfileInfoRow label="Thể Lực" value={`${formatNumber(selectedProfile.stamina)}/${formatNumber(selectedProfile.maxStamina)} AP`} isOdd={false} />
-                                <ProfileInfoRow label="Xu Bạch Kim" value={`${formatNumber(selectedProfile.platinumCoins)} Xu`} isOdd={true} />
-                                <ProfileInfoRow label="Điểm Nguyệt Các" value={`${formatNumber(selectedProfile.moonPoints)} Điểm`} isOdd={false} />
-                                <ProfileInfoRow label="Trận Đấu" value={`${formatNumber(selectedWins)} thắng - ${formatNumber(selectedLosses)} thua`} isOdd={true} />
-                                <ProfileInfoRow label="Tỷ Lệ Thắng" value={formatWinRate(selectedWins, selectedLosses)} isOdd={false} />
-                                <ProfileInfoRow label="Thời Gian Chơi" value={selectedTrainer.playTime || 'Không rõ'} isOdd={true} />
-                                <ProfileInfoRow label="Ngày Đăng Ký" value={formatProfileDate(selectedTrainer.createdAt)} isOdd={false} />
-                                <ProfileInfoRow label="Hoạt Động Gần Nhất" value={formatProfileDate(selectedTrainer.lastActive, true)} isOdd={true} />
+                                <ProfileInfoRow label="HP" value={`${formatNumber(selectedProfile.hp)}/${formatNumber(selectedProfile.maxHp)} HP`} isOdd={false} />
+                                <ProfileInfoRow label="Thể Lực" value={`${formatNumber(selectedProfile.stamina)}/${formatNumber(selectedProfile.maxStamina)} AP`} isOdd={true} />
+                                <ProfileInfoRow label="Xu Bạch Kim" value={`${formatNumber(selectedProfile.platinumCoins)} Xu`} isOdd={false} />
+                                <ProfileInfoRow label="Điểm Nguyệt Các" value={`${formatNumber(selectedProfile.moonPoints)} Điểm`} isOdd={true} />
+                                <ProfileInfoRow label="Trận Đấu" value={`${formatNumber(selectedWins)} thắng - ${formatNumber(selectedLosses)} thua`} isOdd={false} />
+                                <ProfileInfoRow label="Tỷ Lệ Thắng" value={formatWinRate(selectedWins, selectedLosses)} isOdd={true} />
+                                <ProfileInfoRow label="Thời Gian Chơi" value={selectedTrainer.playTime || 'Không rõ'} isOdd={false} />
+                                <ProfileInfoRow label="Ngày Đăng Ký" value={formatProfileDate(selectedTrainer.createdAt)} isOdd={true} />
+                                <ProfileInfoRow label="Hoạt Động Gần Nhất" value={formatProfileDate(selectedTrainer.lastActive, true)} isOdd={false} />
                             </div>
                         </div>
 

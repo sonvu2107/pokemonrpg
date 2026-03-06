@@ -1,10 +1,42 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { userApi } from '../../services/adminApi'
+import { userApi, vipTierApi } from '../../services/adminApi'
 import { ADMIN_PERMISSION_OPTIONS } from '../../constants/adminPermissions'
 
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const DEFAULT_ITEM_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'
+
+const createDefaultVipBenefitForm = () => ({
+    vipTierId: '',
+    title: '',
+    titleImageUrl: '',
+    avatarFrameUrl: '',
+    autoSearchEnabled: true,
+    autoSearchDurationMinutes: 0,
+    autoSearchUsesPerDay: 0,
+    autoBattleTrainerEnabled: true,
+    autoBattleTrainerDurationMinutes: 0,
+    autoBattleTrainerUsesPerDay: 0,
+})
+
+const normalizeVipBenefitFormFromUser = (userLike) => {
+    const base = createDefaultVipBenefitForm()
+    const source = userLike?.vipBenefits && typeof userLike.vipBenefits === 'object'
+        ? userLike.vipBenefits
+        : {}
+    return {
+        vipTierId: String(userLike?.vipTierId || base.vipTierId).trim(),
+        title: String(source.title || base.title).trim().slice(0, 80),
+        titleImageUrl: String(source.titleImageUrl || base.titleImageUrl).trim(),
+        avatarFrameUrl: String(source.avatarFrameUrl || base.avatarFrameUrl).trim(),
+        autoSearchEnabled: source.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(source.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(source.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: source.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source.autoBattleTrainerUsesPerDay, 10) || 0),
+    }
+}
 
 export default function UserManagementPage() {
     const [users, setUsers] = useState([])
@@ -17,9 +49,35 @@ export default function UserManagementPage() {
     const [bulkDeleting, setBulkDeleting] = useState(false)
     const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null)
     const [updatingPermissionUserId, setUpdatingPermissionUserId] = useState(null)
+    const [updatingBanUserId, setUpdatingBanUserId] = useState(null)
+    const [updatingVipBenefitUserId, setUpdatingVipBenefitUserId] = useState(null)
     const [grantModal, setGrantModal] = useState({ type: '', user: null })
     const [grantError, setGrantError] = useState('')
     const [granting, setGranting] = useState(false)
+    const [vipTiers, setVipTiers] = useState([])
+    const [vipBenefitModal, setVipBenefitModal] = useState({
+        open: false,
+        user: null,
+        form: createDefaultVipBenefitForm(),
+        error: '',
+        submitting: false,
+    })
+    const [ipBans, setIpBans] = useState([])
+    const [ipBanLoading, setIpBanLoading] = useState(false)
+    const [ipBanError, setIpBanError] = useState('')
+    const [banIpForm, setBanIpForm] = useState({
+        ip: '',
+        reason: '',
+        durationHours: '',
+    })
+    const [accountBanModal, setAccountBanModal] = useState({
+        open: false,
+        user: null,
+        reason: '',
+        durationHours: '',
+        error: '',
+        submitting: false,
+    })
 
     const [pokemonLookup, setPokemonLookup] = useState([])
     const [pokemonLookupLoading, setPokemonLookupLoading] = useState(false)
@@ -43,6 +101,14 @@ export default function UserManagementPage() {
     useEffect(() => {
         loadUsers()
     }, [page, search])
+
+    useEffect(() => {
+        loadIpBans()
+    }, [])
+
+    useEffect(() => {
+        loadVipTiers()
+    }, [])
 
     useEffect(() => {
         if (grantModal.type !== 'pokemon') return
@@ -89,8 +155,142 @@ export default function UserManagementPage() {
         }
     }
 
+    const isUserCurrentlyBanned = (user) => {
+        if (!user?.isBanned) return false
+        if (!user?.bannedUntil) return true
+        const banUntilMs = new Date(user.bannedUntil).getTime()
+        if (!Number.isFinite(banUntilMs)) return true
+        return banUntilMs > Date.now()
+    }
+
+    const formatDateTime = (value) => {
+        if (!value) return '--'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return '--'
+        return date.toLocaleString('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        })
+    }
+
+    const loadIpBans = async () => {
+        try {
+            setIpBanLoading(true)
+            setIpBanError('')
+            const res = await userApi.listIpBans({ limit: 50, page: 1 })
+            setIpBans(Array.isArray(res?.ipBans) ? res.ipBans : [])
+        } catch (err) {
+            setIpBanError(err.message || 'Không thể tải danh sách IP bị chặn')
+            setIpBans([])
+        } finally {
+            setIpBanLoading(false)
+        }
+    }
+
+    const loadVipTiers = async () => {
+        try {
+            const res = await vipTierApi.list({ active: 'true' })
+            setVipTiers(Array.isArray(res?.vipTiers) ? res.vipTiers : [])
+        } catch (_err) {
+            setVipTiers([])
+        }
+    }
+
     const updateUserInState = (updatedUser) => {
         setUsers((prev) => prev.map((user) => (user._id === updatedUser._id ? { ...user, ...updatedUser } : user)))
+    }
+
+    const openVipBenefitModal = (user) => {
+        const normalizedUserTierId = String(user?.vipTierId || '').trim()
+        const tierByLevel = vipTiers.find((entry) => Number(entry?.level || 0) === Number(user?.vipTierLevel || 0))
+        const resolvedTierId = normalizedUserTierId || String(tierByLevel?._id || '').trim()
+        const normalizedForm = normalizeVipBenefitFormFromUser({
+            ...user,
+            vipTierId: resolvedTierId,
+        })
+
+        setVipBenefitModal({
+            open: true,
+            user,
+            form: normalizedForm,
+            error: '',
+            submitting: false,
+        })
+    }
+
+    const closeVipBenefitModal = (force = false) => {
+        if (!force && vipBenefitModal.submitting) return
+        setVipBenefitModal({
+            open: false,
+            user: null,
+            form: createDefaultVipBenefitForm(),
+            error: '',
+            submitting: false,
+        })
+    }
+
+    const updateVipBenefitFormField = (field, value) => {
+        setVipBenefitModal((prev) => ({
+            ...prev,
+            error: '',
+            form: {
+                ...prev.form,
+                [field]: value,
+            },
+        }))
+    }
+
+    const submitVipBenefitModal = async () => {
+        const targetUser = vipBenefitModal.user
+        if (!targetUser?._id) return
+
+        try {
+            setVipBenefitModal((prev) => ({ ...prev, submitting: true, error: '' }))
+            setUpdatingVipBenefitUserId(targetUser._id)
+
+            const selectedTierId = String(vipBenefitModal.form.vipTierId || '').trim()
+            if (!selectedTierId) {
+                throw new Error('Vui lòng chọn cấp VIP cho người dùng (ví dụ VIP 1 - VIP 10).')
+            }
+
+            const tierRes = await userApi.updateVipTier(targetUser._id, {
+                tierId: selectedTierId,
+                applyBenefits: true,
+            })
+            const tierUpdatedUser = tierRes?.user || null
+            if (tierUpdatedUser) {
+                updateUserInState(tierUpdatedUser)
+            }
+
+            const payload = {
+                title: String(vipBenefitModal.form.title || '').trim(),
+                titleImageUrl: String(vipBenefitModal.form.titleImageUrl || '').trim(),
+                avatarFrameUrl: String(vipBenefitModal.form.avatarFrameUrl || '').trim(),
+                autoSearchEnabled: Boolean(vipBenefitModal.form.autoSearchEnabled),
+                autoSearchDurationMinutes: Math.max(0, parseInt(vipBenefitModal.form.autoSearchDurationMinutes, 10) || 0),
+                autoSearchUsesPerDay: Math.max(0, parseInt(vipBenefitModal.form.autoSearchUsesPerDay, 10) || 0),
+                autoBattleTrainerEnabled: Boolean(vipBenefitModal.form.autoBattleTrainerEnabled),
+                autoBattleTrainerDurationMinutes: Math.max(0, parseInt(vipBenefitModal.form.autoBattleTrainerDurationMinutes, 10) || 0),
+                autoBattleTrainerUsesPerDay: Math.max(0, parseInt(vipBenefitModal.form.autoBattleTrainerUsesPerDay, 10) || 0),
+            }
+
+            const res = await userApi.updateVipBenefits(targetUser._id, payload)
+            if (res?.user) {
+                updateUserInState(res.user)
+            }
+            closeVipBenefitModal(true)
+        } catch (err) {
+            setVipBenefitModal((prev) => ({
+                ...prev,
+                submitting: false,
+                error: err.message || 'Không thể cập nhật quyền lợi VIP',
+            }))
+        } finally {
+            setUpdatingVipBenefitUserId(null)
+        }
     }
 
     const handleRoleChange = async (userId, newRole) => {
@@ -99,6 +299,9 @@ export default function UserManagementPage() {
             const res = await userApi.updateRole(userId, newRole)
             if (res?.user) {
                 updateUserInState(res.user)
+                if (vipBenefitModal.open && vipBenefitModal.user?._id === userId && newRole !== 'vip') {
+                    closeVipBenefitModal(true)
+                }
             }
         } catch (err) {
             alert('Cập nhật vai trò thất bại: ' + err.message)
@@ -181,6 +384,153 @@ export default function UserManagementPage() {
             alert('Xóa tài khoản thất bại: ' + (err.message || 'Lỗi không xác định'))
         } finally {
             setBulkDeleting(false)
+        }
+    }
+
+    const openAccountBanModal = (user) => {
+        setAccountBanModal({
+            open: true,
+            user,
+            reason: user?.banReason || '',
+            durationHours: '',
+            error: '',
+            submitting: false,
+        })
+    }
+
+    const closeAccountBanModal = (force = false) => {
+        if (!force && accountBanModal.submitting) return
+        setAccountBanModal({
+            open: false,
+            user: null,
+            reason: '',
+            durationHours: '',
+            error: '',
+            submitting: false,
+        })
+    }
+
+    const submitAccountBanModal = async () => {
+        const targetUser = accountBanModal.user
+        if (!targetUser?._id) return
+
+        const durationRaw = String(accountBanModal.durationHours || '').trim()
+        let bannedUntil = null
+        if (durationRaw) {
+            const parsedHours = Number.parseInt(durationRaw, 10)
+            if (!Number.isFinite(parsedHours) || parsedHours < 1) {
+                setAccountBanModal((prev) => ({
+                    ...prev,
+                    error: 'Số giờ khóa phải là số nguyên dương (hoặc để trống để khóa vĩnh viễn).',
+                }))
+                return
+            }
+            bannedUntil = new Date(Date.now() + parsedHours * 60 * 60 * 1000).toISOString()
+        }
+
+        try {
+            setAccountBanModal((prev) => ({ ...prev, submitting: true, error: '' }))
+            setUpdatingBanUserId(targetUser._id)
+
+            const res = await userApi.updateBan(targetUser._id, {
+                isBanned: true,
+                reason: String(accountBanModal.reason || '').trim(),
+                bannedUntil,
+            })
+            if (res?.user) {
+                updateUserInState(res.user)
+            }
+            closeAccountBanModal(true)
+        } catch (err) {
+            setAccountBanModal((prev) => ({
+                ...prev,
+                submitting: false,
+                error: err.message || 'Không thể khóa tài khoản',
+            }))
+        } finally {
+            setUpdatingBanUserId(null)
+        }
+    }
+
+    const handleToggleUserBan = async (user) => {
+        const activeBan = isUserCurrentlyBanned(user)
+        try {
+            setUpdatingBanUserId(user._id)
+
+            if (activeBan) {
+                const confirmed = confirm(`Gỡ khóa tài khoản ${user.username || user.email}?`)
+                if (!confirmed) return
+
+                const res = await userApi.updateBan(user._id, { isBanned: false })
+                if (res?.user) {
+                    updateUserInState(res.user)
+                }
+                return
+            }
+            setUpdatingBanUserId(null)
+            openAccountBanModal(user)
+            return
+        } catch (err) {
+            alert('Cập nhật khóa tài khoản thất bại: ' + (err.message || 'Lỗi không xác định'))
+        } finally {
+            setUpdatingBanUserId(null)
+        }
+    }
+
+    const handleBanIpFromUser = (user) => {
+        const defaultIp = String(user?.lastLoginIp || '').trim()
+        setBanIpForm((prev) => ({
+            ...prev,
+            ip: defaultIp,
+            reason: prev.reason || `Chặn từ tài khoản ${user?.username || user?.email || ''}`.trim(),
+        }))
+    }
+
+    const handleCreateIpBan = async () => {
+        const ip = String(banIpForm.ip || '').trim()
+        if (!ip) {
+            alert('Vui lòng nhập IP cần chặn')
+            return
+        }
+
+        const parsedHours = Number.parseInt(String(banIpForm.durationHours || '').trim(), 10)
+        const hasDuration = Number.isFinite(parsedHours) && parsedHours > 0
+        const expiresAt = hasDuration
+            ? new Date(Date.now() + parsedHours * 60 * 60 * 1000).toISOString()
+            : null
+
+        try {
+            setIpBanLoading(true)
+            setIpBanError('')
+            const res = await userApi.banIp({
+                ip,
+                reason: String(banIpForm.reason || '').trim(),
+                expiresAt,
+            })
+            setBanIpForm({ ip: '', reason: '', durationHours: '' })
+            alert(res?.message || 'Đã chặn IP thành công')
+            await loadIpBans()
+        } catch (err) {
+            setIpBanError(err.message || 'Không thể chặn IP')
+        } finally {
+            setIpBanLoading(false)
+        }
+    }
+
+    const handleUnbanIp = async (banId) => {
+        const confirmed = confirm('Gỡ chặn IP này?')
+        if (!confirmed) return
+
+        try {
+            setIpBanLoading(true)
+            setIpBanError('')
+            const res = await userApi.unbanIp(banId)
+            alert(res?.message || 'Đã gỡ chặn IP')
+            await loadIpBans()
+        } catch (err) {
+            setIpBanError(err.message || 'Không thể gỡ chặn IP')
+        } finally {
+            setIpBanLoading(false)
         }
     }
 
@@ -314,19 +664,25 @@ export default function UserManagementPage() {
         return count + (selectedIdSet.has(String(user._id || '').trim()) ? 1 : 0)
     }, 0)
     const allCurrentPageSelected = users.length > 0 && selectedOnCurrentPageCount === users.length
+    const bannedUsersOnPage = users.filter((user) => isUserCurrentlyBanned(user)).length
+    const activeIpBanCount = ipBans.length
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
-            <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-blue-100">
+            <div className="flex flex-wrap justify-between items-center gap-3 bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-500 p-4 rounded-lg shadow-sm border border-blue-300">
                 <div>
-                    <h1 className="text-xl font-bold text-slate-800">Quản lý User và Phân quyền Admin</h1>
-                    <p className="text-slate-500 text-sm mt-1">
-                        Tổng số: <span className="font-bold text-blue-600">{pagination?.total || 0}</span> users
+                    <h1 className="text-xl font-bold text-white">User Security Control</h1>
+                    <p className="text-blue-50 text-sm mt-1">
+                        Tổng users: <span className="font-bold text-cyan-300">{pagination?.total || 0}</span>
+                        {' • '}
+                        Bị khóa (trang hiện tại): <span className="font-bold text-rose-300">{bannedUsersOnPage}</span>
+                        {' • '}
+                        IP đang chặn: <span className="font-bold text-amber-300">{activeIpBanCount}</span>
                     </p>
                 </div>
                 <Link
                     to="/admin"
-                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold shadow-sm transition-all"
+                    className="px-4 py-2 bg-white/95 border border-slate-300 hover:bg-white text-slate-800 rounded-md text-sm font-bold shadow-sm transition-all"
                 >
                     Quay lại
                 </Link>
@@ -366,7 +722,7 @@ export default function UserManagementPage() {
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-md px-4 py-3 text-xs text-blue-800">
-                Mỗi module trong Admin Center có thể bật/tắt riêng cho từng admin.
+                Chế độ quản trị bảo mật: phân quyền admin theo module, khóa/mở khóa tài khoản theo thời hạn, và chặn IP nghi vấn trực tiếp.
             </div>
 
             {error && (
@@ -375,12 +731,94 @@ export default function UserManagementPage() {
                 </div>
             )}
 
+            <div className="bg-white rounded-lg shadow-sm border border-blue-100 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Ban IP</h2>
+                    <button
+                        type="button"
+                        onClick={loadIpBans}
+                        disabled={ipBanLoading}
+                        className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-bold shadow-sm disabled:opacity-50"
+                    >
+                        Làm mới
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <input
+                        type="text"
+                        value={banIpForm.ip}
+                        onChange={(e) => setBanIpForm((prev) => ({ ...prev, ip: e.target.value }))}
+                        placeholder="IP cần chặn"
+                        className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                        type="text"
+                        value={banIpForm.reason}
+                        onChange={(e) => setBanIpForm((prev) => ({ ...prev, reason: e.target.value }))}
+                        placeholder="Lý do (tùy chọn)"
+                        className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                        type="number"
+                        min="1"
+                        value={banIpForm.durationHours}
+                        onChange={(e) => setBanIpForm((prev) => ({ ...prev, durationHours: e.target.value }))}
+                        placeholder="Số giờ chặn"
+                        className="px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                        type="button"
+                        onClick={handleCreateIpBan}
+                        disabled={ipBanLoading}
+                        className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-bold shadow-sm disabled:opacity-50"
+                    >
+                        {ipBanLoading ? 'Đang xử lý...' : 'Chặn IP'}
+                    </button>
+                </div>
+
+                {ipBanError && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 font-medium">
+                        {ipBanError}
+                    </div>
+                )}
+
+                <div className="border border-slate-200 rounded-md overflow-hidden">
+                    <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 text-xs">
+                        {ipBans.length === 0 ? (
+                            <div className="px-3 py-3 text-slate-500">Chưa có IP nào bị chặn.</div>
+                        ) : (
+                            ipBans.map((ban) => (
+                                <div key={ban._id} className="px-3 py-2 flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-slate-800 break-all">{ban.ip}</div>
+                                        <div className="text-slate-500">
+                                            {ban.reason || 'Không có lý do'}
+                                            {' • '}
+                                            Hết hạn: {formatDateTime(ban.expiresAt)}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleUnbanIp(ban._id)}
+                                        disabled={ipBanLoading}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                        Gỡ chặn
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+
             <div className="bg-white rounded-lg shadow-sm border border-blue-200 flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
                 <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full">
-                    <table className="w-full text-sm min-w-[980px] lg:min-w-[1280px]">
-                        <thead className="bg-slate-50 text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                    <table className="w-full text-xs min-w-[1020px] lg:min-w-[1120px]">
+                        <thead className="bg-slate-50 text-slate-700 uppercase text-[11px] tracking-wide border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="px-4 py-3 text-center font-bold w-14">
+                                <th className="px-3 py-2 text-center font-bold w-12">
                                     <input
                                         type="checkbox"
                                         checked={allCurrentPageSelected}
@@ -390,12 +828,14 @@ export default function UserManagementPage() {
                                         title="Chọn tất cả tài khoản trong trang hiện tại"
                                     />
                                 </th>
-                                <th className="px-4 py-3 text-left font-bold min-w-[180px] sm:min-w-[220px]">Email</th>
-                                <th className="px-4 py-3 text-left font-bold min-w-[140px] sm:min-w-[180px]">Username</th>
-                                <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Role</th>
-                                <th className="px-4 py-3 text-left font-bold min-w-[250px] sm:min-w-[320px]">Admin Modules</th>
-                                <th className="px-4 py-3 text-center font-bold min-w-[180px]">Trao thưởng</th>
-                                <th className="px-4 py-3 text-center font-bold whitespace-nowrap">Ngày tạo</th>
+                                <th className="px-3 py-2 text-left font-bold min-w-[200px]">Email</th>
+                                <th className="px-3 py-2 text-left font-bold min-w-[140px]">Username</th>
+                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Trạng thái</th>
+                                <th className="px-3 py-2 text-left font-bold min-w-[130px]">IP gần nhất</th>
+                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Role</th>
+                                <th className="px-3 py-2 text-left font-bold min-w-[300px]">Admin Modules</th>
+                                <th className="px-3 py-2 text-center font-bold min-w-[220px]">Trao thưởng / Kiểm soát</th>
+                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Ngày tạo</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -409,7 +849,7 @@ export default function UserManagementPage() {
 
                                 return (
                                     <tr key={user._id} className="hover:bg-blue-50/30 transition-colors align-top">
-                                        <td className="px-4 py-3 text-center">
+                                        <td className="px-3 py-2 text-center">
                                             <input
                                                 type="checkbox"
                                                 checked={isSelected}
@@ -418,33 +858,80 @@ export default function UserManagementPage() {
                                                 className="accent-blue-600"
                                             />
                                         </td>
-                                        <td className="px-4 py-3 font-medium text-slate-800">{user.email}</td>
-                                        <td className="px-4 py-3 text-slate-600">{user.username || '-'}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <select
-                                                value={user.role}
-                                                onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                                                disabled={roleUpdating}
-                                                className={`px-3 py-1 rounded-md text-xs font-bold border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${user.role === 'admin'
-                                                    ? 'bg-amber-100 text-amber-700 border-amber-300'
-                                                    : 'bg-slate-100 text-slate-700 border-slate-300'
-                                                    } ${roleUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-95'}`}
-                                            >
-                                                <option value="user">User</option>
-                                                <option value="admin">Admin</option>
-                                            </select>
+                                        <td className="px-3 py-2 font-medium text-slate-800 break-all">{user.email}</td>
+                                        <td className="px-3 py-2 text-slate-600">{user.username || '-'}</td>
+                                        <td className="px-3 py-2 text-center">
+                                            {isUserCurrentlyBanned(user) ? (
+                                                <div className="inline-flex flex-col items-center gap-1">
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                                        Đang bị khóa
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-500 max-w-[170px] truncate" title={user.banReason || 'Không có lý do'}>
+                                                        {user.banReason || 'Không có lý do'}
+                                                    </span>
+                                                    {user.bannedUntil && (
+                                                        <span className="text-[10px] text-slate-500">
+                                                            Đến: {formatDateTime(user.bannedUntil)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                    Hoạt động
+                                                </span>
+                                            )}
                                         </td>
-                                        <td className="px-4 py-3">
+                                        <td className="px-3 py-2 text-xs text-slate-600">
+                                            {user.lastLoginIp ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleBanIpFromUser(user)}
+                                                    className="font-mono text-[11px] text-blue-700 hover:text-blue-800 hover:underline"
+                                                    title="Bấm để điền IP vào form Ban IP"
+                                                >
+                                                    {user.lastLoginIp}
+                                                </button>
+                                            ) : (
+                                                <span className="text-slate-400">--</span>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                            <div className="inline-flex flex-col items-center gap-1">
+                                                <select
+                                                    value={user.role}
+                                                    onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                                                    disabled={roleUpdating}
+                                                    className={`px-3 py-1 rounded-md text-xs font-bold border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${user.role === 'admin'
+                                                        ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                                        : (user.role === 'vip'
+                                                            ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                                                            : 'bg-slate-100 text-slate-700 border-slate-300')
+                                                        } ${roleUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-95'}`}
+                                                >
+                                                    <option value="user">User</option>
+                                                    <option value="vip">VIP</option>
+                                                    <option value="admin">Admin</option>
+                                                </select>
+                                                {user.role === 'vip' ? (
+                                                    <span className="px-1.5 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-[10px] font-bold text-yellow-700">
+                                                        VIP Lv.{Math.max(1, Number(user?.vipTierLevel || 1))}{user?.vipTierCode ? ` • ${user.vipTierCode}` : ''}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-slate-400">--</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2">
                                             {!isAdmin ? (
                                                 <span className="text-xs text-slate-400">Không áp dụng</span>
                                             ) : (
-                                                <div className="flex flex-wrap gap-2">
+                                                <div className="grid grid-cols-2 gap-1.5 max-w-[360px]">
                                                     {ADMIN_PERMISSION_OPTIONS.map((option) => {
                                                         const checked = userPermissions.includes(option.key)
                                                         return (
                                                             <label
                                                                 key={option.key}
-                                                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs ${checked
+                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] leading-tight ${checked
                                                                     ? 'bg-blue-50 border-blue-200 text-blue-700'
                                                                     : 'bg-white border-slate-200 text-slate-600'} ${permissionUpdating ? 'opacity-60' : ''}`}
                                                             >
@@ -462,23 +949,48 @@ export default function UserManagementPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <div className="flex items-center justify-center gap-2">
+                                        <td className="px-3 py-2 text-center">
+                                            <div className="grid grid-cols-3 gap-1.5 max-w-[320px] mx-auto">
                                                 <button
                                                     onClick={() => openPokemonGrantModal(user)}
-                                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"
+                                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold shadow-sm"
                                                 >
                                                     Pokemon
                                                 </button>
                                                 <button
                                                     onClick={() => openItemGrantModal(user)}
-                                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-sm"
+                                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-sm"
                                                 >
                                                     Vật phẩm
                                                 </button>
+                                                <button
+                                                    onClick={() => openVipBenefitModal(user)}
+                                                    disabled={updatingVipBenefitUserId === user._id}
+                                                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {updatingVipBenefitUserId === user._id ? 'Đang lưu...' : `VIP ${Number(user?.vipTierLevel || 0) > 0 ? `Lv.${user.vipTierLevel}` : ''}`.trim()}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleUserBan(user)}
+                                                    disabled={updatingBanUserId === user._id}
+                                                    className={`px-2 py-1 rounded text-[11px] font-bold shadow-sm disabled:opacity-50 ${isUserCurrentlyBanned(user)
+                                                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                                                        : 'bg-red-600 hover:bg-red-700 text-white'
+                                                        }`}
+                                                >
+                                                    {updatingBanUserId === user._id
+                                                        ? 'Đang cập nhật...'
+                                                        : (isUserCurrentlyBanned(user) ? 'Gỡ khóa TK' : 'Khóa TK')}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleBanIpFromUser(user)}
+                                                    className="px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold shadow-sm"
+                                                >
+                                                    Ban IP
+                                                </button>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center text-slate-500 text-xs">
+                                        <td className="px-3 py-2 text-center text-slate-500 text-xs whitespace-nowrap">
                                             {new Date(user.createdAt).toLocaleDateString('vi-VN')}
                                         </td>
                                     </tr>
@@ -512,6 +1024,264 @@ export default function UserManagementPage() {
                     </div>
                 )}
             </div>
+
+            {vipBenefitModal.open && vipBenefitModal.user && (
+                <div className="fixed inset-0 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white w-full max-w-lg rounded-lg border border-slate-200 shadow-2xl">
+                        <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/60 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-amber-800">Quản lý quyền lợi VIP</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Mục tiêu: <span className="font-bold text-amber-700">{vipBenefitModal.user.username || vipBenefitModal.user.email}</span>
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => closeVipBenefitModal()}
+                                disabled={vipBenefitModal.submitting}
+                                className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            {vipBenefitModal.error && (
+                                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm font-medium">
+                                    {vipBenefitModal.error}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Cấp VIP (VIP 1 - VIP X)</label>
+                                <select
+                                    value={vipBenefitModal.form.vipTierId}
+                                    onChange={(e) => updateVipBenefitFormField('vipTierId', e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                >
+                                    <option value="">Chọn cấp VIP</option>
+                                    {vipTiers.map((tier) => (
+                                        <option key={tier._id} value={tier._id}>
+                                            VIP {tier.level} - {tier.name || tier.code}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Danh hiệu VIP</label>
+                                <input
+                                    type="text"
+                                    maxLength={80}
+                                    value={vipBenefitModal.form.title}
+                                    onChange={(e) => updateVipBenefitFormField('title', e.target.value)}
+                                    placeholder="VD: VIP Kim Cương"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">URL ảnh danh hiệu VIP</label>
+                                <input
+                                    type="url"
+                                    value={vipBenefitModal.form.titleImageUrl}
+                                    onChange={(e) => updateVipBenefitFormField('titleImageUrl', e.target.value)}
+                                    placeholder="https://..."
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Avatar frame URL</label>
+                                <input
+                                    type="url"
+                                    value={vipBenefitModal.form.avatarFrameUrl}
+                                    onChange={(e) => updateVipBenefitFormField('avatarFrameUrl', e.target.value)}
+                                    placeholder="https://..."
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                />
+                            </div>
+
+                            <label className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 bg-slate-50">
+                                <span className="text-sm font-semibold text-slate-700">Cho phép auto tìm kiếm</span>
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(vipBenefitModal.form.autoSearchEnabled)}
+                                    onChange={(e) => updateVipBenefitFormField('autoSearchEnabled', e.target.checked)}
+                                    className="accent-amber-600"
+                                />
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1">Thời gian auto tìm (phút)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={vipBenefitModal.form.autoSearchDurationMinutes}
+                                        onChange={(e) => updateVipBenefitFormField('autoSearchDurationMinutes', e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1">Số lượt auto tìm / ngày</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={vipBenefitModal.form.autoSearchUsesPerDay}
+                                        onChange={(e) => updateVipBenefitFormField('autoSearchUsesPerDay', e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <label className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 bg-slate-50">
+                                <span className="text-sm font-semibold text-slate-700">Cho phép auto battle trainer</span>
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(vipBenefitModal.form.autoBattleTrainerEnabled)}
+                                    onChange={(e) => updateVipBenefitFormField('autoBattleTrainerEnabled', e.target.checked)}
+                                    className="accent-amber-600"
+                                />
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1">Thời gian auto battle (phút)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={vipBenefitModal.form.autoBattleTrainerDurationMinutes}
+                                        onChange={(e) => updateVipBenefitFormField('autoBattleTrainerDurationMinutes', e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1">Số lượt auto battle / ngày</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={vipBenefitModal.form.autoBattleTrainerUsesPerDay}
+                                        onChange={(e) => updateVipBenefitFormField('autoBattleTrainerUsesPerDay', e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={submitVipBenefitModal}
+                                    disabled={vipBenefitModal.submitting}
+                                    className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-sm font-bold disabled:opacity-50"
+                                >
+                                    {vipBenefitModal.submitting ? 'Đang lưu...' : 'Lưu quyền lợi'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => closeVipBenefitModal()}
+                                    disabled={vipBenefitModal.submitting}
+                                    className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50"
+                                >
+                                    Hủy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {accountBanModal.open && accountBanModal.user && (
+                <div className="fixed inset-0 bg-blue-900/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white w-full max-w-md rounded-lg border border-slate-200 shadow-2xl">
+                        <div className="px-5 py-4 border-b border-blue-100 bg-blue-50/60 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-blue-800">Khóa tài khoản</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Mục tiêu: <span className="font-bold text-red-700">{accountBanModal.user.username || accountBanModal.user.email}</span>
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => closeAccountBanModal()}
+                                disabled={accountBanModal.submitting}
+                                className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            {accountBanModal.error && (
+                                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm font-medium">
+                                    {accountBanModal.error}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Lý do khóa (tùy chọn)</label>
+                                <textarea
+                                    value={accountBanModal.reason}
+                                    onChange={(e) => setAccountBanModal((prev) => ({ ...prev, reason: e.target.value }))}
+                                    rows={3}
+                                    placeholder="Ví dụ: Vi phạm quy định cộng đồng"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Thời hạn khóa (giờ)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={accountBanModal.durationHours}
+                                    onChange={(e) => setAccountBanModal((prev) => ({ ...prev, durationHours: e.target.value }))}
+                                    placeholder="Để trống = khóa vĩnh viễn"
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {[24, 72, 168].map((hours) => (
+                                        <button
+                                            key={hours}
+                                            type="button"
+                                            onClick={() => setAccountBanModal((prev) => ({ ...prev, durationHours: String(hours) }))}
+                                            className="px-2 py-1 rounded border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50"
+                                        >
+                                            {hours / 24} ngày
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => setAccountBanModal((prev) => ({ ...prev, durationHours: '' }))}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Vĩnh viễn
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={submitAccountBanModal}
+                                    disabled={accountBanModal.submitting}
+                                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-bold disabled:opacity-50"
+                                >
+                                    {accountBanModal.submitting ? 'Đang khóa...' : 'Xác nhận khóa'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => closeAccountBanModal()}
+                                    disabled={accountBanModal.submitting}
+                                    className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50"
+                                >
+                                    Hủy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {grantModal.type && grantModal.user && (
                 <div className="fixed inset-0 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">

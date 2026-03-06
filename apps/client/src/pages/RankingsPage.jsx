@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
-import { resolveAvatarUrl } from '../utils/avatarUrl'
+import VipAvatar from '../components/VipAvatar'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
+import { getVipTitle } from '../utils/vip'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -282,28 +283,34 @@ export default function RankingsPage() {
                                             <>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-3">
-                                                        <img
-                                                            src={resolveAvatarUrl(player.avatar, DEFAULT_AVATAR)}
+                                                        <VipAvatar
+                                                            userLike={player}
+                                                            avatar={player.avatar}
+                                                            fallback={DEFAULT_AVATAR}
                                                             alt={player.username || 'Player'}
-                                                            className="h-9 w-9 rounded object-cover border border-blue-200"
-                                                            loading="lazy"
-                                                            onError={(e) => {
-                                                                e.currentTarget.onerror = null
-                                                                e.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                                            }}
+                                                            wrapperClassName="h-9 w-9"
+                                                            imageClassName="h-9 w-9 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-9 w-9 rounded object-cover"
                                                         />
-                                                        <div>
+                                                        <div className="min-w-0">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => openTrainerProfile({
                                                                     userId: player.userId,
                                                                     username: player.username,
                                                                     avatar: player.avatar,
+                                                                    role: player.role,
+                                                                    vipBenefits: player.vipBenefits,
                                                                 }, { returnTo: defaultReturnTo })}
                                                                 className={`font-bold hover:underline ${getUsernameColor(player.rank)}`}
                                                             >
                                                                 {player.username || 'Không rõ'}
                                                             </button>
+                                                            {getVipTitle(player) && (
+                                                                <div className="text-[10px] font-bold text-amber-600 truncate max-w-[220px]">
+                                                                    {getVipTitle(player)}
+                                                                </div>
+                                                            )}
                                                             <div className="text-xs text-slate-500">Cấp {numberFormat(player.level || 1)}</div>
                                                         </div>
                                                     </div>
@@ -314,17 +321,38 @@ export default function RankingsPage() {
                                             </>
                                         ) : (
                                             <>
-                                                <td className={`px-4 py-3 font-bold ${getUsernameColor(player.rank)}`}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openTrainerProfile({
-                                                            userId: player.userId,
-                                                            username: player.username,
-                                                        }, { returnTo: defaultReturnTo })}
-                                                        className="hover:underline"
-                                                    >
-                                                        {player.username}
-                                                    </button>
+                                                <td className="px-4 py-3 font-bold">
+                                                    <div className="flex items-center gap-3">
+                                                        <VipAvatar
+                                                            userLike={player}
+                                                            avatar={player.avatar}
+                                                            fallback={DEFAULT_AVATAR}
+                                                            alt={player.username || 'Player'}
+                                                            wrapperClassName="h-9 w-9"
+                                                            imageClassName="h-9 w-9 rounded object-cover border border-blue-200"
+                                                            frameClassName="h-9 w-9 rounded object-cover"
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openTrainerProfile({
+                                                                    userId: player.userId,
+                                                                    username: player.username,
+                                                                    avatar: player.avatar,
+                                                                    role: player.role,
+                                                                    vipBenefits: player.vipBenefits,
+                                                                }, { returnTo: defaultReturnTo })}
+                                                                className={`hover:underline ${getUsernameColor(player.rank)}`}
+                                                            >
+                                                                {player.username}
+                                                            </button>
+                                                            {getVipTitle(player) && (
+                                                                <div className="text-[10px] font-bold text-amber-600 truncate max-w-[220px]">
+                                                                    {getVipTitle(player)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-slate-700">
                                                     {numberFormat(player.experience)}

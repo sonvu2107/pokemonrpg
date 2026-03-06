@@ -18,8 +18,54 @@ export const authMiddleware = async (req, res, next) => {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
+        const dbUser = await User.findById(decoded.userId)
+            .select('role adminPermissions isBanned banReason bannedUntil')
+            .lean()
+
+        if (!dbUser) {
+            return res.status(401).json({
+                ok: false,
+                message: 'User not found',
+            })
+        }
+
+        const now = Date.now()
+        const banUntilMs = dbUser.bannedUntil ? new Date(dbUser.bannedUntil).getTime() : null
+        const isBanExpired = Boolean(banUntilMs) && banUntilMs <= now
+
+        if (dbUser.isBanned && isBanExpired) {
+            await User.updateOne(
+                { _id: decoded.userId },
+                {
+                    $set: {
+                        isBanned: false,
+                        banReason: '',
+                        bannedAt: null,
+                        bannedUntil: null,
+                        bannedBy: null,
+                    },
+                }
+            )
+            dbUser.isBanned = false
+            dbUser.banReason = ''
+            dbUser.bannedUntil = null
+        }
+
+        if (dbUser.isBanned) {
+            return res.status(403).json({
+                ok: false,
+                code: 'ACCOUNT_BANNED',
+                message: dbUser.banReason || 'Tài khoản của bạn đã bị khóa.',
+                bannedUntil: dbUser.bannedUntil,
+            })
+        }
+
         // Attach user info to request
-        req.user = decoded
+        req.user = {
+            ...decoded,
+            role: dbUser.role,
+            adminPermissions: dbUser.adminPermissions,
+        }
         next()
     } catch (error) {
         if (error.name === 'JsonWebTokenError') {

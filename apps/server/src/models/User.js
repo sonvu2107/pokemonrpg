@@ -19,10 +19,90 @@ const userSchema = new mongoose.Schema(
             required: true,
             minlength: 6,
         },
+        recoveryPinHash: {
+            type: String,
+            default: '',
+        },
+        recoveryPinUpdatedAt: {
+            type: Date,
+            default: null,
+        },
+        passwordChangedAt: {
+            type: Date,
+            default: null,
+        },
         role: {
             type: String,
-            enum: ['user', 'admin'],
+            enum: ['user', 'vip', 'admin'],
             default: 'user',
+        },
+        vipBenefits: {
+            title: {
+                type: String,
+                default: '',
+                trim: true,
+                maxlength: 80,
+            },
+            titleImageUrl: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            avatarFrameUrl: {
+                type: String,
+                default: '',
+                trim: true,
+            },
+            autoSearchEnabled: {
+                type: Boolean,
+                default: true,
+            },
+            autoSearchDurationMinutes: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 10080,
+            },
+            autoSearchUsesPerDay: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 100000,
+            },
+            autoBattleTrainerEnabled: {
+                type: Boolean,
+                default: true,
+            },
+            autoBattleTrainerDurationMinutes: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 10080,
+            },
+            autoBattleTrainerUsesPerDay: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 100000,
+            },
+        },
+        vipTierId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'VipPrivilegeTier',
+            default: null,
+        },
+        vipTierLevel: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 9999,
+        },
+        vipTierCode: {
+            type: String,
+            default: '',
+            trim: true,
+            uppercase: true,
+            maxlength: 32,
         },
         adminPermissions: {
             type: [
@@ -48,6 +128,42 @@ const userSchema = new mongoose.Schema(
         signature: {
             type: String,
             default: '',
+        },
+        lastLoginIp: {
+            type: String,
+            default: '',
+            trim: true,
+            lowercase: true,
+        },
+        registrationIp: {
+            type: String,
+            default: '',
+            trim: true,
+            lowercase: true,
+        },
+        isBanned: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+        banReason: {
+            type: String,
+            default: '',
+            trim: true,
+            maxlength: 500,
+        },
+        bannedAt: {
+            type: Date,
+            default: null,
+        },
+        bannedUntil: {
+            type: Date,
+            default: null,
+        },
+        bannedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
         },
         completedBattleTrainers: {
             type: [String],
@@ -87,5 +203,6 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 
 userSchema.index({ isOnline: 1, createdAt: 1, _id: 1 })
 userSchema.index({ isOnline: 1, lastActive: -1, _id: 1 })
+userSchema.index({ registrationIp: 1, createdAt: -1 })
 
 export default mongoose.model('User', userSchema)

@@ -1,6 +1,7 @@
 import { getUserPokemonId, getPokemonSpriteUrl, formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
-import { resolveAvatarUrl } from '../../utils/avatarUrl'
+import VipAvatar from '../VipAvatar'
+import { isVipRole, getVipTitle } from '../../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png' // Ditto
 
@@ -47,7 +48,8 @@ export default function MessageBubble({ message, onOpenProfile }) {
   }
 
   // Other users' messages (left aligned, white background)
-  const isAdmin = message.sender.role === 'admin'
+  const isVip = isVipRole(message?.sender)
+  const vipTitle = getVipTitle(message?.sender)
   const senderUserId = String(message?.sender?._id || '').trim()
   const canOpenProfile = Boolean(senderUserId && typeof onOpenProfile === 'function')
   
@@ -65,6 +67,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
       username: message?.sender?.username,
       avatar: message?.sender?.avatar,
       role: message?.sender?.role,
+      vipBenefits: message?.sender?.vipBenefits,
     })
   }
 
@@ -78,15 +81,14 @@ export default function MessageBubble({ message, onOpenProfile }) {
           disabled={!canOpenProfile}
           className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0"
         >
-          <img 
-            src={resolveAvatarUrl(avatarUrl, DEFAULT_AVATAR)}
+          <VipAvatar
+            userLike={message?.sender}
+            avatar={avatarUrl}
+            fallback={DEFAULT_AVATAR}
             alt={message.sender.username}
-            className="w-6 h-6 rounded-full object-cover flex-shrink-0 pixelated"
-            loading="lazy"
-            onError={(e) => {
-              e.currentTarget.onerror = null
-              e.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-            }}
+            wrapperClassName="w-6 h-6"
+            imageClassName="w-6 h-6 rounded-full object-cover flex-shrink-0 pixelated"
+            frameClassName="w-6 h-6 rounded-full object-cover"
           />
         </button>
         
@@ -100,10 +102,16 @@ export default function MessageBubble({ message, onOpenProfile }) {
             {message.sender.username}
           </button>
           
-          {/* Admin badge */}
-          {isAdmin && (
-            <span className="px-1.5 py-0.5 bg-purple-600 rounded text-[10px] text-white font-bold uppercase">
-              ADMIN
+          {/* VIP badge */}
+          {isVip && (
+            <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase">
+              VIP
+            </span>
+          )}
+
+          {vipTitle && (
+            <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] text-amber-700 font-bold">
+              {vipTitle}
             </span>
           )}
           

@@ -20,7 +20,7 @@ const messageSchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'vip', 'admin'],
       default: 'user'
     },
     level: {
@@ -30,6 +30,52 @@ const messageSchema = new mongoose.Schema({
     avatar: {
       type: String,
       default: ''
+    },
+    vipBenefits: {
+      title: {
+        type: String,
+        default: '',
+        trim: true,
+        maxlength: 80,
+      },
+      titleImageUrl: {
+        type: String,
+        default: '',
+        trim: true,
+      },
+      avatarFrameUrl: {
+        type: String,
+        default: '',
+        trim: true,
+      },
+      autoSearchEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      autoSearchDurationMinutes: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      autoSearchUsesPerDay: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      autoBattleTrainerEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      autoBattleTrainerDurationMinutes: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      autoBattleTrainerUsesPerDay: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
     }
   },
   content: {

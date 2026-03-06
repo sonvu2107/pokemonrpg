@@ -12,6 +12,21 @@ const USERNAME_CACHE_TTL_MS = 5 * 60 * 1000
 const USERNAME_CACHE_MAX_ENTRIES = 1000
 const GLOBAL_ROOM = 'global'
 
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+  const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+  return {
+    title: String(source?.title || '').trim().slice(0, 80),
+    titleImageUrl: String(source?.titleImageUrl || '').trim(),
+    avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+    autoSearchEnabled: source?.autoSearchEnabled !== false,
+    autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+    autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+    autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+  }
+}
+
 const pruneUsernameCache = () => {
   const now = Date.now()
 
@@ -155,7 +170,7 @@ const attachChatHandlers = (socket, io) => {
       try {
         // Get user info and player state
         const [user, playerState] = await Promise.all([
-          User.findById(userId).select('username role avatar').lean(),
+          User.findById(userId).select('username role avatar vipBenefits').lean(),
           PlayerState.findOne({ userId }).select('level').lean(),
         ])
         
@@ -207,7 +222,8 @@ const attachChatHandlers = (socket, io) => {
             username: user.username,
             role: user.role || 'user',
             level: playerState?.level || 1,
-            avatar: user.avatar || ''
+            avatar: user.avatar || '',
+            vipBenefits: normalizeVipBenefits(user?.vipBenefits),
           },
           content: content.trim(),
           type: 'text'

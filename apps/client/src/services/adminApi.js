@@ -53,6 +53,36 @@ export const pokemonApi = {
         return res.json()
     },
 
+    // GET /api/admin/pokemon/form-variants
+    async listFormVariants(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/pokemon/form-variants?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Không thể tải danh sách dạng tùy chỉnh')
+        }
+        return res.json()
+    },
+
+    // POST /api/admin/pokemon/form-variants
+    async upsertFormVariant(data = {}) {
+        const res = await fetch(`${API_URL}/admin/pokemon/form-variants`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Không thể lưu dạng mới')
+        }
+        return res.json()
+    },
+
     // POST /api/admin/pokemon
     async create(data) {
         const res = await fetch(`${API_URL}/admin/pokemon`, {
@@ -767,6 +797,34 @@ export const userApi = {
         return res.json()
     },
 
+    // PUT /api/admin/users/:id/vip-benefits
+    async updateVipBenefits(userId, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/vip-benefits`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật quyền lợi VIP thất bại')
+        return res.json()
+    },
+
+    // PUT /api/admin/users/:id/vip-tier
+    async updateVipTier(userId, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/vip-tier`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật cấp VIP cho người dùng thất bại')
+        return res.json()
+    },
+
     // POST /api/admin/users/bulk-delete
     async bulkDelete(userIds = []) {
         const res = await fetch(`${API_URL}/admin/users/bulk-delete`, {
@@ -778,6 +836,54 @@ export const userApi = {
             body: JSON.stringify({ userIds }),
         })
         if (!res.ok) await throwApiError(res, 'Xóa tài khoản hàng loạt thất bại')
+        return res.json()
+    },
+
+    // PUT /api/admin/users/:id/ban
+    async updateBan(userId, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/${userId}/ban`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật trạng thái khóa tài khoản thất bại')
+        return res.json()
+    },
+
+    // GET /api/admin/users/ip-bans
+    async listIpBans(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/users/ip-bans?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách IP bị chặn')
+        return res.json()
+    },
+
+    // POST /api/admin/users/ip-bans
+    async banIp(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/ip-bans`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Chặn IP thất bại')
+        return res.json()
+    },
+
+    // DELETE /api/admin/users/ip-bans/:banId
+    async unbanIp(banId) {
+        const res = await fetch(`${API_URL}/admin/users/ip-bans/${banId}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Gỡ chặn IP thất bại')
         return res.json()
     },
 
@@ -826,6 +932,86 @@ export const userApi = {
             body: JSON.stringify(payload),
         })
         if (!res.ok) await throwApiError(res, 'Cấp vật phẩm thất bại')
+        return res.json()
+    },
+}
+
+export const vipTierApi = {
+    // GET /api/admin/users/vip-tiers
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách đặc quyền VIP')
+        return res.json()
+    },
+
+    // POST /api/admin/users/vip-tiers
+    async create(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tạo đặc quyền VIP')
+        return res.json()
+    },
+
+    // POST /api/admin/users/vip-tiers/bulk-range
+    async createRange(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/bulk-range`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tạo dải cấp VIP')
+        return res.json()
+    },
+
+    // POST /api/admin/users/vip-tiers/upload-image
+    async uploadImage(file) {
+        const formData = new FormData()
+        formData.append('image', file)
+
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/upload-image`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeader(),
+            },
+            body: formData,
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải ảnh đặc quyền VIP')
+        return res.json()
+    },
+
+    // PUT /api/admin/users/vip-tiers/:tierId
+    async update(tierId, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/${tierId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể cập nhật đặc quyền VIP')
+        return res.json()
+    },
+
+    // DELETE /api/admin/users/vip-tiers/:tierId
+    async delete(tierId) {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/${tierId}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể xóa đặc quyền VIP')
         return res.json()
     },
 }

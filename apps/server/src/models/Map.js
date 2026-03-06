@@ -64,6 +64,10 @@ const mapSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        isEventMap: {
+            type: Boolean,
+            default: false,
+        },
         iconId: {
             type: Number,
             min: 1,

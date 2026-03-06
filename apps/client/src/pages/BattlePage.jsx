@@ -1,15 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
+import { hasVipAutoBattleTrainerAccess } from '../utils/vip'
+import { consumeVipAutoUse, getVipAutoLimitConfig, getVipAutoUsageToday } from '../utils/vipAutoLimits'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 10
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
+const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
+    { value: 450, label: 'Nhanh (0.45s)' },
+    { value: 700, label: 'Vừa (0.7s)' },
+    { value: 1000, label: 'Chậm (1.0s)' },
+    { value: 1400, label: 'Rất chậm (1.4s)' },
+]
+const DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS = AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS[1].value
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
 const normalizeEntityId = (value = '') => String(value || '').trim()
@@ -869,6 +879,7 @@ const ActiveBattleView = ({
     )
 }
 export function BattlePage() {
+    const { user } = useAuth()
     const location = useLocation()
     const navigate = useNavigate()
     const challengeSearchParams = new URLSearchParams(location.search)
@@ -909,6 +920,15 @@ export function BattlePage() {
     const [isStartingOnlineChallenge, setIsStartingOnlineChallenge] = useState(false)
     const [shouldResetTrainerSession, setShouldResetTrainerSession] = useState(false)
     const [trainerAttackButtonOffset, setTrainerAttackButtonOffset] = useState({ x: 0, y: 0 })
+    const [autoTrainerAttackEnabled, setAutoTrainerAttackEnabled] = useState(false)
+    const [autoTrainerStartedAtMs, setAutoTrainerStartedAtMs] = useState(0)
+    const [autoTrainerAttackIntervalMs, setAutoTrainerAttackIntervalMs] = useState(DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
+    const canUseVipAutoTrainer = hasVipAutoBattleTrainerAccess(user)
+    const normalizedAuthUserId = String(user?.id || user?._id || '').trim()
+    const autoTrainerLimitConfig = getVipAutoLimitConfig(user, 'trainer-battle')
+    const autoTrainerDurationLimitMinutes = autoTrainerLimitConfig.durationMinutes
+    const autoTrainerUsesPerDayLimit = autoTrainerLimitConfig.usesPerDay
+    const autoTrainerUsageToday = getVipAutoUsageToday(normalizedAuthUserId, 'trainer-battle').used
     const rankedChallengeLockRef = useRef('')
     const didInitLoadRef = useRef(false)
     const trainerAttackSpamCountRef = useRef(0)
@@ -928,6 +948,7 @@ export function BattlePage() {
             window.clearTimeout(trainerAttackRepositionTimerRef.current)
             trainerAttackRepositionTimerRef.current = null
         }
+        setAutoTrainerAttackEnabled(false)
         trainerAttackSpamCountRef.current = 0
         setTrainerAttackButtonOffset({ x: 0, y: 0 })
     }, [activeBattleMode])
@@ -1079,6 +1100,62 @@ export function BattlePage() {
         const lastSlide = Math.max(0, completedSlideCount - 1)
         setCompletedCarouselIndex((prev) => Math.min(prev, lastSlide))
     }, [completedSlideCount])
+
+    useEffect(() => {
+        if (view === 'battle') return
+        if (!autoTrainerAttackEnabled) return
+        setAutoTrainerAttackEnabled(false)
+    }, [view, autoTrainerAttackEnabled])
+
+    useEffect(() => {
+        if (!autoTrainerAttackEnabled || canUseVipAutoTrainer) return
+        setAutoTrainerAttackEnabled(false)
+        setActionMessage('Tài khoản hiện không có quyền lợi VIP để dùng auto battle trainer.')
+    }, [autoTrainerAttackEnabled, canUseVipAutoTrainer])
+
+    useEffect(() => {
+        if (!autoTrainerAttackEnabled) {
+            if (autoTrainerStartedAtMs !== 0) {
+                setAutoTrainerStartedAtMs(0)
+            }
+            return
+        }
+
+        if (!autoTrainerStartedAtMs) {
+            setAutoTrainerStartedAtMs(Date.now())
+        }
+    }, [autoTrainerAttackEnabled, autoTrainerStartedAtMs])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        if (!autoTrainerAttackEnabled) return undefined
+        if (autoTrainerDurationLimitMinutes <= 0) return undefined
+
+        const startedAt = autoTrainerStartedAtMs || Date.now()
+        const limitMs = autoTrainerDurationLimitMinutes * 60 * 1000
+        const elapsedMs = Date.now() - startedAt
+        const remainingMs = limitMs - elapsedMs
+
+        if (remainingMs <= 0) {
+            setAutoTrainerAttackEnabled(false)
+            setActionMessage('Đã hết thời gian dùng auto battle trainer theo gói VIP.')
+            return undefined
+        }
+
+        const timer = window.setTimeout(() => {
+            setAutoTrainerAttackEnabled(false)
+            setActionMessage('Đã hết thời gian dùng auto battle trainer theo gói VIP.')
+        }, remainingMs)
+
+        return () => {
+            window.clearTimeout(timer)
+        }
+    }, [autoTrainerAttackEnabled, autoTrainerStartedAtMs, autoTrainerDurationLimitMinutes])
+
+    useEffect(() => {
+        if (!battleResults || !autoTrainerAttackEnabled) return
+        setAutoTrainerAttackEnabled(false)
+    }, [battleResults, autoTrainerAttackEnabled])
 
     useEffect(() => {
         if (!rankedChallengePokemonId) return
@@ -1303,6 +1380,47 @@ export function BattlePage() {
         if (isTrainerAttackButtonShifted()) {
             setActionMessage('Chú ý: Nút tấn công đã đổi vị trí do thao tác quá nhanh.')
         }
+    }
+
+    const resolveAutoTrainerMove = () => {
+        const activeSlot = party[battlePlayerIndex] || party.find((slot) => Boolean(slot)) || null
+        if (!activeSlot) return null
+
+        const normalizedMoves = normalizeMoveList(
+            mergeBattleMoveNames(
+                activeSlot.moves || [],
+                activeSlot.pokemonId,
+                Number(activeSlot.level) || 1
+            )
+        )
+
+        if (normalizedMoves.length === 0) return null
+
+        const activeEnemy = battleOpponent?.team?.[battleOpponent?.currentIndex || 0] || null
+        const playerTypes = resolvePokemonTypes(activeSlot?.pokemonId?.types)
+        const enemyTypes = resolvePokemonTypes(
+            Array.isArray(activeEnemy?.types)
+                ? activeEnemy.types
+                : (Array.isArray(activeEnemy?.pokemon?.types) ? activeEnemy.pokemon.types : [])
+        )
+
+        const planOptions = buildBattlePlans({
+            moves: normalizedMoves,
+            playerTypes,
+            targetTypes: enemyTypes,
+        })
+
+        const suggestedMove = planOptions.find((entry) => entry?.move)?.move || null
+        if (suggestedMove && Number(suggestedMove.currentPp) > 0) {
+            return suggestedMove
+        }
+
+        const selectedMove = normalizedMoves[selectedMoveIndex] || null
+        if (selectedMove && Number(selectedMove.currentPp) > 0) {
+            return selectedMove
+        }
+
+        return normalizedMoves.find((entry) => Number(entry?.currentPp) > 0) || selectedMove || normalizedMoves[0] || null
     }
 
     const handleAttack = async (selectedMove) => {
@@ -1899,6 +2017,43 @@ export function BattlePage() {
         }
     }
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        if (!canUseVipAutoTrainer || !autoTrainerAttackEnabled) return undefined
+        if (view !== 'battle' || activeBattleMode !== 'trainer') return undefined
+        if (battleResults || duelResultModal || isAttacking) return undefined
+
+        const activeEnemy = battleOpponent?.team?.[battleOpponent?.currentIndex || 0] || null
+        const activeEnemyHp = Number(activeEnemy?.currentHp ?? activeEnemy?.maxHp ?? 0)
+        if (!activeEnemy || activeEnemyHp <= 0) return undefined
+
+        const nextAutoMove = resolveAutoTrainerMove()
+        if (!nextAutoMove) return undefined
+
+        const delayMs = Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
+        const timer = window.setTimeout(() => {
+            handleAttack(nextAutoMove)
+        }, delayMs)
+
+        return () => {
+            window.clearTimeout(timer)
+        }
+    }, [
+        autoTrainerAttackEnabled,
+        canUseVipAutoTrainer,
+        autoTrainerAttackIntervalMs,
+        view,
+        activeBattleMode,
+        battleResults,
+        duelResultModal,
+        isAttacking,
+        battleOpponent,
+        party,
+        battlePlayerIndex,
+        selectedMoveIndex,
+        handleAttack,
+    ])
+
     const handlePlanMove = (nextMoveIndex, note = '') => {
         if (!Number.isInteger(nextMoveIndex) || nextMoveIndex < 0) return
         setSelectedMoveIndex(nextMoveIndex)
@@ -1995,6 +2150,9 @@ export function BattlePage() {
     }
 
     const handleRun = async () => {
+        if (autoTrainerAttackEnabled) {
+            setAutoTrainerAttackEnabled(false)
+        }
         if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
             navigateBackToRankingsAfterDuel()
             return
@@ -2532,6 +2690,95 @@ export function BattlePage() {
                             : (activeBattleMode === 'online' ? 'Chế độ: Khiêu chiến online theo đội hình' : 'Chế độ: Battle Trainer')}
                     </div>
                 </div>
+
+                {activeBattleMode === 'trainer' && (
+                    <div className="border border-slate-300 bg-slate-50 rounded p-3 text-xs text-slate-700 space-y-2 max-w-xl mx-auto w-full">
+                        <div className="flex items-center justify-between gap-2">
+                            <div>
+                                <div className="font-bold text-slate-800">Auto battle trainer</div>
+                                <div className="text-[10px] text-slate-500">Tự chọn chiêu theo kế hoạch và tự đánh theo chu kỳ.</div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (autoTrainerAttackEnabled) {
+                                        setAutoTrainerAttackEnabled(false)
+                                        setActionMessage('Đã tắt auto battle trainer.')
+                                        return
+                                    }
+
+                                    if (!canUseVipAutoTrainer) {
+                                        setActionMessage('Chỉ tài khoản VIP mới có thể bật auto battle trainer.')
+                                        return
+                                    }
+
+                                    const activeEnemy = battleOpponent?.team?.[battleOpponent?.currentIndex || 0] || null
+                                    const activeEnemyHp = Number(activeEnemy?.currentHp ?? activeEnemy?.maxHp ?? 0)
+                                    if (!activeEnemy || activeEnemyHp <= 0) {
+                                        setActionMessage('Không có mục tiêu hợp lệ để bật auto battle.')
+                                        return
+                                    }
+
+                                    const consumeResult = consumeVipAutoUse(
+                                        normalizedAuthUserId,
+                                        'trainer-battle',
+                                        autoTrainerUsesPerDayLimit
+                                    )
+                                    if (!consumeResult.ok) {
+                                        setActionMessage(`Đã hết lượt auto battle trong hôm nay (${consumeResult.used}/${consumeResult.limit}).`)
+                                        return
+                                    }
+
+                                    setActiveTab('fight')
+                                    setAutoTrainerAttackEnabled(true)
+                                    setAutoTrainerStartedAtMs(Date.now())
+                                    if (Number.isFinite(consumeResult.remaining)) {
+                                        setActionMessage(`Đã bật auto battle trainer. Còn ${consumeResult.remaining} lượt trong hôm nay.`)
+                                    } else {
+                                        setActionMessage('Đã bật auto battle trainer.')
+                                    }
+                                }}
+                                disabled={Boolean(battleResults) || !canUseVipAutoTrainer}
+                                className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoTrainerAttackEnabled
+                                    ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
+                                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
+                            >
+                                {autoTrainerAttackEnabled ? 'Đang bật' : 'Bật auto'}
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-slate-700">Tốc độ đánh</span>
+                            <select
+                                value={autoTrainerAttackIntervalMs}
+                                onChange={(e) => {
+                                    const nextValue = Number.parseInt(e.target.value, 10)
+                                    setAutoTrainerAttackIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
+                                }}
+                                disabled={!canUseVipAutoTrainer}
+                                className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
+                            >
+                                {AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {canUseVipAutoTrainer && (
+                            <div className="text-[10px] text-slate-500">
+                                Giới hạn auto battle: {autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
+                                {' · '}
+                                Lượt hôm nay: {autoTrainerUsageToday}/{autoTrainerUsesPerDayLimit > 0 ? autoTrainerUsesPerDayLimit : '∞'}
+                            </div>
+                        )}
+
+                        {!canUseVipAutoTrainer && (
+                            <div className="text-[10px] text-slate-500">
+                                Auto battle trainer là quyền lợi dành cho tài khoản VIP.
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <ActiveBattleView
                     party={party}

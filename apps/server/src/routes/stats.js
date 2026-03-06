@@ -343,7 +343,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
 
         const [user, playerState, partyRows] = await Promise.all([
             User.findById(targetUserId)
-                .select('username avatar signature createdAt lastActive role isOnline')
+                .select('username avatar signature createdAt lastActive role vipBenefits isOnline')
                 .lean(),
             PlayerState.findOne({ userId: targetUserId })
                 .select('level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
@@ -412,6 +412,17 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 createdAt: toSafeIsoDate(user?.createdAt),
                 lastActive: toSafeIsoDate(user?.lastActive),
                 role: String(user?.role || 'user'),
+                vipBenefits: {
+                    title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
+                    titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),
+                    avatarFrameUrl: String(user?.vipBenefits?.avatarFrameUrl || '').trim(),
+                    autoSearchEnabled: user?.vipBenefits?.autoSearchEnabled !== false,
+                    autoSearchDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
+                    autoSearchUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
+                    autoBattleTrainerEnabled: user?.vipBenefits?.autoBattleTrainerEnabled !== false,
+                    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
+                    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
+                },
                 isOnline: Boolean(user?.isOnline),
                 playTime: formatPlayTime(user?.createdAt, now),
                 profile,
@@ -437,7 +448,7 @@ router.get('/online', authMiddleware, async (req, res) => {
         const [totalOnline, users] = await Promise.all([
             User.countDocuments({ isOnline: true }),
             User.find({ isOnline: true })
-                .select('username avatar signature createdAt lastActive role isOnline')
+                .select('username avatar signature createdAt lastActive role vipBenefits isOnline')
                 .sort({ createdAt: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -522,6 +533,17 @@ router.get('/online', authMiddleware, async (req, res) => {
             createdAt: toSafeIsoDate(entry?.createdAt),
             lastActive: toSafeIsoDate(entry?.lastActive),
             role: String(entry?.role || 'user'),
+            vipBenefits: {
+                title: String(entry?.vipBenefits?.title || '').trim().slice(0, 80),
+                titleImageUrl: String(entry?.vipBenefits?.titleImageUrl || '').trim(),
+                avatarFrameUrl: String(entry?.vipBenefits?.avatarFrameUrl || '').trim(),
+                autoSearchEnabled: entry?.vipBenefits?.autoSearchEnabled !== false,
+                autoSearchDurationMinutes: Math.max(0, parseInt(entry?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
+                autoSearchUsesPerDay: Math.max(0, parseInt(entry?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
+                autoBattleTrainerEnabled: entry?.vipBenefits?.autoBattleTrainerEnabled !== false,
+                autoBattleTrainerDurationMinutes: Math.max(0, parseInt(entry?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
+                autoBattleTrainerUsesPerDay: Math.max(0, parseInt(entry?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
+            },
             isOnline: Boolean(entry?.isOnline),
             profile: playerStateMap.get(String(entry?._id || '')) || {
                 level: 1,

@@ -32,13 +32,18 @@ import pokemonRoutes from './routes/pokemon.js'
 import partyRoutes from './routes/party.js'
 import inventoryRoutes from './routes/inventory.js'
 import shopRoutes from './routes/shop.js'
+import IpBan from './models/IpBan.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { extractClientIp } from './utils/ipUtils.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
+
+// Trust proxy headers only when explicitly enabled (e.g. behind Cloudflare/Nginx)
+app.set('trust proxy', String(process.env.TRUST_PROXY || '').trim().toLowerCase() === 'true')
 
 // Security middleware
 app.use(helmet())
@@ -62,6 +67,44 @@ app.use(
         credentials: true,
     })
 )
+
+// Rate limiting
+app.use('/api/', async (req, res, next) => {
+    try {
+        const clientIp = extractClientIp(req)
+        if (!clientIp) return next()
+
+        const ipBan = await IpBan.findOne({ ip: clientIp, isActive: true })
+            .select('reason expiresAt')
+            .lean()
+
+        if (!ipBan) return next()
+
+        const expiresAt = ipBan.expiresAt ? new Date(ipBan.expiresAt) : null
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+            await IpBan.updateOne(
+                { ip: clientIp, isActive: true },
+                {
+                    $set: {
+                        isActive: false,
+                        liftedAt: new Date(),
+                        liftedBy: null,
+                    },
+                }
+            )
+            return next()
+        }
+
+        return res.status(403).json({
+            ok: false,
+            code: 'IP_BANNED',
+            message: ipBan.reason || 'IP của bạn đã bị chặn truy cập hệ thống.',
+        })
+    } catch (error) {
+        console.error('IP ban middleware error:', error)
+        return next()
+    }
+})
 
 // Rate limiting
 const limiter = rateLimit({

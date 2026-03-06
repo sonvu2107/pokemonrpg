@@ -227,6 +227,7 @@ router.post('/', async (req, res) => {
             levelMin,
             levelMax,
             isLegendary,
+            isEventMap,
             iconId,
             specialPokemonImages,
             specialPokemonIds,
@@ -304,6 +305,7 @@ router.post('/', async (req, res) => {
             levelMin,
             levelMax,
             isLegendary: isLegendary || false,
+            isEventMap: Boolean(isEventMap),
             iconId: iconId || undefined,
             specialPokemonImages: specialPokemonImages || [],
             specialPokemonIds: normalizedSpecialPokemonIdsFromConfigs,
@@ -342,6 +344,7 @@ router.put('/:id', async (req, res) => {
             levelMin,
             levelMax,
             isLegendary,
+            isEventMap,
             iconId,
             specialPokemonImages,
             specialPokemonIds,
@@ -421,6 +424,7 @@ router.put('/:id', async (req, res) => {
         map.levelMin = levelMin
         map.levelMax = levelMax
         map.isLegendary = isLegendary !== undefined ? isLegendary : map.isLegendary
+        map.isEventMap = isEventMap !== undefined ? Boolean(isEventMap) : map.isEventMap
         map.iconId = iconId !== undefined ? iconId : map.iconId
         map.specialPokemonImages = specialPokemonImages !== undefined ? specialPokemonImages : map.specialPokemonImages
         map.specialPokemonIds = shouldUpdateSpecialPokemonPool

@@ -8,6 +8,21 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        autoSearchEnabled: source?.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+    }
+}
+
 const getAdminUserIds = async () => {
     const admins = await User.find({ role: 'admin' }).select('_id').lean()
     return admins.map((entry) => entry._id)
@@ -165,7 +180,7 @@ router.get('/daily', async (req, res, next) => {
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username avatar')
+                .populate('userId', 'username avatar role vipBenefits')
                 .lean(),
         ])
 
@@ -182,6 +197,8 @@ router.get('/daily', async (req, res, next) => {
             userId: activity.userId?._id || null,
             username: activity.userId?.username || 'Unknown',
             avatar: activity.userId?.avatar || '',
+            role: String(activity?.userId?.role || 'user').trim() || 'user',
+            vipBenefits: normalizeVipBenefits(activity?.userId?.vipBenefits),
             level: activity.userId?._id ? (playerLevelByUserId.get(activity.userId._id.toString()) || 1) : 1,
             searches: activity.searches || 0,
             mapExp: activity.mapExp || 0,
@@ -227,7 +244,7 @@ router.get('/overall', async (req, res, next) => {
                 .sort({ experience: -1, level: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
-                .populate('userId', 'username')
+                .populate('userId', 'username avatar role vipBenefits')
                 .lean(),
         ])
 
@@ -236,6 +253,9 @@ router.get('/overall', async (req, res, next) => {
             rank: skip + index + 1,
             userId: state.userId?._id,
             username: state.userId?.username || 'Unknown',
+            avatar: state.userId?.avatar || '',
+            role: String(state?.userId?.role || 'user').trim() || 'user',
+            vipBenefits: normalizeVipBenefits(state?.userId?.vipBenefits),
             experience: state.experience || 0,
             level: state.level || 1,
         }))
@@ -325,6 +345,8 @@ router.get('/pokemon', async (req, res, next) => {
                             _id: '$owner._id',
                             username: '$owner.username',
                             avatar: '$owner.avatar',
+                            role: '$owner.role',
+                            vipBenefits: '$owner.vipBenefits',
                         },
                     },
                 },
@@ -373,6 +395,8 @@ router.get('/pokemon', async (req, res, next) => {
                     _id: entry.owner?._id || null,
                     username: entry.owner?.username || 'Unknown',
                     avatar: entry.owner?.avatar || '',
+                    role: String(entry?.owner?.role || 'user').trim() || 'user',
+                    vipBenefits: normalizeVipBenefits(entry?.owner?.vipBenefits),
                 },
             }))
 
@@ -477,6 +501,8 @@ router.get('/pokemon', async (req, res, next) => {
             userId: entry._id || null,
             username: entry.user?.username || 'Unknown',
             avatar: entry.user?.avatar || '',
+            role: String(entry?.user?.role || 'user').trim() || 'user',
+            vipBenefits: normalizeVipBenefits(entry?.user?.vipBenefits),
             collectedCount: Math.max(0, Number(entry.collectedCount || 0)),
             totalPokemon: Math.max(0, Number(entry.totalPokemon || 0)),
             completionPercent: normalizedTotalDexEntries > 0

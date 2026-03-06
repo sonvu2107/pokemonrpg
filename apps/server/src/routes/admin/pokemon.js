@@ -1,6 +1,7 @@
 import express from 'express'
 import mongoose from 'mongoose'
 import Pokemon from '../../models/Pokemon.js'
+import PokemonFormVariant from '../../models/PokemonFormVariant.js'
 
 const router = express.Router()
 
@@ -31,6 +32,19 @@ const VALID_TYPES = new Set([
 
 const VALID_RARITIES = new Set(['sss', 'ss', 's', 'a', 'b', 'c', 'd'])
 const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
+const FORM_VARIANT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{0,31}$/
+
+const normalizeFormVariantId = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeFormVariantName = (value = '') => String(value || '').trim()
+
+const toFormVariantResponse = (entry = null) => {
+    if (!entry) return null
+    return {
+        id: String(entry.formId || '').trim().toLowerCase(),
+        name: String(entry.formName || '').trim() || String(entry.formId || '').trim().toLowerCase(),
+        isActive: Boolean(entry.isActive),
+    }
+}
 
 const normalizeBaseStats = (stats) => {
     if (!stats || typeof stats !== 'object') return stats
@@ -511,6 +525,98 @@ router.get('/lookup/moves', async (req, res) => {
         res.json({ ok: true, moves })
     } catch (error) {
         console.error('GET /api/admin/pokemon/lookup/moves error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/admin/pokemon/form-variants - List shared custom form variants
+router.get('/form-variants', async (req, res) => {
+    try {
+        const search = String(req.query.search || '').trim().toLowerCase()
+        const safePage = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const safeLimit = toSafePageLimit(req.query.limit, 200)
+
+        const query = { isActive: true }
+        if (search) {
+            const escaped = escapeRegExp(search)
+            query.$or = [
+                { formId: { $regex: escaped, $options: 'i' } },
+                { formNameLower: { $regex: escaped, $options: 'i' } },
+            ]
+        }
+
+        const skip = (safePage - 1) * safeLimit
+        const [rows, total] = await Promise.all([
+            PokemonFormVariant.find(query)
+                .sort({ formId: 1, _id: 1 })
+                .skip(skip)
+                .limit(safeLimit)
+                .lean(),
+            PokemonFormVariant.countDocuments(query),
+        ])
+
+        res.json({
+            ok: true,
+            formVariants: rows.map((entry) => toFormVariantResponse(entry)).filter(Boolean),
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                pages: Math.max(1, Math.ceil(total / safeLimit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/admin/pokemon/form-variants error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/pokemon/form-variants - Create/update shared form variant
+router.post('/form-variants', async (req, res) => {
+    try {
+        const formId = normalizeFormVariantId(req.body?.formId)
+        const formNameRaw = normalizeFormVariantName(req.body?.formName)
+
+        if (!formId || !FORM_VARIANT_ID_REGEX.test(formId)) {
+            return res.status(400).json({
+                ok: false,
+                message: 'formId không hợp lệ. Chỉ cho phép a-z, 0-9, _, -, tối đa 32 ký tự.',
+            })
+        }
+
+        const formName = formNameRaw || formId
+        const updaterUserId = mongoose.Types.ObjectId.isValid(String(req.user?.userId || ''))
+            ? req.user.userId
+            : null
+
+        const variant = await PokemonFormVariant.findOneAndUpdate(
+            { formId },
+            {
+                $set: {
+                    formId,
+                    formName,
+                    formNameLower: formName.toLowerCase(),
+                    isActive: true,
+                    updatedBy: updaterUserId,
+                },
+                $setOnInsert: {
+                    createdBy: updaterUserId,
+                },
+            },
+            {
+                new: true,
+                upsert: true,
+                setDefaultsOnInsert: true,
+            }
+        ).lean()
+
+        res.json({
+            ok: true,
+            formVariant: toFormVariantResponse(variant),
+            message: `Đã lưu dạng ${formName} (${formId})`,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/pokemon/form-variants error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })

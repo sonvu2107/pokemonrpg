@@ -120,6 +120,14 @@ export default function AdminDashboard() {
                     color: 'orange',
                 },
                 {
+                    permission: ADMIN_PERMISSIONS.USERS,
+                    title: 'Đặc Quyền VIP',
+                    description: 'Tạo VIP 1 -> VIP X và cấu hình quyền lợi',
+                    to: '/admin/vip-privileges',
+                    icon: ICONS.codes,
+                    color: 'amber',
+                },
+                {
                     permission: ADMIN_PERMISSIONS.NEWS,
                     title: 'Tin Tức & Thông Báo',
                     description: 'Quản lý tin tức, sự kiện game và nhật ký',

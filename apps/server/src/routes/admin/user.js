@@ -18,7 +18,12 @@ import Message from '../../models/Message.js'
 import MarketListing from '../../models/MarketListing.js'
 import ItemPurchaseLog from '../../models/ItemPurchaseLog.js'
 import MovePurchaseLog from '../../models/MovePurchaseLog.js'
+import IpBan from '../../models/IpBan.js'
+import VipPrivilegeTier from '../../models/VipPrivilegeTier.js'
+import upload from '../../middleware/upload.js'
+import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, buildMovesForLevel } from '../../utils/movePpUtils.js'
+import { normalizeIpAddress } from '../../utils/ipUtils.js'
 import {
     ADMIN_PERMISSIONS,
     ALL_ADMIN_PERMISSIONS,
@@ -34,6 +39,21 @@ const toSafeLookupLimit = (value, fallback = 200) => Math.min(1000, Math.max(1, 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const isUserCurrentlyBanned = (user) => {
+    if (!user?.isBanned) return false
+    if (!user?.bannedUntil) return true
+    const banUntilMs = new Date(user.bannedUntil).getTime()
+    if (!Number.isFinite(banUntilMs)) return true
+    return banUntilMs > Date.now()
+}
+
+const parseOptionalFutureDate = (value) => {
+    if (value === null || value === undefined || value === '') return null
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+    return date
+}
+
 const resolvePokemonSprite = (pokemonLike) => {
     if (!pokemonLike) return ''
     const forms = Array.isArray(pokemonLike.forms) ? pokemonLike.forms : []
@@ -48,17 +68,141 @@ const resolvePokemonSprite = (pokemonLike) => {
         ''
 }
 
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        autoSearchEnabled: source?.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+    }
+}
+
+const parseNonNegativePercent = (value, fallback = 0) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Number(fallback) || 0)
+    return Math.min(1000, Math.round(parsed * 100) / 100)
+}
+
+const parseNonNegativeInt = (value, fallback = 0, max = 100000) => {
+    const parsed = Number.parseInt(value, 10)
+    if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Number.parseInt(fallback, 10) || 0)
+    return Math.min(max, parsed)
+}
+
+const normalizeVipTierCode = (value = '') => {
+    const raw = String(value || '').trim().toUpperCase()
+    if (!raw) return ''
+    return raw.replace(/\s+/g, '').replace(/[^A-Z0-9_-]/g, '')
+}
+
+const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
+    const source = benefitsLike && typeof benefitsLike === 'object' ? benefitsLike : {}
+    const fallback = fallbackLike && typeof fallbackLike === 'object' ? fallbackLike : {}
+
+    const toCustomBenefits = Array.isArray(source.customBenefits)
+        ? source.customBenefits
+        : (Array.isArray(fallback.customBenefits) ? fallback.customBenefits : [])
+
+    return {
+        title: String(source.title ?? fallback.title ?? '').trim().slice(0, 80),
+        titleImageUrl: String(source.titleImageUrl ?? fallback.titleImageUrl ?? '').trim(),
+        avatarFrameUrl: String(source.avatarFrameUrl ?? fallback.avatarFrameUrl ?? '').trim(),
+        autoSearchEnabled: source.autoSearchEnabled === undefined
+            ? (fallback.autoSearchEnabled !== false)
+            : Boolean(source.autoSearchEnabled),
+        autoSearchDurationMinutes: parseNonNegativeInt(
+            source.autoSearchDurationMinutes ?? fallback.autoSearchDurationMinutes ?? 0,
+            0,
+            10080
+        ),
+        autoSearchUsesPerDay: parseNonNegativeInt(
+            source.autoSearchUsesPerDay ?? fallback.autoSearchUsesPerDay ?? 0,
+            0,
+            100000
+        ),
+        autoBattleTrainerEnabled: source.autoBattleTrainerEnabled === undefined
+            ? (fallback.autoBattleTrainerEnabled !== false)
+            : Boolean(source.autoBattleTrainerEnabled),
+        autoBattleTrainerDurationMinutes: parseNonNegativeInt(
+            source.autoBattleTrainerDurationMinutes ?? fallback.autoBattleTrainerDurationMinutes ?? 0,
+            0,
+            10080
+        ),
+        autoBattleTrainerUsesPerDay: parseNonNegativeInt(
+            source.autoBattleTrainerUsesPerDay ?? fallback.autoBattleTrainerUsesPerDay ?? 0,
+            0,
+            100000
+        ),
+        expBonusPercent: parseNonNegativePercent(source.expBonusPercent ?? fallback.expBonusPercent ?? 0, 0),
+        moonPointBonusPercent: parseNonNegativePercent(source.moonPointBonusPercent ?? fallback.moonPointBonusPercent ?? 0, 0),
+        catchRateBonusPercent: parseNonNegativePercent(source.catchRateBonusPercent ?? fallback.catchRateBonusPercent ?? 0, 0),
+        itemDropBonusPercent: parseNonNegativePercent(source.itemDropBonusPercent ?? fallback.itemDropBonusPercent ?? 0, 0),
+        dailyRewardBonusPercent: parseNonNegativePercent(source.dailyRewardBonusPercent ?? fallback.dailyRewardBonusPercent ?? 0, 0),
+        customBenefits: [...new Set(
+            toCustomBenefits
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+                .map((entry) => entry.slice(0, 160))
+        )],
+    }
+}
+
+const buildVipTierResponse = (tierLike) => {
+    const tier = tierLike?.toObject ? tierLike.toObject() : tierLike
+    if (!tier) return null
+
+    return {
+        _id: tier._id,
+        code: normalizeVipTierCode(tier.code),
+        name: String(tier.name || '').trim().slice(0, 80),
+        level: Math.max(1, Number.parseInt(tier.level, 10) || 1),
+        description: String(tier.description || '').trim().slice(0, 500),
+        isActive: Boolean(tier.isActive),
+        benefits: normalizeVipTierBenefits(tier.benefits || {}),
+        createdAt: tier.createdAt,
+        updatedAt: tier.updatedAt,
+    }
+}
+
 const buildUserResponse = (user) => {
     const raw = user?.toObject ? user.toObject() : user
+    if (!raw) return null
+    const { password, recoveryPinHash, ...safeRaw } = raw
     return {
-        ...raw,
-        adminPermissions: getEffectiveAdminPermissions(raw),
+        ...safeRaw,
+        vipTierId: safeRaw?.vipTierId ? String(safeRaw.vipTierId) : null,
+        vipTierLevel: Math.max(0, Number.parseInt(safeRaw?.vipTierLevel, 10) || 0),
+        vipTierCode: String(safeRaw?.vipTierCode || '').trim().toUpperCase(),
+        vipBenefits: normalizeVipBenefits(safeRaw?.vipBenefits),
+        adminPermissions: getEffectiveAdminPermissions(safeRaw),
     }
 }
 
 // GET /api/admin/users - List all users with pagination and search
 router.get('/', async (req, res) => {
     try {
+        await User.updateMany(
+            {
+                isBanned: true,
+                bannedUntil: { $ne: null, $lte: new Date() },
+            },
+            {
+                $set: {
+                    isBanned: false,
+                    banReason: '',
+                    bannedAt: null,
+                    bannedUntil: null,
+                    bannedBy: null,
+                },
+            }
+        )
+
         const { search, page = 1, limit = 20 } = req.query
         const safePage = Math.max(1, parseInt(page, 10) || 1)
         const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
@@ -78,7 +222,7 @@ router.get('/', async (req, res) => {
 
         const [users, total] = await Promise.all([
             User.find(query)
-                .select('-password') // Exclude password field
+                .select('-password -recoveryPinHash')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(safeLimit)
@@ -186,6 +330,524 @@ router.get('/lookup/items', async (req, res) => {
         res.json({ ok: true, items })
     } catch (error) {
         console.error('GET /api/admin/users/lookup/items error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/admin/users/ip-bans - List active IP bans
+router.get('/ip-bans', async (req, res) => {
+    try {
+        const search = String(req.query.search || '').trim().toLowerCase()
+        const safePage = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const safeLimit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20))
+
+        const query = { isActive: true }
+        if (search) {
+            query.ip = { $regex: escapeRegExp(search), $options: 'i' }
+        }
+
+        const skip = (safePage - 1) * safeLimit
+        const [rows, total] = await Promise.all([
+            IpBan.find(query)
+                .sort({ updatedAt: -1, _id: -1 })
+                .skip(skip)
+                .limit(safeLimit)
+                .populate('bannedBy', 'username email')
+                .lean(),
+            IpBan.countDocuments(query),
+        ])
+
+        res.json({
+            ok: true,
+            ipBans: rows,
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                pages: Math.max(1, Math.ceil(total / safeLimit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/admin/users/ip-bans error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/ip-bans - Ban IP
+router.post('/ip-bans', async (req, res) => {
+    try {
+        const ip = normalizeIpAddress(req.body?.ip)
+        const reason = String(req.body?.reason || '').trim()
+        const expiresAt = parseOptionalFutureDate(req.body?.expiresAt)
+
+        if (!ip) {
+            return res.status(400).json({ ok: false, message: 'IP không hợp lệ' })
+        }
+
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+            return res.status(400).json({ ok: false, message: 'Thời gian hết hạn phải ở tương lai' })
+        }
+
+        const banDoc = await IpBan.findOneAndUpdate(
+            { ip },
+            {
+                $set: {
+                    ip,
+                    reason,
+                    isActive: true,
+                    bannedBy: req.user.userId,
+                    bannedAt: new Date(),
+                    expiresAt: expiresAt || null,
+                    liftedAt: null,
+                    liftedBy: null,
+                },
+            },
+            {
+                new: true,
+                upsert: true,
+                setDefaultsOnInsert: true,
+            }
+        )
+
+        res.json({
+            ok: true,
+            ipBan: banDoc,
+            message: `Đã chặn IP ${ip}`,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/ip-bans error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// DELETE /api/admin/users/ip-bans/:banId - Unban IP
+router.delete('/ip-bans/:banId', async (req, res) => {
+    try {
+        const banId = String(req.params.banId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(banId)) {
+            return res.status(400).json({ ok: false, message: 'banId không hợp lệ' })
+        }
+
+        const updated = await IpBan.findByIdAndUpdate(
+            banId,
+            {
+                $set: {
+                    isActive: false,
+                    liftedBy: req.user.userId,
+                    liftedAt: new Date(),
+                },
+            },
+            { new: true }
+        ).lean()
+
+        if (!updated) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy bản ghi IP ban' })
+        }
+
+        res.json({ ok: true, message: `Đã gỡ chặn IP ${updated.ip}` })
+    } catch (error) {
+        console.error('DELETE /api/admin/users/ip-bans/:banId error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/admin/users/vip-tiers - List VIP privilege tiers
+router.post('/vip-tiers/upload-image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ ok: false, message: 'Chưa có tệp ảnh được tải lên' })
+        }
+
+        const { imageUrl, publicId } = await uploadVipAssetImageToCloudinary({
+            buffer: req.file.buffer,
+            mimetype: req.file.mimetype,
+            originalname: req.file.originalname,
+        })
+
+        res.json({
+            ok: true,
+            imageUrl,
+            publicId,
+            message: 'Tải ảnh đặc quyền VIP thành công',
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/vip-tiers/upload-image error:', error)
+        res.status(500).json({ ok: false, message: error.message || 'Tải ảnh thất bại' })
+    }
+})
+
+// GET /api/admin/users/vip-tiers - List VIP privilege tiers
+router.get('/vip-tiers', async (req, res) => {
+    try {
+        const search = String(req.query.search || '').trim()
+        const activeFilterRaw = String(req.query.active || '').trim().toLowerCase()
+
+        const query = {}
+        if (search) {
+            const escaped = escapeRegExp(search)
+            query.$or = [
+                { code: { $regex: escaped, $options: 'i' } },
+                { name: { $regex: escaped, $options: 'i' } },
+                { description: { $regex: escaped, $options: 'i' } },
+            ]
+        }
+
+        if (activeFilterRaw === 'true' || activeFilterRaw === '1') {
+            query.isActive = true
+        } else if (activeFilterRaw === 'false' || activeFilterRaw === '0') {
+            query.isActive = false
+        }
+
+        const tiers = await VipPrivilegeTier.find(query)
+            .sort({ level: 1, code: 1, _id: 1 })
+            .lean()
+
+        res.json({
+            ok: true,
+            vipTiers: tiers.map((tier) => buildVipTierResponse(tier)),
+        })
+    } catch (error) {
+        console.error('GET /api/admin/users/vip-tiers error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/vip-tiers - Create VIP privilege tier
+router.post('/vip-tiers', async (req, res) => {
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {}
+        const level = clamp(parseInt(payload.level, 10) || 1, 1, 9999)
+        const code = normalizeVipTierCode(payload.code || `VIP${level}`)
+        const name = String(payload.name || `VIP ${level}`).trim().slice(0, 80)
+        const description = String(payload.description || '').trim().slice(0, 500)
+        const isActive = payload.isActive === undefined ? true : Boolean(payload.isActive)
+
+        if (!code || !/^[A-Z0-9_-]{2,32}$/.test(code)) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Mã VIP không hợp lệ. Chỉ dùng A-Z, 0-9, _ hoặc - (2-32 ký tự).',
+            })
+        }
+
+        if (!name) {
+            return res.status(400).json({ ok: false, message: 'Tên gói VIP là bắt buộc' })
+        }
+
+        const tier = await VipPrivilegeTier.create({
+            code,
+            name,
+            level,
+            description,
+            isActive,
+            benefits: normalizeVipTierBenefits(payload.benefits || {}),
+            createdBy: req.user.userId,
+            updatedBy: req.user.userId,
+        })
+
+        res.status(201).json({
+            ok: true,
+            vipTier: buildVipTierResponse(tier),
+            message: `Đã tạo gói đặc quyền ${name}`,
+        })
+    } catch (error) {
+        if (error?.code === 11000) {
+            return res.status(409).json({
+                ok: false,
+                message: 'Cấp độ hoặc mã VIP đã tồn tại. Vui lòng dùng giá trị khác.',
+            })
+        }
+        console.error('POST /api/admin/users/vip-tiers error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/vip-tiers/bulk-range - Create VIP range (VIP1..VIPN)
+router.post('/vip-tiers/bulk-range', async (req, res) => {
+    try {
+        const payload = req.body && typeof req.body === 'object' ? req.body : {}
+        const fromLevel = clamp(parseInt(payload.fromLevel, 10) || 1, 1, 9999)
+        const toLevel = clamp(parseInt(payload.toLevel, 10) || fromLevel, 1, 9999)
+        const start = Math.min(fromLevel, toLevel)
+        const end = Math.max(fromLevel, toLevel)
+
+        if ((end - start + 1) > 500) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Mỗi lần chỉ được tạo tối đa 500 cấp VIP',
+            })
+        }
+
+        const existing = await VipPrivilegeTier.find({
+            level: { $gte: start, $lte: end },
+        })
+            .select('level')
+            .lean()
+        const existingLevelSet = new Set(existing.map((entry) => Number(entry.level)))
+
+        const defaultBenefits = normalizeVipTierBenefits(payload.benefits || {})
+        const docs = []
+        const skippedLevels = []
+
+        for (let level = start; level <= end; level += 1) {
+            if (existingLevelSet.has(level)) {
+                skippedLevels.push(level)
+                continue
+            }
+            docs.push({
+                code: `VIP${level}`,
+                name: `VIP ${level}`,
+                level,
+                description: '',
+                isActive: true,
+                benefits: defaultBenefits,
+                createdBy: req.user.userId,
+                updatedBy: req.user.userId,
+            })
+        }
+
+        let createdCount = 0
+        if (docs.length > 0) {
+            await VipPrivilegeTier.insertMany(docs, { ordered: true })
+            createdCount = docs.length
+        }
+
+        res.json({
+            ok: true,
+            createdCount,
+            skippedCount: skippedLevels.length,
+            skippedLevels,
+            message: `Đã tạo ${createdCount} cấp VIP mới`,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/vip-tiers/bulk-range error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// PUT /api/admin/users/vip-tiers/:tierId - Update VIP privilege tier
+router.put('/vip-tiers/:tierId', async (req, res) => {
+    try {
+        const tierId = String(req.params.tierId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(tierId)) {
+            return res.status(400).json({ ok: false, message: 'tierId không hợp lệ' })
+        }
+
+        const payload = req.body && typeof req.body === 'object' ? req.body : {}
+        const tier = await VipPrivilegeTier.findById(tierId)
+        if (!tier) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy gói VIP' })
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'level')) {
+            tier.level = clamp(parseInt(payload.level, 10) || 1, 1, 9999)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'code')) {
+            const code = normalizeVipTierCode(payload.code)
+            if (!code || !/^[A-Z0-9_-]{2,32}$/.test(code)) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Mã VIP không hợp lệ. Chỉ dùng A-Z, 0-9, _ hoặc - (2-32 ký tự).',
+                })
+            }
+            tier.code = code
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+            tier.name = String(payload.name || '').trim().slice(0, 80)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'description')) {
+            tier.description = String(payload.description || '').trim().slice(0, 500)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'isActive')) {
+            tier.isActive = Boolean(payload.isActive)
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'benefits')) {
+            tier.benefits = normalizeVipTierBenefits(payload.benefits, tier.benefits || {})
+        }
+
+        if (!String(tier.name || '').trim()) {
+            return res.status(400).json({ ok: false, message: 'Tên gói VIP là bắt buộc' })
+        }
+
+        tier.updatedBy = req.user.userId
+        await tier.save()
+
+        res.json({
+            ok: true,
+            vipTier: buildVipTierResponse(tier),
+            message: 'Đã cập nhật gói đặc quyền VIP',
+        })
+    } catch (error) {
+        if (error?.code === 11000) {
+            return res.status(409).json({
+                ok: false,
+                message: 'Cấp độ hoặc mã VIP đã tồn tại. Vui lòng dùng giá trị khác.',
+            })
+        }
+        console.error('PUT /api/admin/users/vip-tiers/:tierId error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// DELETE /api/admin/users/vip-tiers/:tierId - Delete VIP privilege tier
+router.delete('/vip-tiers/:tierId', async (req, res) => {
+    try {
+        const tierId = String(req.params.tierId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(tierId)) {
+            return res.status(400).json({ ok: false, message: 'tierId không hợp lệ' })
+        }
+
+        const deleted = await VipPrivilegeTier.findByIdAndDelete(tierId).lean()
+        if (!deleted) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy gói VIP' })
+        }
+
+        res.json({
+            ok: true,
+            message: `Đã xóa gói ${deleted.name || deleted.code}`,
+        })
+    } catch (error) {
+        console.error('DELETE /api/admin/users/vip-tiers/:tierId error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// PUT /api/admin/users/:id/vip-tier - Assign VIP tier to user
+router.put('/:id/vip-tier', async (req, res) => {
+    try {
+        const targetUserId = String(req.params.id || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+            return res.status(400).json({ ok: false, message: 'id người dùng không hợp lệ' })
+        }
+
+        const payload = req.body && typeof req.body === 'object' ? req.body : {}
+        const tierId = String(payload.tierId || '').trim()
+        const level = parseInt(payload.level, 10)
+        const applyBenefits = payload.applyBenefits !== false
+
+        let tier = null
+        if (tierId) {
+            if (!mongoose.Types.ObjectId.isValid(tierId)) {
+                return res.status(400).json({ ok: false, message: 'tierId không hợp lệ' })
+            }
+            tier = await VipPrivilegeTier.findById(tierId)
+        } else if (Number.isFinite(level) && level > 0) {
+            tier = await VipPrivilegeTier.findOne({ level })
+        } else {
+            return res.status(400).json({ ok: false, message: 'Cần chọn tierId hoặc level VIP hợp lệ' })
+        }
+
+        if (!tier) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy cấp VIP phù hợp' })
+        }
+
+        const user = await User.findById(targetUserId)
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        user.role = 'vip'
+        user.vipTierId = tier._id
+        user.vipTierLevel = Math.max(1, parseInt(tier.level, 10) || 1)
+        user.vipTierCode = normalizeVipTierCode(tier.code)
+
+        if (applyBenefits) {
+            const tierBenefits = normalizeVipTierBenefits(tier.benefits || {})
+            user.vipBenefits = {
+                ...normalizeVipBenefits(user.vipBenefits),
+                ...tierBenefits,
+            }
+        }
+
+        await user.save()
+
+        res.json({
+            ok: true,
+            user: buildUserResponse(user),
+            tier: buildVipTierResponse(tier),
+            message: `Đã gán ${tier.name || tier.code} cho người dùng`,
+        })
+    } catch (error) {
+        console.error('PUT /api/admin/users/:id/vip-tier error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// PUT /api/admin/users/:id/ban - Ban/unban account
+router.put('/:id/ban', async (req, res) => {
+    try {
+        const targetUserId = String(req.params.id || '').trim()
+        const shouldBan = Boolean(req.body?.isBanned)
+        const reason = String(req.body?.reason || '').trim()
+        const bannedUntil = parseOptionalFutureDate(req.body?.bannedUntil)
+
+        if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+            return res.status(400).json({ ok: false, message: 'id người dùng không hợp lệ' })
+        }
+
+        if (shouldBan && String(req.user?.userId || '').trim() === targetUserId) {
+            return res.status(400).json({ ok: false, message: 'Không thể tự khóa chính tài khoản của bạn' })
+        }
+
+        if (shouldBan && bannedUntil && bannedUntil.getTime() <= Date.now()) {
+            return res.status(400).json({ ok: false, message: 'Thời gian hết hạn ban phải ở tương lai' })
+        }
+
+        const user = await User.findById(targetUserId)
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        if (shouldBan && user.role === 'admin') {
+            const remainingAdmins = await User.find({
+                role: 'admin',
+                _id: { $ne: user._id },
+            })
+                .select('isBanned bannedUntil adminPermissions')
+                .lean()
+
+            const activeAdmins = remainingAdmins.filter((entry) => !isUserCurrentlyBanned(entry))
+            if (activeAdmins.length === 0) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Không thể khóa admin cuối cùng của hệ thống',
+                })
+            }
+
+            const activeUsersManagers = activeAdmins.filter((entry) =>
+                hasAdminPermission(entry, ADMIN_PERMISSIONS.USERS)
+            )
+            if (activeUsersManagers.length === 0) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Không thể khóa toàn bộ admin có quyền quản lý người dùng',
+                })
+            }
+        }
+
+        if (shouldBan) {
+            user.isBanned = true
+            user.banReason = reason
+            user.bannedAt = new Date()
+            user.bannedUntil = bannedUntil || null
+            user.bannedBy = req.user.userId
+            user.isOnline = false
+        } else {
+            user.isBanned = false
+            user.banReason = ''
+            user.bannedAt = null
+            user.bannedUntil = null
+            user.bannedBy = null
+        }
+
+        await user.save()
+
+        res.json({
+            ok: true,
+            user: buildUserResponse(user),
+            message: shouldBan ? 'Đã khóa tài khoản người dùng' : 'Đã gỡ khóa tài khoản người dùng',
+        })
+    } catch (error) {
+        console.error('PUT /api/admin/users/:id/ban error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
@@ -453,8 +1115,8 @@ router.put('/:id/role', async (req, res) => {
         const { role } = req.body
 
         // Validation
-        if (!['user', 'admin'].includes(role)) {
-            return res.status(400).json({ ok: false, message: 'Vai trò không hợp lệ. Chỉ chấp nhận "user" hoặc "admin"' })
+        if (!['user', 'vip', 'admin'].includes(role)) {
+            return res.status(400).json({ ok: false, message: 'Vai trò không hợp lệ. Chỉ chấp nhận "user", "vip" hoặc "admin"' })
         }
 
         const user = await User.findById(id)
@@ -464,7 +1126,7 @@ router.put('/:id/role', async (req, res) => {
         }
 
         // Prevent removing the last admin
-        if (user.role === 'admin' && role === 'user') {
+        if (user.role === 'admin' && role !== 'admin') {
             const adminCount = await User.countDocuments({ role: 'admin' })
             if (adminCount <= 1) {
                 return res.status(400).json({
@@ -550,6 +1212,71 @@ router.put('/:id/permissions', async (req, res) => {
         })
     } catch (error) {
         console.error('PUT /api/admin/users/:id/permissions error:', error)
+        res.status(500).json({ ok: false, message: error.message })
+    }
+})
+
+// PUT /api/admin/users/:id/vip-benefits - Update VIP benefits for a user
+router.put('/:id/vip-benefits', async (req, res) => {
+    try {
+        const { id } = req.params
+        const user = await User.findById(id)
+
+        if (!user) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+        }
+
+        if (user.role !== 'vip') {
+            return res.status(400).json({
+                ok: false,
+                message: 'Chỉ có thể cập nhật quyền lợi cho tài khoản VIP',
+            })
+        }
+
+        const currentVipBenefits = normalizeVipBenefits(user.vipBenefits)
+        const incoming = req.body && typeof req.body === 'object' ? req.body : {}
+        const nextVipBenefits = {
+            ...currentVipBenefits,
+        }
+
+        if (Object.prototype.hasOwnProperty.call(incoming, 'title')) {
+            nextVipBenefits.title = String(incoming.title || '').trim().slice(0, 80)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'titleImageUrl')) {
+            nextVipBenefits.titleImageUrl = String(incoming.titleImageUrl || '').trim()
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'avatarFrameUrl')) {
+            nextVipBenefits.avatarFrameUrl = String(incoming.avatarFrameUrl || '').trim()
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoSearchEnabled')) {
+            nextVipBenefits.autoSearchEnabled = Boolean(incoming.autoSearchEnabled)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoSearchDurationMinutes')) {
+            nextVipBenefits.autoSearchDurationMinutes = parseNonNegativeInt(incoming.autoSearchDurationMinutes, 0, 10080)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoSearchUsesPerDay')) {
+            nextVipBenefits.autoSearchUsesPerDay = parseNonNegativeInt(incoming.autoSearchUsesPerDay, 0, 100000)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoBattleTrainerEnabled')) {
+            nextVipBenefits.autoBattleTrainerEnabled = Boolean(incoming.autoBattleTrainerEnabled)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoBattleTrainerDurationMinutes')) {
+            nextVipBenefits.autoBattleTrainerDurationMinutes = parseNonNegativeInt(incoming.autoBattleTrainerDurationMinutes, 0, 10080)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'autoBattleTrainerUsesPerDay')) {
+            nextVipBenefits.autoBattleTrainerUsesPerDay = parseNonNegativeInt(incoming.autoBattleTrainerUsesPerDay, 0, 100000)
+        }
+
+        user.vipBenefits = nextVipBenefits
+        await user.save()
+
+        res.json({
+            ok: true,
+            user: buildUserResponse(user),
+            message: 'Đã cập nhật quyền lợi VIP',
+        })
+    } catch (error) {
+        console.error('PUT /api/admin/users/:id/vip-benefits error:', error)
         res.status(500).json({ ok: false, message: error.message })
     }
 })

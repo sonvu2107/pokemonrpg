@@ -79,6 +79,7 @@ export default function RightColumn() {
         { to: '/admin', label: 'Tổng quan', permission: null },
         { to: '/admin/events', label: 'Quản lý Sự kiện', permission: ADMIN_PERMISSIONS.NEWS },
         { to: '/admin/users', label: 'Quản lý Người Chơi', permission: ADMIN_PERMISSIONS.USERS },
+        { to: '/admin/vip-privileges', label: 'Đặc quyền VIP', permission: ADMIN_PERMISSIONS.USERS },
         { to: '/admin/pokemon', label: 'Quản lý Pokémon', permission: ADMIN_PERMISSIONS.POKEMON },
         { to: '/admin/maps', label: 'Quản lý Bản Đồ', permission: ADMIN_PERMISSIONS.MAPS },
         { to: '/admin/items', label: 'Quản lý Vật Phẩm', permission: ADMIN_PERMISSIONS.ITEMS },

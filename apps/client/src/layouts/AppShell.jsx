@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { api } from "../services/api"
-import { resolveAvatarUrl } from "../utils/avatarUrl"
+import VipAvatar from "../components/VipAvatar"
+import { isVipRole, getVipTitle } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
@@ -61,6 +62,8 @@ export default function AppShell() {
         }
     }, [user?.id, user?.avatar, user?.level])
 
+    const vipTitle = getVipTitle(user)
+
 
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
@@ -95,16 +98,17 @@ export default function AppShell() {
                                         <div className="text-sm font-medium">
                                             {user.username}
                                         </div>
+                                        {vipTitle && (
+                                            <div className="text-[11px] font-bold text-amber-600">
+                                                {vipTitle}
+                                            </div>
+                                        )}
                                         <div className="text-xs">
-                                            {user.role === 'admin' ? (
-                                                <span className="px-1.5 py-0.5 bg-purple-600 rounded text-[10px] text-white font-bold uppercase tracking-wider">
-                                                    ADMIN
+                                            {isVipRole(user) ? (
+                                                <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase tracking-wider">
+                                                    VIP
                                                 </span>
-                                            ) : (
-                                                <span className="text-slate-500 text-[11px] font-medium opacity-80">
-                                                    (Người chơi)
-                                                </span>
-                                            )}
+                                            ) : null}
                                         </div>
                                     </div>
                                     <button
@@ -185,24 +189,30 @@ export default function AppShell() {
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
                                     <div className="flex items-center gap-3 mb-3">
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-b from-blue-100 to-white flex items-center justify-center shadow-md overflow-hidden border-2 border-blue-300 shrink-0 p-0.5">
-                                            <img
-                                                src={resolveAvatarUrl(mobileProfile.avatar, DEFAULT_AVATAR)}
+                                            <VipAvatar
+                                                userLike={user}
+                                                avatar={mobileProfile.avatar}
+                                                fallback={DEFAULT_AVATAR}
                                                 alt="Avatar"
-                                                className="w-full h-full object-contain pixelated"
-                                                onError={(e) => {
-                                                    e.currentTarget.onerror = null
-                                                    e.currentTarget.src = DEFAULT_AVATAR
-                                                }}
+                                                wrapperClassName="w-full h-full"
+                                                imageClassName="w-full h-full object-contain pixelated"
+                                                frameClassName="w-full h-full object-contain"
+                                                loading="eager"
                                             />
                                         </div>
                                         <div>
                                             <div className="font-bold text-slate-800 text-base">{user.username}</div>
                                             <div className="flex gap-2 text-xs">
-                                                {user.role === 'admin' && (
-                                                    <span className="px-1.5 py-0.5 bg-purple-600 rounded text-white font-bold uppercase">ADMIN</span>
+                                                {isVipRole(user) && (
+                                                    <span className="px-1.5 py-0.5 bg-amber-500 rounded text-white font-bold uppercase">VIP</span>
                                                 )}
                                                 <span className="text-slate-500">Level {mobileProfile.level}</span>
                                             </div>
+                                            {vipTitle && (
+                                                <div className="mt-0.5 text-[10px] font-bold text-amber-600 max-w-[180px] truncate">
+                                                    {vipTitle}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

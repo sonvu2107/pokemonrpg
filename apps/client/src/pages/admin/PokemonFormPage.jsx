@@ -35,6 +35,7 @@ const FORM_VARIANTS = [
     { id: 'hyper', name: 'Hyper' },
 ]
 const FORM_VARIANT_NAME_BY_ID = Object.fromEntries(FORM_VARIANTS.map(v => [v.id, v.name]))
+const BUILT_IN_FORM_VARIANT_IDS = new Set(FORM_VARIANTS.map(v => String(v.id || '').trim().toLowerCase()).filter(Boolean))
 const FORM_VARIANT_MODAL_PAGE_SIZE = 12
 
 const RARITY_ALIASES = {
@@ -95,6 +96,66 @@ const resolveDefaultFormId = (formList = [], preferredDefault = 'normal') => {
     return ids[0] || 'normal'
 }
 
+const sanitizeCustomVariants = (variants = []) => {
+    if (!Array.isArray(variants)) return []
+
+    const next = []
+    const seen = new Set()
+
+    variants.forEach((entry) => {
+        const id = normalizeFormId(entry?.id).toLowerCase()
+        if (!id || BUILT_IN_FORM_VARIANT_IDS.has(id) || seen.has(id)) return
+        seen.add(id)
+        next.push({
+            id,
+            name: getVariantDisplayName(id, entry?.name),
+        })
+    })
+
+    return next
+}
+
+const mergeFormVariants = (base = [], incoming = []) => {
+    const next = [...(Array.isArray(base) ? base : [])]
+    const indexById = new Map(
+        next
+            .map((entry, index) => [normalizeFormId(entry?.id).toLowerCase(), index])
+            .filter(([id]) => Boolean(id))
+    )
+
+    ;(Array.isArray(incoming) ? incoming : []).forEach((entry) => {
+        const id = normalizeFormId(entry?.id).toLowerCase()
+        if (!id || BUILT_IN_FORM_VARIANT_IDS.has(id)) return
+        const name = getVariantDisplayName(id, entry?.name)
+        if (indexById.has(id)) {
+            const foundIndex = indexById.get(id)
+            next[foundIndex] = { id, name }
+            return
+        }
+        indexById.set(id, next.length)
+        next.push({ id, name })
+    })
+
+    return next
+}
+
+const extractCustomVariantsFromForms = (formRows = []) => {
+    const variants = []
+    const seen = new Set()
+
+    ;(Array.isArray(formRows) ? formRows : []).forEach((entry) => {
+        const formId = normalizeFormId(entry?.formId).toLowerCase()
+        if (!formId || BUILT_IN_FORM_VARIANT_IDS.has(formId) || seen.has(formId)) return
+        seen.add(formId)
+        variants.push({
+            id: formId,
+            name: getVariantDisplayName(formId, entry?.formName),
+        })
+    })
+
+    return variants
+}
+
 const GROWTH_RATES = ['fast', 'medium_fast', 'medium_slow', 'slow', 'erratic', 'fluctuating']
 
 export default function PokemonFormPage() {
@@ -117,6 +178,7 @@ export default function PokemonFormPage() {
     const [newFormVariantId, setNewFormVariantId] = useState('')
     const [newFormVariantName, setNewFormVariantName] = useState('')
     const [formVariantModalError, setFormVariantModalError] = useState('')
+    const [formVariantSubmitting, setFormVariantSubmitting] = useState(false)
 
     const [defaultFormId, setDefaultFormId] = useState('normal')
     const [forms, setForms] = useState([
@@ -181,6 +243,12 @@ export default function PokemonFormPage() {
         loadData()
     }, [id])
 
+    useEffect(() => {
+        const inferredCustomVariants = extractCustomVariantsFromForms(forms)
+        if (inferredCustomVariants.length === 0) return
+        setCustomFormVariants((prev) => mergeFormVariants(prev, inferredCustomVariants))
+    }, [forms])
+
     const canonicalizeMoveName = (value) => {
         const normalized = String(value || '').trim()
         if (!normalized) return ''
@@ -192,13 +260,15 @@ export default function PokemonFormPage() {
     const loadData = async () => {
         try {
             setLoading(true)
-            // Fetch all pokemon for evolution dropdown + move catalog for autocomplete
-            const [pokemonList, moveLookup] = await Promise.all([
+            // Fetch all pokemon for evolution dropdown + move catalog + shared form variants
+            const [pokemonList, moveLookup, formVariantLookup] = await Promise.all([
                 pokemonApi.list({ limit: 1000 }),
                 pokemonApi.lookupMoves({ limit: 1000 }).catch(() => ({ moves: [] })),
+                pokemonApi.listFormVariants({ limit: 1000 }).catch(() => ({ formVariants: [] })),
             ])
             setAllPokemon(pokemonList.pokemon || [])
             setMoveCatalog(moveLookup.moves || [])
+            setCustomFormVariants(sanitizeCustomVariants(formVariantLookup.formVariants || []))
 
             if (isEdit) {
                 const data = await pokemonApi.getById(id)
@@ -222,6 +292,7 @@ export default function PokemonFormPage() {
                     formId: normalizeFormId(f.formId).toLowerCase(),
                 }))
                 setForms(normalizedForms)
+                setCustomFormVariants((prev) => mergeFormVariants(prev, extractCustomVariantsFromForms(normalizedForms)))
                 setDefaultFormId(resolveDefaultFormId(normalizedForms, pokemon.defaultFormId))
 
                 // Map API data to form state
@@ -497,10 +568,12 @@ export default function PokemonFormPage() {
         setNewFormVariantId('')
         setNewFormVariantName('')
         setFormVariantModalError('')
+        setFormVariantSubmitting(false)
         setShowFormVariantModal(true)
     }
 
-    const closeFormVariantModal = () => {
+    const closeFormVariantModal = (force = false) => {
+        if (!force && formVariantSubmitting) return
         setShowFormVariantModal(false)
         setFormVariantModalTargetIndex(null)
         setFormVariantSearchTerm('')
@@ -508,6 +581,7 @@ export default function PokemonFormPage() {
         setNewFormVariantId('')
         setNewFormVariantName('')
         setFormVariantModalError('')
+        setFormVariantSubmitting(false)
     }
 
     const handleSelectVariantFromModal = (variant) => {
@@ -524,7 +598,7 @@ export default function PokemonFormPage() {
         closeFormVariantModal()
     }
 
-    const handleAddVariantFromModal = () => {
+    const handleAddVariantFromModal = async () => {
         if (selectedFormIndex < 0) return
 
         const normalizedVariantId = normalizeFormId(newFormVariantId).toLowerCase()
@@ -540,21 +614,26 @@ export default function PokemonFormPage() {
             return
         }
 
-        setCustomFormVariants((prev) => {
-            const existingCustomIndex = prev.findIndex((entry) => normalizeFormId(entry?.id).toLowerCase() === normalizedVariantId)
-            if (existingCustomIndex !== -1) {
-                const next = [...prev]
-                next[existingCustomIndex] = { id: normalizedVariantId, name: normalizedVariantName }
-                return next
-            }
-            if (FORM_VARIANTS.some((entry) => normalizeFormId(entry?.id).toLowerCase() === normalizedVariantId)) {
-                return prev
-            }
-            return [...prev, { id: normalizedVariantId, name: normalizedVariantName }]
-        })
+        try {
+            setFormVariantSubmitting(true)
+            setFormVariantModalError('')
 
-        applyPresetToForm(selectedFormIndex, normalizedVariantId, normalizedVariantName)
-        closeFormVariantModal()
+            const response = await pokemonApi.upsertFormVariant({
+                formId: normalizedVariantId,
+                formName: normalizedVariantName,
+            })
+
+            const savedId = normalizeFormId(response?.formVariant?.id || normalizedVariantId).toLowerCase()
+            const savedName = getVariantDisplayName(savedId, response?.formVariant?.name || normalizedVariantName)
+
+            setCustomFormVariants((prev) => mergeFormVariants(prev, [{ id: savedId, name: savedName }]))
+            applyPresetToForm(selectedFormIndex, savedId, savedName)
+            closeFormVariantModal(true)
+        } catch (err) {
+            setFormVariantModalError(err.message || 'Không thể lưu dạng mới vào hệ thống')
+        } finally {
+            setFormVariantSubmitting(false)
+        }
     }
 
     const removeForm = (index) => {
@@ -1007,6 +1086,7 @@ export default function PokemonFormPage() {
                             <button
                                 type="button"
                                 onClick={closeFormVariantModal}
+                                disabled={formVariantSubmitting}
                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -1026,6 +1106,7 @@ export default function PokemonFormPage() {
                                         setFormVariantPage(1)
                                         setFormVariantModalError('')
                                     }}
+                                    disabled={formVariantSubmitting}
                                     placeholder="Nhập tên dạng hoặc formId"
                                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                                 />
@@ -1063,7 +1144,7 @@ export default function PokemonFormPage() {
                                     <button
                                         type="button"
                                         onClick={() => setFormVariantPage((prev) => Math.max(1, prev - 1))}
-                                        disabled={resolvedFormVariantPage <= 1}
+                                        disabled={resolvedFormVariantPage <= 1 || formVariantSubmitting}
                                         className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         Trước
@@ -1074,7 +1155,7 @@ export default function PokemonFormPage() {
                                     <button
                                         type="button"
                                         onClick={() => setFormVariantPage((prev) => Math.min(formVariantTotalPages, prev + 1))}
-                                        disabled={resolvedFormVariantPage >= formVariantTotalPages}
+                                        disabled={resolvedFormVariantPage >= formVariantTotalPages || formVariantSubmitting}
                                         className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         Sau
@@ -1084,6 +1165,9 @@ export default function PokemonFormPage() {
 
                             <div className="rounded border border-cyan-200 bg-cyan-50 p-3">
                                 <div className="text-sm font-bold text-cyan-900 mb-2">Thêm dạng mới</div>
+                                <p className="text-[11px] text-cyan-800 mb-2">
+                                    Dạng mới sẽ được lưu ngay vào database và dùng chung cho các lần tạo/sửa Pokémon sau.
+                                </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <input
                                         type="text"
@@ -1092,6 +1176,7 @@ export default function PokemonFormPage() {
                                             setNewFormVariantId(event.target.value)
                                             setFormVariantModalError('')
                                         }}
+                                        disabled={formVariantSubmitting}
                                         placeholder="formId mới (vd: cosmic)"
                                         className="w-full px-3 py-2 bg-white border border-cyan-200 rounded text-sm"
                                     />
@@ -1102,6 +1187,7 @@ export default function PokemonFormPage() {
                                             setNewFormVariantName(event.target.value)
                                             setFormVariantModalError('')
                                         }}
+                                        disabled={formVariantSubmitting}
                                         placeholder="Tên dạng (vd: Cosmic)"
                                         className="w-full px-3 py-2 bg-white border border-cyan-200 rounded text-sm"
                                     />
@@ -1110,9 +1196,10 @@ export default function PokemonFormPage() {
                                     <button
                                         type="button"
                                         onClick={handleAddVariantFromModal}
+                                        disabled={formVariantSubmitting}
                                         className="px-3 py-2 bg-white border border-cyan-300 text-cyan-700 rounded text-xs font-bold hover:bg-cyan-100"
                                     >
-                                        Thêm và áp dụng dạng mới
+                                        {formVariantSubmitting ? 'Đang lưu vào DB...' : 'Thêm và áp dụng dạng mới'}
                                     </button>
                                 </div>
                             </div>
