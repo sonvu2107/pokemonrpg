@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
+import PokemonTradeDetailModal from '../components/PokemonTradeDetailModal'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -43,6 +44,8 @@ export default function ShopSellPage() {
     const [showPokemonPickerModal, setShowPokemonPickerModal] = useState(false)
     const [pokemonPickerSearchTerm, setPokemonPickerSearchTerm] = useState('')
     const [pokemonPickerPage, setPokemonPickerPage] = useState(1)
+    const [detailPokemon, setDetailPokemon] = useState(null)
+    const [detailTitle, setDetailTitle] = useState('Chi tiết Pokémon')
 
     const activePage = pagination?.active?.page || 1
     const soldPage = pagination?.sold?.page || 1
@@ -176,6 +179,11 @@ export default function ShopSellPage() {
         setShowPokemonPickerModal(false)
     }
 
+    const handleOpenPokemonDetail = (pokemonEntry, title = 'Chi tiết Pokémon') => {
+        setDetailPokemon(pokemonEntry || null)
+        setDetailTitle(title)
+    }
+
     const renderPageButtons = (type) => {
         const pageInfo = pagination?.[type] || { page: 1, totalPages: 1 }
         const totalPages = pageInfo.totalPages || 1
@@ -268,6 +276,13 @@ export default function ShopSellPage() {
                                             )}
                                             <div className="text-slate-600">Cấp độ: {selectedPokemon.level}</div>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenPokemonDetail(selectedPokemon, 'Chi tiết Pokémon muốn bán')}
+                                            className="ml-auto px-2 py-1 text-xs font-bold rounded border border-blue-300 bg-white text-blue-700 hover:bg-blue-50"
+                                        >
+                                            Chi tiết
+                                        </button>
                                     </div>
                                 )}
 
@@ -310,15 +325,27 @@ export default function ShopSellPage() {
                                             activeListings.map((listing) => (
                                                 <tr key={listing.id} className="border-b border-blue-100 hover:bg-blue-50/40">
                                                     <td className="px-1 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
-                                                        <img src={listing.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'} alt={listing.speciesName} className="w-10 h-10 sm:w-14 sm:h-14 object-contain pixelated mx-auto" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenPokemonDetail(listing, 'Chi tiết Pokémon đang bán')}
+                                                            className="rounded hover:bg-blue-50 p-1"
+                                                        >
+                                                            <img src={listing.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'} alt={listing.speciesName} className="w-10 h-10 sm:w-14 sm:h-14 object-contain pixelated mx-auto" />
+                                                        </button>
                                                     </td>
                                                     <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
-                                                        <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
-                                                        {listing.formId && listing.formId !== 'normal' && (
-                                                            <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
-                                                        )}
-                                                        <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
-                                                        <div className="text-[10px] sm:text-xs text-slate-500">Đăng ngày: {formatDate(listing.listedAt)}</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenPokemonDetail(listing, 'Chi tiết Pokémon đang bán')}
+                                                            className="w-full text-center rounded p-1 hover:bg-blue-50"
+                                                        >
+                                                            <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
+                                                            {listing.formId && listing.formId !== 'normal' && (
+                                                                <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
+                                                            )}
+                                                            <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
+                                                            <div className="text-[10px] sm:text-xs text-slate-500">Đăng ngày: {formatDate(listing.listedAt)}</div>
+                                                        </button>
                                                     </td>
                                                     <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center text-sm sm:text-lg font-bold text-slate-800">
                                                         {Number(listing.price || 0).toLocaleString('vi-VN')} xu
@@ -364,15 +391,27 @@ export default function ShopSellPage() {
                                     soldListings.map((listing) => (
                                         <tr key={listing.id} className="border-b border-blue-100 hover:bg-blue-50/40">
                                             <td className="px-1 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
-                                                <img src={listing.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'} alt={listing.speciesName} className="w-10 h-10 sm:w-14 sm:h-14 object-contain pixelated mx-auto" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenPokemonDetail(listing, 'Chi tiết Pokémon đã bán')}
+                                                    className="rounded hover:bg-blue-50 p-1"
+                                                >
+                                                    <img src={listing.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'} alt={listing.speciesName} className="w-10 h-10 sm:w-14 sm:h-14 object-contain pixelated mx-auto" />
+                                                </button>
                                             </td>
                                             <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center">
-                                                <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
-                                                {listing.formId && listing.formId !== 'normal' && (
-                                                    <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
-                                                )}
-                                                <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
-                                                <div className="text-[10px] sm:text-xs text-slate-500">Bán ngày: {formatDate(listing.soldAt || listing.listedAt)}</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenPokemonDetail(listing, 'Chi tiết Pokémon đã bán')}
+                                                    className="w-full text-center rounded p-1 hover:bg-blue-50"
+                                                >
+                                                    <div className="font-bold text-slate-800 text-xs sm:text-sm">{listing.pokemonName}</div>
+                                                    {listing.formId && listing.formId !== 'normal' && (
+                                                        <div className="text-[10px] sm:text-xs text-sky-700 font-bold uppercase">{listing.formName || listing.formId}</div>
+                                                    )}
+                                                    <div className="text-xs sm:text-sm text-slate-600">Lv.{listing.level}</div>
+                                                    <div className="text-[10px] sm:text-xs text-slate-500">Bán ngày: {formatDate(listing.soldAt || listing.listedAt)}</div>
+                                                </button>
                                             </td>
                                             <td className="px-2 sm:px-3 py-2 sm:py-3 border-r border-blue-100 text-center text-sm sm:text-lg font-bold text-slate-800">
                                                 {Number(listing.price || 0).toLocaleString('vi-VN')} xu
@@ -497,6 +536,13 @@ export default function ShopSellPage() {
                     </div>
                 </div>
             )}
+
+            <PokemonTradeDetailModal
+                open={Boolean(detailPokemon)}
+                pokemon={detailPokemon}
+                title={detailTitle}
+                onClose={() => setDetailPokemon(null)}
+            />
         </div>
     )
 }

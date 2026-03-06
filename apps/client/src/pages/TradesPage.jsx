@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
+import PokemonTradeDetailModal from '../components/PokemonTradeDetailModal'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -70,6 +71,7 @@ export default function TradesPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [buyingId, setBuyingId] = useState('')
+    const [detailPokemon, setDetailPokemon] = useState(null)
 
     const [draftType, setDraftType] = useState('all')
     const [draftPokemonName, setDraftPokemonName] = useState('all')
@@ -163,6 +165,10 @@ export default function TradesPage() {
         } finally {
             setBuyingId('')
         }
+    }
+
+    const handleOpenPokemonDetail = (listing) => {
+        setDetailPokemon(listing || null)
     }
 
     return (
@@ -310,29 +316,41 @@ export default function TradesPage() {
                                     listings.map((listing) => (
                                         <tr key={listing.id} className="border-b border-blue-100 hover:bg-blue-50/40">
                                             <td className="px-1 sm:px-3 py-2 sm:py-4 border-r border-blue-100 text-center">
-                                                <img
-                                                    src={getSprite(listing)}
-                                                    alt={listing.speciesName}
-                                                    className="w-12 h-12 sm:w-16 sm:h-16 object-contain pixelated mx-auto"
-                                                    onError={(event) => {
-                                                        event.currentTarget.onerror = null
-                                                        event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                    }}
-                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenPokemonDetail(listing)}
+                                                    className="rounded hover:bg-blue-50 p-1"
+                                                >
+                                                    <img
+                                                        src={getSprite(listing)}
+                                                        alt={listing.speciesName}
+                                                        className="w-12 h-12 sm:w-16 sm:h-16 object-contain pixelated mx-auto"
+                                                        onError={(event) => {
+                                                            event.currentTarget.onerror = null
+                                                            event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                                        }}
+                                                    />
+                                                </button>
                                             </td>
                                             <td className="px-2 sm:px-3 py-2 sm:py-4 border-r border-blue-100 text-center">
-                                                <div className="inline-block px-1 sm:px-2 py-1 rounded bg-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
-                                                    {listing.pokemonName}
-                                                </div>
-                                                {listing.formId && listing.formId !== 'normal' && (
-                                                    <div className="mt-1 text-[10px] sm:text-xs text-sky-700 font-bold uppercase">
-                                                        {listing.formName || listing.formId}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenPokemonDetail(listing)}
+                                                    className="w-full text-center rounded p-1 hover:bg-blue-50"
+                                                >
+                                                    <div className="inline-block px-1 sm:px-2 py-1 rounded bg-slate-100 text-slate-800 font-bold text-xs sm:text-sm">
+                                                        {listing.pokemonName}
                                                     </div>
-                                                )}
-                                                <div className="mt-1 text-xs sm:text-sm font-bold text-slate-700">Cấp độ: {listing.level}</div>
-                                                <div className="text-xs sm:text-sm"><span className="font-bold">Người bán:</span> {listing.seller?.username || 'Không rõ'}</div>
-                                                <div className="text-xs sm:text-sm"><span className="font-bold">OT:</span> {listing.otName || 'Không rõ'}</div>
-                                                <div className="text-[10px] sm:text-xs text-slate-500 mt-1">{formatDate(listing.listedAt)}</div>
+                                                    {listing.formId && listing.formId !== 'normal' && (
+                                                        <div className="mt-1 text-[10px] sm:text-xs text-sky-700 font-bold uppercase">
+                                                            {listing.formName || listing.formId}
+                                                        </div>
+                                                    )}
+                                                    <div className="mt-1 text-xs sm:text-sm font-bold text-slate-700">Cấp độ: {listing.level}</div>
+                                                    <div className="text-xs sm:text-sm"><span className="font-bold">Người bán:</span> {listing.seller?.username || 'Không rõ'}</div>
+                                                    <div className="text-xs sm:text-sm"><span className="font-bold">OT:</span> {listing.otName || 'Không rõ'}</div>
+                                                    <div className="text-[10px] sm:text-xs text-slate-500 mt-1">{formatDate(listing.listedAt)}</div>
+                                                </button>
                                             </td>
                                             <td className="px-2 sm:px-3 py-2 sm:py-4 border-r border-blue-100 text-center text-base sm:text-xl font-bold text-slate-800">
                                                 {Number(listing.price || 0).toLocaleString('vi-VN')} xu
@@ -354,6 +372,13 @@ export default function TradesPage() {
                     </div>
                 </section>
             </div>
+
+            <PokemonTradeDetailModal
+                open={Boolean(detailPokemon)}
+                pokemon={detailPokemon}
+                title="Chi tiết Pokémon trong chợ"
+                onClose={() => setDetailPokemon(null)}
+            />
         </div>
     )
 }
