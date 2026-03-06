@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import newsApi from '../services/newsApi'
+import ArticleContentRenderer, { hasInlineImageInContent } from '../components/ArticleContentRenderer'
 
 const VIEW_OPTIONS = [
     { key: 'notification', label: 'Thông báo' },
@@ -172,6 +173,7 @@ export default function HomePage() {
                 news.map((post) => {
                     const postImages = resolvePostImages(post)
                     const isGuidePost = hasGuideTag(post)
+                    const hasInlineImage = hasInlineImageInContent(post.content)
                     return (
                         <div
                             key={post._id}
@@ -208,8 +210,8 @@ export default function HomePage() {
                                 </span>
                             </div>
                             <div className="p-4 text-slate-700">
-                                <p className="whitespace-pre-wrap">{post.content}</p>
-                                {postImages.length > 0 && (
+                                <ArticleContentRenderer content={post.content} title={post.title} />
+                                {!hasInlineImage && postImages.length > 0 && (
                                     <div className="mt-3">
                                         <div className="relative overflow-hidden rounded border border-blue-100">
                                             <img

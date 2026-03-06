@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import newsApi from '../services/newsApi'
+import ArticleContentRenderer, { hasInlineImageInContent } from '../components/ArticleContentRenderer'
 
 const getTypeLabel = (type) => {
     const labels = {
@@ -42,6 +43,7 @@ export default function NewsDetailPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const postImages = resolvePostImages(post)
+    const hasInlineImage = hasInlineImageInContent(post?.content)
 
     useEffect(() => {
         let cancelled = false
@@ -114,8 +116,8 @@ export default function NewsDetailPage() {
                     </header>
 
                     <div className="p-4 text-slate-700">
-                        <p className="whitespace-pre-wrap">{post.content}</p>
-                        {postImages.length > 0 && (
+                        <ArticleContentRenderer content={post.content} title={post.title} />
+                        {!hasInlineImage && postImages.length > 0 && (
                             <div className="mt-4 space-y-3">
                                 <div className="relative overflow-hidden rounded border border-blue-100">
                                     <img

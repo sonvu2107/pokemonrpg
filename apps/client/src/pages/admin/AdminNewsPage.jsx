@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import newsApi from '../../services/newsApi'
+import ArticleContentRenderer, { hasInlineImageInContent } from '../../components/ArticleContentRenderer'
 import ImageUpload from '../../components/ImageUpload'
 import { mapApi as publicMapApi } from '../../services/mapApi'
 import { mapApi as adminMapApi } from '../../services/adminApi'
@@ -71,6 +72,8 @@ const resolvePostTags = (post) => normalizeTags(post?.tags)
 
 const resolveFilterType = (type) => (type === 'maintenance' ? 'update' : type)
 
+const buildImageMarkdown = (imageUrl, index) => `![anh-${index + 1}](${imageUrl})`
+
 const PAGE_SIZE = 8
 
 export default function AdminNewsPage({ mode = 'all' }) {
@@ -89,6 +92,9 @@ export default function AdminNewsPage({ mode = 'all' }) {
     const [formData, setFormData] = useState(createDefaultFormData(mode === 'events'))
     const [selectedTypeFilter, setSelectedTypeFilter] = useState('all')
     const [currentPage, setCurrentPage] = useState(1)
+    const [showContentPreview, setShowContentPreview] = useState(false)
+    const contentTextareaRef = useRef(null)
+    const pendingSelectionRef = useRef(null)
 
     const isEventManager = mode === 'events'
     const canManageMaps = canAccessAdminModule(ADMIN_PERMISSIONS.MAPS)
@@ -113,6 +119,16 @@ export default function AdminNewsPage({ mode = 'all' }) {
     useEffect(() => {
         setCurrentPage(1)
     }, [selectedTypeFilter, isEventManager])
+
+    useEffect(() => {
+        const pending = pendingSelectionRef.current
+        const textarea = contentTextareaRef.current
+        if (!pending || !textarea) return
+
+        textarea.focus()
+        textarea.setSelectionRange(pending.start, pending.end)
+        pendingSelectionRef.current = null
+    }, [formData.content])
 
     const loadPosts = async () => {
         try {
@@ -219,6 +235,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
 
             setShowForm(false)
             setEditingPost(null)
+            setShowContentPreview(false)
             setFormData(createDefaultFormData(isEventManager))
             loadPosts()
         } catch (error) {
@@ -252,6 +269,146 @@ export default function AdminNewsPage({ mode = 'all' }) {
             console.error('Không thể xóa bài viết:', error)
             alert('Có lỗi xảy ra khi xóa bài viết')
         }
+    }
+
+    const appendUploadedImagesToContent = () => {
+        setFormData((prev) => {
+            const currentContent = String(prev.content || '')
+            const currentTrimmed = currentContent.trimEnd()
+            const urls = normalizeImageUrls(prev.imageUrls)
+                .filter((url) => !currentContent.includes(url))
+
+            if (urls.length === 0) return prev
+
+            const markdownBlock = urls
+                .map((imageUrl, index) => buildImageMarkdown(imageUrl, index))
+                .join('\n')
+
+            return {
+                ...prev,
+                content: currentTrimmed
+                    ? `${currentTrimmed}\n\n${markdownBlock}`
+                    : markdownBlock,
+            }
+        })
+    }
+
+    const applyEditorContentChange = (updater) => {
+        const textarea = contentTextareaRef.current
+
+        setFormData((prev) => {
+            const currentContent = String(prev.content || '')
+            const selectionStart = textarea ? Number(textarea.selectionStart) : currentContent.length
+            const selectionEnd = textarea ? Number(textarea.selectionEnd) : currentContent.length
+
+            const nextState = updater(currentContent, selectionStart, selectionEnd)
+            if (!nextState || typeof nextState.nextContent !== 'string') {
+                return prev
+            }
+
+            const rawStart = Number.isFinite(Number(nextState.selectionStart))
+                ? Number(nextState.selectionStart)
+                : nextState.nextContent.length
+            const rawEnd = Number.isFinite(Number(nextState.selectionEnd))
+                ? Number(nextState.selectionEnd)
+                : rawStart
+            const nextStart = Math.max(0, Math.min(nextState.nextContent.length, rawStart))
+            const nextEnd = Math.max(0, Math.min(nextState.nextContent.length, rawEnd))
+            pendingSelectionRef.current = { start: nextStart, end: nextEnd }
+
+            return {
+                ...prev,
+                content: nextState.nextContent,
+            }
+        })
+    }
+
+    const wrapSelectionWithSyntax = (prefix, suffix = '', placeholder = '') => {
+        applyEditorContentChange((content, start, end) => {
+            const selectedText = content.slice(start, end)
+            const hasSelection = start !== end
+            const innerText = hasSelection ? selectedText : placeholder
+            const insertedText = `${prefix}${innerText}${suffix}`
+            const nextContent = `${content.slice(0, start)}${insertedText}${content.slice(end)}`
+
+            if (hasSelection) {
+                const caret = start + insertedText.length
+                return {
+                    nextContent,
+                    selectionStart: caret,
+                    selectionEnd: caret,
+                }
+            }
+
+            return {
+                nextContent,
+                selectionStart: start + prefix.length,
+                selectionEnd: start + prefix.length + innerText.length,
+            }
+        })
+    }
+
+    const transformSelectionAsList = () => {
+        applyEditorContentChange((content, start, end) => {
+            const fallbackText = 'Mục 1\nMục 2'
+            const selectedText = start === end ? fallbackText : content.slice(start, end)
+            const transformed = selectedText
+                .split('\n')
+                .map((line) => {
+                    const cleaned = String(line || '').trim()
+                    if (!cleaned) return ''
+                    return `- ${cleaned.replace(/^[-*]\s+/, '')}`
+                })
+                .join('\n')
+
+            const replaceStart = start
+            const replaceEnd = end
+            const nextContent = `${content.slice(0, replaceStart)}${transformed}${content.slice(replaceEnd)}`
+            const nextCaret = replaceStart + transformed.length
+
+            return {
+                nextContent,
+                selectionStart: nextCaret,
+                selectionEnd: nextCaret,
+            }
+        })
+    }
+
+    const insertHeading = () => {
+        applyEditorContentChange((content, start, end) => {
+            const selectedText = String(content.slice(start, end) || 'Tiêu đề phụ').trim()
+            const headingText = selectedText.replace(/^#{1,6}\s*/, '')
+            const insertedText = `## ${headingText}`
+            const nextContent = `${content.slice(0, start)}${insertedText}${content.slice(end)}`
+            const nextCaret = start + insertedText.length
+
+            return {
+                nextContent,
+                selectionStart: nextCaret,
+                selectionEnd: nextCaret,
+            }
+        })
+    }
+
+    const insertLinkTemplate = () => {
+        wrapSelectionWithSyntax('[', '](https://)', 'Link mô tả')
+    }
+
+    const insertImageTemplate = () => {
+        const firstUploaded = normalizeImageUrls(formData.imageUrls)[0] || 'https://'
+        applyEditorContentChange((content, start, end) => {
+            const selectedText = String(content.slice(start, end) || 'mo-ta-anh').trim()
+            const insertedText = `![${selectedText}](${firstUploaded})`
+            const nextContent = `${content.slice(0, start)}${insertedText}${content.slice(end)}`
+
+            const urlStart = start + insertedText.indexOf(firstUploaded)
+            const urlEnd = urlStart + firstUploaded.length
+            return {
+                nextContent,
+                selectionStart: urlStart,
+                selectionEnd: urlEnd,
+            }
+        })
     }
 
     const formatDate = (dateString) => {
@@ -291,6 +448,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
     const startIndex = filteredPosts.length === 0 ? 0 : ((safeCurrentPage - 1) * PAGE_SIZE) + 1
     const endIndex = Math.min(filteredPosts.length, safeCurrentPage * PAGE_SIZE)
     const paginatedPosts = filteredPosts.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE)
+    const formPreviewImages = normalizeImageUrls(formData.imageUrls)
 
     return (
         <div className="space-y-4">
@@ -303,6 +461,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                         onClick={() => {
                             setShowForm(!showForm)
                             setEditingPost(null)
+                            setShowContentPreview(false)
                             setFormData(createDefaultFormData(isEventManager))
                         }}
                         className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-700 rounded text-sm font-bold shadow-sm transition-colors"
@@ -328,16 +487,101 @@ export default function AdminNewsPage({ mode = 'all' }) {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">
-                                    Nội dung
-                                </label>
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                    <label className="block text-sm font-bold text-slate-700">
+                                        Nội dung
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowContentPreview((prev) => !prev)}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-blue-300 text-blue-700 bg-white hover:bg-blue-50"
+                                    >
+                                        {showContentPreview ? 'Ẩn xem trước' : 'Xem trước bài'}
+                                    </button>
+                                </div>
+                                <div className="mb-2 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={insertHeading}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Tiêu đề phụ
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => wrapSelectionWithSyntax('**', '**', 'in đậm')}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Đậm
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => wrapSelectionWithSyntax('*', '*', 'in nghiêng')}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Nghiêng
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={transformSelectionAsList}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Danh sách
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={insertLinkTemplate}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Link
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={insertImageTemplate}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Ảnh tại con trỏ
+                                    </button>
+                                </div>
                                 <textarea
+                                    ref={contentTextareaRef}
                                     value={formData.content}
                                     onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                                    rows="6"
+                                    rows="9"
                                     className="w-full px-3 py-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     required
                                 />
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                    Hỗ trợ markdown cơ bản: # ## ###, - danh sách, **đậm**, *nghiêng*, [link](https://...), ![mô tả](url ảnh).
+                                </p>
+                                {showContentPreview && (
+                                    <div className="mt-3 rounded border border-blue-200 bg-white p-3">
+                                        <div className="text-xs font-bold text-blue-700 mb-2">Xem trước nội dung</div>
+                                        {String(formData.content || '').trim() ? (
+                                            <>
+                                                <ArticleContentRenderer content={formData.content} title={formData.title || 'Bài viết'} />
+                                                {!hasInlineImageInContent(formData.content) && formPreviewImages.length > 0 && (
+                                                    <div className="mt-3">
+                                                        <div className="relative overflow-hidden rounded border border-blue-100">
+                                                            <img
+                                                                src={formPreviewImages[0]}
+                                                                alt="Preview"
+                                                                className="w-full max-h-72 object-cover"
+                                                            />
+                                                            {formPreviewImages.length > 1 && (
+                                                                <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">
+                                                                    +{formPreviewImages.length - 1} ảnh
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-xs text-slate-500">Chưa có nội dung để xem trước.</div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -367,6 +611,19 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                     }}
                                     label="Ảnh tin tức (nhiều ảnh)"
                                 />
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={appendUploadedImagesToContent}
+                                        disabled={formPreviewImages.length === 0}
+                                        className="px-2 py-1 text-xs font-bold rounded border border-blue-300 text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Chèn ảnh vào nội dung
+                                    </button>
+                                    <span className="text-[11px] text-slate-500">
+                                        Dùng cú pháp: ![mô tả](url) để chèn ảnh ngay giữa bài.
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -542,6 +799,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                     onClick={() => {
                                         setShowForm(false)
                                         setEditingPost(null)
+                                        setShowContentPreview(false)
                                         setFormData(createDefaultFormData(isEventManager))
                                     }}
                                     className="px-4 py-2 bg-slate-400 hover:bg-slate-500 text-white rounded font-bold shadow-sm transition-colors"
