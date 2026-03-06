@@ -93,35 +93,13 @@ export default function PokedexPage() {
         return types.map((type) => toTitle(type)).join('/')
     }
 
-    const getAlternateForms = (entry) => {
-        const defaultFormId = String(entry?.defaultFormId || 'normal').trim() || 'normal'
-        const forms = Array.isArray(entry?.forms) ? entry.forms : []
-        return forms.filter((form) => {
-            const formId = String(form?.formId || '').trim()
-            return formId && formId !== defaultFormId
-        })
-    }
-
     const pokedexRows = useMemo(() => {
-        return (Array.isArray(pokemon) ? pokemon : []).flatMap((entry) => {
-            const alternates = getAlternateForms(entry)
-            const baseRow = {
-                ...entry,
-                rowKey: `${entry._id}-base`,
-                displayName: entry.name,
-                displaySprite: entry.sprite,
-            }
-
-            const formRows = alternates.map((form) => ({
-                ...entry,
-                rowKey: `${entry._id}-${form.formId}`,
-                got: Boolean(form?.got),
-                displayName: `${entry.name} (${form.formName || toTitle(form.formId)})`,
-                displaySprite: form.sprite || entry.sprite,
-            }))
-
-            return [baseRow, ...formRows]
-        })
+        return (Array.isArray(pokemon) ? pokemon : []).map((entry) => ({
+            ...entry,
+            rowKey: String(entry?._id || `${entry?.speciesId || 'pokemon'}:${entry?.formId || 'normal'}`),
+            displayName: String(entry?.displayName || entry?.name || '').trim() || 'Unknown',
+            displaySprite: String(entry?.displaySprite || entry?.sprite || entry?.imageUrl || '').trim(),
+        }))
     }, [pokemon])
 
     return (
@@ -225,9 +203,12 @@ export default function PokedexPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                pokedexRows.map((entry) => (
+                                pokedexRows.map((entry, index) => {
+                                    const fallbackDexEntryNumber = ((Number(pagination.page || 1) - 1) * Number(pagination.limit || 50)) + index + 1
+                                    const dexEntryNumber = Number(entry.dexEntryNumber || fallbackDexEntryNumber)
+                                    return (
                                     <tr key={entry.rowKey} className="border-b border-slate-300">
-                                        <td className="border-r border-slate-300 text-center py-1">#{entry.pokedexNumber}</td>
+                                        <td className="border-r border-slate-300 text-center py-1">#{dexEntryNumber}</td>
                                         <td className="border-r border-slate-300 text-center py-1">
                                             <img
                                                 src={POKEBALL_ICON}
@@ -251,7 +232,8 @@ export default function PokedexPage() {
                                         </td>
                                         <td className="text-center py-1">{typeLabel(entry.types)}</td>
                                     </tr>
-                                ))
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>

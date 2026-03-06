@@ -519,8 +519,15 @@ export const moveApi = {
 
 // Battle trainer endpoints
 export const battleTrainerApi = {
-    async list() {
-        const res = await fetch(`${API_URL}/admin/battle-trainers`, {
+    async list(params = {}) {
+        const query = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                query.append(key, String(value))
+            }
+        })
+        const queryString = query.toString()
+        const res = await fetch(`${API_URL}/admin/battle-trainers${queryString ? `?${queryString}` : ''}`, {
             headers: getAuthHeader(),
         })
         if (!res.ok) throw new Error('Không thể tải huấn luyện viên battle')

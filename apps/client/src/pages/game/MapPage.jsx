@@ -1,9 +1,35 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { mapApi } from '../../services/mapApi'
 import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
 import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
+
+const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
+
+const getLastEncounterStorageKey = (slug = '') => `${LAST_ENCOUNTER_STORAGE_PREFIX}${String(slug || '').trim().toLowerCase()}`
+
+const buildEncounterSummary = (result = {}) => {
+    const pokemon = result?.pokemon
+    if (!pokemon) return null
+
+    const name = String(pokemon?.name || '').trim() || 'Không rõ'
+    const level = Math.max(1, Number(result?.level || result?.pokemon?.level || 1))
+    const rarity = String(pokemon?.rarity || '').trim().toLowerCase()
+    const resolvedFormId = normalizeFormId(pokemon?.formId || pokemon?.form?.formId || 'normal')
+    const formNameRaw = String(pokemon?.form?.formName || pokemon?.form?.formId || resolvedFormId).trim()
+    const formName = resolvedFormId !== 'normal' ? (formNameRaw || resolvedFormId) : ''
+
+    return {
+        name,
+        level,
+        rarity,
+        formId: resolvedFormId,
+        formName,
+        updatedAt: Date.now(),
+    }
+}
 
 export default function MapPage() {
     const { slug } = useParams()
@@ -33,6 +59,9 @@ export default function MapPage() {
         expToNext: 250,
         totalSearches: 0,
     })
+    const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
+    const searchScrollYRef = useRef(0)
+    const shouldRestoreSearchScrollRef = useRef(false)
     const formattedGold = Number(playerState.platinumCoins || 0).toLocaleString('vi-VN')
     const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
@@ -58,6 +87,29 @@ export default function MapPage() {
     const unlockRemainingLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
 
     useEffect(() => {
+        if (typeof window === 'undefined') {
+            setLastEncounterSummary(null)
+            return
+        }
+
+        try {
+            const raw = window.localStorage.getItem(getLastEncounterStorageKey(slug))
+            if (!raw) {
+                setLastEncounterSummary(null)
+                return
+            }
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object') {
+                setLastEncounterSummary(parsed)
+            } else {
+                setLastEncounterSummary(null)
+            }
+        } catch (_error) {
+            setLastEncounterSummary(null)
+        }
+    }, [slug])
+
+    useEffect(() => {
         loadMapData()
         setLastResult(null)
         setEncounter(null)
@@ -65,6 +117,21 @@ export default function MapPage() {
         setActionMessage('')
         setFeatureNotice('')
     }, [slug])
+
+    useEffect(() => {
+        if (searching || !shouldRestoreSearchScrollRef.current) return
+        if (typeof window === 'undefined') return
+
+        const targetY = Math.max(0, Number(searchScrollYRef.current) || 0)
+        shouldRestoreSearchScrollRef.current = false
+
+        window.requestAnimationFrame(() => {
+            window.scrollTo(0, targetY)
+            window.requestAnimationFrame(() => {
+                window.scrollTo(0, targetY)
+            })
+        })
+    }, [searching, encounter, lastResult])
 
     const loadMapData = async () => {
         try {
@@ -119,6 +186,10 @@ export default function MapPage() {
             return
         }
         try {
+            if (typeof window !== 'undefined') {
+                searchScrollYRef.current = window.scrollY || window.pageYOffset || 0
+                shouldRestoreSearchScrollRef.current = true
+            }
             setSearching(true)
 
             const res = await gameApi.searchMap(slug)
@@ -133,6 +204,20 @@ export default function MapPage() {
 
             setLastResult(res)
             if (res.encountered) {
+                const encounterSummary = buildEncounterSummary(res)
+                if (encounterSummary) {
+                    setLastEncounterSummary(encounterSummary)
+                    if (typeof window !== 'undefined') {
+                        try {
+                            window.localStorage.setItem(
+                                getLastEncounterStorageKey(slug),
+                                JSON.stringify(encounterSummary)
+                            )
+                        } catch (_error) {
+                            // Ignore storage errors in non-critical UI feature
+                        }
+                    }
+                }
                 setEncounter({
                     id: res.encounterId,
                     pokemon: res.pokemon,
@@ -473,7 +558,24 @@ export default function MapPage() {
                             </tr>
                             <tr className="border-b border-slate-300">
                                 <td className="bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Gặp gần nhất:</td>
-                                <td className="px-3 py-1 text-slate-500">-</td>
+                                <td className="px-3 py-1 text-slate-700">
+                                    {lastEncounterSummary ? (
+                                        <span>
+                                            <span className="font-bold text-blue-800">{lastEncounterSummary.name}</span>
+                                            {lastEncounterSummary.formName ? ` (${lastEncounterSummary.formName})` : ''}
+                                            {' '}
+                                            <span className="text-slate-500">Lv {lastEncounterSummary.level}</span>
+                                            {' '}
+                                            {lastEncounterSummary.rarity ? (
+                                                <span className={`font-bold ${getRarityStyle(lastEncounterSummary.rarity).text}`}>
+                                                    [{getRarityStyle(lastEncounterSummary.rarity).label}]
+                                                </span>
+                                            ) : null}
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-500">-</span>
+                                    )}
+                                </td>
                             </tr>
                         </tbody>
                     </table>

@@ -440,24 +440,50 @@ export default function PokemonInfoPage() {
     const previousPokemon = pokemon.evolution?.previousPokemon || null
     const previousSprite = previousPokemon?.sprites?.normal || ''
     const ownerAvatar = String(pokemon.userId?.avatar || '').trim() || DEFAULT_AVATAR
-    const normalizeTrainerLabel = (value = '') => {
+    const parseTrainerOrigin = (value = '') => {
         const raw = String(value || '').trim()
-        if (!raw) return ''
-        const [prefix] = raw.split(':')
-        const token = String(prefix || '').trim().toLowerCase()
-        if (!token) return ''
-        if (token === 'admin_grant' || token === 'system_grant') return 'Hệ thống cấp'
-        return token
-            .split(/[_\-\s]+/)
-            .filter(Boolean)
-            .map((entry) => entry.slice(0, 1).toUpperCase() + entry.slice(1))
-            .join(' ')
+        if (!raw) return { token: '', payload: '' }
+        const [prefix, ...rest] = raw.split(':')
+        return {
+            token: String(prefix || '').trim().toLowerCase(),
+            payload: String(rest.join(':') || '').trim(),
+        }
     }
-    const originalTrainerRaw = String(pokemon.originalTrainer || '').trim()
-    const originalTrainerDisplay = normalizeTrainerLabel(originalTrainerRaw) || pokemon.userId?.username || 'Unknown'
-    const obtainedLabel = originalTrainerRaw
-        ? (String(originalTrainerRaw).toLowerCase().startsWith('admin_grant') ? 'Nhận từ hệ thống' : 'Trao đổi')
-        : 'Bắt hoang dã'
+    const translateOriginPlace = (token = '') => {
+        switch (String(token || '').trim().toLowerCase()) {
+            case 'trade':
+                return 'Trao đổi'
+            case 'daily_checkin':
+                return 'Điểm danh hằng ngày'
+            case 'promo_code':
+                return 'Mã quà tặng'
+            case 'battle_trainer_reward':
+                return 'Thưởng huấn luyện viên'
+            case 'admin_grant':
+            case 'system_grant':
+                return ''
+            default:
+                return 'Bắt hoang dã'
+        }
+    }
+    const translateOriginTrainer = ({ token, payload }) => {
+        const normalizedToken = String(token || '').trim().toLowerCase()
+        if (normalizedToken === 'admin_grant' || normalizedToken === 'system_grant') return ''
+        if (!normalizedToken) {
+            return String(pokemon.userId?.username || '').trim() || 'Không rõ'
+        }
+        if (normalizedToken === 'trade') {
+            return payload || 'Người chơi khác'
+        }
+        if (normalizedToken === 'daily_checkin' || normalizedToken === 'promo_code' || normalizedToken === 'battle_trainer_reward') {
+            return 'Hệ thống'
+        }
+        return payload || String(pokemon.userId?.username || '').trim() || 'Không rõ'
+    }
+    const trainerOrigin = parseTrainerOrigin(pokemon.originalTrainer)
+    const hideOriginInfo = trainerOrigin.token === 'admin_grant' || trainerOrigin.token === 'system_grant'
+    const originalTrainerDisplay = hideOriginInfo ? '' : translateOriginTrainer(trainerOrigin)
+    const obtainedLabel = hideOriginInfo ? '' : translateOriginPlace(trainerOrigin.token)
     const nicknameDisplay = String(pokemon.nickname || '').trim()
     const hasCustomNickname = Boolean(
         nicknameDisplay && nicknameDisplay.toLowerCase() !== String(base.name || '').trim().toLowerCase()
@@ -595,14 +621,14 @@ export default function PokemonInfoPage() {
                         <div className="p-2 text-center text-sm font-bold text-slate-700 flex flex-col items-center">
                             <img
                                 src={ownerAvatar}
-                                alt={pokemon.userId?.username || 'Unknown'}
+                                alt={pokemon.userId?.username || 'Không rõ'}
                                 className="w-10 h-10 rounded-full border border-blue-200 object-cover bg-slate-100 mb-1"
                                 onError={(e) => {
                                     e.currentTarget.onerror = null
                                     e.currentTarget.src = DEFAULT_AVATAR
                                 }}
                             />
-                            <span className="text-blue-600">{pokemon.userId?.username || 'Unknown'}</span>
+                            <span className="text-blue-600">{pokemon.userId?.username || 'Không rõ'}</span>
                             <span className="text-[10px] text-slate-400">ID: {pokemon.userId?._id?.slice(-8).toUpperCase()}</span>
                         </div>
                     </div>

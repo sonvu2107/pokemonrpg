@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
-import { resolveAvatarUrl } from '../utils/avatarUrl'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
 
-const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
         {title}
@@ -23,8 +21,8 @@ export default function PokemonRankingsPage() {
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: '/rankings/pokemon' })
 
     const isPowerMode = rankingMode === 'power'
-    const pageTitle = isPowerMode ? 'BXH Lực Chiến Pokémon' : 'BXH Thu Thập Pokémon'
-    const sectionTitle = isPowerMode ? 'Xếp Hạng Lực Chiến Pokémon' : 'Xếp Hạng Sưu Tập Pokémon'
+    const pageTitle = isPowerMode ? 'BXH Lực Chiến Pokémon' : 'BXH Pokédex'
+    const sectionTitle = isPowerMode ? 'Xếp Hạng Lực Chiến Pokémon' : 'Xếp Hạng Pokédex'
 
     useEffect(() => {
         setCurrentPage(1)
@@ -41,7 +39,7 @@ export default function PokemonRankingsPage() {
             const data = await gameApi.getPokemonRankings({ page, limit: 35, mode: rankingMode })
             setRankings(Array.isArray(data.rankings) ? data.rankings : [])
             setPagination(data.pagination || null)
-            setTotalSpecies(Math.max(0, Number(data.totalSpecies || 0)))
+            setTotalSpecies(Math.max(0, Number((data.totalDexEntries ?? data.totalSpecies) || 0)))
         } catch (err) {
             setError(err.message || 'Không thể tải bảng xếp hạng Pokémon')
         } finally {
@@ -167,14 +165,14 @@ export default function PokemonRankingsPage() {
                 <SectionHeader title={sectionTitle} />
                 <div className="overflow-x-auto">
                     {isPowerMode ? (
-                        <table className="w-full text-sm sm:text-base">
+                        <table className="w-full table-fixed text-sm sm:text-base">
                             <thead>
                                 <tr className="bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold">
-                                    <th className="px-3 py-2 text-left w-20 border-r border-slate-400">Hạng</th>
-                                    <th className="px-3 py-2 text-left border-r border-slate-400">Pokémon</th>
-                                    <th className="px-3 py-2 text-right w-40 border-r border-slate-400">Lực Chiến</th>
-                                    <th className="px-3 py-2 text-right w-28 border-r border-slate-400">Cấp</th>
-                                    <th className="px-3 py-2 text-left w-56">Người Chơi</th>
+                                    <th className="px-2 py-2 text-left w-[10%] border-r border-slate-400">Hạng</th>
+                                    <th className="px-2 py-2 text-left w-[42%] border-r border-slate-400">Pokémon</th>
+                                    <th className="px-2 py-2 text-right w-[16%] border-r border-slate-400">Lực Chiến</th>
+                                    <th className="px-2 py-2 text-right w-[8%] border-r border-slate-400">Cấp</th>
+                                    <th className="px-2 py-2 text-left w-[24%]">Người Chơi</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -192,41 +190,32 @@ export default function PokemonRankingsPage() {
                                         const combatPower = resolveCombatPower(entry)
                                         return (
                                             <tr key={`${detailId || 'unknown'}-${entry.rank}`} className="border-b border-slate-200 hover:bg-blue-50 transition-colors">
-                                                <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
-                                                <td className="px-3 py-3 border-r border-slate-200">
-                                                    <div className="flex items-center gap-2">
+                                                <td className="px-2 py-2.5 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
+                                                <td className="px-2 py-2.5 border-r border-slate-200">
+                                                    <div className="flex items-center gap-2 min-w-0">
                                                         <Link to={`/pokemon/${detailId}`}>
                                                             <img
                                                                 src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
                                                                 alt={displayName}
-                                                                className="w-12 h-12 object-contain pixelated"
+                                                                className="w-14 h-14 sm:w-16 sm:h-16 object-contain pixelated"
                                                             />
                                                         </Link>
-                                                        <div>
-                                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline">
+                                                        <div className="min-w-0 flex-1">
+                                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline block truncate">
                                                                 {displayName}
                                                             </Link>
                                                             <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-3 py-3 text-right font-extrabold text-rose-700 border-r border-slate-200">
+                                                <td className="px-2 py-2.5 text-right font-extrabold text-rose-700 border-r border-slate-200">
                                                     {numberFormat(combatPower)}
                                                 </td>
-                                                <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">
+                                                <td className="px-2 py-2.5 text-right font-bold text-slate-700 border-r border-slate-200">
                                                     {numberFormat(entry.level)}
                                                 </td>
-                                                <td className="px-3 py-3">
+                                                <td className="px-2 py-2.5">
                                                     <div className="flex items-center gap-2">
-                                                        <img
-                                                            src={resolveAvatarUrl(entry.owner?.avatar, DEFAULT_AVATAR)}
-                                                            className="w-8 h-8 rounded object-cover border border-slate-300"
-                                                            alt={entry.owner?.username || 'Người Chơi'}
-                                                            onError={(event) => {
-                                                                event.currentTarget.onerror = null
-                                                                event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                                            }}
-                                                        />
                                                         <button
                                                             type="button"
                                                             disabled={!hasProfile}
@@ -235,7 +224,7 @@ export default function PokemonRankingsPage() {
                                                                 username: entry.owner?.username,
                                                                 avatar: entry.owner?.avatar,
                                                             }, { returnTo: '/rankings/pokemon' })}
-                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
+                                                            className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
                                                         >
                                                             {entry.owner?.username || 'Không rõ'}
                                                         </button>
@@ -253,7 +242,7 @@ export default function PokemonRankingsPage() {
                                 <tr className="bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold">
                                     <th className="px-3 py-2 text-left w-20 border-r border-slate-400">Hạng</th>
                                     <th className="px-3 py-2 text-left border-r border-slate-400">Người Chơi</th>
-                                    <th className="px-3 py-2 text-right w-52 border-r border-slate-400">Pokemon / Tổng số</th>
+                                    <th className="px-3 py-2 text-right w-52 border-r border-slate-400">Pokédex / Cá thể</th>
                                     <th className="px-3 py-2 text-right w-40">Hoàn Thành</th>
                                 </tr>
                             </thead>
@@ -275,15 +264,6 @@ export default function PokemonRankingsPage() {
                                                 <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
                                                 <td className="px-3 py-3 border-r border-slate-200">
                                                     <div className="flex items-center gap-3">
-                                                        <img
-                                                            src={resolveAvatarUrl(entry.avatar, DEFAULT_AVATAR)}
-                                                            className="w-10 h-10 rounded object-cover border border-slate-300"
-                                                            alt={entry.username || 'Người Chơi'}
-                                                            onError={(event) => {
-                                                                event.currentTarget.onerror = null
-                                                                event.currentTarget.src = resolveAvatarUrl('', DEFAULT_AVATAR)
-                                                            }}
-                                                        />
                                                         <button
                                                             type="button"
                                                             disabled={!hasProfile}
@@ -299,9 +279,9 @@ export default function PokemonRankingsPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right font-bold text-slate-700 border-r border-slate-200">
-                                                    <div>Pokemon: {numberFormat(collectedCount)}{totalSpecies > 0 ? `/${numberFormat(totalSpecies)}` : ''}</div>
+                                                    <div>Pokédex: {numberFormat(collectedCount)}{totalSpecies > 0 ? `/${numberFormat(totalSpecies)}` : ''}</div>
                                                     <div className="text-xs font-medium text-slate-500">
-                                                        Tổng số đã có: {numberFormat(totalPokemon)}
+                                                        Cá thể đã có: {numberFormat(totalPokemon)}
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-3 text-right">

@@ -123,6 +123,24 @@ const calcPokemonCombatPower = (entry) => {
     return toSafePositiveInt(rawPower * shinyBonus, 1)
 }
 
+const countDexEntriesForSpecies = (species = {}) => {
+    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const uniqueFormIds = new Set([defaultFormId])
+    for (const form of forms) {
+        const normalizedFormId = normalizeFormId(form?.formId || defaultFormId)
+        if (normalizedFormId) uniqueFormIds.add(normalizedFormId)
+    }
+    return Math.max(1, uniqueFormIds.size)
+}
+
+const getTotalDexEntries = async () => {
+    const speciesRows = await Pokemon.find({})
+        .select('defaultFormId forms')
+        .lean()
+    return speciesRows.reduce((total, species) => total + countDexEntriesForSpecies(species), 0)
+}
+
 // GET /api/rankings/daily - Daily rankings by searches/map exp/moon points
 router.get('/daily', async (req, res, next) => {
     try {
@@ -373,14 +391,39 @@ router.get('/pokemon', async (req, res, next) => {
             })
         }
 
-        const [rows, totalUsers, totalSpecies] = await Promise.all([
+        const [rows, totalUsers, totalDexEntries] = await Promise.all([
             UserPokemon.aggregate([
                 { $match: baseMatch },
                 {
                     $group: {
                         _id: '$userId',
                         totalPokemon: { $sum: 1 },
-                        uniquePokemonIds: { $addToSet: '$pokemonId' },
+                        uniqueDexEntryKeys: {
+                            $addToSet: {
+                                $let: {
+                                    vars: {
+                                        rawFormId: {
+                                            $toLower: {
+                                                $ifNull: ['$formId', 'normal'],
+                                            },
+                                        },
+                                    },
+                                    in: {
+                                        $concat: [
+                                            { $toString: '$pokemonId' },
+                                            ':',
+                                            {
+                                                $cond: [
+                                                    { $eq: ['$$rawFormId', ''] },
+                                                    'normal',
+                                                    '$$rawFormId',
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
                 {
@@ -388,7 +431,7 @@ router.get('/pokemon', async (req, res, next) => {
                         totalPokemon: 1,
                         collectedCount: {
                             $size: {
-                                $ifNull: ['$uniquePokemonIds', []],
+                                $ifNull: ['$uniqueDexEntryKeys', []],
                             },
                         },
                     },
@@ -422,12 +465,12 @@ router.get('/pokemon', async (req, res, next) => {
                     $count: 'total',
                 },
             ]).allowDiskUse(true),
-            Pokemon.countDocuments(),
+            getTotalDexEntries(),
         ])
 
         const normalizedTotalUsers = Math.max(0, Number(totalUsers?.[0]?.total || 0))
         const totalPages = Math.max(1, Math.ceil(normalizedTotalUsers / limit))
-        const normalizedTotalSpecies = Math.max(0, Number(totalSpecies || 0))
+        const normalizedTotalDexEntries = Math.max(0, Number(totalDexEntries || 0))
 
         const rankings = rows.map((entry, index) => ({
             rank: skip + index + 1,
@@ -436,8 +479,8 @@ router.get('/pokemon', async (req, res, next) => {
             avatar: entry.user?.avatar || '',
             collectedCount: Math.max(0, Number(entry.collectedCount || 0)),
             totalPokemon: Math.max(0, Number(entry.totalPokemon || 0)),
-            completionPercent: normalizedTotalSpecies > 0
-                ? Math.round((Math.max(0, Number(entry.collectedCount || 0)) / normalizedTotalSpecies) * 100)
+            completionPercent: normalizedTotalDexEntries > 0
+                ? Math.round((Math.max(0, Number(entry.collectedCount || 0)) / normalizedTotalDexEntries) * 100)
                 : 0,
         }))
 
@@ -445,7 +488,8 @@ router.get('/pokemon', async (req, res, next) => {
             ok: true,
             mode: rankingMode,
             rankings,
-            totalSpecies: normalizedTotalSpecies,
+            totalSpecies: normalizedTotalDexEntries,
+            totalDexEntries: normalizedTotalDexEntries,
             pagination: {
                 currentPage: page,
                 totalPages,
