@@ -219,16 +219,7 @@ const resolveMovePowerForDisplay = (entry, name = '') => {
 }
 const normalizeMoveNameKey = (value = '') => String(value || '').trim().toLowerCase()
 const getBattlePokemonDisplayName = (pokemon) => pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon'
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon?.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter((entry) => Number.isFinite(entry?.level) && entry.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map((entry) => String(entry?.moveName || '').trim())
-        .filter(Boolean)
-    return learned.slice(-4)
-}
-const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
+const mergeBattleMoveNames = (moves = []) => {
     const explicit = (Array.isArray(moves) ? moves : [])
         .map((entry) => {
             if (typeof entry === 'string') {
@@ -246,19 +237,7 @@ const mergeBattleMoveNames = (moves = [], pokemon = null, level = 1) => {
         })
         .filter(Boolean)
 
-    if (explicit.length >= 4) return explicit.slice(0, 4)
-    const merged = [...explicit]
-    const knownSet = new Set(explicit.map((entry) => normalizeMoveNameKey(entry?.name || '')))
-    const fallback = buildMovesForLevel(pokemon, level)
-    for (const moveName of fallback) {
-        const key = normalizeMoveNameKey(moveName)
-        if (!key || knownSet.has(key)) continue
-        merged.push({ name: moveName })
-        knownSet.add(key)
-        if (merged.length >= 4) break
-    }
-
-    return merged.slice(0, 4)
+    return explicit.slice(0, 4)
 }
 const normalizeMoveList = (moves = []) => {
     const struggleMove = {
@@ -419,11 +398,7 @@ const buildBattlePlans = ({ moves = [], playerTypes = [], targetTypes = [] } = {
 }
 
 const buildRefilledBattleMoves = (pokemonSlot = null) => {
-    const mergedMoves = mergeBattleMoveNames(
-        pokemonSlot?.moves || [],
-        pokemonSlot?.pokemonId,
-        Number(pokemonSlot?.level) || 1
-    )
+    const mergedMoves = mergeBattleMoveNames(pokemonSlot?.moves || [])
 
     const refilledMoves = normalizeMoveList(mergedMoves)
         .filter((entry) => normalizeMoveNameKey(entry?.name) !== 'struggle')
@@ -525,13 +500,7 @@ const ActiveBattleView = ({
         statusTurns: Number.isFinite(Number(activePokemon?.statusTurns)) ? Math.max(0, Math.floor(Number(activePokemon.statusTurns))) : 0,
         damageGuards: activePokemon?.damageGuards || {},
         volatileState: activePokemon?.volatileState || {},
-        moves: normalizeMoveList(
-            mergeBattleMoveNames(
-                activePokemon.moves || [],
-                activePokemon.pokemonId,
-                Number(activePokemon.level) || 1
-            )
-        ),
+        moves: normalizeMoveList(mergeBattleMoveNames(activePokemon.moves || [])),
     } : null
 
     const activeOpponent = opponent?.team?.[opponent.currentIndex || 0] || null
@@ -1492,13 +1461,7 @@ export function BattlePage() {
         const activeSlot = party[battlePlayerIndex] || party.find((slot) => Boolean(slot)) || null
         if (!activeSlot) return null
 
-        const normalizedMoves = normalizeMoveList(
-            mergeBattleMoveNames(
-                activeSlot.moves || [],
-                activeSlot.pokemonId,
-                Number(activeSlot.level) || 1
-            )
-        )
+        const normalizedMoves = normalizeMoveList(mergeBattleMoveNames(activeSlot.moves || []))
 
         if (normalizedMoves.length === 0) return null
 
@@ -2499,7 +2462,7 @@ export function BattlePage() {
 
             const targetMoves = Array.isArray(targetPokemon?.moveDetails) && targetPokemon.moveDetails.length > 0
                 ? targetPokemon.moveDetails
-                : mergeBattleMoveNames(targetPokemon?.moves || [], targetSpecies, targetLevel)
+                : mergeBattleMoveNames(targetPokemon?.moves || [])
             const defenderMoves = normalizeMoveList(
                 (Array.isArray(targetMoves) ? targetMoves : []).map((entry) => {
                     const maxPp = Number(entry?.maxPp ?? entry?.pp)

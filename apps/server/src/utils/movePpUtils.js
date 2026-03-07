@@ -2,31 +2,6 @@ import Move from '../models/Move.js'
 
 export const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
 
-const normalizeTypeToken = (value = '') => String(value || '').trim().toLowerCase()
-
-const normalizePokemonTypes = (types = []) => {
-    const entries = Array.isArray(types) ? types : []
-    return [...new Set(entries.map((entry) => normalizeTypeToken(entry)).filter(Boolean))]
-}
-
-const queryEmergencyMoves = async ({ typePool = [], limit = 24 } = {}) => {
-    const normalizedTypePool = [...new Set((Array.isArray(typePool) ? typePool : []).map((entry) => normalizeTypeToken(entry)).filter(Boolean))]
-    if (normalizedTypePool.length === 0) return []
-
-    return Move.find({
-        isActive: true,
-        category: { $in: ['physical', 'special'] },
-        power: { $gt: 0 },
-        accuracy: { $gte: 70 },
-        pp: { $gte: 5 },
-        type: { $in: normalizedTypePool },
-    })
-        .sort({ power: -1, accuracy: -1, priority: -1, pp: -1, _id: 1 })
-        .limit(Math.max(1, Math.floor(Number(limit) || 24)))
-        .select('name type')
-        .lean()
-}
-
 const toMoveName = (entry) => {
     if (typeof entry === 'string') return String(entry || '').trim()
     return String(entry?.moveName || entry?.name || '').trim()
@@ -42,75 +17,13 @@ export const buildMovesForLevel = (pokemon, level) => {
     return learned.slice(-4)
 }
 
-export const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
+export const mergeKnownMovesWithFallback = (moves = []) => {
     const explicitMoves = (Array.isArray(moves) ? moves : [])
         .map((entry) => toMoveName(entry))
         .map((entry) => String(entry || '').trim())
         .filter(Boolean)
 
-    if (explicitMoves.length >= 4) {
-        return explicitMoves.slice(0, 4)
-    }
-
-    const merged = [...explicitMoves]
-    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
-    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
-
-    for (const fallbackMove of fallbackMoves) {
-        const key = normalizeMoveName(fallbackMove)
-        if (!key || knownSet.has(key)) continue
-        merged.push(fallbackMove)
-        knownSet.add(key)
-        if (merged.length >= 4) break
-    }
-
-    return merged.slice(0, 4)
-}
-
-const buildEmergencyMovesForSpecies = async (pokemonSpecies = null) => {
-    const speciesTypes = normalizePokemonTypes(pokemonSpecies?.types)
-    const typedDocs = await queryEmergencyMoves({
-        typePool: speciesTypes,
-        limit: 24,
-    })
-    const normalDocs = await queryEmergencyMoves({
-        typePool: ['normal'],
-        limit: 24,
-    })
-    const docs = [...typedDocs, ...normalDocs]
-
-    const sameTypeMoves = docs.filter((entry) => speciesTypes.includes(normalizeTypeToken(entry?.type)))
-    const mixedPool = [...sameTypeMoves, ...docs]
-    const selected = []
-    const selectedKeys = new Set()
-
-    for (const entry of mixedPool) {
-        const moveName = String(entry?.name || '').trim()
-        const key = normalizeMoveName(moveName)
-        if (!key || selectedKeys.has(key)) continue
-        selected.push(moveName)
-        selectedKeys.add(key)
-        if (selected.length >= 4) break
-    }
-
-    if (selected.length > 0) return selected
-
-    const globalFallbackDocs = await Move.find({
-        isActive: true,
-        category: { $in: ['physical', 'special'] },
-        power: { $gt: 0 },
-        accuracy: { $gte: 70 },
-        pp: { $gte: 5 },
-    })
-        .sort({ power: -1, accuracy: -1, priority: -1, pp: -1, _id: 1 })
-        .limit(4)
-        .select('name')
-        .lean()
-
-    return globalFallbackDocs
-        .map((entry) => String(entry?.name || '').trim())
-        .filter(Boolean)
-        .slice(0, 4)
+    return explicitMoves.slice(0, 4)
 }
 
 export const buildMoveLookupByName = async (moveNames = []) => {
@@ -213,7 +126,7 @@ const isPpStateEqual = (left = [], right = []) => {
     return true
 }
 
-export const syncUserPokemonMovesAndPp = async (userPokemon, { pokemonSpecies = null, level = null } = {}) => {
+export const syncUserPokemonMovesAndPp = async (userPokemon) => {
     if (!userPokemon) {
         return {
             moves: [],
@@ -222,12 +135,7 @@ export const syncUserPokemonMovesAndPp = async (userPokemon, { pokemonSpecies = 
         }
     }
 
-    const resolvedLevel = Math.max(1, Number(level ?? userPokemon.level) || 1)
-    const resolvedSpecies = pokemonSpecies || userPokemon.pokemonId || null
-    let nextMoves = mergeKnownMovesWithFallback(userPokemon.moves, resolvedSpecies, resolvedLevel)
-    if (nextMoves.length === 0) {
-        nextMoves = await buildEmergencyMovesForSpecies(resolvedSpecies)
-    }
+    const nextMoves = mergeKnownMovesWithFallback(userPokemon.moves)
     const moveLookupMap = await buildMoveLookupByName(nextMoves)
     const nextMovePpState = buildMovePpStateFromMoves({
         moveNames: nextMoves,

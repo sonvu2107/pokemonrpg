@@ -27,7 +27,7 @@ const serializePartyPokemon = ({ entry, moveLookupMap }) => {
     const plainEntry = entry.toObject()
     plainEntry.stats = stats
 
-    const mergedMoveNames = mergeKnownMovesWithFallback(plainEntry.moves, base, entry.level)
+    const mergedMoveNames = mergeKnownMovesWithFallback(plainEntry.moves)
     const movePpState = buildMovePpStateFromMoves({
         moveNames: mergedMoveNames,
         movePpState: plainEntry.movePpState,
@@ -60,7 +60,7 @@ router.get('/', async (req, res) => {
             .sort({ partyIndex: 1 })
 
         const allMoveNames = party
-            .map((entry) => mergeKnownMovesWithFallback(entry.moves, entry.pokemonId, entry.level))
+            .map((entry) => mergeKnownMovesWithFallback(entry.moves))
             .flat()
         const moveLookupMap = await buildMoveLookupByName(allMoveNames)
 

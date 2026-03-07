@@ -462,10 +462,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             let restoredPpMoves = []
 
             if (targetPokemon && totalPpHeal > 0) {
-                await syncUserPokemonMovesAndPp(targetPokemon, {
-                    pokemonSpecies: targetPokemon.pokemonId,
-                    level: targetPokemon.level,
-                })
+                await syncUserPokemonMovesAndPp(targetPokemon)
 
                 const normalizedTargetMove = normalizeMoveName(moveName)
                 const nextMovePpState = (Array.isArray(targetPokemon.movePpState) ? targetPokemon.movePpState : [])

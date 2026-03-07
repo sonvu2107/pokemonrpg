@@ -22,7 +22,6 @@ import IpBan from '../../models/IpBan.js'
 import VipPrivilegeTier from '../../models/VipPrivilegeTier.js'
 import upload from '../../middleware/upload.js'
 import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
-import { buildMoveLookupByName, buildMovePpStateFromMoves, buildMovesForLevel } from '../../utils/movePpUtils.js'
 import { normalizeIpAddress } from '../../utils/ipUtils.js'
 import {
     ADMIN_PERMISSIONS,
@@ -1008,7 +1007,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
         const [targetUser, pokemon] = await Promise.all([
             User.findById(targetUserId).select('username').lean(),
             Pokemon.findById(pokemonId)
-                .select('name defaultFormId forms levelUpMoves')
+                .select('name defaultFormId forms')
                 .lean(),
         ])
 
@@ -1033,13 +1032,6 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             ? normalizedRequestedFormId
             : (availableForms.has(defaultFormId) ? defaultFormId : 'normal')
 
-        const moves = buildMovesForLevel(pokemon, safeLevel)
-        const moveLookupMap = await buildMoveLookupByName(moves)
-        const movePpState = buildMovePpStateFromMoves({
-            moveNames: moves,
-            movePpState: [],
-            moveLookupMap,
-        })
         const docs = Array.from({ length: safeQuantity }, () => ({
             userId: targetUserId,
             pokemonId,
@@ -1048,8 +1040,8 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             formId: resolvedFormId,
             isShiny: Boolean(isShiny),
             location: 'box',
-            moves,
-            movePpState,
+            moves: [],
+            movePpState: [],
             originalTrainer: `admin_grant:${req.user.userId}`,
         }))
 

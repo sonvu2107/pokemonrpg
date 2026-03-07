@@ -1051,38 +1051,15 @@ const calcLowHpCatchBonusPercent = ({ hp, maxHp, rarity }) => {
     return Math.max(0, missingHpRatio * capPercent)
 }
 
-const buildMovesForLevel = (pokemon, level) => {
-    const pool = Array.isArray(pokemon.levelUpMoves) ? pokemon.levelUpMoves : []
-    const learned = pool
-        .filter(m => Number.isFinite(m.level) && m.level <= level)
-        .sort((a, b) => a.level - b.level)
-        .map((m) => String(m?.moveName || m?.moveId?.name || '').trim())
-        .filter(Boolean)
-    return learned.slice(-4)
-}
-
-const mergeKnownMovesWithFallback = (moves = [], pokemonSpecies = null, level = 1) => {
+const mergeKnownMovesWithFallback = (moves = []) => {
     const explicitMoves = (Array.isArray(moves) ? moves : [])
-        .map((entry) => String(entry || '').trim())
+        .map((entry) => {
+            if (typeof entry === 'string') return String(entry || '').trim()
+            return String(entry?.moveName || entry?.name || '').trim()
+        })
         .filter(Boolean)
 
-    if (explicitMoves.length >= 4) {
-        return explicitMoves.slice(0, 4)
-    }
-
-    const merged = [...explicitMoves]
-    const knownSet = new Set(explicitMoves.map((entry) => normalizeMoveName(entry)))
-    const fallbackMoves = buildMovesForLevel(pokemonSpecies, level)
-
-    for (const fallbackMove of fallbackMoves) {
-        const key = normalizeMoveName(fallbackMove)
-        if (!key || knownSet.has(key)) continue
-        merged.push(fallbackMove)
-        knownSet.add(key)
-        if (merged.length >= 4) break
-    }
-
-    return merged.slice(0, 4)
+    return explicitMoves.slice(0, 4)
 }
 
 const normalizeCounterMoveEntry = (entry = null, fallbackIndex = -1) => {
@@ -1531,11 +1508,7 @@ const applyLevelEvolution = async (userPokemon) => {
 
         userPokemon.pokemonId = nextSpecies._id
         userPokemon.formId = nextFormId
-        userPokemon.moves = buildMovesForLevel(nextSpecies, userPokemon.level)
-        await syncUserPokemonMovesAndPp(userPokemon, {
-            pokemonSpecies: nextSpecies,
-            level: userPokemon.level,
-        })
+        await syncUserPokemonMovesAndPp(userPokemon)
 
         evolutions.push({
             fromPokemonId: currentSpecies._id,
@@ -3433,7 +3406,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
         const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
         const attackerSpecies = activePokemon?.pokemonId || {}
-        const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves, attackerSpecies, attackerLevel)
+        const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves)
         const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
 
         let selectedMoveName = String(moveName || move?.name || knownMoves[0] || 'Struggle').trim()
@@ -3443,8 +3416,14 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let moveFallbackFrom = ''
 
         const selectedMoveKey = normalizeMoveName(selectedMoveName)
-        if (knownMoves.length > 0 && selectedMoveKey !== 'struggle' && !normalizedKnownMoves.has(selectedMoveKey)) {
-            selectedMoveName = knownMoves[0]
+        if (selectedMoveKey !== 'struggle' && !normalizedKnownMoves.has(selectedMoveKey)) {
+            if (knownMoves.length > 0) {
+                selectedMoveName = knownMoves[0]
+            } else {
+                moveFallbackReason = 'NO_KNOWN_MOVE'
+                moveFallbackFrom = requestedMoveName
+                selectedMoveName = 'Struggle'
+            }
         }
 
         const Move = (await import('../models/Move.js')).default
@@ -5326,24 +5305,18 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 const isPokemonRewardLocked = Boolean(alreadyClaimedPrize || blockedByCompletion)
 
                 if (!isPokemonRewardLocked) {
-                    const moves = buildMovesForLevel(prizeData, prizeLevel)
-                    const grantedPokemon = await UserPokemon.create({
+                    await UserPokemon.create({
                         userId,
                         pokemonId: trainerPrizePokemonId,
                         level: prizeLevel,
                         experience: 0,
-                        moves,
+                        moves: [],
                         movePpState: [],
                         formId: resolvedPrizeFormId,
                         isShiny: false,
                         location: 'box',
                         originalTrainer: trainerRewardMarker,
                     })
-                    await syncUserPokemonMovesAndPp(grantedPokemon, {
-                        pokemonSpecies: prizeData,
-                        level: prizeLevel,
-                    })
-                    await grantedPokemon.save()
                 }
 
                 prizePokemon = {

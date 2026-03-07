@@ -14,7 +14,6 @@ import {
     serializeDailyReward,
     toDailyDateKey,
 } from '../utils/dailyCheckInUtils.js'
-import { buildMoveLookupByName, buildMovePpStateFromMoves, buildMovesForLevel } from '../utils/movePpUtils.js'
 
 const router = express.Router()
 
@@ -221,7 +220,7 @@ router.post('/claim', async (req, res) => {
             }
 
             const pokemonDoc = await Pokemon.findById(pokemonId)
-                .select('name defaultFormId forms levelUpMoves')
+                .select('name defaultFormId forms')
                 .lean()
 
             if (!pokemonDoc) {
@@ -244,13 +243,6 @@ router.post('/claim', async (req, res) => {
                 ? requestedFormId
                 : (availableForms.has(defaultFormId) ? defaultFormId : 'normal')
 
-            const moves = buildMovesForLevel(pokemonDoc, safeLevel)
-            const moveLookupMap = await buildMoveLookupByName(moves)
-            const movePpState = buildMovePpStateFromMoves({
-                moveNames: moves,
-                movePpState: [],
-                moveLookupMap,
-            })
             const docs = Array.from({ length: safeQuantity }, () => ({
                 userId,
                 pokemonId,
@@ -259,8 +251,8 @@ router.post('/claim', async (req, res) => {
                 formId: resolvedFormId,
                 isShiny: Boolean(reward?.pokemonConfig?.isShiny),
                 location: 'box',
-                moves,
-                movePpState,
+                moves: [],
+                movePpState: [],
                 originalTrainer: `daily_checkin:${rewardDay}`,
             }))
 

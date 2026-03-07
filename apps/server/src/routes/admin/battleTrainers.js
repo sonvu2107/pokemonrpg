@@ -276,13 +276,82 @@ const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3, damagePercent = 1
     if (!Array.isArray(pokemonPool) || pokemonPool.length === 0) return []
     const normalizedTeamSize = clampNumber(teamSize, 1, 6)
     const normalizedDamagePercent = parseTeamDamagePercent(damagePercent, 100)
-    const baseIndex = Math.abs(seed) % pokemonPool.length
+    const normalizedSeed = Number.isFinite(Number(seed)) ? Math.floor(Number(seed)) : 1
+    const createSeededRandom = (seedValue) => {
+        let state = (Math.abs(seedValue) + 1) >>> 0
+        return () => {
+            state = (state + 0x6D2B79F5) | 0
+            let t = Math.imul(state ^ (state >>> 15), 1 | state)
+            t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+    }
+
+    const random = createSeededRandom(normalizedSeed + parsePositiveInt(level, 1) * 9973 + normalizedTeamSize * 389)
+    const normalizeRarity = (value) => String(value || '').trim().toLowerCase()
+    const allowedRaritiesByLevel = (() => {
+        const normalizedLevel = parsePositiveInt(level, 1)
+        if (normalizedLevel >= 120) return ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+        if (normalizedLevel >= 90) return ['ss', 's', 'a', 'b', 'c', 'd']
+        if (normalizedLevel >= 70) return ['s', 'a', 'b', 'c', 'd']
+        if (normalizedLevel >= 50) return ['a', 'b', 'c', 'd']
+        if (normalizedLevel >= 30) return ['b', 'c', 'd']
+        if (normalizedLevel >= 15) return ['c', 'd']
+        return ['d']
+    })()
+
+    const rarityPool = pokemonPool.filter((pokemon) => {
+        const rarity = normalizeRarity(pokemon?.rarity)
+        return allowedRaritiesByLevel.includes(rarity)
+    })
+
+    const pickUniquePokemon = (pool, count, pickedIds = new Set()) => {
+        const available = pool.filter((entry) => !pickedIds.has(String(entry?._id || '')))
+        const selected = []
+        while (available.length > 0 && selected.length < count) {
+            const pickIndex = Math.floor(random() * available.length)
+            const [picked] = available.splice(pickIndex, 1)
+            if (!picked?._id) continue
+            pickedIds.add(String(picked._id))
+            selected.push(picked)
+        }
+        return selected
+    }
+
+    const pickedIds = new Set()
+    const primaryCandidates = rarityPool.length > 0 ? rarityPool : pokemonPool
+    const selectedPokemons = [
+        ...pickUniquePokemon(primaryCandidates, normalizedTeamSize, pickedIds),
+    ]
+
+    if (selectedPokemons.length < normalizedTeamSize) {
+        const remaining = normalizedTeamSize - selectedPokemons.length
+        selectedPokemons.push(...pickUniquePokemon(pokemonPool, remaining, pickedIds))
+    }
+
+    const resolveRandomFormId = (pokemonLike = {}) => {
+        const forms = Array.isArray(pokemonLike?.forms) ? pokemonLike.forms : []
+        const formIds = forms
+            .map((entry) => normalizeFormId(entry?.formId || entry?.name || ''))
+            .filter(Boolean)
+
+        const defaultFormId = normalizeFormId(pokemonLike?.defaultFormId || 'normal')
+        if (!formIds.includes(defaultFormId)) {
+            formIds.unshift(defaultFormId)
+        }
+
+        if (formIds.length === 0) return 'normal'
+        const pickIndex = Math.floor(random() * formIds.length)
+        return formIds[pickIndex] || defaultFormId || 'normal'
+    }
+
+    const levelSpread = Math.max(1, Math.min(12, Math.floor(parsePositiveInt(level, 1) * 0.08)))
     const team = []
-    for (let slot = 0; slot < normalizedTeamSize; slot += 1) {
-        const pickIndex = (baseIndex + slot) % pokemonPool.length
-        const selectedPokemon = pokemonPool[pickIndex]
-        const adjustedLevel = parsePositiveInt(level, 1)
-        const formId = normalizeFormId(selectedPokemon?.defaultFormId || selectedPokemon?.forms?.[0]?.formId || 'normal')
+    for (let slot = 0; slot < selectedPokemons.length; slot += 1) {
+        const selectedPokemon = selectedPokemons[slot]
+        const levelDelta = Math.floor(random() * (levelSpread * 2 + 1)) - levelSpread
+        const adjustedLevel = clampNumber(parsePositiveInt(level, 1) + levelDelta, 1, 1000)
+        const formId = resolveRandomFormId(selectedPokemon)
         team.push({
             pokemonId: selectedPokemon._id,
             level: adjustedLevel,
@@ -532,6 +601,9 @@ router.post('/auto-generate', async (req, res) => {
         const configuredCoinsReward = parseOptionalRewardNumber(req.body?.platinumCoinsReward)
         const configuredExpReward = parseOptionalRewardNumber(req.body?.expReward)
         const configuredDamageBonusRules = parseDamageBonusRules(req.body?.damageBonusRules)
+        const generationSeedBase = Number.isFinite(Number(req.body?.seed))
+            ? Math.floor(Number(req.body.seed))
+            : Date.now()
         const configuredPrizeEveryTrainer = clampNumber(req.body?.prizePokemonEveryTrainer, 0, 100000)
         const resolvedPrizePoolResult = await resolvePrizePokemonPoolSelections(req.body?.prizePokemonPool)
         if (resolvedPrizePoolResult.error) {
@@ -549,7 +621,7 @@ router.post('/auto-generate', async (req, res) => {
         }
 
         const pokemonPool = await Pokemon.find({})
-            .select('_id name pokedexNumber defaultFormId forms')
+            .select('_id name pokedexNumber rarity defaultFormId forms')
             .sort({ pokedexNumber: 1, _id: 1 })
             .lean()
 
@@ -577,7 +649,13 @@ router.post('/auto-generate', async (req, res) => {
                 const platinumCoinsReward = configuredCoinsReward !== null ? configuredCoinsReward : rewardValue
                 const expReward = configuredExpReward !== null ? configuredExpReward : rewardValue
                 const teamDamagePercent = resolveTeamDamagePercentByLevel(level, configuredDamageBonusRules)
-                const team = buildAutoTeam(pokemonPool, level, index * 17 + level, teamSize, teamDamagePercent)
+                const team = buildAutoTeam(
+                    pokemonPool,
+                    level,
+                    generationSeedBase + (index * 101) + (level * 1009),
+                    teamSize,
+                    teamDamagePercent
+                )
                 const shouldRewardTrainer = shouldAssignRandomPrize && (index % configuredPrizeEveryTrainer === 0)
                 const selectedPrize = shouldRewardTrainer
                     ? resolvedPrizePool[Math.floor(Math.random() * resolvedPrizePool.length)]

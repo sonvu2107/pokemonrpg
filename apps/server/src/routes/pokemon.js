@@ -6,7 +6,6 @@ import UserMoveInventory from '../models/UserMoveInventory.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 import {
-    buildMovesForLevel,
     buildMoveLookupByName,
     buildMovePpStateFromMoves,
     normalizeMoveName,
@@ -1125,11 +1124,7 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         const fromName = currentSpecies.name
         userPokemon.pokemonId = targetSpecies._id
         userPokemon.formId = nextFormId
-        userPokemon.moves = buildMovesForLevel(targetSpecies, userPokemon.level)
-        await syncUserPokemonMovesAndPp(userPokemon, {
-            pokemonSpecies: targetSpecies,
-            level: userPokemon.level,
-        })
+        await syncUserPokemonMovesAndPp(userPokemon)
         await userPokemon.save()
         await userPokemon.populate('pokemonId')
 
