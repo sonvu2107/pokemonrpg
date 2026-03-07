@@ -42,7 +42,6 @@ const extractObjectIdLike = (value) => {
 }
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 24
-const SEARCH_BUTTON_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const SEARCH_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 300
 const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 8
@@ -260,7 +259,6 @@ export default function MapPage() {
     const shouldRestoreSearchScrollRef = useRef(false)
     const searchSpamCountRef = useRef(0)
     const lastSearchRequestAtRef = useRef(0)
-    const searchButtonRepositionTimerRef = useRef(null)
     const autoSearchConfigDirtyRef = useRef(false)
     const lastAutoSearchServerSnapshotRef = useRef('')
     const lastSearchChallengeAtRef = useRef(0)
@@ -370,14 +368,6 @@ export default function MapPage() {
         }
     }, [availablePokeballs, autoCatchBallId])
 
-    useEffect(() => () => {
-        if (typeof window === 'undefined') return
-        if (searchButtonRepositionTimerRef.current) {
-            window.clearTimeout(searchButtonRepositionTimerRef.current)
-            searchButtonRepositionTimerRef.current = null
-        }
-    }, [])
-
     useEffect(() => {
         if (searching || !shouldRestoreSearchScrollRef.current) return
         if (typeof window === 'undefined') return
@@ -458,10 +448,6 @@ export default function MapPage() {
     }
 
     const resetSearchButtonOffset = () => {
-        if (typeof window !== 'undefined' && searchButtonRepositionTimerRef.current) {
-            window.clearTimeout(searchButtonRepositionTimerRef.current)
-            searchButtonRepositionTimerRef.current = null
-        }
         setSearchButtonOffset({ x: 0, y: 0 })
     }
 
@@ -496,19 +482,6 @@ export default function MapPage() {
         setSearchChallenge(createSearchChallenge())
     }
 
-    const scheduleSearchButtonReposition = () => {
-        if (typeof window === 'undefined') return
-
-        if (searchButtonRepositionTimerRef.current) {
-            window.clearTimeout(searchButtonRepositionTimerRef.current)
-        }
-
-        searchButtonRepositionTimerRef.current = window.setTimeout(() => {
-            searchButtonRepositionTimerRef.current = null
-            setSearchButtonOffset({ x: 0, y: 0 })
-        }, SEARCH_BUTTON_REPOSITION_INTERVAL_MS)
-    }
-
     const nudgeSearchButton = ({ veryFastSpam = false } = {}) => {
         if (typeof window === 'undefined') return
 
@@ -530,7 +503,6 @@ export default function MapPage() {
         const nextY = randomFarOffset(minY, maxY)
 
         setSearchButtonOffset({ x: nextX, y: nextY })
-        scheduleSearchButtonReposition()
     }
 
     const registerSearchSpamAttempt = (retryAfterMs = 0) => {
@@ -585,10 +557,6 @@ export default function MapPage() {
             return
         }
 
-        if (searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0) {
-            resetSearchButtonOffset()
-        }
-
         if (isLocked) {
             setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
             return
@@ -605,6 +573,7 @@ export default function MapPage() {
             registerSearchSpamAttempt(LOCAL_SEARCH_SPAM_COOLDOWN_MS - elapsedSinceLastRequest)
             return
         }
+        const shouldResetSearchButtonAfterRequest = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
 
         lastSearchRequestAtRef.current = nowMs
 
@@ -623,7 +592,9 @@ export default function MapPage() {
                 searchSpamCountRef.current = 0
                 searchVeryFastSpamStreakRef.current = 0
                 lastSearchSpamAttemptAtRef.current = 0
-                resetSearchButtonOffset()
+                if (shouldResetSearchButtonAfterRequest) {
+                    resetSearchButtonOffset()
+                }
                 setSearchChallenge(null)
                 setSearchChallengeError('')
                 return
@@ -633,7 +604,9 @@ export default function MapPage() {
             searchSpamCountRef.current = 0
             searchVeryFastSpamStreakRef.current = 0
             lastSearchSpamAttemptAtRef.current = 0
-            resetSearchButtonOffset()
+            if (shouldResetSearchButtonAfterRequest) {
+                resetSearchButtonOffset()
+            }
 
             setLastResult(res)
             if (res.encountered) {
