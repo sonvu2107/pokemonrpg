@@ -130,13 +130,18 @@ export default function LoginPage() {
             <div className="mx-auto max-w-[1280px] w-full px-3 py-4">
 
                 {/* Top Banner (Optional, placeholder based on screenshot) */}
-                <div className="mb-4 rounded-lg overflow-hidden shadow-lg border border-blue-500 bg-slate-900 h-40 flex items-center justify-center relative">
-                    {/* Placeholder gradient/image */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-900 to-cyan-900"></div>
-                    <h1 className="relative z-10 text-4xl font-extrabold text-white drop-shadow-lg tracking-wider" style={{ fontFamily: 'Verdana, sans-serif' }}>
-                        <span className="text-yellow-400">Thú Ảo</span> <span className="text-cyan-300">VNPET</span>
-                    </h1>
-                    <div className="absolute bottom-2 text-white/60 text-xs font-mono">ONLINE RPG • VERSION 1.5</div>
+                <div className="mb-4 rounded-lg overflow-hidden shadow-lg border border-blue-500 relative group bg-slate-900 max-w-2xl mx-auto">
+                    {/* Background image filling the entire container naturally */}
+                    <img src="/vnpet-logo.jpg" alt="Thú Ảo VNPET" className="w-full h-auto block transition-transform duration-700 group-hover:scale-105" />
+
+                    {/* Gradient overlay for text readability */}
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-transparent pointer-events-none"></div>
+
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 text-white/80 text-[10px] sm:text-xs font-mono font-semibold tracking-widest drop-shadow-md whitespace-nowrap">
+                        <span className="bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm border border-white/20">
+                            ONLINE RPG • VERSION BETA 1.0
+                        </span>
+                    </div>
                 </div>
 
                 <div className="flex flex-col lg:flex-row gap-4 items-start justify-center">
