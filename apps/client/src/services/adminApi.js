@@ -645,6 +645,14 @@ export const battleTrainerApi = {
         return res.json()
     },
 
+    async usageSummary() {
+        const res = await fetch(`${API_URL}/admin/battle-trainers/usage-summary`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) throw new Error('Không thể tải dữ liệu đã chọn Pokémon')
+        return res.json()
+    },
+
     async create(data) {
         const res = await fetch(`${API_URL}/admin/battle-trainers`, {
             method: 'POST',

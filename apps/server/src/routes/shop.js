@@ -11,6 +11,7 @@ import ItemPurchaseLog from '../models/ItemPurchaseLog.js'
 import Move from '../models/Move.js'
 import UserMoveInventory from '../models/UserMoveInventory.js'
 import MovePurchaseLog from '../models/MovePurchaseLog.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 
@@ -416,10 +417,10 @@ router.get('/sell', async (req, res) => {
         const availablePokemonPromise = includeAvailable
             ? UserPokemon.aggregate([
                 {
-                    $match: {
+                    $match: withActiveUserPokemonFilter({
                         userId: userIdObject,
                         location: 'box',
-                    },
+                    }),
                 },
                 {
                     $lookup: {
@@ -712,11 +713,11 @@ router.post('/sell/list', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá bán không hợp lệ' })
         }
 
-        const userPokemon = await UserPokemon.findOne({
+        const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({
             _id: userPokemonId,
             userId: sellerId,
             location: 'box',
-        })
+        }))
             .select('pokemonId nickname formId level')
             .lean()
 
@@ -1034,16 +1035,17 @@ router.post('/buy/:listingId', async (req, res) => {
         )
 
         const transferResult = await UserPokemon.updateOne(
-            {
+            withActiveUserPokemonFilter({
                 _id: claimedListing.userPokemonId,
                 userId: claimedListing.sellerId,
-            },
+            }),
             {
                 $set: {
                     userId: buyerId,
                     location: 'box',
                     partyIndex: null,
                     boxNumber: 1,
+                    status: 'active',
                     updatedAt: new Date(),
                 },
             }

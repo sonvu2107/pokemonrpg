@@ -414,6 +414,43 @@ router.get('/', async (req, res) => {
     }
 })
 
+// GET /api/admin/battle-trainers/usage-summary
+router.get('/usage-summary', async (_req, res) => {
+    try {
+        const usageRows = await BattleTrainer.find({})
+            .select('_id prizePokemonId team.pokemonId')
+            .lean()
+
+        const usages = (Array.isArray(usageRows) ? usageRows : [])
+            .map((trainer) => {
+                const trainerId = String(trainer?._id || '').trim()
+                const prizePokemonId = String(trainer?.prizePokemonId || '').trim()
+                const teamEntries = Array.isArray(trainer?.team) ? trainer.team : []
+                const teamPokemonIds = [...new Set(
+                    teamEntries
+                        .map((entry) => String(entry?.pokemonId || '').trim())
+                        .filter(Boolean)
+                )]
+
+                return {
+                    trainerId,
+                    prizePokemonId,
+                    teamPokemonIds,
+                }
+            })
+            .filter((entry) => entry.trainerId)
+
+        res.json({
+            ok: true,
+            usages,
+            total: usages.length,
+        })
+    } catch (error) {
+        console.error('GET /api/admin/battle-trainers/usage-summary error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
 // POST /api/admin/battle-trainers
 router.post('/', async (req, res) => {
     try {

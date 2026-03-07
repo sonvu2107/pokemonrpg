@@ -84,8 +84,34 @@ const parseAutoPrizeSelectionKey = (selectionKey) => {
     }
 }
 
+const normalizeTrainerUsageRows = (rowsLike = []) => {
+    if (!Array.isArray(rowsLike)) return []
+
+    return rowsLike
+        .map((trainer) => {
+            const trainerId = String(trainer?.trainerId || trainer?._id || trainer?.id || '').trim()
+            const prizePokemonId = String(trainer?.prizePokemonId?._id || trainer?.prizePokemonId || '').trim()
+            const rawTeamPokemonIds = Array.isArray(trainer?.teamPokemonIds)
+                ? trainer.teamPokemonIds
+                : (Array.isArray(trainer?.team) ? trainer.team.map((entry) => entry?.pokemonId) : [])
+            const teamPokemonIds = [...new Set(
+                rawTeamPokemonIds
+                    .map((value) => String(value?._id || value || '').trim())
+                    .filter(Boolean)
+            )]
+
+            return {
+                trainerId,
+                prizePokemonId,
+                teamPokemonIds,
+            }
+        })
+        .filter((row) => row.trainerId)
+}
+
 export default function BattleTrainerPage() {
     const [trainers, setTrainers] = useState([])
+    const [trainerUsageRows, setTrainerUsageRows] = useState([])
     const [pokemon, setPokemon] = useState([])
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
@@ -176,12 +202,20 @@ export default function BattleTrainerPage() {
         try {
             setLoading(true)
             setError('')
-            const data = await battleTrainerApi.list({
-                page: targetPage,
-                limit: trainerPagination.limit,
-            })
+            const [data, usageSummaryData] = await Promise.all([
+                battleTrainerApi.list({
+                    page: targetPage,
+                    limit: trainerPagination.limit,
+                }),
+                battleTrainerApi.usageSummary().catch(() => null),
+            ])
 
             const rows = Array.isArray(data?.trainers) ? data.trainers : []
+            const usageRows = normalizeTrainerUsageRows(
+                Array.isArray(usageSummaryData?.usages)
+                    ? usageSummaryData.usages
+                    : rows
+            )
             const total = Math.max(0, Number(data?.pagination?.total) || 0)
             const totalPages = Math.max(1, Number(data?.pagination?.pages) || 1)
             const limit = Math.max(1, Number(data?.pagination?.limit) || TRAINER_PAGE_SIZE)
@@ -195,6 +229,7 @@ export default function BattleTrainerPage() {
             }
 
             setTrainers(rows)
+            setTrainerUsageRows(usageRows)
             setTrainerPagination((prev) => ({
                 ...prev,
                 page: Math.max(1, Number(data?.pagination?.page) || targetPage),
@@ -206,6 +241,7 @@ export default function BattleTrainerPage() {
         } catch (err) {
             setError(err.message || 'Không thể tải danh sách trainer')
             setTrainers([])
+            setTrainerUsageRows([])
             setTrainerPagination((prev) => ({
                 ...prev,
                 pages: 1,
@@ -708,6 +744,7 @@ export default function BattleTrainerPage() {
     }
 
     const normalizePokemonFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+    const resolveTeamPokemonId = (entry) => String(entry?.pokemonId?._id || entry?.pokemonId || '').trim()
 
     const getPokemonFormsForDisplay = (entry) => {
         const defaultFormId = normalizePokemonFormId(entry?.defaultFormId)
@@ -766,6 +803,53 @@ export default function BattleTrainerPage() {
     const selectedTeamPokemonForm = selectedTeamPokemonForms.find((entry) => entry.formId === normalizedTeamPokemonFormId)
         || selectedTeamPokemonForms[0]
         || null
+    const normalizedEditingId = String(editingId || '').trim()
+
+    const selectedPrizePokemonIdsInCurrentForm = useMemo(() => {
+        const selectedIds = new Set()
+        const prizePokemonId = String(form.prizePokemonId || '').trim()
+        if (!prizePokemonId) return selectedIds
+        selectedIds.add(prizePokemonId)
+        return selectedIds
+    }, [form.prizePokemonId])
+
+    const selectedPrizePokemonIdsInOtherTrainers = useMemo(() => {
+        const selectedIds = new Set()
+        ;(Array.isArray(trainerUsageRows) ? trainerUsageRows : []).forEach((entry) => {
+            const trainerId = String(entry?.trainerId || '').trim()
+            if (normalizedEditingId && trainerId === normalizedEditingId) return
+            const prizePokemonId = String(entry?.prizePokemonId || '').trim()
+            if (!prizePokemonId) return
+            selectedIds.add(prizePokemonId)
+        })
+        return selectedIds
+    }, [trainerUsageRows, normalizedEditingId])
+
+    const selectedPokemonIdsInCurrentForm = useMemo(() => {
+        const selectedIds = new Set()
+        ;(Array.isArray(form.team) ? form.team : []).forEach((entry) => {
+            const pokemonId = resolveTeamPokemonId(entry)
+            if (!pokemonId) return
+            selectedIds.add(pokemonId)
+        })
+        return selectedIds
+    }, [form.team])
+
+    const selectedPokemonIdsInOtherTrainers = useMemo(() => {
+        const selectedIds = new Set()
+        ;(Array.isArray(trainerUsageRows) ? trainerUsageRows : []).forEach((trainer) => {
+            const trainerId = String(trainer?.trainerId || '').trim()
+            if (normalizedEditingId && trainerId === normalizedEditingId) return
+
+            const teamPokemonIds = Array.isArray(trainer?.teamPokemonIds) ? trainer.teamPokemonIds : []
+            teamPokemonIds.forEach((entry) => {
+                const pokemonId = String(entry || '').trim()
+                if (!pokemonId) return
+                selectedIds.add(pokemonId)
+            })
+        })
+        return selectedIds
+    }, [trainerUsageRows, normalizedEditingId])
 
     const allPokemonLookup = useMemo(() => {
         const lookup = {}
@@ -2110,12 +2194,23 @@ export default function BattleTrainerPage() {
                                         const { pokemon: entry, form: rowForm } = row
                                         const isSelected = form.prizePokemonId === entry._id
                                             && normalizedPrizePokemonFormId === rowForm.formId
+                                        const isUsedInCurrentTrainer = selectedPrizePokemonIdsInCurrentForm.has(entry._id)
+                                        const isUsedInOtherTrainer = selectedPrizePokemonIdsInOtherTrainers.has(entry._id)
+                                        const showPickedTag = !isSelected && (isUsedInCurrentTrainer || isUsedInOtherTrainer)
+                                        const pickedTagText = isUsedInCurrentTrainer && isUsedInOtherTrainer
+                                            ? 'Đã chọn (trainer này + khác)'
+                                            : isUsedInCurrentTrainer
+                                                ? 'Đã chọn (trainer này)'
+                                                : 'Đã chọn (trainer khác)'
+                                        const pickedTagClassName = isUsedInCurrentTrainer
+                                            ? 'text-[11px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 rounded px-2 py-0.5'
+                                            : 'text-[11px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded px-2 py-0.5'
                                         return (
                                             <button
                                                 key={row.key}
                                                 type="button"
                                                 onClick={() => handleSelectPrizePokemon(entry._id, rowForm.formId)}
-                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : showPickedTag ? (isUsedInCurrentTrainer ? 'bg-emerald-50/60' : 'bg-amber-50/70') : 'hover:bg-slate-50'}`}
                                             >
                                                 <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                     <img
@@ -2139,6 +2234,9 @@ export default function BattleTrainerPage() {
                                                 </div>
                                                 {isSelected && (
                                                     <span className="text-[11px] font-bold text-blue-700 bg-blue-100 border border-blue-200 rounded px-2 py-0.5">Đã chọn</span>
+                                                )}
+                                                {!isSelected && showPickedTag && (
+                                                    <span className={pickedTagClassName}>{pickedTagText}</span>
                                                 )}
                                             </button>
                                         )
@@ -2279,12 +2377,23 @@ export default function BattleTrainerPage() {
                                         const { pokemon: entry, form: rowForm } = row
                                         const isSelected = activeTeamEntry?.pokemonId === entry._id
                                             && normalizedTeamPokemonFormId === rowForm.formId
+                                        const isUsedInCurrentTrainer = selectedPokemonIdsInCurrentForm.has(entry._id)
+                                        const isUsedInOtherTrainer = selectedPokemonIdsInOtherTrainers.has(entry._id)
+                                        const showPickedTag = !isSelected && (isUsedInCurrentTrainer || isUsedInOtherTrainer)
+                                        const pickedTagText = isUsedInCurrentTrainer && isUsedInOtherTrainer
+                                            ? 'Đã chọn (trainer này + khác)'
+                                            : isUsedInCurrentTrainer
+                                                ? 'Đã chọn (trainer này)'
+                                                : 'Đã chọn (trainer khác)'
+                                        const pickedTagClassName = isUsedInCurrentTrainer
+                                            ? 'text-[11px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 rounded px-2 py-0.5'
+                                            : 'text-[11px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded px-2 py-0.5'
                                         return (
                                             <button
                                                 key={`team-${row.key}`}
                                                 type="button"
                                                 onClick={() => handleSelectTeamPokemon(entry._id, rowForm.formId)}
-                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : showPickedTag ? (isUsedInCurrentTrainer ? 'bg-emerald-50/60' : 'bg-amber-50/70') : 'hover:bg-slate-50'}`}
                                             >
                                                 <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                     <img
@@ -2308,6 +2417,9 @@ export default function BattleTrainerPage() {
                                                 </div>
                                                 {isSelected && (
                                                     <span className="text-[11px] font-bold text-blue-700 bg-blue-100 border border-blue-200 rounded px-2 py-0.5">Đã chọn</span>
+                                                )}
+                                                {!isSelected && showPickedTag && (
+                                                    <span className={pickedTagClassName}>{pickedTagText}</span>
                                                 )}
                                             </button>
                                         )
