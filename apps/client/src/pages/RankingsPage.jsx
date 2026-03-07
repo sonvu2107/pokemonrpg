@@ -22,7 +22,7 @@ const DAILY_TABS = [
 ]
 const OVERALL_TABS = [
     { label: 'Tài Phú', value: 'wealth' },
-    { label: 'HLV Đã Leo', value: 'trainerBattle' },
+    { label: 'Top Leo Tháp', value: 'trainerBattle' },
     { label: 'LC', value: 'lc' },
 ]
 const WEEKDAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
@@ -141,7 +141,7 @@ export default function RankingsPage() {
     }
     const overallTitleMap = {
         wealth: 'Bảng Xếp Hạng Tài Phú Tuần',
-        trainerBattle: 'Bảng Xếp Hạng Lv HLV Cao Nhất',
+        trainerBattle: 'Bảng Xếp Hạng Top Leo Tháp',
         lc: 'Bảng Xếp Hạng Tổng LC Tuần',
     }
     const pageTitle = isDaily
@@ -198,7 +198,7 @@ export default function RankingsPage() {
     const overallPrimaryLabel = overallMode === 'wealth'
         ? 'Xu BK Kiếm Được Tuần'
         : overallMode === 'trainerBattle'
-            ? 'Lv HLV Cao Nhất'
+            ? 'Top Leo Tháp'
             : 'Tổng LC Party'
 
     const getOverallPrimaryValue = (player = {}) => {

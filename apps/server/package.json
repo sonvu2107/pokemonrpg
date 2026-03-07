@@ -14,6 +14,8 @@
         "reset:battle-trainer-moon-points": "node src/scripts/resetBattleTrainerMoonPoints.js",
         "reset:user-moon-points:dry": "node src/resetUserMoonPoints.js",
         "reset:user-moon-points": "node src/resetUserMoonPoints.js --apply",
+        "reset:user-levels:dry": "node src/resetUserLevels.js",
+        "reset:user-levels": "node src/resetUserLevels.js --apply",
         "reset:user-pokemon-levels:dry": "node src/scripts/resetUserPokemonLevels.js",
         "reset:user-pokemon-levels": "node src/scripts/resetUserPokemonLevels.js --apply",
         "backfill:pokemon-form-stats:dry": "node src/backfillPokemonFormStats.js",

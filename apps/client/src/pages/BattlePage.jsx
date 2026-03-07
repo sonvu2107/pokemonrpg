@@ -1174,14 +1174,6 @@ export function BattlePage() {
         }
     }
 
-    const advanceTrainerOrder = (currentOrder, total) => {
-        if (!Number.isFinite(total) || total <= 0) return 0
-        const current = Number.isFinite(currentOrder) ? currentOrder : 0
-        const nextOrder = (current + 1) % total
-        window.localStorage.setItem(TRAINER_ORDER_STORAGE_KEY, String(nextOrder))
-        return nextOrder
-    }
-
     const prefetchTrainerImage = (value = '') => {
         if (typeof window === 'undefined') return
         const normalized = String(value || '').trim()
@@ -2284,25 +2276,34 @@ export function BattlePage() {
                         : Math.max(1, Number(currentBattleState?.level || 1))
                     const autoWinLog = `Đã đánh bại huấn luyện viên ${trainerNameForLog} Lv ${trainerLevelForLog}.`
                     setAutoTrainerServerStatus(autoWinLog)
+                    const normalizedCompletedId = normalizeEntityId(entry?.id)
+                    const nextCompletedIds = new Set(
+                        (Array.isArray(completedEntries) ? completedEntries : [])
+                            .map((item) => normalizeEntityId(item?.id))
+                            .filter(Boolean)
+                    )
                     if (entry) {
+                        if (normalizedCompletedId) {
+                            nextCompletedIds.add(normalizedCompletedId)
+                        }
+                        setCompletedCarouselIndex(0)
+                        setCompletedEntries((prev) => {
+                            if (!normalizedCompletedId) return prev
+                            if (prev.some((item) => normalizeEntityId(item?.id) === normalizedCompletedId)) return prev
+                            return [entry, ...prev]
+                        })
                         try {
-                            const completedTrainerIds = await markTrainerCompleted(entry.id)
-                            if (completedTrainerIds) {
-                                setCompletedCarouselIndex(0)
-                                setCompletedEntries((prev) => {
-                                    if (prev.some((item) => String(item.id) === String(entry.id))) return prev
-                                    return [entry, ...prev]
-                                })
-                            }
+                            await markTrainerCompleted(entry.id)
                         } catch (saveProgressError) {
                             console.error('Lưu tiến trình huấn luyện viên hoàn thành thất bại', saveProgressError)
                         }
                     }
 
                     if (masterPokemon.length > 0) {
-                        const nextOrder = advanceTrainerOrder(currentBattleState?.trainerOrder || 0, masterPokemon.length)
-                        const nextTrainer = masterPokemon[nextOrder] || null
-                        setOpponent(buildOpponent(null, nextTrainer, nextOrder))
+                        const syncedTrainerOrder = getTrainerOrderFromProgress(masterPokemon, nextCompletedIds)
+                        setStoredTrainerOrder(syncedTrainerOrder)
+                        const { trainer, trainerOrder } = getTrainerByOrder(masterPokemon, syncedTrainerOrder)
+                        setOpponent(buildOpponent(null, trainer, trainerOrder))
                     }
                 } catch (err) {
                     setActionMessage(err.message)

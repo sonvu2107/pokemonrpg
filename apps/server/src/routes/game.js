@@ -5504,6 +5504,13 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             }
         }
 
+        if (normalizedTrainerId) {
+            await User.updateOne(
+                { _id: userId },
+                { $addToSet: { completedBattleTrainers: normalizedTrainerId } }
+            )
+        }
+
         res.json({
             ok: true,
             wallet: serializePlayerWallet(playerState),

@@ -5,7 +5,7 @@ import { leaderboardRewardApi } from '../../services/adminApi'
 
 const MODE_OPTIONS = [
     { value: 'wealth', label: 'Top Tài Phú Tuần' },
-    { value: 'trainerBattle', label: 'Top HLV Leo Tuần' },
+    { value: 'trainerBattle', label: 'Top Leo Tháp Tuần' },
     { value: 'lc', label: 'Top LC Party Tuần' },
 ]
 
@@ -45,7 +45,7 @@ const getDefaultRewardAmount = (rank, rewardType = 'platinumCoins') => {
 }
 
 const getPrimaryLabelByMode = (mode) => {
-    if (mode === 'trainerBattle') return 'HLV Leo Được Tuần'
+    if (mode === 'trainerBattle') return 'Top Leo Tháp'
     if (mode === 'lc') return 'Tổng LC Party'
     return 'Xu BK Kiếm Được Tuần'
 }
