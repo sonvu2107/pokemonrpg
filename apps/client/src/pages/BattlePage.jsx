@@ -67,6 +67,27 @@ const createTrainerAttackChallenge = () => {
 }
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
+const formatFriendlyAutoTrainerMessage = (value = '') => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+
+    let message = raw
+        .replace(/TIME_BUDGET/gi, 'hệ thống đang bận theo nhịp xử lý')
+        .replace(/REQUEST_TIMEOUT/gi, 'kết nối tạm chậm')
+        .replace(/SESSION_CONFLICT/gi, 'phiên chiến đấu đang được đồng bộ')
+        .replace(/BATTLE_SESSION_CONFLICT/gi, 'phiên chiến đấu đang được đồng bộ')
+        .replace(/ATTACK_ERROR/gi, 'lỗi ra đòn tạm thời')
+        .replace(/RESOLVE_ERROR/gi, 'lỗi nhận kết quả tạm thời')
+        .replace(/PLAYER_DEFEATED/gi, 'Pokemon của bạn đã kiệt sức')
+        .replace(/DAILY_LIMIT_REACHED/gi, 'đã đạt giới hạn hôm nay')
+        .replace(/DURATION_EXPIRED/gi, 'đã hết thời lượng hôm nay')
+
+    message = message
+        .replace(/Auto battle trainer lỗi tạm thời:/i, 'Auto battle trainer đang xử lý, sẽ tự thử lại:')
+        .replace(/Auto battle trainer dung do loi:/i, 'Auto battle trainer tạm dừng do lỗi:')
+
+    return message
+}
 const readStoredAutoTrainerTargetId = () => {
     if (typeof window === 'undefined') return ''
     try {
@@ -1234,10 +1255,11 @@ export function BattlePage() {
 
         const logs = Array.isArray(status?.logs) ? status.logs : []
         setAutoTrainerServerLogs(logs)
+        const latestLogMessage = formatFriendlyAutoTrainerMessage(logs[0]?.message)
         setAutoTrainerServerStatus(
             (Boolean(status?.enabled)
-                ? `Đang chạy ngầm. ${String(logs[0]?.message || '').trim() || 'Đang tự chiến theo cấu hình.'}`
-                : (String(logs[0]?.message || '').trim() || 'Tự chiến huấn luyện viên đang tắt.'))
+                ? `Đang chạy ngầm. ${latestLogMessage || 'Đang tự chiến theo cấu hình.'}`
+                : (latestLogMessage || 'Tự chiến huấn luyện viên đang tắt.'))
         )
     }
 
@@ -1288,7 +1310,7 @@ export function BattlePage() {
                 applyAutoTrainerStatus(status)
             } catch (error) {
                 if (!cancelled) {
-                    setAutoTrainerServerStatus(String(error?.message || 'Không thể tải trạng thái auto trainer.'))
+                    setAutoTrainerServerStatus(formatFriendlyAutoTrainerMessage(String(error?.message || 'Không thể tải trạng thái auto trainer.')))
                 }
             }
         }
@@ -3032,7 +3054,7 @@ export function BattlePage() {
                         <div key={entry._id || entry.id} className={`text-[10px] ${entry.type === 'success'
                             ? 'text-emerald-700'
                             : (entry.type === 'error' ? 'text-rose-700' : (entry.type === 'warn' ? 'text-amber-700' : 'text-slate-600'))}`}>
-                            • {entry.message}
+                            • {formatFriendlyAutoTrainerMessage(entry.message)}
                         </div>
                     ))}
                 </div>

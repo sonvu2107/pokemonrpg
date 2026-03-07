@@ -140,6 +140,28 @@ const DEFAULT_AUTO_SEARCH_HISTORY = {
     catchAttemptCount: 0,
     catchSuccessCount: 0,
 }
+const formatFriendlyAutoSearchMessage = (value = '') => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+
+    let message = raw
+        .replace(/TIME_BUDGET/gi, 'hệ thống đang bận theo nhịp xử lý')
+        .replace(/REQUEST_TIMEOUT/gi, 'kết nối tạm chậm')
+        .replace(/SESSION_CONFLICT/gi, 'đang đồng bộ phiên xử lý')
+        .replace(/ACTION_COOLDOWN/gi, 'thao tác đang trong thời gian chờ')
+        .replace(/DAILY_LIMIT_REACHED/gi, 'đã đạt giới hạn hôm nay')
+        .replace(/DURATION_EXPIRED/gi, 'đã hết thời lượng hôm nay')
+        .replace(/MAP_LOCKED/gi, 'bản đồ đang bị khóa')
+        .replace(/MAP_NOT_FOUND/gi, 'không tìm thấy bản đồ')
+        .replace(/NO_BALL_AVAILABLE/gi, 'không đủ bóng để bắt')
+        .replace(/PLAYER_DEFEATED/gi, 'Pokemon của bạn đã kiệt sức')
+
+    message = message
+        .replace(/Auto tìm kiếm lỗi:/i, 'Tự tìm kiếm gặp lỗi:')
+        .replace(/auto tìm kiếm tạm dừng/gi, 'tự tìm kiếm tạm dừng')
+
+    return message
+}
 
 const normalizeActionByRaritySnapshot = (value = {}) => {
     const source = value && typeof value === 'object' ? value : {}
@@ -704,10 +726,11 @@ export default function MapPage() {
         const logs = Array.isArray(status?.logs) ? status.logs : []
         setAutoSearchServerLogs(logs)
         const mapName = String(status?.map?.name || '').trim()
+        const latestLogMessage = formatFriendlyAutoSearchMessage(logs[0]?.message)
         setAutoSearchServerStatus(
             (Boolean(status?.enabled)
-                ? `Đang chạy ngầm${mapName ? ` tại ${mapName}` : ''}. ${String(logs[0]?.message || '').trim() || 'Đang tự tìm theo cấu hình.'}`
-                : (String(logs[0]?.message || '').trim() || 'Tự tìm kiếm đang tắt.'))
+                ? `Đang chạy ngầm${mapName ? ` tại ${mapName}` : ''}. ${latestLogMessage || 'Đang tự tìm theo cấu hình.'}`
+                : (latestLogMessage || 'Tự tìm kiếm đang tắt.'))
         )
     }
 
@@ -759,7 +782,7 @@ export default function MapPage() {
                 }
             } catch (error) {
                 if (!cancelled) {
-                    setAutoSearchServerStatus(String(error?.message || 'Không thể tải trạng thái tự tìm kiếm.'))
+                    setAutoSearchServerStatus(formatFriendlyAutoSearchMessage(String(error?.message || 'Không thể tải trạng thái tự tìm kiếm.')))
                 }
             }
         }
@@ -1448,7 +1471,7 @@ export default function MapPage() {
                                                 <div key={entry._id || entry.id} className={`text-[10px] ${entry.type === 'success'
                                                     ? 'text-emerald-700'
                                                     : (entry.type === 'error' ? 'text-rose-700' : (entry.type === 'warn' ? 'text-amber-700' : 'text-slate-600'))}`}>
-                                                    • {entry.message}
+                                                    • {formatFriendlyAutoSearchMessage(entry.message)}
                                                 </div>
                                             ))}
                                         </div>

@@ -249,6 +249,19 @@ const buildOpponentPayload = (opponentState = {}, fallback = null) => {
     }
 }
 
+const formatTrainerOutcomeReasonForLog = (reason = '') => {
+    const raw = String(reason || '').trim()
+    if (!raw) return 'Battle thất bại.'
+    const normalized = normalizeSearchText(raw)
+
+    if (normalized === 'session_conflict') return 'Phiên chiến đấu đang được đồng bộ.'
+    if (normalized === 'request_timeout') return 'Kết nối tạm chậm, hệ thống sẽ tự thử lại.'
+    if (normalized === 'time_budget') return 'Hệ thống đang bận theo nhịp xử lý, sẽ tự thử lại.'
+    if (normalized.includes('pokemon cua ban da bai tran')) return 'Pokemon của bạn đã bại trận.'
+    if (normalized.includes('khong tim thay pokemon')) return 'Không tìm thấy Pokemon đang chiến đấu.'
+    return raw
+}
+
 const updateAutoTrainerState = async ({ userId, setPatch = {}, lastAction = null, logMessage = '', logType = 'info' }) => {
     const updateDoc = {
         $set: {
@@ -440,6 +453,12 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
             const message = String(error?.message || '').trim()
             const normalized = normalizeSearchText(message)
             const errorCode = String(error?.code || '').trim().toUpperCase()
+            if (errorCode === 'TIME_BUDGET') {
+                return { ok: false, code: 'TIME_BUDGET', reason: 'TIME_BUDGET' }
+            }
+            if (errorCode === 'REQUEST_TIMEOUT') {
+                return { ok: false, code: 'REQUEST_TIMEOUT', reason: 'REQUEST_TIMEOUT' }
+            }
             if (normalized.includes('doi hinh huan luyen vien da bi danh bai') || normalized.includes('nhan ket qua tran dau')) {
                 return { ok: true, code: 'WIN' }
             }
@@ -738,6 +757,25 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
+    if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'REQUEST_TIMEOUT') {
+        await updateAutoTrainerState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+            },
+            lastAction: {
+                action: 'tick',
+                result: 'skipped',
+                reason: 'REQUEST_TIMEOUT',
+                targetId: trainerId,
+                at: now,
+            },
+        })
+        stats.skipped += 1
+        stats.skippedReasons.REQUEST_TIMEOUT = (stats.skippedReasons.REQUEST_TIMEOUT || 0) + 1
+        return
+    }
+
     if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'SESSION_CONFLICT') {
         await updateAutoTrainerState({
             userId,
@@ -778,8 +816,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 at: now,
             },
             logMessage: shouldDisable
-                ? `Auto battle trainer dừng: ${outcome.reason || 'Không thể tiếp tục battle.'}`
-                : `Auto battle trainer lỗi tạm thời: ${outcome.reason || 'Battle thất bại.'}`,
+                ? `Auto battle trainer dừng: ${formatTrainerOutcomeReasonForLog(outcome.reason || 'Không thể tiếp tục battle.')}`
+                : `Auto battle trainer đang xử lý, sẽ tự thử lại: ${formatTrainerOutcomeReasonForLog(outcome.reason || 'Battle thất bại.')}`,
             logType: shouldDisable ? 'warn' : 'error',
         })
         stats.errors += 1
