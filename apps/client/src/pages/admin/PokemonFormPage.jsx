@@ -103,6 +103,15 @@ const toTitleCaseFromTokens = (tokens = []) => (
         .join(' ')
 )
 
+const formatFormPreviewLabel = (formId = '', formName = '') => {
+    const normalizedFormId = normalizeFormId(formId).toLowerCase()
+    const normalizedFormName = normalizeFormName(formName)
+    if (!normalizedFormId && !normalizedFormName) return 'Không xác định'
+    if (!normalizedFormId) return normalizedFormName
+    if (!normalizedFormName) return normalizedFormId
+    return `${normalizedFormName} (${normalizedFormId})`
+}
+
 const findPokemonSuffixTokenLength = (stemTokens = [], pokemonNames = []) => {
     if (!Array.isArray(stemTokens) || stemTokens.length === 0) return 0
     if (!Array.isArray(pokemonNames) || pokemonNames.length === 0) return 0
@@ -123,7 +132,7 @@ const findPokemonSuffixTokenLength = (stemTokens = [], pokemonNames = []) => {
     return matchedLength
 }
 
-const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, pokemonNames = []) => {
+const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, pokemonNames = [], options = {}) => {
     const stemRaw = String(fileName || '')
         .replace(/\.[^.]+$/, '')
         .trim()
@@ -136,11 +145,15 @@ const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, p
     const normalizedStemTokens = pokemonSuffixTokenLength > 0
         ? stemTokens.slice(0, stemTokens.length - pokemonSuffixTokenLength)
         : stemTokens
-    if (normalizedStemTokens.length === 0) return { formId: '', formName: '' }
+    const keepMega = options?.keepMega !== false
+    const effectiveStemTokens = keepMega
+        ? normalizedStemTokens
+        : normalizedStemTokens.filter((token) => token !== 'mega')
+    if (effectiveStemTokens.length === 0) return { formId: '', formName: '' }
 
     const variantPool = Array.isArray(variants) && variants.length > 0 ? variants : FORM_VARIANTS
 
-    const compactStem = normalizedStemTokens.join('')
+    const compactStem = effectiveStemTokens.join('')
 
     const matchedVariantById = variantPool.find((variant) => {
         const compactVariantId = splitStemTokens(variant?.id).join('')
@@ -157,7 +170,7 @@ const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, p
     const matchedVariant = matchedVariantById || matchedVariantByName
 
     if (!matchedVariant) {
-        const fallbackTokens = normalizedStemTokens
+        const fallbackTokens = effectiveStemTokens
         return {
             formId: fallbackTokens.join('-'),
             formName: toTitleCaseFromTokens(fallbackTokens),
@@ -254,6 +267,8 @@ export default function PokemonFormPage() {
     const [bulkFormUploadCount, setBulkFormUploadCount] = useState(0)
     const [bulkFormUploadNotice, setBulkFormUploadNotice] = useState('')
     const [showBulkUploadModal, setShowBulkUploadModal] = useState(false)
+    const [bulkUploadMegaMode, setBulkUploadMegaMode] = useState('keep')
+    const [bulkUploadSelectedFiles, setBulkUploadSelectedFiles] = useState([])
     const [bulkUploadQueueRows, setBulkUploadQueueRows] = useState([])
     const [customFormVariants, setCustomFormVariants] = useState([])
     const [showFormVariantModal, setShowFormVariantModal] = useState(false)
@@ -323,6 +338,8 @@ export default function PokemonFormPage() {
             .map((entry, index) => (index === selectedFormIndex ? '' : normalizeFormId(entry?.formId).toLowerCase()))
             .filter(Boolean)
     )
+    const hasPendingBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'pending')
+    const bulkMegaFileCount = bulkUploadQueueRows.filter((row) => row.hasMegaKeyword).length
 
     useEffect(() => {
         loadData()
@@ -527,14 +544,86 @@ export default function PokemonFormPage() {
         setForms(prev => [...prev, { formId: '', formName: '', imageUrl: '', sprites: {}, stats: {} }])
     }
 
+    const buildBulkUploadQueueRows = (files = [], megaMode = 'keep') => {
+        const list = Array.isArray(files) ? files : []
+        const pokemonNames = allPokemon
+            .map((entry) => String(entry?.name || '').trim())
+            .filter(Boolean)
+        const keepMega = megaMode === 'keep'
+
+        return list.map((file, index) => {
+            const safeFileName = String(file?.name || '').trim()
+            const inferredKeepMega = inferFormVariantFromFileName(
+                safeFileName,
+                formVariantOptions,
+                pokemonNames,
+                { keepMega: true }
+            )
+            const inferredRemoveMega = inferFormVariantFromFileName(
+                safeFileName,
+                formVariantOptions,
+                pokemonNames,
+                { keepMega: false }
+            )
+            const inferred = keepMega ? inferredKeepMega : inferredRemoveMega
+            const inferredKeepFormId = normalizeFormId(inferredKeepMega.formId).toLowerCase()
+            const inferredKeepFormName = normalizeFormName(inferredKeepMega.formName) || inferredKeepFormId
+            const inferredRemoveFormId = normalizeFormId(inferredRemoveMega.formId).toLowerCase()
+            const inferredRemoveFormName = normalizeFormName(inferredRemoveMega.formName) || inferredRemoveFormId
+            const inferredFormId = normalizeFormId(inferred.formId).toLowerCase()
+            const inferredFormName = normalizeFormName(inferred.formName) || inferredFormId
+            const stemTokens = splitStemTokens(safeFileName.replace(/\.[^.]+$/, ''))
+            const hasMegaKeyword = stemTokens.includes('mega')
+            const isMegaModeAffecting = hasMegaKeyword && (
+                inferredKeepFormId !== inferredRemoveFormId || inferredKeepFormName !== inferredRemoveFormName
+            )
+
+            const modeMessage = isMegaModeAffecting
+                ? (keepMega
+                    ? 'Giữ Mega đang được áp dụng cho ảnh này'
+                    : 'Bỏ Mega đang được áp dụng cho ảnh này')
+                : (hasMegaKeyword
+                    ? 'Ảnh có Mega nhưng kết quả suy luận không đổi giữa 2 chế độ'
+                    : '')
+
+            return {
+                queueId: `${Date.now()}-${index}-${safeFileName || 'unnamed-file'}`,
+                file,
+                fileName: safeFileName || `file-${index + 1}`,
+                inferredFormId,
+                inferredFormName,
+                inferredKeepFormId,
+                inferredKeepFormName,
+                inferredRemoveFormId,
+                inferredRemoveFormName,
+                hasMegaKeyword,
+                isMegaModeAffecting,
+                status: 'pending',
+                progress: 0,
+                message: modeMessage,
+            }
+        })
+    }
+
     const closeBulkUploadModal = (force = false) => {
         if (!force && bulkFormUploading) return
         setShowBulkUploadModal(false)
+        setBulkUploadMegaMode('keep')
+        setBulkUploadSelectedFiles([])
         setBulkUploadQueueRows([])
+        setBulkFormUploadProgress(0)
+        setBulkFormUploadCount(0)
     }
 
     const updateBulkUploadQueueRow = (queueId, patch = {}) => {
         setBulkUploadQueueRows((prev) => prev.map((row) => (row.queueId === queueId ? { ...row, ...patch } : row)))
+    }
+
+    const handleBulkMegaModeChange = (mode) => {
+        if (bulkFormUploading || bulkUploadSelectedFiles.length === 0 || !hasPendingBulkQueueRows) return
+        const normalizedMode = mode === 'remove' ? 'remove' : 'keep'
+        setBulkUploadMegaMode(normalizedMode)
+        setBulkUploadQueueRows(buildBulkUploadQueueRows(bulkUploadSelectedFiles, normalizedMode))
     }
 
     const applyBulkFormUploadResults = (items = [], onSummary = null) => {
@@ -555,16 +644,11 @@ export default function PokemonFormPage() {
             let createdCount = 0
             let skippedCount = 0
 
-            items.forEach(({ fileName, url }) => {
+            items.forEach(({ formId, formName, url }) => {
                 if (!url) return
 
-                const inferred = inferFormVariantFromFileName(
-                    fileName,
-                    formVariantOptions,
-                    allPokemon.map((entry) => String(entry?.name || '').trim()).filter(Boolean)
-                )
-                const normalizedFormId = normalizeFormId(inferred.formId).toLowerCase()
-                const fallbackFormName = normalizeFormName(inferred.formName)
+                const normalizedFormId = normalizeFormId(formId).toLowerCase()
+                const fallbackFormName = normalizeFormName(formName)
 
                 if (!normalizedFormId) {
                     skippedCount += 1
@@ -596,7 +680,7 @@ export default function PokemonFormPage() {
         })
     }
 
-    const handleBulkFormImagesSelected = async (event) => {
+    const handleBulkFormImagesSelected = (event) => {
         const files = Array.from(event.target.files || [])
         event.target.value = ''
         if (files.length === 0) return
@@ -609,35 +693,30 @@ export default function PokemonFormPage() {
             }
         }
 
+        setError('')
+        setBulkFormUploadNotice('')
+        setBulkUploadMegaMode('keep')
+        setBulkUploadSelectedFiles(files)
+        setBulkUploadQueueRows(buildBulkUploadQueueRows(files, 'keep'))
+        setBulkFormUploadProgress(0)
+        setBulkFormUploadCount(files.length)
+        setShowBulkUploadModal(true)
+    }
+
+    const startBulkFormUpload = async () => {
+        if (bulkFormUploading || bulkUploadQueueRows.length === 0) return
+
+        const preparedRows = bulkUploadQueueRows
+            .filter((row) => row.status === 'pending')
+            .map((row) => ({ ...row }))
+        if (preparedRows.length === 0) return
+
         try {
             setError('')
             setBulkFormUploadNotice('')
-            setShowBulkUploadModal(true)
             setBulkFormUploading(true)
             setBulkFormUploadProgress(0)
-            setBulkFormUploadCount(files.length)
-
-            const pokemonNames = allPokemon
-                .map((entry) => String(entry?.name || '').trim())
-                .filter(Boolean)
-
-            const preparedRows = files.map((file, index) => {
-                const inferred = inferFormVariantFromFileName(file.name, formVariantOptions, pokemonNames)
-                const inferredFormId = normalizeFormId(inferred.formId).toLowerCase()
-                const inferredFormName = normalizeFormName(inferred.formName) || inferredFormId
-                return {
-                    queueId: `${Date.now()}-${index}-${file.name}`,
-                    file,
-                    fileName: file.name,
-                    inferredFormId,
-                    inferredFormName,
-                    status: 'pending',
-                    progress: 0,
-                    message: '',
-                }
-            })
-
-            setBulkUploadQueueRows(preparedRows)
+            setBulkFormUploadCount(preparedRows.length)
 
             const existingFormIds = new Set(
                 forms
@@ -652,6 +731,17 @@ export default function PokemonFormPage() {
             for (let index = 0; index < preparedRows.length; index += 1) {
                 const row = preparedRows[index]
                 const normalizedFormId = normalizeFormId(row.inferredFormId).toLowerCase()
+
+                if (!row.file) {
+                    skippedBeforeUpload += 1
+                    updateBulkUploadQueueRow(row.queueId, {
+                        status: 'error',
+                        progress: 0,
+                        message: 'Tệp ảnh không hợp lệ, vui lòng chọn lại',
+                    })
+                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
+                    continue
+                }
 
                 if (!normalizedFormId) {
                     skippedBeforeUpload += 1
@@ -687,7 +777,11 @@ export default function PokemonFormPage() {
                     })
 
                     existingFormIds.add(normalizedFormId)
-                    uploadedItems.push({ fileName: row.fileName, url })
+                    uploadedItems.push({
+                        formId: normalizedFormId,
+                        formName: row.inferredFormName,
+                        url,
+                    })
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'success',
                         progress: 100,
@@ -723,7 +817,6 @@ export default function PokemonFormPage() {
             setError(err.message || 'Upload ảnh form hàng loạt thất bại')
         } finally {
             setBulkFormUploading(false)
-            setBulkFormUploadCount(0)
         }
     }
 
@@ -917,7 +1010,7 @@ export default function PokemonFormPage() {
                                 Nếu trùng formId đã có trong dữ liệu, hệ thống sẽ bỏ qua, không ghi đè.
                             </p>
                             <p className="text-[11px] text-cyan-800 mb-2">
-                                Sau khi chọn ảnh, modal tiến trình sẽ hiện theo từng file: xong ảnh này rồi mới sang ảnh tiếp theo.
+                                Sau khi chọn ảnh, modal sẽ hiện trước để chọn Giữ Mega hoặc Bỏ Mega rồi mới bắt đầu upload tuần tự.
                             </p>
                             <input
                                 id="bulk-form-image-upload"
@@ -1456,6 +1549,8 @@ export default function PokemonFormPage() {
                                 <span>
                                     {bulkFormUploading
                                         ? `Đang xử lý tuần tự ${bulkFormUploadCount} ảnh...`
+                                        : hasPendingBulkQueueRows
+                                            ? `Đã nạp ${bulkUploadQueueRows.length} ảnh, chờ bạn xác nhận để upload.`
                                         : `Đã xử lý xong ${bulkUploadQueueRows.length} ảnh.`}
                                 </span>
                                 <span>{bulkFormUploadProgress}%</span>
@@ -1468,27 +1563,86 @@ export default function PokemonFormPage() {
                             </div>
                         </div>
 
+                        <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-bold text-slate-700 uppercase mb-2">Tùy chọn Mega trước khi upload</div>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkMegaModeChange('keep')}
+                                    disabled={bulkFormUploading || !hasPendingBulkQueueRows}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold border transition-colors ${bulkUploadMegaMode === 'keep'
+                                        ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    Giữ Mega
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkMegaModeChange('remove')}
+                                    disabled={bulkFormUploading || !hasPendingBulkQueueRows}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold border transition-colors ${bulkUploadMegaMode === 'remove'
+                                        ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    Bỏ Mega
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                                Có {bulkMegaFileCount} ảnh chứa từ khóa Mega. Chọn "Giữ Mega" để giữ nguyên token Mega, hoặc "Bỏ Mega" để loại token này trước khi suy luận dạng.
+                            </p>
+                        </div>
+
                         <div className="max-h-[52vh] overflow-y-auto rounded border border-slate-200 divide-y divide-slate-100">
+                            <div className="hidden sm:grid sm:grid-cols-12 px-4 py-2 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                <div className="sm:col-span-5">Tệp</div>
+                                <div className="sm:col-span-3">Preview giữ Mega</div>
+                                <div className="sm:col-span-3">Preview bỏ Mega</div>
+                                <div className="sm:col-span-1 text-right">Trạng thái</div>
+                            </div>
                             {bulkUploadQueueRows.length === 0 ? (
                                 <div className="px-4 py-6 text-sm text-slate-500 text-center">Chưa có ảnh nào trong hàng đợi upload.</div>
                             ) : (
                                 bulkUploadQueueRows.map((row, index) => {
                                     const statusMeta = BULK_UPLOAD_STATUS_META[row.status] || BULK_UPLOAD_STATUS_META.pending
+                                    const keepPreviewLabel = formatFormPreviewLabel(row.inferredKeepFormId, row.inferredKeepFormName)
+                                    const removePreviewLabel = formatFormPreviewLabel(row.inferredRemoveFormId, row.inferredRemoveFormName)
+                                    const isKeepActive = bulkUploadMegaMode === 'keep'
+                                    const isRemoveActive = bulkUploadMegaMode === 'remove'
                                     return (
-                                        <div key={row.queueId} className="px-4 py-3 bg-white">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
+                                        <div
+                                            key={row.queueId}
+                                            className={`px-4 py-3 bg-white ${row.isMegaModeAffecting && hasPendingBulkQueueRows ? 'border-l-4 border-l-amber-300' : ''}`}
+                                        >
+                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                <div className="sm:col-span-5 min-w-0">
                                                     <div className="text-sm font-semibold text-slate-800 truncate">{index + 1}. {row.fileName}</div>
                                                     <div className="text-[11px] text-slate-500 mt-0.5">
-                                                        Dạng dự kiến: {row.inferredFormName ? `${row.inferredFormName} (${row.inferredFormId || 'n/a'})` : (row.inferredFormId || 'Không xác định')}
+                                                        Dạng đang áp dụng: {formatFormPreviewLabel(row.inferredFormId, row.inferredFormName)}
                                                     </div>
                                                     {row.message && (
-                                                        <div className="text-[11px] text-slate-600 mt-1">{row.message}</div>
+                                                        <div className={`text-[11px] mt-1 ${row.isMegaModeAffecting ? 'text-amber-700 font-semibold' : 'text-slate-600'}`}>
+                                                            {row.message}
+                                                        </div>
                                                     )}
                                                 </div>
-                                                <span className={`shrink-0 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide ${statusMeta.badgeClass}`}>
-                                                    {statusMeta.label}
-                                                </span>
+
+                                                <div className={`sm:col-span-3 text-[11px] rounded border px-2 py-1.5 ${isKeepActive
+                                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 font-semibold'
+                                                    : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                                                    {keepPreviewLabel}
+                                                </div>
+
+                                                <div className={`sm:col-span-3 text-[11px] rounded border px-2 py-1.5 ${isRemoveActive
+                                                    ? 'border-amber-300 bg-amber-50 text-amber-700 font-semibold'
+                                                    : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                                                    {removePreviewLabel}
+                                                </div>
+
+                                                <div className="sm:col-span-1 sm:text-right">
+                                                    <span className={`inline-flex px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide ${statusMeta.badgeClass}`}>
+                                                        {statusMeta.label}
+                                                    </span>
+                                                </div>
                                             </div>
                                             {(row.status === 'uploading' || row.status === 'success') && (
                                                 <div className="mt-2">
@@ -1507,6 +1661,14 @@ export default function PokemonFormPage() {
                         </div>
 
                         <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={startBulkFormUpload}
+                                disabled={bulkFormUploading || !hasPendingBulkQueueRows}
+                                className="mr-2 px-4 py-2 bg-cyan-600 border border-cyan-600 rounded text-sm font-bold text-white hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {bulkFormUploading ? 'Đang upload...' : (hasPendingBulkQueueRows ? 'Bắt đầu upload' : 'Đã upload xong')}
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => closeBulkUploadModal()}
