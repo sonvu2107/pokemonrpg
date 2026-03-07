@@ -522,11 +522,22 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     const durationLimitMinutes = toSafeInt(userDoc?.vipBenefits?.autoBattleTrainerDurationMinutes, 0)
     const dailyState = resolveDailyState(autoState, dailyLimit)
     const now = new Date()
+    const nowMs = now.getTime()
+    const isSameRuntimeDay = String(autoState.dayKey || '') === dailyState.dayKey
+    const storedRuntimeMs = isSameRuntimeDay ? Math.max(0, Number(autoState.dayRuntimeMs || 0)) : 0
+    const lastRuntimeAtMs = (isSameRuntimeDay && autoState.lastRuntimeAt)
+        ? new Date(autoState.lastRuntimeAt).getTime()
+        : nowMs
+    const runtimeDeltaMs = Math.max(0, Math.min(60000, nowMs - lastRuntimeAtMs))
+    const runtimeMsToday = Math.max(0, storedRuntimeMs + runtimeDeltaMs)
+    const runtimeMinutesToday = Math.floor(runtimeMsToday / 60000)
 
     const baseSyncPatch = {
         'autoTrainer.dayKey': dailyState.dayKey,
         'autoTrainer.dayCount': dailyState.count,
         'autoTrainer.dayLimit': dailyState.limit,
+        'autoTrainer.dayRuntimeMs': runtimeMsToday,
+        'autoTrainer.lastRuntimeAt': now,
     }
 
     if (!hasVipAutoTrainerAccess(userDoc)) {
@@ -536,6 +547,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatch,
                 'autoTrainer.enabled': false,
                 'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -558,6 +570,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatch,
                 'autoTrainer.enabled': false,
                 'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'quota',
@@ -573,16 +586,14 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    if (durationLimitMinutes > 0) {
-        const startedAtMs = autoState.startedAt ? new Date(autoState.startedAt).getTime() : Date.now()
-        const elapsedMs = Date.now() - startedAtMs
-        if (elapsedMs >= durationLimitMinutes * 60 * 1000) {
+    if (durationLimitMinutes > 0 && runtimeMinutesToday >= durationLimitMinutes) {
             await updateAutoTrainerState({
                 userId,
                 setPatch: {
                     ...baseSyncPatch,
                     'autoTrainer.enabled': false,
                     'autoTrainer.startedAt': null,
+                    'autoTrainer.lastRuntimeAt': null,
                 },
                 lastAction: {
                     action: 'duration',
@@ -591,12 +602,11 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     targetId: autoState.trainerId,
                     at: now,
                 },
-                logMessage: 'Đã hết thời gian dùng auto battle trainer theo gói VIP.',
+                logMessage: `Đã hết thời lượng auto battle hôm nay (${runtimeMinutesToday}/${durationLimitMinutes} phút).`,
                 logType: 'warn',
             })
             stats.skipped += 1
             return
-        }
     }
 
     const trainerId = normalizeId(autoState.trainerId)
@@ -607,6 +617,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatch,
                 'autoTrainer.enabled': false,
                 'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -634,6 +645,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatch,
                 'autoTrainer.enabled': false,
                 'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -657,6 +669,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatch,
                 'autoTrainer.enabled': false,
                 'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -754,6 +767,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...(shouldDisable ? {
                     'autoTrainer.enabled': false,
                     'autoTrainer.startedAt': null,
+                    'autoTrainer.lastRuntimeAt': null,
                 } : {}),
             },
             lastAction: {
@@ -787,6 +801,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             'autoTrainer.dayKey': dailyState.dayKey,
             'autoTrainer.dayCount': nextDailyCount,
             'autoTrainer.dayLimit': dailyState.limit,
+            'autoTrainer.dayRuntimeMs': runtimeMsToday,
+            'autoTrainer.lastRuntimeAt': reachedLimit ? null : now,
         },
         lastAction: {
             action: 'auto_run',

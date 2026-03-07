@@ -22,6 +22,7 @@ const toBoolean = (value) => {
 }
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
@@ -570,6 +571,149 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('GET /api/pokemon/pokedex error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/pokemon/evolution-zone (protected)
+router.get('/evolution-zone', authMiddleware, async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const limit = Math.min(60, Math.max(1, parseInt(req.query.limit, 10) || 24))
+        const skip = (page - 1) * limit
+        const search = String(req.query.search || '').trim()
+        const query = { userId: req.user.userId }
+
+        if (search) {
+            const searchRegex = new RegExp(escapeRegExp(search), 'i')
+            const numericSearch = Number.parseInt(search, 10)
+            const speciesSearchQuery = Number.isFinite(numericSearch)
+                ? {
+                    $or: [
+                        { name: searchRegex },
+                        { pokedexNumber: numericSearch },
+                    ],
+                }
+                : { name: searchRegex }
+            const speciesRows = await Pokemon.find(speciesSearchQuery)
+                .select('_id')
+                .lean()
+            const speciesIds = speciesRows
+                .map((entry) => entry?._id)
+                .filter(Boolean)
+
+            query.$or = [
+                { nickname: searchRegex },
+                { pokemonId: { $in: speciesIds } },
+            ]
+        }
+
+        const userPokemonRows = await UserPokemon.find(query)
+            .select('pokemonId nickname level formId isShiny location createdAt updatedAt')
+            .populate('pokemonId', 'name pokedexNumber rarity imageUrl sprites forms defaultFormId evolution')
+            .sort({ level: -1, updatedAt: -1, _id: -1 })
+            .lean()
+
+        const evolvableRows = []
+        const targetIdSet = new Set()
+
+        for (const entry of userPokemonRows) {
+            const species = entry?.pokemonId
+            if (!species) continue
+
+            const evolutionRule = resolveEvolutionRule(species, entry?.formId)
+            const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
+            if (!evolutionRule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1) continue
+
+            const currentLevel = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+            if (currentLevel < minLevel) continue
+
+            const targetId = String(evolutionRule.evolvesTo?._id || evolutionRule.evolvesTo || '').trim()
+            if (!targetId) continue
+
+            targetIdSet.add(targetId)
+            evolvableRows.push({
+                entry,
+                minLevel,
+                targetId,
+            })
+        }
+
+        const targetIds = Array.from(targetIdSet)
+        const targetSpeciesRows = targetIds.length > 0
+            ? await Pokemon.find({ _id: { $in: targetIds } })
+                .select('name pokedexNumber imageUrl sprites forms defaultFormId')
+                .lean()
+            : []
+        const targetSpeciesById = new Map(
+            targetSpeciesRows.map((row) => [String(row?._id || '').trim(), row])
+        )
+
+        const rows = evolvableRows.map(({ entry, minLevel, targetId }) => {
+            const species = entry?.pokemonId || null
+            const currentDisplay = resolvePokemonFormDisplay(species, entry?.formId)
+            const targetSpecies = targetSpeciesById.get(targetId) || null
+            const targetDisplay = resolvePokemonFormDisplay(targetSpecies, entry?.formId)
+
+            return {
+                ...entry,
+                level: Math.max(1, Number.parseInt(entry?.level, 10) || 1),
+                pokemonId: species
+                    ? {
+                        _id: species._id,
+                        name: species.name,
+                        pokedexNumber: Math.max(0, Number(species.pokedexNumber || 0)),
+                        rarity: String(species.rarity || 'd').trim().toLowerCase() || 'd',
+                        defaultFormId: normalizeFormId(species.defaultFormId || 'normal'),
+                        forms: Array.isArray(species.forms) ? species.forms : [],
+                        sprites: {
+                            normal: currentDisplay.sprite,
+                        },
+                    }
+                    : null,
+                evolution: {
+                    canEvolve: true,
+                    evolutionLevel: minLevel,
+                    targetPokemon: targetSpecies
+                        ? {
+                            _id: targetSpecies._id,
+                            name: targetSpecies.name,
+                            pokedexNumber: Math.max(0, Number(targetSpecies.pokedexNumber || 0)),
+                            defaultFormId: normalizeFormId(targetSpecies.defaultFormId || 'normal'),
+                            forms: Array.isArray(targetSpecies.forms) ? targetSpecies.forms : [],
+                            sprites: {
+                                normal: targetDisplay.sprite,
+                            },
+                        }
+                        : null,
+                },
+            }
+        })
+
+        const total = rows.length
+        const pageRows = rows.slice(skip, skip + limit)
+        const pages = Math.max(1, Math.ceil(total / limit))
+
+        return res.json({
+            ok: true,
+            pokemon: pageRows,
+            pagination: {
+                page,
+                limit,
+                total,
+                pages,
+                hasNextPage: page < pages,
+                hasPrevPage: page > 1,
+            },
+            filters: {
+                search,
+            },
+            summary: {
+                totalEligible: total,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon/evolution-zone error:', error)
+        return res.status(500).json({ ok: false, message: 'Không thể tải khu vực tiến hóa' })
     }
 })
 

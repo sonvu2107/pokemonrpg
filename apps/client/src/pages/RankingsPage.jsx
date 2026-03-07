@@ -5,6 +5,8 @@ import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
+import { useAuth } from '../context/AuthContext'
+import { ADMIN_PERMISSIONS } from '../constants/adminPermissions'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -17,6 +19,11 @@ const DAILY_TABS = [
     { label: 'BXH Tìm Kiếm', value: 'search' },
     { label: 'BXH EXP Bản Đồ', value: 'mapExp' },
     { label: 'BXH Điểm Nguyệt', value: 'moonPoints' },
+]
+const OVERALL_TABS = [
+    { label: 'Tài Phú', value: 'wealth' },
+    { label: 'HLV Đã Leo', value: 'trainerBattle' },
+    { label: 'LC', value: 'lc' },
 ]
 const WEEKDAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
@@ -42,35 +49,46 @@ const buildDateButtons = (today = new Date()) => {
 }
 
 export default function RankingsPage() {
+    const { user, canAccessAdminModule } = useAuth()
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
     const [dailyType, setDailyType] = useState('search')
+    const [overallMode, setOverallMode] = useState('wealth')
 
     const location = useLocation()
     const isDaily = location.pathname.includes('daily')
     const rankingType = isDaily ? 'daily' : 'overall'
     const todayKey = useMemo(() => toDateKey(new Date()), [])
     const [selectedDate, setSelectedDate] = useState(todayKey)
+    const [overallPeriod, setOverallPeriod] = useState(null)
     const dateButtons = useMemo(() => buildDateButtons(new Date()), [])
     const dailyTitleMap = {
         search: 'Bảng Xếp Hạng Tìm Kiếm Hằng Ngày',
         mapExp: 'Bảng Xếp Hạng EXP Bản Đồ Hằng Ngày',
         moonPoints: 'Bảng Xếp Hạng Điểm Nguyệt Hằng Ngày',
     }
-    const pageTitle = isDaily ? (dailyTitleMap[dailyType] || dailyTitleMap.search) : 'Bảng Xếp Hạng Chung'
+    const overallTitleMap = {
+        wealth: 'Bảng Xếp Hạng Tài Phú Tuần',
+        trainerBattle: 'Bảng Xếp Hạng HLV Đã Leo Tuần',
+        lc: 'Bảng Xếp Hạng Tổng LC Tuần',
+    }
+    const pageTitle = isDaily
+        ? (dailyTitleMap[dailyType] || dailyTitleMap.search)
+        : (overallTitleMap[overallMode] || overallTitleMap.wealth)
     const defaultReturnTo = isDaily ? '/rankings/daily' : '/rankings/overall'
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo })
+    const canOpenWeeklyRewardManager = user?.role === 'admin' && canAccessAdminModule(ADMIN_PERMISSIONS.REWARDS)
 
     useEffect(() => {
         setCurrentPage(1)
-    }, [rankingType, dailyType, selectedDate])
+    }, [rankingType, dailyType, selectedDate, overallMode])
 
     useEffect(() => {
         loadRankings(currentPage)
-    }, [currentPage, rankingType, dailyType, selectedDate])
+    }, [currentPage, rankingType, dailyType, selectedDate, overallMode])
 
     const loadRankings = async (page) => {
         try {
@@ -78,19 +96,43 @@ export default function RankingsPage() {
             setLoading(true)
             const data = rankingType === 'daily'
                 ? await gameApi.getDailyRankings({ page, limit: 35, type: dailyType, date: selectedDate })
-                : await gameApi.getRankings(rankingType, page, 35)
+                : await gameApi.getRankings(rankingType, page, 35, rankingType === 'overall' ? { mode: overallMode } : {})
 
             setRankings(data.rankings || [])
             setPagination(data.pagination || null)
+            setOverallPeriod(rankingType === 'overall' ? (data.period || null) : null)
 
             if (rankingType === 'daily' && data.date && data.date !== selectedDate) {
                 setSelectedDate(data.date)
+            }
+            if (rankingType === 'overall') {
+                const normalizedServerMode = String(data?.mode || '').trim()
+                const isKnownMode = OVERALL_TABS.some((tab) => tab.value === normalizedServerMode)
+                if (isKnownMode && normalizedServerMode !== overallMode) {
+                    setOverallMode(normalizedServerMode)
+                }
             }
         } catch (err) {
             setError(err.message || 'Không thể tải bảng xếp hạng')
         } finally {
             setLoading(false)
         }
+    }
+
+    const overallPrimaryLabel = overallMode === 'wealth'
+        ? 'Xu BK Kiếm Được Tuần'
+        : overallMode === 'trainerBattle'
+            ? 'HLV Leo Được Tuần'
+            : 'Tổng LC Party'
+
+    const getOverallPrimaryValue = (player = {}) => {
+        if (overallMode === 'wealth') {
+            return numberFormat(player.weeklyPlatinumCoins ?? player.platinumCoins)
+        }
+        if (overallMode === 'trainerBattle') {
+            return numberFormat(player.weeklyTrainerBattleLevels ?? player.trainerBattleLevel)
+        }
+        return numberFormat(player.combatPower)
     }
 
     const renderPagination = () => {
@@ -189,8 +231,44 @@ export default function RankingsPage() {
                 <div className="flex items-center justify-center gap-2 text-sm font-bold">
                     <Link to="/rankings/overall" className={`px-3 py-1 rounded ${!isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Chung</Link>
                     <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Pokémon</Link>
+                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Độ Hiếm</Link>
                     <Link to="/rankings/daily" className={`px-3 py-1 rounded ${isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Hàng Ngày</Link>
                 </div>
+                {!isDaily && (
+                    <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-bold">
+                            {OVERALL_TABS.map((tab) => (
+                                <button
+                                    key={tab.value}
+                                    type="button"
+                                    onClick={() => setOverallMode(tab.value)}
+                                    className={`rounded px-3 py-1 border transition-colors ${overallMode === tab.value
+                                        ? 'bg-cyan-600 border-cyan-700 text-white'
+                                        : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
+                                        }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="text-xs font-semibold text-slate-600">
+                            Reset mỗi T2 hằng tuần
+                            {overallPeriod?.weekStart && overallPeriod?.weekEnd
+                                ? ` (${overallPeriod.weekStart} - ${overallPeriod.weekEnd})`
+                                : ''}
+                        </div>
+                        {canOpenWeeklyRewardManager && (
+                            <div>
+                                <Link
+                                    to="/admin/weekly-leaderboards"
+                                    className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100"
+                                >
+                                    Mở Quản Lý Trao Thưởng
+                                </Link>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {isDaily && (
@@ -256,7 +334,7 @@ export default function RankingsPage() {
                                     </>
                                 ) : (
                                     <>
-                                        <th className="px-4 py-3 text-right font-bold text-blue-900">Kinh Nghiệm</th>
+                                        <th className="px-4 py-3 text-right font-bold text-blue-900">{overallPrimaryLabel}</th>
                                         <th className="px-4 py-3 text-right font-bold text-blue-900 w-28">Cấp Độ</th>
                                     </>
                                 )}
@@ -355,7 +433,7 @@ export default function RankingsPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-slate-700">
-                                                    {numberFormat(player.experience)}
+                                                    {getOverallPrimaryValue(player)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-slate-700">
                                                     {numberFormat(player.level)}

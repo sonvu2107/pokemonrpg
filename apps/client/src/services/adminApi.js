@@ -700,6 +700,74 @@ export const dailyRewardApi = {
     },
 }
 
+// Weekly leaderboard reward endpoints
+export const leaderboardRewardApi = {
+    // GET /api/admin/leaderboard-rewards?mode=&weekStart=
+    async list(params = {}) {
+        const query = new URLSearchParams()
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                query.append(key, String(value))
+            }
+        })
+
+        const queryString = query.toString()
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards${queryString ? `?${queryString}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải dữ liệu trao thưởng top tuần')
+        return res.json()
+    },
+
+    // POST /api/admin/leaderboard-rewards/award
+    async award(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/award`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Trao thưởng top tuần thất bại')
+        return res.json()
+    },
+
+    // GET /api/admin/leaderboard-rewards/meta/items
+    async lookupItems(params = {}) {
+        const query = new URLSearchParams()
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                query.append(key, String(value))
+            }
+        })
+
+        const queryString = query.toString()
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/meta/items${queryString ? `?${queryString}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách vật phẩm thưởng')
+        return res.json()
+    },
+
+    // GET /api/admin/leaderboard-rewards/meta/pokemon
+    async lookupPokemon(params = {}) {
+        const query = new URLSearchParams()
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                query.append(key, String(value))
+            }
+        })
+
+        const queryString = query.toString()
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/meta/pokemon${queryString ? `?${queryString}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách Pokemon thưởng')
+        return res.json()
+    },
+}
+
 // Promo code endpoints
 export const promoCodeApi = {
     // GET /api/admin/promo-codes

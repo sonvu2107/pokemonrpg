@@ -359,6 +359,25 @@ export const gameApi = {
         return data
     },
 
+    // GET /api/pokemon/evolution-zone
+    async getEvolutionZone(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/pokemon/evolution-zone${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải khu vực tiến hóa')
+        }
+        return res.json()
+    },
+
     // GET /api/pokemon/:id/skills
     async getPokemonSkills(id) {
         const res = await fetch(`${API_URL}/pokemon/${id}/skills`, {
@@ -599,6 +618,44 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/rankings/pokemon-rarity - Pokemon rarity amount viewer
+    async getPokemonRarityStats(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/rankings/pokemon-rarity${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải bảng độ hiếm Pokemon')
+        }
+        return res.json()
+    },
+
+    // GET /api/rankings/pokemon-rarity/options - Pokemon selector options
+    async getPokemonRarityOptions(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/rankings/pokemon-rarity/options${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải danh sách Pokemon cho bộ chọn')
+        }
+        return res.json()
+    },
+
     // GET /api/shop/buy
     async getShopBuyListings(params = {}) {
         const searchParams = new URLSearchParams()
@@ -755,8 +812,19 @@ export const gameApi = {
     },
 
     // GET /api/rankings/:type - Get rankings
-    async getRankings(type = 'overall', page = 1, limit = 35) {
-        const res = await fetch(`${API_URL}/rankings/${type}?page=${page}&limit=${limit}`, {
+    async getRankings(type = 'overall', page = 1, limit = 35, params = {}) {
+        const searchParams = new URLSearchParams({
+            page: String(page),
+            limit: String(limit),
+        })
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/rankings/${type}${query ? `?${query}` : ''}`, {
             headers: getAuthHeader(),
         })
         if (!res.ok) {

@@ -163,6 +163,7 @@ export default function PokemonRankingsPage() {
                 <div className="flex items-center justify-center gap-2 text-sm font-bold">
                     <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Chung</Link>
                     <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-600 text-white">Pokémon</Link>
+                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Độ Hiếm</Link>
                     <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Hàng Ngày</Link>
                 </div>
                 <div className="mt-3 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold">

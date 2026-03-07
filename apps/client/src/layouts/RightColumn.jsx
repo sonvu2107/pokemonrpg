@@ -87,6 +87,7 @@ export default function RightColumn() {
         { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
         { to: '/admin/battle', label: 'Quản lý Battle', permission: ADMIN_PERMISSIONS.BATTLE },
         { to: '/admin/daily-rewards', label: 'Quản lý Quà Ngày', permission: ADMIN_PERMISSIONS.REWARDS },
+        { to: '/admin/weekly-leaderboards', label: 'Quản lý Top Tuần', permission: ADMIN_PERMISSIONS.REWARDS },
         { to: '/admin/promo-codes', label: 'Quản lý Mã Code', permission: ADMIN_PERMISSIONS.CODES },
     ].filter((link) => !link.permission || canAccessAdminModule(link.permission))
 
@@ -158,6 +159,7 @@ export default function RightColumn() {
 
             <SidebarSection title="Xếp Hạng" iconId={215}>
                 <SidebarLink to="/rankings/pokemon">BXH Pokémon</SidebarLink>
+                <SidebarLink to="/rankings/rarity">Bảng Độ Hiếm</SidebarLink>
                 <SidebarLink to="/rankings/overall">BXH Tổng</SidebarLink>
                 <SidebarLink to="/rankings/daily">BXH Ngày</SidebarLink>
             </SidebarSection>

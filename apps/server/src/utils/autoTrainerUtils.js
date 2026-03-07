@@ -132,6 +132,8 @@ export const normalizeAutoTrainerState = (stateLike = {}) => {
         dayKey: String(stateLike?.dayKey || '').trim(),
         dayCount: toSafeInt(stateLike?.dayCount, 0),
         dayLimit: toSafeInt(stateLike?.dayLimit, 0),
+        dayRuntimeMs: toSafeInt(stateLike?.dayRuntimeMs, 0, 0, 86400000),
+        lastRuntimeAt: stateLike?.lastRuntimeAt ? new Date(stateLike.lastRuntimeAt) : null,
         lastAction: stateLike?.lastAction && typeof stateLike.lastAction === 'object'
             ? {
                 action: String(stateLike.lastAction.action || '').trim(),
@@ -166,6 +168,8 @@ export const normalizeAutoSearchState = (stateLike = {}) => {
         dayKey: String(stateLike?.dayKey || '').trim(),
         dayCount: toSafeInt(stateLike?.dayCount, 0),
         dayLimit: toSafeInt(stateLike?.dayLimit, 0),
+        dayRuntimeMs: toSafeInt(stateLike?.dayRuntimeMs, 0, 0, 86400000),
+        lastRuntimeAt: stateLike?.lastRuntimeAt ? new Date(stateLike.lastRuntimeAt) : null,
         history: {
             foundPokemonCount: toSafeInt(history?.foundPokemonCount, 0),
             itemDropCount: toSafeInt(history?.itemDropCount, 0),

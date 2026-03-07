@@ -59,6 +59,30 @@ const BULK_UPLOAD_STATUS_META = {
         badgeClass: 'bg-red-100 text-red-700 border border-red-200',
     },
 }
+const BULK_UPLOAD_RETRY_ATTEMPTS = 3
+const BULK_UPLOAD_RETRY_BASE_DELAY_MS = 800
+const BULK_UPLOAD_MAX_CONCURRENCY = 3
+
+const waitForMs = (ms = 0) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
+
+const isRetryableUploadError = (error) => {
+    const message = String(error?.message || '').toLowerCase()
+    if (!message) return false
+
+    const retryableHints = [
+        'lỗi mạng',
+        'network',
+        'timeout',
+        'timed out',
+        '429',
+        '500',
+        '502',
+        '503',
+        '504',
+    ]
+
+    return retryableHints.some((hint) => message.includes(hint))
+}
 
 const RARITY_ALIASES = {
     superlegendary: 'ss',
@@ -74,7 +98,6 @@ const normalizeRarity = (rarity) => {
     const normalized = String(rarity).trim().toLowerCase()
     return RARITY_ALIASES[normalized] || normalized
 }
-
 
 const normalizeFormId = (formId) => String(formId || '').trim()
 const normalizeFormName = (formName) => String(formName || '').trim()
@@ -150,11 +173,8 @@ const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, p
         ? normalizedStemTokens
         : normalizedStemTokens.filter((token) => token !== 'mega')
     if (effectiveStemTokens.length === 0) return { formId: '', formName: '' }
-
     const variantPool = Array.isArray(variants) && variants.length > 0 ? variants : FORM_VARIANTS
-
     const compactStem = effectiveStemTokens.join('')
-
     const matchedVariantById = variantPool.find((variant) => {
         const compactVariantId = splitStemTokens(variant?.id).join('')
         return compactVariantId && compactVariantId === compactStem
@@ -193,7 +213,6 @@ const resolveDefaultFormId = (formList = [], preferredDefault = 'normal') => {
 
 const sanitizeCustomVariants = (variants = []) => {
     if (!Array.isArray(variants)) return []
-
     const next = []
     const seen = new Set()
 
@@ -257,7 +276,6 @@ export default function PokemonFormPage() {
     const { id } = useParams()
     const navigate = useNavigate()
     const isEdit = Boolean(id)
-
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [allPokemon, setAllPokemon] = useState([])
@@ -279,7 +297,6 @@ export default function PokemonFormPage() {
     const [newFormVariantName, setNewFormVariantName] = useState('')
     const [formVariantModalError, setFormVariantModalError] = useState('')
     const [formVariantSubmitting, setFormVariantSubmitting] = useState(false)
-
     const [defaultFormId, setDefaultFormId] = useState('normal')
     const [forms, setForms] = useState([
         { formId: 'normal', formName: 'Normal', imageUrl: '', sprites: {}, stats: {} },
@@ -339,6 +356,7 @@ export default function PokemonFormPage() {
             .filter(Boolean)
     )
     const hasPendingBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'pending')
+    const hasFailedBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'error')
     const bulkMegaFileCount = bulkUploadQueueRows.filter((row) => row.hasMegaKeyword).length
 
     useEffect(() => {
@@ -626,6 +644,22 @@ export default function PokemonFormPage() {
         setBulkUploadQueueRows(buildBulkUploadQueueRows(bulkUploadSelectedFiles, normalizedMode))
     }
 
+    const retryFailedBulkRows = () => {
+        if (bulkFormUploading || !hasFailedBulkQueueRows) return
+
+        setBulkUploadQueueRows((prev) => prev.map((row) => {
+            if (row.status !== 'error') return row
+            return {
+                ...row,
+                status: 'pending',
+                progress: 0,
+                message: 'Đã đưa lại vào hàng đợi để thử lại',
+            }
+        }))
+        setBulkFormUploadProgress(0)
+        setBulkFormUploadNotice('')
+    }
+
     const applyBulkFormUploadResults = (items = [], onSummary = null) => {
         if (!Array.isArray(items) || items.length === 0) {
             if (typeof onSummary === 'function') {
@@ -728,75 +762,139 @@ export default function PokemonFormPage() {
             let skippedBeforeUpload = 0
             let uploadFailed = 0
 
-            for (let index = 0; index < preparedRows.length; index += 1) {
-                const row = preparedRows[index]
+            let completedCount = 0
+            const totalCount = preparedRows.length
+            const uploadableRows = []
+            const updateOverallProgress = () => {
+                setBulkFormUploadProgress(Math.round((completedCount / totalCount) * 100))
+            }
+
+            preparedRows.forEach((row) => {
                 const normalizedFormId = normalizeFormId(row.inferredFormId).toLowerCase()
 
                 if (!row.file) {
                     skippedBeforeUpload += 1
+                    completedCount += 1
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'error',
                         progress: 0,
                         message: 'Tệp ảnh không hợp lệ, vui lòng chọn lại',
                     })
-                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
-                    continue
+                    updateOverallProgress()
+                    return
                 }
 
                 if (!normalizedFormId) {
                     skippedBeforeUpload += 1
+                    completedCount += 1
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'skipped',
                         progress: 0,
                         message: 'Không đọc được formId từ tên file',
                     })
-                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
-                    continue
+                    updateOverallProgress()
+                    return
                 }
 
                 if (existingFormIds.has(normalizedFormId)) {
                     skippedBeforeUpload += 1
+                    completedCount += 1
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'skipped',
                         progress: 0,
                         message: `Đã tồn tại formId ${normalizedFormId}, bỏ qua để tránh ghi đè`,
                     })
-                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
-                    continue
+                    updateOverallProgress()
+                    return
                 }
 
-                updateBulkUploadQueueRow(row.queueId, {
-                    status: 'uploading',
-                    progress: 0,
-                    message: `Đang upload: ${row.inferredFormName || normalizedFormId}`,
+                existingFormIds.add(normalizedFormId)
+                uploadableRows.push({ ...row, normalizedFormId })
+            })
+
+            if (uploadableRows.length > 0) {
+                let cursor = 0
+                const workerCount = Math.min(BULK_UPLOAD_MAX_CONCURRENCY, uploadableRows.length)
+
+                const workers = new Array(workerCount).fill(0).map(async () => {
+                    while (true) {
+                        const currentIndex = cursor
+                        cursor += 1
+                        if (currentIndex >= uploadableRows.length) break
+
+                        const row = uploadableRows[currentIndex]
+                        const normalizedFormId = row.normalizedFormId
+
+                        updateBulkUploadQueueRow(row.queueId, {
+                            status: 'uploading',
+                            progress: 0,
+                            message: `Đang upload: ${row.inferredFormName || normalizedFormId}`,
+                        })
+
+                        try {
+                            let uploadedUrl = ''
+                            let lastUploadError = null
+
+                            for (let attempt = 1; attempt <= BULK_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
+                                if (attempt > 1) {
+                                    updateBulkUploadQueueRow(row.queueId, {
+                                        status: 'uploading',
+                                        progress: 0,
+                                        message: `Thử lại ${attempt}/${BULK_UPLOAD_RETRY_ATTEMPTS}: ${row.inferredFormName || normalizedFormId}`,
+                                    })
+                                }
+
+                                try {
+                                    const url = await uploadOneToCloudinary(row.file, (percentage) => {
+                                        updateBulkUploadQueueRow(row.queueId, { progress: percentage })
+                                    })
+                                    uploadedUrl = url
+                                    lastUploadError = null
+                                    break
+                                } catch (err) {
+                                    lastUploadError = err
+                                    const shouldRetry = attempt < BULK_UPLOAD_RETRY_ATTEMPTS && isRetryableUploadError(err)
+                                    if (!shouldRetry) break
+
+                                    const delayMs = BULK_UPLOAD_RETRY_BASE_DELAY_MS * attempt
+                                    updateBulkUploadQueueRow(row.queueId, {
+                                        status: 'uploading',
+                                        progress: 0,
+                                        message: `Mạng không ổn định, sẽ thử lại sau ${Math.ceil(delayMs / 1000)}s...`,
+                                    })
+                                    await waitForMs(delayMs)
+                                }
+                            }
+
+                            if (!uploadedUrl) {
+                                throw lastUploadError || new Error('Upload thất bại')
+                            }
+
+                            uploadedItems.push({
+                                formId: normalizedFormId,
+                                formName: row.inferredFormName,
+                                url: uploadedUrl,
+                            })
+                            updateBulkUploadQueueRow(row.queueId, {
+                                status: 'success',
+                                progress: 100,
+                                message: `Đã upload xong và xếp vào dạng ${normalizedFormId}`,
+                            })
+                        } catch (err) {
+                            uploadFailed += 1
+                            updateBulkUploadQueueRow(row.queueId, {
+                                status: 'error',
+                                progress: 0,
+                                message: err.message || 'Upload thất bại',
+                            })
+                        } finally {
+                            completedCount += 1
+                            updateOverallProgress()
+                        }
+                    }
                 })
 
-                try {
-                    const url = await uploadOneToCloudinary(row.file, (percentage) => {
-                        updateBulkUploadQueueRow(row.queueId, { progress: percentage })
-                    })
-
-                    existingFormIds.add(normalizedFormId)
-                    uploadedItems.push({
-                        formId: normalizedFormId,
-                        formName: row.inferredFormName,
-                        url,
-                    })
-                    updateBulkUploadQueueRow(row.queueId, {
-                        status: 'success',
-                        progress: 100,
-                        message: `Đã upload xong và xếp vào dạng ${normalizedFormId}`,
-                    })
-                } catch (err) {
-                    uploadFailed += 1
-                    updateBulkUploadQueueRow(row.queueId, {
-                        status: 'error',
-                        progress: 0,
-                        message: err.message || 'Upload thất bại',
-                    })
-                } finally {
-                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
-                }
+                await Promise.all(workers)
             }
 
             await new Promise((resolve) => {
@@ -1010,7 +1108,7 @@ export default function PokemonFormPage() {
                                 Nếu trùng formId đã có trong dữ liệu, hệ thống sẽ bỏ qua, không ghi đè.
                             </p>
                             <p className="text-[11px] text-cyan-800 mb-2">
-                                Sau khi chọn ảnh, modal sẽ hiện trước để chọn Giữ Mega hoặc Bỏ Mega rồi mới bắt đầu upload tuần tự.
+                                Sau khi chọn ảnh, modal sẽ hiện trước để chọn Giữ Mega hoặc Bỏ Mega rồi mới bắt đầu upload.
                             </p>
                             <input
                                 id="bulk-form-image-upload"
@@ -1548,7 +1646,7 @@ export default function PokemonFormPage() {
                             <div className="flex items-center justify-between text-xs font-semibold text-cyan-900 mb-2">
                                 <span>
                                     {bulkFormUploading
-                                        ? `Đang xử lý tuần tự ${bulkFormUploadCount} ảnh...`
+                                        ? `Đang upload tối đa ${BULK_UPLOAD_MAX_CONCURRENCY} ảnh song song (${bulkFormUploadCount} ảnh trong hàng xử lý)...`
                                         : hasPendingBulkQueueRows
                                             ? `Đã nạp ${bulkUploadQueueRows.length} ảnh, chờ bạn xác nhận để upload.`
                                         : `Đã xử lý xong ${bulkUploadQueueRows.length} ảnh.`}
@@ -1589,6 +1687,12 @@ export default function PokemonFormPage() {
                             </div>
                             <p className="text-[11px] text-slate-600">
                                 Có {bulkMegaFileCount} ảnh chứa từ khóa Mega. Chọn "Giữ Mega" để giữ nguyên token Mega, hoặc "Bỏ Mega" để loại token này trước khi suy luận dạng.
+                            </p>
+                            <p className="text-[11px] text-slate-600 mt-1">
+                                Nếu lỗi mạng tạm thời, mỗi ảnh sẽ tự thử lại tối đa {BULK_UPLOAD_RETRY_ATTEMPTS} lần trước khi báo lỗi.
+                            </p>
+                            <p className="text-[11px] text-slate-600 mt-1">
+                                Để tăng tốc, hệ thống upload song song tối đa {BULK_UPLOAD_MAX_CONCURRENCY} ảnh/lượt nhưng vẫn giữ rule không ghi đè formId đã có.
                             </p>
                         </div>
 
@@ -1661,6 +1765,14 @@ export default function PokemonFormPage() {
                         </div>
 
                         <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={retryFailedBulkRows}
+                                disabled={bulkFormUploading || !hasFailedBulkQueueRows}
+                                className="mr-2 px-4 py-2 bg-white border border-red-300 rounded text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Retry ảnh lỗi
+                            </button>
                             <button
                                 type="button"
                                 onClick={startBulkFormUpload}

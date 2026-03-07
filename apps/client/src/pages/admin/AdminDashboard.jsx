@@ -12,6 +12,7 @@ const ICONS = {
     battle: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/focus-band.png",
     rewards: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/lucky-egg.png",
     codes: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/mystery-egg.png",
+    leaderboard: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/contest-pass.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
 }
 
@@ -104,6 +105,14 @@ export default function AdminDashboard() {
                     to: '/admin/daily-rewards',
                     icon: ICONS.rewards,
                     color: 'cyan',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.REWARDS,
+                    title: 'Top Tuần & Trao Thưởng',
+                    description: 'Theo dõi top Tài phú, HLV leo, LC và trao thưởng',
+                    to: '/admin/weekly-leaderboards',
+                    icon: ICONS.leaderboard,
+                    color: 'indigo',
                 },
             ]
         },

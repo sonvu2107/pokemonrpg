@@ -26,7 +26,6 @@ import {
 } from '../utils/gameUtils.js'
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
-import { syncUserPokemonMovesAndPp } from '../utils/movePpUtils.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
 import {
     AUTO_SEARCH_RARITY_KEYS,
@@ -1449,82 +1448,6 @@ const resolvePokemonImageForForm = (pokemon, formId, isShiny = false) => {
     return normalSprite
 }
 
-const resolveEvolutionRule = (species, currentFormId) => {
-    const baseEvolution = species?.evolution || null
-    const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
-    if (baseEvolution?.evolvesTo && Number.isFinite(baseMinLevel) && baseMinLevel >= 1) {
-        return {
-            evolvesTo: baseEvolution.evolvesTo,
-            minLevel: baseMinLevel,
-        }
-    }
-
-    const normalizedFormId = String(currentFormId || '').trim().toLowerCase()
-    const forms = Array.isArray(species?.forms) ? species.forms : []
-    const form = forms.find((entry) => String(entry?.formId || '').trim().toLowerCase() === normalizedFormId) || null
-    const formEvolution = form?.evolution || null
-    const formMinLevel = Number.parseInt(formEvolution?.minLevel, 10)
-    if (formEvolution?.evolvesTo && Number.isFinite(formMinLevel) && formMinLevel >= 1) {
-        return {
-            evolvesTo: formEvolution.evolvesTo,
-            minLevel: formMinLevel,
-        }
-    }
-
-    return null
-}
-
-const applyLevelEvolution = async (userPokemon) => {
-    const evolutions = []
-    let currentSpeciesId = userPokemon?.pokemonId?._id || userPokemon?.pokemonId
-
-    for (let i = 0; i < 10; i += 1) {
-        if (!currentSpeciesId) break
-
-        const currentSpecies = await Pokemon.findById(currentSpeciesId)
-            .select('name evolution forms defaultFormId levelUpMoves')
-            .lean()
-        if (!currentSpecies) break
-
-        const rule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
-        if (!rule?.evolvesTo || !Number.isFinite(rule.minLevel) || rule.minLevel < 1 || userPokemon.level < rule.minLevel) {
-            break
-        }
-
-        const nextSpecies = await Pokemon.findById(rule.evolvesTo)
-            .select('name forms defaultFormId levelUpMoves')
-            .lean()
-        if (!nextSpecies) break
-
-        if (String(nextSpecies._id) === String(currentSpecies._id)) {
-            break
-        }
-
-        const nextForms = Array.isArray(nextSpecies.forms) ? nextSpecies.forms : []
-        const currentFormId = String(userPokemon.formId || '').trim().toLowerCase()
-        const canKeepForm = currentFormId && nextForms.some((form) => String(form?.formId || '').trim().toLowerCase() === currentFormId)
-        const nextFormId = canKeepForm
-            ? currentFormId
-            : (String(nextSpecies.defaultFormId || '').trim().toLowerCase() || 'normal')
-
-        userPokemon.pokemonId = nextSpecies._id
-        userPokemon.formId = nextFormId
-        await syncUserPokemonMovesAndPp(userPokemon)
-
-        evolutions.push({
-            fromPokemonId: currentSpecies._id,
-            from: currentSpecies.name,
-            toPokemonId: nextSpecies._id,
-            to: nextSpecies.name,
-            level: userPokemon.level,
-        })
-
-        currentSpeciesId = nextSpecies._id
-    }
-
-    return evolutions
-}
-
 const ACTIVE_TRAINER_BATTLE_TTL_MS = 30 * 60 * 1000
 const getBattleSessionExpiryDate = () => new Date(Date.now() + ACTIVE_TRAINER_BATTLE_TTL_MS)
 
@@ -2110,6 +2033,11 @@ const buildAutoTrainerStatusPayload = async (userLike = {}) => {
     const normalizedState = normalizeAutoTrainerState(userLike?.autoTrainer)
     const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
     const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+    const durationLimitMinutes = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoBattleTrainerDurationMinutes, 0)
+    const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
+        ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+        : 0
+    const runtimeMinutesToday = Math.floor(runtimeMsToday / 60000)
 
     let trainerMeta = null
     const selectedTrainerId = normalizeAutoTrainerId(normalizedState.trainerId)
@@ -2142,6 +2070,11 @@ const buildAutoTrainerStatusPayload = async (userLike = {}) => {
             count: dailyState.count,
             limit: dailyState.limit,
             remaining: Number.isFinite(dailyState.remaining) ? dailyState.remaining : null,
+            runtimeMinutes: runtimeMinutesToday,
+            runtimeLimitMinutes: durationLimitMinutes,
+            runtimeRemainingMinutes: durationLimitMinutes > 0
+                ? Math.max(0, durationLimitMinutes - runtimeMinutesToday)
+                : null,
         },
         lastAction: normalizedState.lastAction || null,
         logs: (Array.isArray(normalizedState.logs) ? normalizedState.logs : []).slice(0, AUTO_TRAINER_LOGS_LIMIT),
@@ -2152,6 +2085,11 @@ const buildAutoSearchStatusPayload = async (userLike = {}) => {
     const normalizedState = normalizeAutoSearchState(userLike?.autoSearch)
     const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoSearchUsesPerDay, 0)
     const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+    const durationLimitMinutes = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoSearchDurationMinutes, 0)
+    const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
+        ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+        : 0
+    const runtimeMinutesToday = Math.floor(runtimeMsToday / 60000)
 
     let mapMeta = null
     const selectedMapSlug = String(normalizedState.mapSlug || '').trim().toLowerCase()
@@ -2184,6 +2122,11 @@ const buildAutoSearchStatusPayload = async (userLike = {}) => {
             count: dailyState.count,
             limit: dailyState.limit,
             remaining: Number.isFinite(dailyState.remaining) ? dailyState.remaining : null,
+            runtimeMinutes: runtimeMinutesToday,
+            runtimeLimitMinutes: durationLimitMinutes,
+            runtimeRemainingMinutes: durationLimitMinutes > 0
+                ? Math.max(0, durationLimitMinutes - runtimeMinutesToday)
+                : null,
         },
         history: normalizedState.history || {
             foundPokemonCount: 0,
@@ -2213,11 +2156,15 @@ router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
         const normalizedState = normalizeAutoSearchState(user.autoSearch)
         const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
         const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+        const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
+            ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+            : 0
 
         const shouldSyncState = (
             String(normalizedState.dayKey || '') !== dailyState.dayKey
             || Number(normalizedState.dayCount || 0) !== dailyState.count
             || Number(normalizedState.dayLimit || 0) !== dailyState.limit
+            || Number(normalizedState.dayRuntimeMs || 0) !== runtimeMsToday
         )
 
         if (shouldSyncState) {
@@ -2228,6 +2175,8 @@ router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
                         'autoSearch.dayKey': dailyState.dayKey,
                         'autoSearch.dayCount': dailyState.count,
                         'autoSearch.dayLimit': dailyState.limit,
+                        'autoSearch.dayRuntimeMs': runtimeMsToday,
+                        'autoSearch.lastRuntimeAt': runtimeMsToday > 0 ? normalizedState.lastRuntimeAt : null,
                     },
                 }
             )
@@ -2240,6 +2189,7 @@ router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
                 dayKey: dailyState.dayKey,
                 dayCount: dailyState.count,
                 dayLimit: dailyState.limit,
+                dayRuntimeMs: runtimeMsToday,
             },
         })
 
@@ -2272,7 +2222,12 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
         const normalizedState = normalizeAutoSearchState(user.autoSearch)
         const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
         const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
+        const durationLimitMinutes = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchDurationMinutes, 0)
         const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
+        const currentDayRuntimeMs = String(normalizedState.dayKey || '') === dailyState.dayKey
+            ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+            : 0
+        const currentDayRuntimeMinutes = Math.floor(currentDayRuntimeMs / 60000)
 
         const nextEnabled = shouldUpdateEnabled
             ? Boolean(incomingEnabled)
@@ -2332,6 +2287,13 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
             })
         }
 
+        if (nextEnabled && durationLimitMinutes > 0 && currentDayRuntimeMinutes >= durationLimitMinutes) {
+            return res.status(400).json({
+                ok: false,
+                message: `Đã hết thời lượng tự tìm kiếm hôm nay (${currentDayRuntimeMinutes}/${durationLimitMinutes} phút).`,
+            })
+        }
+
         const now = new Date()
         const resolvedMapName = String(resolvedMap?.name || nextMapSlug || '').trim() || nextMapSlug
         const nextDayCount = dailyState.count
@@ -2351,6 +2313,8 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
                 'autoSearch.dayKey': dailyState.dayKey,
                 'autoSearch.dayCount': nextDayCount,
                 'autoSearch.dayLimit': dailyState.limit,
+                'autoSearch.dayRuntimeMs': currentDayRuntimeMs,
+                'autoSearch.lastRuntimeAt': nextEnabled ? now : null,
                 'autoSearch.lastAction': {
                     action: 'toggle',
                     result: nextEnabled ? 'enabled' : 'disabled',
@@ -2400,11 +2364,15 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
         const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
         const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
         const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+        const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
+            ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+            : 0
 
         const shouldSyncState = (
             String(normalizedState.dayKey || '') !== dailyState.dayKey
             || Number(normalizedState.dayCount || 0) !== dailyState.count
             || Number(normalizedState.dayLimit || 0) !== dailyState.limit
+            || Number(normalizedState.dayRuntimeMs || 0) !== runtimeMsToday
         )
 
         if (shouldSyncState) {
@@ -2415,6 +2383,8 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
                         'autoTrainer.dayKey': dailyState.dayKey,
                         'autoTrainer.dayCount': dailyState.count,
                         'autoTrainer.dayLimit': dailyState.limit,
+                        'autoTrainer.dayRuntimeMs': runtimeMsToday,
+                        'autoTrainer.lastRuntimeAt': runtimeMsToday > 0 ? normalizedState.lastRuntimeAt : null,
                     },
                 }
             )
@@ -2427,6 +2397,7 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
                 dayKey: dailyState.dayKey,
                 dayCount: dailyState.count,
                 dayLimit: dailyState.limit,
+                dayRuntimeMs: runtimeMsToday,
             },
         })
 
@@ -2459,7 +2430,12 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
         const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
         const canUseVipAutoTrainer = hasVipAutoTrainerAccess(user)
         const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+        const durationLimitMinutes = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 0)
         const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
+        const currentDayRuntimeMs = String(normalizedState.dayKey || '') === dailyState.dayKey
+            ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
+            : 0
+        const currentDayRuntimeMinutes = Math.floor(currentDayRuntimeMs / 60000)
 
         const targetTrainerId = hasTrainerIdPatch
             ? requestedTrainerId
@@ -2480,6 +2456,13 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             return res.status(400).json({
                 ok: false,
                 message: `Đã hết lượt auto battle trong hôm nay (${dailyState.count}/${dailyLimit}).`,
+            })
+        }
+
+        if (nextEnabled && durationLimitMinutes > 0 && currentDayRuntimeMinutes >= durationLimitMinutes) {
+            return res.status(400).json({
+                ok: false,
+                message: `Đã hết thời lượng auto battle hôm nay (${currentDayRuntimeMinutes}/${durationLimitMinutes} phút).`,
             })
         }
 
@@ -2511,6 +2494,8 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
                 'autoTrainer.dayKey': dailyState.dayKey,
                 'autoTrainer.dayCount': dailyState.count,
                 'autoTrainer.dayLimit': dailyState.limit,
+                'autoTrainer.dayRuntimeMs': currentDayRuntimeMs,
+                'autoTrainer.lastRuntimeAt': nextEnabled ? now : null,
                 'autoTrainer.lastAction': {
                     action: 'toggle',
                     result: nextEnabled ? 'enabled' : 'disabled',
@@ -3220,7 +3205,6 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
                     }
                 }
 
-                const evolutions = levelsGained > 0 ? await applyLevelEvolution(leadPartyPokemon) : []
                 await leadPartyPokemon.save()
                 await leadPartyPokemon.populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
 
@@ -3238,7 +3222,7 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
                     expGained,
                     expToNext: leadPartyPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(leadPartyPokemon.level),
                     levelsGained,
-                    evolution: evolutions,
+                    evolution: [],
                 }
 
                 if (expGained > 0 || levelsGained > 0) {
@@ -5239,7 +5223,6 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             trackedParticipants.map((entry) => [entry.pokemonId, entry.pokemon])
         )
         const pokemonRewards = []
-        const allEvolutions = []
         let totalLevelsGained = 0
 
         for (const expParticipant of expParticipants) {
@@ -5274,15 +5257,11 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             }
 
             participantPokemon.friendship = Math.min(255, (participantPokemon.friendship || 0) + happinessAwarded)
-            const evolutions = levelsGained > 0 ? await applyLevelEvolution(participantPokemon) : []
 
             await participantPokemon.save()
             await participantPokemon.populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
 
             totalLevelsGained += levelsGained
-            if (evolutions.length > 0) {
-                allEvolutions.push(...evolutions)
-            }
 
             pokemonRewards.push({
                 userPokemonId: participantPokemon._id,
@@ -5453,8 +5432,8 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                     prizeItem,
                 },
                 evolution: {
-                    evolved: allEvolutions.length > 0,
-                    chain: allEvolutions,
+                    evolved: false,
+                    chain: [],
                 },
             },
         })

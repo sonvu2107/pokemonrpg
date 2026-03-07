@@ -16,6 +16,7 @@ const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD = 8
+const AUTO_TRAINER_TARGET_STORAGE_KEY = 'battle_auto_trainer_target_id_v1'
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
     { value: 700, label: 'Vừa (0.7s)' },
@@ -66,6 +67,34 @@ const createTrainerAttackChallenge = () => {
 }
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
+const readStoredAutoTrainerTargetId = () => {
+    if (typeof window === 'undefined') return ''
+    try {
+        return normalizeEntityId(window.localStorage.getItem(AUTO_TRAINER_TARGET_STORAGE_KEY))
+    } catch {
+        return ''
+    }
+}
+const writeStoredAutoTrainerTargetId = (value = '') => {
+    if (typeof window === 'undefined') return
+    const normalized = normalizeEntityId(value)
+    try {
+        if (!normalized) {
+            window.localStorage.removeItem(AUTO_TRAINER_TARGET_STORAGE_KEY)
+            return
+        }
+        window.localStorage.setItem(AUTO_TRAINER_TARGET_STORAGE_KEY, normalized)
+    } catch {
+        // ignore storage error
+    }
+}
+const buildAutoTrainerConfigSnapshot = ({ enabled, trainerId, attackIntervalMs }) => {
+    return JSON.stringify({
+        enabled: Boolean(enabled),
+        trainerId: normalizeEntityId(trainerId),
+        attackIntervalMs: Math.max(450, Number(attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
+    })
+}
 const expToNextPokemonLevel = (level = 1) => 250 + Math.max(0, Number(level || 1) - 1) * 100
 const hydratePartyWithBattleHp = (partySlots = []) => {
     return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
@@ -936,24 +965,41 @@ export function BattlePage() {
     const [autoTrainerAttackEnabled, setAutoTrainerAttackEnabled] = useState(false)
     const [autoTrainerStartedAtMs, setAutoTrainerStartedAtMs] = useState(0)
     const [autoTrainerAttackIntervalMs, setAutoTrainerAttackIntervalMs] = useState(DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
-    const [autoTrainerTargetId, setAutoTrainerTargetId] = useState('')
+    const [autoTrainerTargetId, setAutoTrainerTargetId] = useState(() => readStoredAutoTrainerTargetId())
     const [autoTrainerServerStatus, setAutoTrainerServerStatus] = useState('')
     const [autoTrainerServerLogs, setAutoTrainerServerLogs] = useState([])
+    const [isAutoTrainerConfigDirty, setIsAutoTrainerConfigDirty] = useState(false)
     const canUseVipAutoTrainer = hasVipAutoBattleTrainerAccess(user)
     const autoTrainerLimitConfig = getVipAutoLimitConfig(user, 'trainer-battle')
     const autoTrainerDurationLimitMinutes = autoTrainerLimitConfig.durationMinutes
     const [autoTrainerUsesPerDayLimit, setAutoTrainerUsesPerDayLimit] = useState(autoTrainerLimitConfig.usesPerDay)
     const [autoTrainerUsageToday, setAutoTrainerUsageToday] = useState(0)
+    const [autoTrainerRuntimeTodayMinutes, setAutoTrainerRuntimeTodayMinutes] = useState(0)
+    const [autoTrainerRuntimeLimitMinutes, setAutoTrainerRuntimeLimitMinutes] = useState(autoTrainerDurationLimitMinutes)
     const rankedChallengeLockRef = useRef('')
     const didInitLoadRef = useRef(false)
     const trainerAttackSpamCountRef = useRef(0)
     const trainerAttackRepositionTimerRef = useRef(null)
     const lastTrainerAttackChallengeAtRef = useRef(0)
     const lastTrainerAttackRepositionAtRef = useRef(0)
+    const autoTrainerConfigDirtyRef = useRef(false)
+    const lastAutoTrainerServerSnapshotRef = useRef('')
+
+    const markAutoTrainerConfigDirty = () => {
+        autoTrainerConfigDirtyRef.current = true
+        setIsAutoTrainerConfigDirty(true)
+    }
+
+    const syncAutoTrainerConfigDirty = (nextDirty) => {
+        const normalizedDirty = Boolean(nextDirty)
+        autoTrainerConfigDirtyRef.current = normalizedDirty
+        setIsAutoTrainerConfigDirty((prev) => (prev === normalizedDirty ? prev : normalizedDirty))
+    }
 
     useEffect(() => {
         setAutoTrainerUsesPerDayLimit(autoTrainerLimitConfig.usesPerDay)
-    }, [autoTrainerLimitConfig.usesPerDay])
+        setAutoTrainerRuntimeLimitMinutes(autoTrainerLimitConfig.durationMinutes)
+    }, [autoTrainerLimitConfig.usesPerDay, autoTrainerLimitConfig.durationMinutes])
 
     useEffect(() => () => {
         if (typeof window === 'undefined') return
@@ -990,15 +1036,29 @@ export function BattlePage() {
             .filter(Boolean)
 
         if (normalizedCompletedIds.length === 0) {
-            if (autoTrainerTargetId) {
-                setAutoTrainerTargetId('')
-            }
             return
         }
 
         const normalizedTargetId = normalizeEntityId(autoTrainerTargetId)
-        if (!normalizedTargetId || !normalizedCompletedIds.includes(normalizedTargetId)) {
-            setAutoTrainerTargetId(normalizedCompletedIds[0])
+        if (normalizedTargetId && normalizedCompletedIds.includes(normalizedTargetId)) {
+            writeStoredAutoTrainerTargetId(normalizedTargetId)
+            return
+        }
+
+        if (normalizedTargetId) {
+            return
+        }
+
+        const storedTargetId = readStoredAutoTrainerTargetId()
+        if (storedTargetId && normalizedCompletedIds.includes(storedTargetId)) {
+            setAutoTrainerTargetId(storedTargetId)
+            return
+        }
+
+        const fallbackId = normalizedCompletedIds[0]
+        if (fallbackId) {
+            setAutoTrainerTargetId(fallbackId)
+            writeStoredAutoTrainerTargetId(fallbackId)
         }
     }, [completedEntries, autoTrainerTargetId])
 
@@ -1147,6 +1207,75 @@ export function BattlePage() {
         setActionMessage('Tài khoản hiện không có quyền lợi VIP để dùng auto battle trainer.')
     }, [autoTrainerAttackEnabled, canUseVipAutoTrainer])
 
+    const applyAutoTrainerStatus = (status = {}, options = {}) => {
+        const forceConfig = Boolean(options?.forceConfig)
+        const serverSnapshot = buildAutoTrainerConfigSnapshot({
+            enabled: Boolean(status?.enabled),
+            trainerId: normalizeEntityId(status?.trainerId),
+            attackIntervalMs: Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
+        })
+        lastAutoTrainerServerSnapshotRef.current = serverSnapshot
+
+        const shouldApplyConfig = forceConfig || !autoTrainerConfigDirtyRef.current
+        if (shouldApplyConfig) {
+            const normalizedStatusTrainerId = normalizeEntityId(status?.trainerId)
+            setAutoTrainerAttackEnabled(Boolean(status?.enabled))
+            setAutoTrainerTargetId(normalizedStatusTrainerId)
+            writeStoredAutoTrainerTargetId(normalizedStatusTrainerId)
+            setAutoTrainerAttackIntervalMs(Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS))
+            setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : 0)
+            syncAutoTrainerConfigDirty(false)
+        }
+
+        setAutoTrainerUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
+        setAutoTrainerUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || 0))
+        setAutoTrainerRuntimeTodayMinutes(Math.max(0, Number(status?.daily?.runtimeMinutes) || 0))
+        setAutoTrainerRuntimeLimitMinutes(Math.max(0, Number(status?.daily?.runtimeLimitMinutes) || autoTrainerDurationLimitMinutes || 0))
+
+        const logs = Array.isArray(status?.logs) ? status.logs : []
+        setAutoTrainerServerLogs(logs)
+        setAutoTrainerServerStatus(
+            (Boolean(status?.enabled)
+                ? `Đang chạy ngầm. ${String(logs[0]?.message || '').trim() || 'Đang tự chiến theo cấu hình.'}`
+                : (String(logs[0]?.message || '').trim() || 'Tự chiến huấn luyện viên đang tắt.'))
+        )
+    }
+
+    useEffect(() => {
+        const serverSnapshot = String(lastAutoTrainerServerSnapshotRef.current || '')
+        if (!serverSnapshot) return
+
+        const localSnapshot = buildAutoTrainerConfigSnapshot({
+            enabled: autoTrainerAttackEnabled,
+            trainerId: autoTrainerTargetId,
+            attackIntervalMs: autoTrainerAttackIntervalMs,
+        })
+
+        const isDirty = localSnapshot !== serverSnapshot
+        syncAutoTrainerConfigDirty(isDirty)
+    }, [autoTrainerAttackEnabled, autoTrainerTargetId, autoTrainerAttackIntervalMs])
+
+    useEffect(() => {
+        if (!user || !isAutoTrainerConfigDirty) return undefined
+
+        const timer = window.setTimeout(async () => {
+            try {
+                const res = await gameApi.updateAutoTrainerSettings({
+                    enabled: autoTrainerAttackEnabled,
+                    trainerId: normalizeEntityId(autoTrainerTargetId),
+                    attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
+                })
+                applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
+            } catch (error) {
+                setActionMessage(String(error?.message || 'Không thể đồng bộ cấu hình auto battle trainer.'))
+            }
+        }, 500)
+
+        return () => {
+            window.clearTimeout(timer)
+        }
+    }, [user?.id, isAutoTrainerConfigDirty, autoTrainerAttackEnabled, autoTrainerTargetId, autoTrainerAttackIntervalMs])
+
     useEffect(() => {
         if (!user) return undefined
         let cancelled = false
@@ -1156,21 +1285,7 @@ export function BattlePage() {
                 const statusRes = await gameApi.getAutoTrainerStatus()
                 const status = statusRes?.autoTrainer || {}
                 if (cancelled) return
-
-                setAutoTrainerAttackEnabled(Boolean(status?.enabled))
-                setAutoTrainerTargetId(normalizeEntityId(status?.trainerId))
-                setAutoTrainerAttackIntervalMs(Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS))
-                setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : 0)
-                setAutoTrainerUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
-                setAutoTrainerUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || 0))
-
-                const logs = Array.isArray(status?.logs) ? status.logs : []
-                setAutoTrainerServerLogs(logs)
-                setAutoTrainerServerStatus(
-                    (Boolean(status?.enabled)
-                        ? `Đang chạy ngầm. ${String(logs[0]?.message || '').trim() || 'Đang tự chiến theo cấu hình.'}`
-                        : (String(logs[0]?.message || '').trim() || 'Tự chiến huấn luyện viên đang tắt.'))
-                )
+                applyAutoTrainerStatus(status)
             } catch (error) {
                 if (!cancelled) {
                     setAutoTrainerServerStatus(String(error?.message || 'Không thể tải trạng thái auto trainer.'))
@@ -2783,6 +2898,7 @@ export function BattlePage() {
         }
 
         setAutoTrainerTargetId(normalizedId)
+        writeStoredAutoTrainerTargetId(normalizedId)
         setOpponent(rematchOpponent)
         startBattleWithOpponent(rematchOpponent)
     }
@@ -2790,6 +2906,7 @@ export function BattlePage() {
     const selectedAutoTrainerEntry = completedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(autoTrainerTargetId)
     ) || null
+    const hasMissingAutoTrainerSelection = Boolean(normalizeEntityId(autoTrainerTargetId)) && !selectedAutoTrainerEntry
 
     const handleToggleAutoTrainer = async () => {
         try {
@@ -2799,11 +2916,7 @@ export function BattlePage() {
                     trainerId: normalizeEntityId(autoTrainerTargetId),
                     attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
                 })
-                const status = res?.autoTrainer || {}
-                setAutoTrainerAttackEnabled(Boolean(status?.enabled))
-                setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : 0)
-                setAutoTrainerServerLogs(Array.isArray(status?.logs) ? status.logs : [])
-                setAutoTrainerServerStatus(String(status?.logs?.[0]?.message || '').trim() || 'Đã tắt auto battle trainer.')
+                applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
                 setActionMessage('Đã tắt auto battle trainer.')
                 return
             }
@@ -2824,15 +2937,7 @@ export function BattlePage() {
                 trainerId: normalizedTrainerId,
                 attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
             })
-            const status = res?.autoTrainer || {}
-            setAutoTrainerAttackEnabled(Boolean(status?.enabled))
-            setAutoTrainerTargetId(normalizeEntityId(status?.trainerId || normalizedTrainerId))
-            setAutoTrainerAttackIntervalMs(Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS))
-            setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : Date.now())
-            setAutoTrainerUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
-            setAutoTrainerUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || autoTrainerUsesPerDayLimit || 0))
-            setAutoTrainerServerLogs(Array.isArray(status?.logs) ? status.logs : [])
-            setAutoTrainerServerStatus(String(status?.logs?.[0]?.message || '').trim() || 'Auto battle trainer đang chạy ngầm ở server.')
+            applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
             setActionMessage(`Đã bật auto battle trainer với ${selectedAutoTrainerEntry?.name || 'trainer đã chọn'}. Auto sẽ chạy ngầm ở server.`)
         } catch (error) {
             setActionMessage(String(error?.message || 'Không thể cập nhật auto battle trainer.'))
@@ -2866,12 +2971,17 @@ export function BattlePage() {
                     value={autoTrainerTargetId}
                     onChange={(e) => {
                         const nextTrainerId = normalizeEntityId(e.target.value)
+                        markAutoTrainerConfigDirty()
                         setAutoTrainerTargetId(nextTrainerId)
+                        writeStoredAutoTrainerTargetId(nextTrainerId)
                     }}
                     disabled={!hasAutoTrainerTargets || autoTrainerAttackEnabled}
                     className="px-2 py-1 border border-slate-300 rounded bg-white text-xs max-w-[230px]"
                 >
                     {!hasAutoTrainerTargets && <option value="">Chưa có trainer đã hoàn thành</option>}
+                    {hasMissingAutoTrainerSelection && (
+                        <option value={autoTrainerTargetId}>Đang giữ trainer đã chọn</option>
+                    )}
                     {autoTrainerSelectableEntries.map((entry) => (
                         <option key={entry.id} value={entry.id}>
                             {entry.name}
@@ -2886,6 +2996,7 @@ export function BattlePage() {
                     value={autoTrainerAttackIntervalMs}
                     onChange={(e) => {
                         const nextValue = Number.parseInt(e.target.value, 10)
+                        markAutoTrainerConfigDirty()
                         setAutoTrainerAttackIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
                     }}
                     disabled={!canUseVipAutoTrainer}
@@ -2902,9 +3013,11 @@ export function BattlePage() {
                     ? `Đang chọn: ${selectedAutoTrainerEntry.name}`
                     : 'Chưa chọn trainer auto'}
                 {' · '}
-                Giới hạn auto battle: {autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
+                Giới hạn auto battle: {(autoTrainerRuntimeLimitMinutes > 0 ? `${autoTrainerRuntimeLimitMinutes} phút/ngày` : (autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/ngày` : 'không giới hạn'))}
                 {' · '}
-                Lượt hôm nay: {autoTrainerUsageToday}/{autoTrainerUsesPerDayLimit > 0 ? autoTrainerUsesPerDayLimit : '∞'}
+                Lượt chạy hôm nay: {autoTrainerUsageToday}/{autoTrainerUsesPerDayLimit > 0 ? autoTrainerUsesPerDayLimit : '∞'}
+                {' · '}
+                Đã dùng: {autoTrainerRuntimeTodayMinutes} phút
             </div>
 
             {autoTrainerServerStatus && (

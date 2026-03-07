@@ -14,6 +14,7 @@ import ChangePartyPage from './pages/ChangePartyPage'
 import PokedexPage from './pages/PokedexPage'
 import RankingsPage from './pages/RankingsPage'
 import PokemonRankingsPage from './pages/PokemonRankingsPage'
+import PokemonRarityPage from './pages/PokemonRarityPage'
 import EvolvePage from './pages/EvolvePage'
 import TradesPage from './pages/TradesPage'
 import ShopSellPage from './pages/ShopSellPage'
@@ -46,6 +47,7 @@ import VipPrivilegePage from './pages/admin/VipPrivilegePage'
 import BattleTrainerPage from './pages/admin/BattleTrainerPage'
 import DailyRewardManagerPage from './pages/admin/DailyRewardManagerPage'
 import PromoCodeManagerPage from './pages/admin/PromoCodeManagerPage'
+import WeeklyLeaderboardRewardPage from './pages/admin/WeeklyLeaderboardRewardPage'
 import AdminRouteGuard from './components/AdminRouteGuard'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
@@ -79,6 +81,7 @@ export default function App() {
                     <Route path="/party" element={<ChangePartyPage />} />
                     <Route path="/rankings/overall" element={<RankingsPage />} />
                     <Route path="/rankings/pokemon" element={<PokemonRankingsPage />} />
+                    <Route path="/rankings/rarity" element={<PokemonRarityPage />} />
                     <Route path="/rankings/daily" element={<RankingsPage />} />
                     <Route path="/shop/buy" element={<TradesPage />} />
                     <Route path="/shop/sell" element={<ShopSellPage />} />
@@ -114,6 +117,7 @@ export default function App() {
                     <Route path="/admin/moves/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />
                     <Route path="/admin/battle" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BATTLE}><BattleTrainerPage /></AdminRouteGuard>} />
                     <Route path="/admin/daily-rewards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><DailyRewardManagerPage /></AdminRouteGuard>} />
+                    <Route path="/admin/weekly-leaderboards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><WeeklyLeaderboardRewardPage /></AdminRouteGuard>} />
                     <Route path="/admin/promo-codes" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.CODES}><PromoCodeManagerPage /></AdminRouteGuard>} />
                 </Route>
             </Routes>

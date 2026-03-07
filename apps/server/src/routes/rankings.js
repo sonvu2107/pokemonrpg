@@ -1,10 +1,12 @@
 import express from 'express'
+import mongoose from 'mongoose'
 import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import DailyActivity from '../models/DailyActivity.js'
 import User from '../models/User.js'
 import Pokemon from '../models/Pokemon.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
+import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
@@ -170,6 +172,212 @@ const normalizeRankingMode = (value = '') => {
         return 'power'
     }
     return 'collection'
+}
+
+const normalizeOverallMode = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (
+        normalized === 'wealth'
+        || normalized === 'coins'
+        || normalized === 'platinum'
+        || normalized === 'platinumcoins'
+        || normalized === 'tai_phu'
+        || normalized === 'taiphu'
+    ) {
+        return 'wealth'
+    }
+    if (
+        normalized === 'trainerbattle'
+        || normalized === 'trainer_battle'
+        || normalized === 'trainer'
+        || normalized === 'trainerlevel'
+        || normalized === 'trainer_level'
+        || normalized === 'hvl'
+    ) {
+        return 'trainerBattle'
+    }
+    if (
+        normalized === 'lc'
+        || normalized === 'combat'
+        || normalized === 'power'
+        || normalized === 'combat_power'
+        || normalized === 'lucchien'
+    ) {
+        return 'lc'
+    }
+    return 'wealth'
+}
+
+const RARITY_KEYS = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+
+const normalizeRarityKey = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return RARITY_KEYS.includes(normalized) ? normalized : 'd'
+}
+
+const normalizePokemonRarityFilter = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized || normalized === 'all') return 'all'
+    return RARITY_KEYS.includes(normalized) ? normalized : 'all'
+}
+
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const buildPokemonSpeciesQuery = ({ search = '', rarity = 'all' } = {}) => {
+    const query = {}
+    const rarityFilter = normalizePokemonRarityFilter(rarity)
+    const keyword = String(search || '').trim()
+
+    if (rarityFilter !== 'all') {
+        query.rarity = rarityFilter
+    }
+
+    if (!keyword) {
+        return query
+    }
+
+    const searchRegex = new RegExp(escapeRegExp(keyword), 'i')
+    const numericSearch = Number.parseInt(keyword, 10)
+    if (Number.isFinite(numericSearch)) {
+        query.$or = [
+            { pokedexNumber: numericSearch },
+            { name: searchRegex },
+        ]
+    } else {
+        query.$or = [
+            { name: searchRegex },
+        ]
+    }
+
+    return query
+}
+
+const RARITY_VALUE_BASE_SCORE = {
+    d: 20,
+    c: 35,
+    b: 50,
+    a: 66,
+    s: 80,
+    ss: 90,
+    sss: 97,
+}
+
+const resolveValueTierLabel = (score = 0) => {
+    if (score >= 95) return 'Cực phẩm'
+    if (score >= 85) return 'Rất hiếm'
+    if (score >= 70) return 'Giá trị cao'
+    if (score >= 50) return 'Ổn định'
+    return 'Phổ thông'
+}
+
+const calcSpeciesValueScore = ({ rarity = 'd', totalOwnedByPlayers = 0, rarityWeight = 100 } = {}) => {
+    const normalizedRarity = normalizeRarityKey(rarity)
+    const baseScore = RARITY_VALUE_BASE_SCORE[normalizedRarity] || RARITY_VALUE_BASE_SCORE.d
+
+    const totalOwned = Math.max(0, Number(totalOwnedByPlayers || 0))
+    const scarcityByPopulation = totalOwned <= 0
+        ? 15
+        : Math.max(0, Math.round(15 - (Math.log10(totalOwned + 1) * 4)))
+
+    const parsedWeight = Number(rarityWeight)
+    const safeWeight = Number.isFinite(parsedWeight) && parsedWeight > 0 ? parsedWeight : 100
+    const scarcityByWeight = Math.max(
+        0,
+        Math.min(8, Math.round(Math.log10((101 / Math.max(0.1, safeWeight))) * 3))
+    )
+
+    return Math.max(1, Math.min(100, baseScore + scarcityByPopulation + scarcityByWeight))
+}
+
+const getPokedexFallbackSprite = (pokedexNumber) => {
+    const numeric = Math.max(0, Number.parseInt(pokedexNumber, 10) || 0)
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${numeric}.png`
+}
+
+const getFormLabel = (formId = '', formName = '') => {
+    const explicit = String(formName || '').trim()
+    if (explicit) return explicit
+    const normalized = normalizeFormId(formId)
+    return normalized
+        .split(/[_\-\s]+/)
+        .filter(Boolean)
+        .map((entry) => entry.slice(0, 1).toUpperCase() + entry.slice(1))
+        .join(' ')
+}
+
+const buildSpeciesFormsForStats = (species = {}) => {
+    const speciesId = String(species?._id || '').trim()
+    if (!speciesId) return []
+
+    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const fallbackSprite = getPokedexFallbackSprite(species?.pokedexNumber)
+    const baseSprite = String(
+        species?.sprites?.icon
+        || species?.sprites?.normal
+        || species?.imageUrl
+        || fallbackSprite
+    ).trim() || fallbackSprite
+
+    const formMap = new Map()
+    formMap.set(defaultFormId, {
+        formId: defaultFormId,
+        formName: getFormLabel(defaultFormId, defaultFormId === 'normal' ? 'Mặc định' : ''),
+        sprite: baseSprite,
+        isDefault: true,
+    })
+
+    for (const entry of forms) {
+        const normalizedFormId = normalizeFormId(entry?.formId || defaultFormId)
+        if (!normalizedFormId) continue
+        const sprite = String(
+            entry?.sprites?.icon
+            || entry?.sprites?.normal
+            || entry?.imageUrl
+            || baseSprite
+        ).trim() || baseSprite
+
+        formMap.set(normalizedFormId, {
+            formId: normalizedFormId,
+            formName: getFormLabel(normalizedFormId, entry?.formName),
+            sprite,
+            isDefault: normalizedFormId === defaultFormId,
+        })
+    }
+
+    const entries = Array.from(formMap.values())
+    const sortedAlternates = entries
+        .filter((entry) => !entry.isDefault)
+        .sort((left, right) => left.formName.localeCompare(right.formName, 'vi', { sensitivity: 'base' }))
+
+    return [
+        ...entries.filter((entry) => entry.isDefault),
+        ...sortedAlternates,
+    ]
+}
+
+const isValidObjectIdString = (value = '') => /^[a-f\d]{24}$/i.test(String(value || '').trim())
+
+const toObjectIdOrNull = (value = null) => {
+    const raw = String(value || '').trim()
+    if (!isValidObjectIdString(raw)) return null
+    return new mongoose.Types.ObjectId(raw)
+}
+
+const buildWeeklyPeriod = (sourceDate = new Date()) => {
+    const now = new Date(sourceDate)
+    now.setHours(0, 0, 0, 0)
+
+    const mondayOffset = (now.getDay() + 6) % 7
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - mondayOffset)
+
+    return {
+        type: 'weekly',
+        resetDay: 'monday',
+        weekStart: toDailyDateKey(weekStart),
+        weekEnd: toDailyDateKey(now),
+    }
 }
 
 const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
@@ -507,46 +715,245 @@ router.get('/daily', async (req, res, next) => {
     }
 })
 
-// GET /api/rankings/overall - Get overall rankings by EXP/Level
+// GET /api/rankings/overall - Overall rankings by selected mode
 router.get('/overall', async (req, res, next) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 35))
         const skip = (page - 1) * limit
         const adminUserIds = await getAdminUserIds()
-        const playerFilter = adminUserIds.length > 0 ? { userId: { $nin: adminUserIds } } : {}
+        const overallMode = normalizeOverallMode(req.query.mode)
+        const period = buildWeeklyPeriod(new Date())
+        const weeklyMatch = {
+            date: {
+                $gte: period.weekStart,
+                $lte: period.weekEnd,
+            },
+        }
+        if (adminUserIds.length > 0) {
+            weeklyMatch.userId = { $nin: adminUserIds }
+        }
 
-        const [totalUsers, playerStates] = await Promise.all([
-            PlayerState.countDocuments(playerFilter),
-            PlayerState.find(playerFilter)
-                .select('userId experience level')
-                .sort({ experience: -1, level: -1, _id: -1 })
-                .skip(skip)
-                .limit(limit)
-                .populate('userId', 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
-                .lean(),
+        const buildPlayerLevelByUserId = async (userIds = []) => {
+            const normalizedUserIds = Array.isArray(userIds) ? userIds.filter(Boolean) : []
+            if (normalizedUserIds.length === 0) return new Map()
+
+            const playerStates = await PlayerState.find({ userId: { $in: normalizedUserIds } })
+                .select('userId level')
+                .lean()
+
+            return new Map(
+                playerStates.map((entry) => [String(entry?.userId || ''), Math.max(1, Number(entry?.level || 1))])
+            )
+        }
+
+        if (overallMode === 'lc') {
+            const weeklyActiveUsers = await DailyActivity.aggregate([
+                { $match: weeklyMatch },
+                {
+                    $group: {
+                        _id: '$userId',
+                    },
+                },
+            ]).allowDiskUse(true)
+
+            const weeklyActiveUserIdSet = new Set(
+                weeklyActiveUsers
+                    .map((entry) => String(entry?._id || '').trim())
+                    .filter(Boolean)
+            )
+
+            if (weeklyActiveUserIdSet.size === 0) {
+                return res.json({
+                    ok: true,
+                    mode: overallMode,
+                    period,
+                    rankings: [],
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 1,
+                        totalUsers: 0,
+                        limit,
+                        hasNextPage: false,
+                        hasPrevPage: false,
+                    },
+                })
+            }
+
+            const activeOwnerIds = Array.from(weeklyActiveUserIdSet)
+            const partyRows = await UserPokemon.find({
+                userId: { $in: activeOwnerIds },
+                location: 'party',
+            })
+                .select('userId pokemonId level formId isShiny ivs evs')
+                .lean()
+
+            const pokemonLookup = await getPokemonPowerMetaLookup()
+            const totalCombatPowerByUserId = new Map()
+
+            for (const entry of partyRows) {
+                const ownerId = String(entry?.userId || '').trim()
+                if (!ownerId) continue
+
+                const pokemonId = String(entry?.pokemonId || '').trim()
+                if (!pokemonId) continue
+
+                const pokemon = pokemonLookup.get(pokemonId)
+                if (!pokemon) continue
+
+                const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+                const combatPower = toSafePositiveInt(
+                    calcPokemonCombatPower({ ...entry, pokemon }),
+                    Math.max(1, level * 10)
+                )
+
+                totalCombatPowerByUserId.set(
+                    ownerId,
+                    (totalCombatPowerByUserId.get(ownerId) || 0) + combatPower
+                )
+            }
+
+            const ownerPowerRows = Array.from(totalCombatPowerByUserId.entries())
+                .map(([ownerId, combatPower]) => ({
+                    ownerId,
+                    combatPower,
+                }))
+                .sort((a, b) => {
+                    if (b.combatPower !== a.combatPower) return b.combatPower - a.combatPower
+                    return a.ownerId.localeCompare(b.ownerId)
+                })
+
+            const totalUsers = ownerPowerRows.length
+            const totalPages = Math.max(1, Math.ceil(totalUsers / limit))
+            const pageRows = ownerPowerRows.slice(skip, skip + limit)
+            const ownerIds = pageRows.map((entry) => entry.ownerId).filter(Boolean)
+
+            const [owners, playerLevelByUserId] = await Promise.all([
+                ownerIds.length > 0
+                    ? User.find({ _id: { $in: ownerIds } })
+                        .select('username avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
+                        .lean()
+                    : [],
+                buildPlayerLevelByUserId(ownerIds),
+            ])
+
+            const ownerById = new Map(
+                owners.map((entry) => [String(entry?._id || '').trim(), entry])
+            )
+            const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(owners)
+
+            const rankings = pageRows.map((entry, index) => {
+                const owner = ownerById.get(entry.ownerId)
+                return {
+                    rank: skip + index + 1,
+                    userId: owner?._id || entry.ownerId,
+                    username: owner?.username || 'Unknown',
+                    avatar: normalizeAvatarUrl(owner?.avatar),
+                    role: String(owner?.role || 'user').trim() || 'user',
+                    vipTierLevel: Math.max(0, parseInt(owner?.vipTierLevel, 10) || 0),
+                    vipTierCode: String(owner?.vipTierCode || '').trim().toUpperCase(),
+                    vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(owner?._id || ''))),
+                    level: playerLevelByUserId.get(String(owner?._id || entry.ownerId || '')) || 1,
+                    combatPower: Math.max(0, Number(entry?.combatPower || 0)),
+                }
+            })
+
+            return res.json({
+                ok: true,
+                mode: overallMode,
+                period,
+                rankings,
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalUsers,
+                    limit,
+                    hasNextPage: page < totalPages,
+                    hasPrevPage: page > 1,
+                },
+            })
+        }
+
+        const weeklySort = overallMode === 'trainerBattle'
+            ? { weeklyTrainerBattleLevels: -1, weeklyPlatinumCoins: -1, _id: 1 }
+            : { weeklyPlatinumCoins: -1, weeklyTrainerBattleLevels: -1, _id: 1 }
+
+        const weeklyGroupPipeline = [
+            { $match: weeklyMatch },
+            {
+                $group: {
+                    _id: '$userId',
+                    weeklyPlatinumCoins: { $sum: { $ifNull: ['$platinumCoins', 0] } },
+                    weeklyTrainerBattleLevels: { $sum: { $ifNull: ['$battles', 0] } },
+                },
+            },
+        ]
+
+        const [totalRows, rows] = await Promise.all([
+            DailyActivity.aggregate([
+                ...weeklyGroupPipeline,
+                {
+                    $count: 'total',
+                },
+            ]).allowDiskUse(true),
+            DailyActivity.aggregate([
+                ...weeklyGroupPipeline,
+                { $sort: weeklySort },
+                { $skip: skip },
+                { $limit: limit },
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: '_id',
+                        foreignField: '_id',
+                        as: 'user',
+                    },
+                },
+                {
+                    $unwind: {
+                        path: '$user',
+                        preserveNullAndEmptyArrays: true,
+                    },
+                },
+            ]).allowDiskUse(true),
         ])
 
-        const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(playerStates.map((state) => state?.userId))
+        const userIds = rows
+            .map((entry) => entry?._id)
+            .filter(Boolean)
+        const [playerLevelByUserId, benefitsByUserId] = await Promise.all([
+            buildPlayerLevelByUserId(userIds),
+            buildEffectiveVipBenefitsByUserId(rows.map((entry) => entry?.user)),
+        ])
 
-        // Build rankings with rank numbers
-        const rankings = playerStates.map((state, index) => ({
-            rank: skip + index + 1,
-            userId: state.userId?._id,
-            username: state.userId?.username || 'Unknown',
-            avatar: normalizeAvatarUrl(state.userId?.avatar),
-            role: String(state?.userId?.role || 'user').trim() || 'user',
-            vipTierLevel: Math.max(0, parseInt(state?.userId?.vipTierLevel, 10) || 0),
-            vipTierCode: String(state?.userId?.vipTierCode || '').trim().toUpperCase(),
-            vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(state?.userId?._id || ''))),
-            experience: state.experience || 0,
-            level: state.level || 1,
-        }))
+        const rankings = rows.map((entry, index) => {
+            const userId = String(entry?._id || '').trim()
+            const weeklyPlatinumCoins = Math.max(0, Number(entry?.weeklyPlatinumCoins || 0))
+            const weeklyTrainerBattleLevels = Math.max(0, Number(entry?.weeklyTrainerBattleLevels || 0))
+            return {
+                rank: skip + index + 1,
+                userId: entry?._id || null,
+                username: entry?.user?.username || 'Unknown',
+                avatar: normalizeAvatarUrl(entry?.user?.avatar),
+                role: String(entry?.user?.role || 'user').trim() || 'user',
+                vipTierLevel: Math.max(0, parseInt(entry?.user?.vipTierLevel, 10) || 0),
+                vipTierCode: String(entry?.user?.vipTierCode || '').trim().toUpperCase(),
+                vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(entry?.user?._id || ''))),
+                level: playerLevelByUserId.get(userId) || 1,
+                weeklyPlatinumCoins,
+                weeklyTrainerBattleLevels,
+                platinumCoins: weeklyPlatinumCoins,
+                trainerBattleLevel: weeklyTrainerBattleLevels,
+            }
+        })
 
+        const totalUsers = Math.max(0, Number(totalRows?.[0]?.total || 0))
         const totalPages = Math.max(1, Math.ceil(totalUsers / limit))
 
         res.json({
             ok: true,
+            mode: overallMode,
+            period,
             rankings,
             pagination: {
                 currentPage: page,
@@ -559,6 +966,301 @@ router.get('/overall', async (req, res, next) => {
         })
     } catch (error) {
         console.error('GET /api/rankings/overall error:', error)
+        next(error)
+    }
+})
+
+// GET /api/rankings/pokemon-rarity/options - Pokemon options for rarity viewer
+router.get('/pokemon-rarity/options', authMiddleware, async (req, res, next) => {
+    try {
+        const search = String(req.query.search || '').trim()
+        const rarity = normalizePokemonRarityFilter(req.query.rarity)
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const limit = Math.min(120, Math.max(12, parseInt(req.query.limit, 10) || 40))
+        const skip = (page - 1) * limit
+
+        const query = buildPokemonSpeciesQuery({ search, rarity })
+        const [total, rows] = await Promise.all([
+            Pokemon.countDocuments(query),
+            Pokemon.find(query)
+                .select('_id name pokedexNumber rarity')
+                .sort({ pokedexNumber: 1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+        ])
+
+        const totalPages = Math.max(1, Math.ceil(Math.max(0, Number(total || 0)) / limit))
+
+        res.json({
+            ok: true,
+            options: rows.map((entry) => ({
+                _id: entry?._id,
+                name: String(entry?.name || '').trim() || 'Unknown',
+                pokedexNumber: Math.max(0, Number(entry?.pokedexNumber || 0)),
+                rarity: normalizeRarityKey(entry?.rarity || 'd'),
+            })),
+            pagination: {
+                currentPage: page,
+                totalPages,
+                total: Math.max(0, Number(total || 0)),
+                limit,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/rankings/pokemon-rarity/options error:', error)
+        next(error)
+    }
+})
+
+// GET /api/rankings/pokemon-rarity - Pokemon rarity + amount viewer
+router.get('/pokemon-rarity', authMiddleware, async (req, res, next) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25))
+        const skip = (page - 1) * limit
+        const search = String(req.query.search || '').trim()
+        const rarity = normalizePokemonRarityFilter(req.query.rarity)
+        const requestedPokemonId = String(req.query.pokemonId || '').trim()
+        const selectedPokemonId = isValidObjectIdString(requestedPokemonId) ? requestedPokemonId : ''
+
+        const adminUserIds = await getAdminUserIds()
+        const baseMatch = {}
+        if (adminUserIds.length > 0) {
+            baseMatch.userId = { $nin: adminUserIds }
+        }
+
+        const query = buildPokemonSpeciesQuery({ search, rarity })
+        const [totalSpecies, speciesRows, totalPokemonInPlayerHands] = await Promise.all([
+            Pokemon.countDocuments(query),
+            Pokemon.find(query)
+                .select('name pokedexNumber rarity rarityWeight forms defaultFormId imageUrl sprites')
+                .sort({ pokedexNumber: 1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            UserPokemon.countDocuments(baseMatch),
+        ])
+
+        let selectedSpecies = null
+        if (selectedPokemonId) {
+            selectedSpecies = await Pokemon.findById(selectedPokemonId)
+                .select('name pokedexNumber rarity rarityWeight forms defaultFormId imageUrl sprites')
+                .lean()
+        }
+        if (!selectedSpecies && speciesRows.length > 0) {
+            selectedSpecies = speciesRows[0]
+        }
+
+        const requestedSpeciesIdSet = new Set(
+            speciesRows
+                .map((entry) => String(entry?._id || '').trim())
+                .filter(Boolean)
+        )
+        const selectedSpeciesId = String(selectedSpecies?._id || '').trim()
+        if (selectedSpeciesId) {
+            requestedSpeciesIdSet.add(selectedSpeciesId)
+        }
+
+        const requestedSpeciesIds = Array.from(requestedSpeciesIdSet)
+        const requestedSpeciesObjectIds = requestedSpeciesIds
+            .map((entry) => toObjectIdOrNull(entry))
+            .filter(Boolean)
+        const requesterUserObjectId = toObjectIdOrNull(req.user.userId)
+        let globalFormCountRows = []
+        let ownedFormCountRows = []
+        if (requestedSpeciesObjectIds.length > 0) {
+            const sharedProjectionStage = {
+                $project: {
+                    pokemonId: 1,
+                    normalizedFormId: {
+                        $let: {
+                            vars: {
+                                rawFormId: {
+                                    $toLower: {
+                                        $trim: {
+                                            input: {
+                                                $ifNull: ['$formId', ''],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                            in: {
+                                $cond: [
+                                    { $eq: ['$$rawFormId', ''] },
+                                    'normal',
+                                    '$$rawFormId',
+                                ],
+                            },
+                        },
+                    },
+                },
+            }
+
+            const groupStages = [
+                {
+                    $group: {
+                        _id: {
+                            pokemonId: '$pokemonId',
+                            formId: '$normalizedFormId',
+                        },
+                        count: { $sum: 1 },
+                    },
+                },
+            ]
+
+            const [globalRows, ownedRows] = await Promise.all([
+                UserPokemon.aggregate([
+                    {
+                        $match: {
+                            ...baseMatch,
+                            pokemonId: { $in: requestedSpeciesObjectIds },
+                        },
+                    },
+                    sharedProjectionStage,
+                    ...groupStages,
+                ]).allowDiskUse(true),
+                requesterUserObjectId
+                    ? UserPokemon.aggregate([
+                        {
+                            $match: {
+                                userId: requesterUserObjectId,
+                                pokemonId: { $in: requestedSpeciesObjectIds },
+                            },
+                        },
+                        sharedProjectionStage,
+                        ...groupStages,
+                    ]).allowDiskUse(true)
+                    : [],
+            ])
+
+            globalFormCountRows = globalRows
+            ownedFormCountRows = ownedRows
+        }
+
+        const globalCountBySpecies = new Map()
+        const globalCountBySpeciesForm = new Map()
+        for (const row of globalFormCountRows) {
+            const speciesId = String(row?._id?.pokemonId || '').trim()
+            if (!speciesId) continue
+            const formId = normalizeFormId(row?._id?.formId || 'normal')
+            const count = Math.max(0, Number(row?.count || 0))
+            globalCountBySpeciesForm.set(`${speciesId}:${formId}`, count)
+            globalCountBySpecies.set(speciesId, (globalCountBySpecies.get(speciesId) || 0) + count)
+        }
+
+        const ownedCountBySpecies = new Map()
+        const ownedCountBySpeciesForm = new Map()
+        for (const row of ownedFormCountRows) {
+            const speciesId = String(row?._id?.pokemonId || '').trim()
+            if (!speciesId) continue
+            const formId = normalizeFormId(row?._id?.formId || 'normal')
+            const count = Math.max(0, Number(row?.count || 0))
+            ownedCountBySpeciesForm.set(`${speciesId}:${formId}`, count)
+            ownedCountBySpecies.set(speciesId, (ownedCountBySpecies.get(speciesId) || 0) + count)
+        }
+
+        const rankings = speciesRows.map((species, index) => {
+            const speciesId = String(species?._id || '').trim()
+            const rarityKey = normalizeRarityKey(species?.rarity || 'd')
+            const totalOwnedByPlayers = Math.max(0, Number(globalCountBySpecies.get(speciesId) || 0))
+            const totalOwnedByMe = Math.max(0, Number(ownedCountBySpecies.get(speciesId) || 0))
+            const valueScore = calcSpeciesValueScore({
+                rarity: rarityKey,
+                totalOwnedByPlayers,
+                rarityWeight: species?.rarityWeight,
+            })
+
+            return {
+                rank: skip + index + 1,
+                pokemonId: species?._id || null,
+                name: String(species?.name || '').trim() || 'Unknown',
+                pokedexNumber: Math.max(0, Number(species?.pokedexNumber || 0)),
+                rarity: rarityKey,
+                rarityLabel: rarityKey.toUpperCase(),
+                rarityWeight: Math.max(0, Number(species?.rarityWeight || 0)),
+                totalOwnedByPlayers,
+                totalOwnedByMe,
+                valueScore,
+                valueTier: resolveValueTierLabel(valueScore),
+                sprite: String(
+                    species?.sprites?.icon
+                    || species?.sprites?.normal
+                    || species?.imageUrl
+                    || getPokedexFallbackSprite(species?.pokedexNumber)
+                ).trim() || getPokedexFallbackSprite(species?.pokedexNumber),
+            }
+        })
+
+        let selectedSpeciesStats = null
+        if (selectedSpecies) {
+            const selectedId = String(selectedSpecies?._id || '').trim()
+            const selectedRarity = normalizeRarityKey(selectedSpecies?.rarity || 'd')
+            const forms = buildSpeciesFormsForStats(selectedSpecies)
+            const formStats = forms.map((form) => {
+                const key = `${selectedId}:${normalizeFormId(form.formId || 'normal')}`
+                const totalOwnedByPlayers = Math.max(0, Number(globalCountBySpeciesForm.get(key) || 0))
+                const totalOwnedByMe = Math.max(0, Number(ownedCountBySpeciesForm.get(key) || 0))
+                return {
+                    formId: normalizeFormId(form.formId || 'normal'),
+                    formName: String(form.formName || '').trim() || 'Mặc định',
+                    isDefault: Boolean(form.isDefault),
+                    sprite: String(form.sprite || '').trim() || getPokedexFallbackSprite(selectedSpecies?.pokedexNumber),
+                    totalOwnedByPlayers,
+                    totalOwnedByMe,
+                }
+            })
+
+            const selectedTotalOwnedByPlayers = Math.max(0, Number(globalCountBySpecies.get(selectedId) || 0))
+            const selectedTotalOwnedByMe = Math.max(0, Number(ownedCountBySpecies.get(selectedId) || 0))
+            const selectedValueScore = calcSpeciesValueScore({
+                rarity: selectedRarity,
+                totalOwnedByPlayers: selectedTotalOwnedByPlayers,
+                rarityWeight: selectedSpecies?.rarityWeight,
+            })
+
+            selectedSpeciesStats = {
+                pokemonId: selectedSpecies?._id || null,
+                name: String(selectedSpecies?.name || '').trim() || 'Unknown',
+                pokedexNumber: Math.max(0, Number(selectedSpecies?.pokedexNumber || 0)),
+                rarity: selectedRarity,
+                rarityLabel: selectedRarity.toUpperCase(),
+                rarityWeight: Math.max(0, Number(selectedSpecies?.rarityWeight || 0)),
+                totalOwnedByPlayers: selectedTotalOwnedByPlayers,
+                totalOwnedByMe: selectedTotalOwnedByMe,
+                valueScore: selectedValueScore,
+                valueTier: resolveValueTierLabel(selectedValueScore),
+                forms: formStats,
+            }
+        }
+
+        const totalPages = Math.max(1, Math.ceil(Math.max(0, Number(totalSpecies || 0)) / limit))
+        res.json({
+            ok: true,
+            rankings,
+            selectedSpecies: selectedSpeciesStats,
+            filters: {
+                search,
+                rarity,
+            },
+            summary: {
+                totalPokemonInPlayerHands: Math.max(0, Number(totalPokemonInPlayerHands || 0)),
+                totalSpecies: Math.max(0, Number(totalSpecies || 0)),
+            },
+            pagination: {
+                currentPage: page,
+                totalPages,
+                total: Math.max(0, Number(totalSpecies || 0)),
+                limit,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/rankings/pokemon-rarity error:', error)
         next(error)
     }
 })

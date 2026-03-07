@@ -251,6 +251,8 @@ export default function MapPage() {
     const [isAutoSearchConfigDirty, setIsAutoSearchConfigDirty] = useState(false)
     const [autoSearchUsageToday, setAutoSearchUsageToday] = useState(0)
     const [autoSearchUsesPerDayLimit, setAutoSearchUsesPerDayLimit] = useState(0)
+    const [autoSearchRuntimeTodayMinutes, setAutoSearchRuntimeTodayMinutes] = useState(0)
+    const [autoSearchRuntimeLimitMinutes, setAutoSearchRuntimeLimitMinutes] = useState(0)
     const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
     const [searchChallenge, setSearchChallenge] = useState(null)
     const [searchChallengeError, setSearchChallengeError] = useState('')
@@ -316,7 +318,8 @@ export default function MapPage() {
 
     useEffect(() => {
         setAutoSearchUsesPerDayLimit(autoSearchLimitConfig.usesPerDay)
-    }, [autoSearchLimitConfig.usesPerDay])
+        setAutoSearchRuntimeLimitMinutes(autoSearchLimitConfig.durationMinutes)
+    }, [autoSearchLimitConfig.usesPerDay, autoSearchLimitConfig.durationMinutes])
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -696,6 +699,8 @@ export default function MapPage() {
 
         setAutoSearchUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
         setAutoSearchUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || autoSearchLimitConfig.usesPerDay || 0))
+        setAutoSearchRuntimeTodayMinutes(Math.max(0, Number(status?.daily?.runtimeMinutes) || 0))
+        setAutoSearchRuntimeLimitMinutes(Math.max(0, Number(status?.daily?.runtimeLimitMinutes) || autoSearchDurationLimitMinutes || 0))
         setAutoSearchHistory({
             ...DEFAULT_AUTO_SEARCH_HISTORY,
             ...(status?.history || {}),
@@ -1410,9 +1415,11 @@ export default function MapPage() {
                                     <div className="text-[10px] text-slate-500">
                                         {canUseVipAutoSearch && (
                                             <div>
-                                                Giới hạn tự tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
+                                                Giới hạn tự tìm: {(autoSearchRuntimeLimitMinutes > 0 ? `${autoSearchRuntimeLimitMinutes} phút/ngày` : (autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/ngày` : 'không giới hạn'))}
                                                 {' · '}
                                                 Lượt chạy hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                                                {' · '}
+                                                Đã dùng: {autoSearchRuntimeTodayMinutes} phút
                                             </div>
                                         )}
                                         {isCurrentMapEvent

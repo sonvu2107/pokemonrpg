@@ -269,6 +269,16 @@ const userSchema = new mongoose.Schema(
                 min: 0,
                 max: 1000000,
             },
+            dayRuntimeMs: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 86400000,
+            },
+            lastRuntimeAt: {
+                type: Date,
+                default: null,
+            },
             history: {
                 foundPokemonCount: { type: Number, default: 0, min: 0, max: 100000000 },
                 itemDropCount: { type: Number, default: 0, min: 0, max: 100000000 },
@@ -363,6 +373,16 @@ const userSchema = new mongoose.Schema(
                 default: 0,
                 min: 0,
                 max: 1000000,
+            },
+            dayRuntimeMs: {
+                type: Number,
+                default: 0,
+                min: 0,
+                max: 86400000,
+            },
+            lastRuntimeAt: {
+                type: Date,
+                default: null,
             },
             lastAction: {
                 action: {

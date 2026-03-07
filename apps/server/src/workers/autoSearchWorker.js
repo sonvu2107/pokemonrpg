@@ -280,10 +280,20 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     const dailyLimit = toSafeInt(userDoc?.vipBenefits?.autoSearchUsesPerDay, 0)
     const durationLimitMinutes = toSafeInt(userDoc?.vipBenefits?.autoSearchDurationMinutes, 0)
     const dailyState = resolveDailyState(autoState, dailyLimit)
+    const isSameRuntimeDay = String(autoState.dayKey || '') === dailyState.dayKey
+    const storedRuntimeMs = isSameRuntimeDay ? Math.max(0, Number(autoState.dayRuntimeMs || 0)) : 0
+    const lastRuntimeAtMs = (isSameRuntimeDay && autoState.lastRuntimeAt)
+        ? new Date(autoState.lastRuntimeAt).getTime()
+        : nowMs
+    const runtimeDeltaMs = Math.max(0, Math.min(60000, nowMs - lastRuntimeAtMs))
+    const runtimeMsToday = Math.max(0, storedRuntimeMs + runtimeDeltaMs)
+    const runtimeMinutesToday = Math.floor(runtimeMsToday / 60000)
 
     const baseSyncPatch = {
         'autoSearch.dayKey': dailyState.dayKey,
         'autoSearch.dayLimit': dailyState.limit,
+        'autoSearch.dayRuntimeMs': runtimeMsToday,
+        'autoSearch.lastRuntimeAt': now,
     }
     const baseSyncPatchWithCount = {
         ...baseSyncPatch,
@@ -297,6 +307,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -319,6 +330,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'quota',
@@ -334,16 +346,14 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    if (durationLimitMinutes > 0) {
-        const startedAtMs = autoState.startedAt ? new Date(autoState.startedAt).getTime() : Date.now()
-        const elapsedMs = Date.now() - startedAtMs
-        if (elapsedMs >= durationLimitMinutes * 60 * 1000) {
+    if (durationLimitMinutes > 0 && runtimeMinutesToday >= durationLimitMinutes) {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
                     ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
+                    'autoSearch.lastRuntimeAt': null,
                 },
                 lastAction: {
                     action: 'duration',
@@ -352,12 +362,11 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     targetId: autoState.mapSlug,
                     at: now,
                 },
-                logMessage: 'Đã hết thời gian dùng auto tìm kiếm theo gói VIP.',
+                logMessage: `Đã hết thời lượng tự tìm kiếm hôm nay (${runtimeMinutesToday}/${durationLimitMinutes} phút).`,
                 logType: 'warn',
             })
             stats.skipped += 1
             return
-        }
     }
 
     const mapSlug = String(autoState.mapSlug || '').trim().toLowerCase()
@@ -368,6 +377,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -391,6 +401,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -413,6 +424,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
             },
             lastAction: {
                 action: 'eligibility',
@@ -430,6 +442,12 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     const inMemoryNextActionAt = Number(userNextActionAtMs.get(userId) || 0)
     if (inMemoryNextActionAt > nowMs) {
+        await updateAutoSearchState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+            },
+        })
         stats.skipped += 1
         stats.skippedReasons.WAIT_INTERVAL = (stats.skippedReasons.WAIT_INTERVAL || 0) + 1
         return
@@ -438,12 +456,24 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     const lastActionAtMs = autoState.lastAction?.at ? new Date(autoState.lastAction.at).getTime() : 0
     const intervalMs = Math.max(900, toSafeInt(autoState.searchIntervalMs, 1200))
     if (lastActionAtMs > 0 && (nowMs - lastActionAtMs) < intervalMs) {
+        await updateAutoSearchState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+            },
+        })
         stats.skipped += 1
         stats.skippedReasons.WAIT_INTERVAL = (stats.skippedReasons.WAIT_INTERVAL || 0) + 1
         return
     }
 
     if (Date.now() >= deadlineAt) {
+        await updateAutoSearchState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+            },
+        })
         stats.skipped += 1
         stats.skippedReasons.TIME_BUDGET = (stats.skippedReasons.TIME_BUDGET || 0) + 1
         return
@@ -561,6 +591,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                         ...baseSyncPatchWithCount,
                         'autoSearch.enabled': false,
                         'autoSearch.startedAt': null,
+                        'autoSearch.lastRuntimeAt': null,
                     },
                     lastAction: {
                         action: 'eligibility',
@@ -583,6 +614,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                         ...baseSyncPatchWithCount,
                         'autoSearch.enabled': false,
                         'autoSearch.startedAt': null,
+                        'autoSearch.lastRuntimeAt': null,
                     },
                     lastAction: {
                         action: 'eligibility',
@@ -655,6 +687,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
+                    'autoSearch.lastRuntimeAt': null,
                 },
                 lastAction: {
                     action: 'catch',
@@ -725,6 +758,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                         ...baseSyncPatchWithCount,
                         'autoSearch.enabled': false,
                         'autoSearch.startedAt': null,
+                        'autoSearch.lastRuntimeAt': null,
                     },
                     lastAction: {
                         action: 'catch',
@@ -759,6 +793,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
+                    'autoSearch.lastRuntimeAt': null,
                 },
                 incPatch: {
                     ...(isFirstBattleForEncounter ? { 'autoSearch.history.battleCount': 1 } : {}),

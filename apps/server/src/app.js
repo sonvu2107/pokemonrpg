@@ -20,6 +20,7 @@ import battleTrainersRoutes from './routes/battleTrainers.js'
 import dailyCheckinRoutes from './routes/dailyCheckin.js'
 import dailyRewardsAdminRoutes from './routes/admin/dailyRewards.js'
 import promoCodesAdminRoutes from './routes/admin/promoCodes.js'
+import leaderboardRewardsAdminRoutes from './routes/admin/leaderboardRewards.js'
 import messagesRoutes from './routes/messages.js'
 import promoCodeRoutes from './routes/promoCodes.js'
 import friendsRoutes from './routes/friends.js'
@@ -195,6 +196,7 @@ app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, requireA
 app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BATTLE), battleTrainersAdminRoutes)
 app.use('/api/admin/daily-rewards', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.REWARDS), dailyRewardsAdminRoutes)
 app.use('/api/admin/promo-codes', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.CODES), promoCodesAdminRoutes)
+app.use('/api/admin/leaderboard-rewards', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.REWARDS), leaderboardRewardsAdminRoutes)
 
 // Error handlers
 app.use(notFound)
