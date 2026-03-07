@@ -1093,6 +1093,34 @@ export function BattlePage() {
         )
     }
 
+    const syncCachedProfileCompletedTrainers = (completedTrainerIds = new Set()) => {
+        const nextCompletedIds = [...(completedTrainerIds instanceof Set ? completedTrainerIds : new Set())]
+            .map((id) => normalizeEntityId(id))
+            .filter(Boolean)
+        if (nextCompletedIds.length === 0) return
+
+        queryClient.setQueryData(profileQueryOptions().queryKey, (prev) => {
+            if (!prev || typeof prev !== 'object') return prev
+            const prevUser = prev?.user
+            if (!prevUser || typeof prevUser !== 'object') return prev
+
+            const mergedCompletedIds = Array.from(new Set([
+                ...(Array.isArray(prevUser.completedBattleTrainers) ? prevUser.completedBattleTrainers : [])
+                    .map((id) => normalizeEntityId(id))
+                    .filter(Boolean),
+                ...nextCompletedIds,
+            ]))
+
+            return {
+                ...prev,
+                user: {
+                    ...prevUser,
+                    completedBattleTrainers: mergedCompletedIds,
+                },
+            }
+        })
+    }
+
     const buildBattlePartyState = (partySlots = []) => {
         return (Array.isArray(partySlots) ? partySlots : []).map((slot) => {
             if (!slot) return null
@@ -2293,11 +2321,20 @@ export function BattlePage() {
                             return [entry, ...prev]
                         })
                         try {
-                            await markTrainerCompleted(entry.id)
+                            const persistedCompletedIds = await markTrainerCompleted(entry.id)
+                            if (persistedCompletedIds instanceof Set && persistedCompletedIds.size > 0) {
+                                nextCompletedIds.clear()
+                                persistedCompletedIds.forEach((id) => {
+                                    const normalizedId = normalizeEntityId(id)
+                                    if (normalizedId) nextCompletedIds.add(normalizedId)
+                                })
+                            }
                         } catch (saveProgressError) {
                             console.error('Lưu tiến trình huấn luyện viên hoàn thành thất bại', saveProgressError)
                         }
                     }
+
+                    syncCachedProfileCompletedTrainers(nextCompletedIds)
 
                     if (masterPokemon.length > 0) {
                         const syncedTrainerOrder = getTrainerOrderFromProgress(masterPokemon, nextCompletedIds)
