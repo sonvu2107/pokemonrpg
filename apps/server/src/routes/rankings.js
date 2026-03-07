@@ -4,10 +4,12 @@ import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import DailyActivity from '../models/DailyActivity.js'
 import User from '../models/User.js'
+import BattleTrainer from '../models/BattleTrainer.js'
 import Pokemon from '../models/Pokemon.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -380,6 +382,43 @@ const buildWeeklyPeriod = (sourceDate = new Date()) => {
     }
 }
 
+const buildBattleTrainerLevelLookup = async () => {
+    const rows = await BattleTrainer.find({})
+        .select('_id orderIndex milestoneLevel createdAt')
+        .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
+        .lean()
+
+    const levelByTrainerId = new Map()
+    rows.forEach((entry, index) => {
+        const trainerId = String(entry?._id || '').trim()
+        if (!trainerId) return
+
+        const orderIndex = Math.max(0, Number.parseInt(entry?.orderIndex, 10) || 0)
+        const milestoneLevel = Math.max(0, Number.parseInt(entry?.milestoneLevel, 10) || 0)
+        const explicitLevel = Math.max(orderIndex, milestoneLevel)
+        const sequentialLevel = index + 1
+        const level = explicitLevel > 0 ? explicitLevel : sequentialLevel
+
+        levelByTrainerId.set(trainerId, level)
+    })
+
+    return levelByTrainerId
+}
+
+const resolveHighestCompletedTrainerLevel = (completedTrainerIds = [], levelByTrainerId = new Map()) => {
+    const normalizedIds = Array.isArray(completedTrainerIds) ? completedTrainerIds : []
+    let highestLevel = 0
+
+    for (const rawTrainerId of normalizedIds) {
+        const trainerId = String(rawTrainerId || '').trim()
+        if (!trainerId) continue
+        const level = Math.max(0, Number(levelByTrainerId.get(trainerId) || 0))
+        if (level > highestLevel) highestLevel = level
+    }
+
+    return highestLevel
+}
+
 const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
 
 const resolvePokemonForm = (pokemon = {}, formId = 'normal') => {
@@ -410,8 +449,10 @@ const resolvePokemonSprite = (entry) => {
 
 const resolvePokemonBaseStats = (entry) => {
     const pokemon = entry?.pokemon || {}
-    const resolvedForm = resolvePokemonForm(pokemon, entry?.formId)
-    return resolvedForm?.stats || pokemon.baseStats || {}
+    return resolveEffectivePokemonBaseStats({
+        pokemonLike: pokemon,
+        formId: entry?.formId,
+    })
 }
 
 const toStatNumber = (value) => {
@@ -874,9 +915,120 @@ router.get('/overall', async (req, res, next) => {
             })
         }
 
-        const weeklySort = overallMode === 'trainerBattle'
-            ? { weeklyTrainerBattleLevels: -1, weeklyPlatinumCoins: -1, _id: 1 }
-            : { weeklyPlatinumCoins: -1, weeklyTrainerBattleLevels: -1, _id: 1 }
+        if (overallMode === 'trainerBattle') {
+            const weeklyRows = await DailyActivity.aggregate([
+                { $match: weeklyMatch },
+                {
+                    $group: {
+                        _id: '$userId',
+                        weeklyPlatinumCoins: { $sum: { $ifNull: ['$platinumCoins', 0] } },
+                    },
+                },
+            ]).allowDiskUse(true)
+
+            if (weeklyRows.length === 0) {
+                return res.json({
+                    ok: true,
+                    mode: overallMode,
+                    period,
+                    rankings: [],
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 1,
+                        totalUsers: 0,
+                        limit,
+                        hasNextPage: false,
+                        hasPrevPage: false,
+                    },
+                })
+            }
+
+            const userIds = weeklyRows
+                .map((entry) => entry?._id)
+                .filter(Boolean)
+            const [users, trainerLevelById] = await Promise.all([
+                User.find({ _id: { $in: userIds } })
+                    .select('username avatar role vipTierId vipTierLevel vipTierCode vipBenefits completedBattleTrainers')
+                    .lean(),
+                buildBattleTrainerLevelLookup(),
+            ])
+
+            const userById = new Map(
+                users.map((entry) => [String(entry?._id || '').trim(), entry])
+            )
+
+            const mergedRows = weeklyRows.map((entry) => {
+                const userId = String(entry?._id || '').trim()
+                const user = userById.get(userId) || null
+                const weeklyPlatinumCoins = Math.max(0, Number(entry?.weeklyPlatinumCoins || 0))
+                const weeklyTrainerBattleLevels = resolveHighestCompletedTrainerLevel(
+                    user?.completedBattleTrainers,
+                    trainerLevelById
+                )
+
+                return {
+                    userId,
+                    user,
+                    weeklyPlatinumCoins,
+                    weeklyTrainerBattleLevels,
+                }
+            })
+
+            mergedRows.sort((a, b) => {
+                if (b.weeklyTrainerBattleLevels !== a.weeklyTrainerBattleLevels) {
+                    return b.weeklyTrainerBattleLevels - a.weeklyTrainerBattleLevels
+                }
+                if (b.weeklyPlatinumCoins !== a.weeklyPlatinumCoins) {
+                    return b.weeklyPlatinumCoins - a.weeklyPlatinumCoins
+                }
+                return a.userId.localeCompare(b.userId)
+            })
+
+            const totalUsers = mergedRows.length
+            const totalPages = Math.max(1, Math.ceil(totalUsers / limit))
+            const pageRows = mergedRows.slice(skip, skip + limit)
+            const pageUserIds = pageRows
+                .map((entry) => entry.user?._id || entry.userId)
+                .filter(Boolean)
+
+            const [playerLevelByUserId, benefitsByUserId] = await Promise.all([
+                buildPlayerLevelByUserId(pageUserIds),
+                buildEffectiveVipBenefitsByUserId(pageRows.map((entry) => entry?.user)),
+            ])
+
+            const rankings = pageRows.map((entry, index) => ({
+                rank: skip + index + 1,
+                userId: entry?.user?._id || entry.userId || null,
+                username: entry?.user?.username || 'Unknown',
+                avatar: normalizeAvatarUrl(entry?.user?.avatar),
+                role: String(entry?.user?.role || 'user').trim() || 'user',
+                vipTierLevel: Math.max(0, parseInt(entry?.user?.vipTierLevel, 10) || 0),
+                vipTierCode: String(entry?.user?.vipTierCode || '').trim().toUpperCase(),
+                vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(entry?.user?._id || ''))),
+                level: playerLevelByUserId.get(String(entry?.user?._id || entry.userId || '')) || 1,
+                weeklyPlatinumCoins: entry.weeklyPlatinumCoins,
+                weeklyTrainerBattleLevels: entry.weeklyTrainerBattleLevels,
+                platinumCoins: entry.weeklyPlatinumCoins,
+                trainerBattleLevel: entry.weeklyTrainerBattleLevels,
+            }))
+
+            return res.json({
+                ok: true,
+                mode: overallMode,
+                period,
+                rankings,
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalUsers,
+                    limit,
+                    hasNextPage: page < totalPages,
+                    hasPrevPage: page > 1,
+                },
+            })
+        }
+
+        const weeklySort = { weeklyPlatinumCoins: -1, weeklyTrainerBattleLevels: -1, _id: 1 }
 
         const weeklyGroupPipeline = [
             { $match: weeklyMatch },

@@ -16,6 +16,8 @@
         "reset:user-moon-points": "node src/resetUserMoonPoints.js --apply",
         "reset:user-pokemon-levels:dry": "node src/scripts/resetUserPokemonLevels.js",
         "reset:user-pokemon-levels": "node src/scripts/resetUserPokemonLevels.js --apply",
+        "backfill:pokemon-form-stats:dry": "node src/backfillPokemonFormStats.js",
+        "backfill:pokemon-form-stats": "node src/backfillPokemonFormStats.js --apply",
         "migrate:pokemon-move-ids:dry": "node scripts/migratePokemonMoveIds.js",
         "migrate:pokemon-move-ids": "node scripts/migratePokemonMoveIds.js --apply",
         "set:moves:learn-scope:move-type:dry": "node scripts/setMoveLearnScopeMoveType.js",

@@ -13,6 +13,7 @@ import {
 } from '../utils/movePpUtils.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const router = express.Router()
 
@@ -226,14 +227,10 @@ const resolvePokemonFormDisplay = (pokemonLike, requestedFormId = null) => {
 }
 
 const resolveFormStats = (pokemonLike, requestedFormId = null) => {
-    const forms = Array.isArray(pokemonLike?.forms) ? pokemonLike.forms : []
-    const defaultFormId = normalizeFormId(pokemonLike?.defaultFormId || 'normal')
-    const normalizedRequestedFormId = normalizeFormId(requestedFormId || defaultFormId)
-    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === normalizedRequestedFormId)
-        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
-        || forms[0]
-        || null
-    return resolvedForm?.stats || pokemonLike?.baseStats || {}
+    return resolveEffectivePokemonBaseStats({
+        pokemonLike,
+        formId: requestedFormId,
+    })
 }
 
 const toStatNumber = (value) => {

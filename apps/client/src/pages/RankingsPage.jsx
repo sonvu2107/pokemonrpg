@@ -141,7 +141,7 @@ export default function RankingsPage() {
     }
     const overallTitleMap = {
         wealth: 'Bảng Xếp Hạng Tài Phú Tuần',
-        trainerBattle: 'Bảng Xếp Hạng HLV Đã Leo Tuần',
+        trainerBattle: 'Bảng Xếp Hạng Lv HLV Cao Nhất',
         lc: 'Bảng Xếp Hạng Tổng LC Tuần',
     }
     const pageTitle = isDaily
@@ -198,7 +198,7 @@ export default function RankingsPage() {
     const overallPrimaryLabel = overallMode === 'wealth'
         ? 'Xu BK Kiếm Được Tuần'
         : overallMode === 'trainerBattle'
-            ? 'HLV Leo Được Tuần'
+            ? 'Lv HLV Cao Nhất'
             : 'Tổng LC Party'
 
     const getOverallPrimaryValue = (player = {}) => {

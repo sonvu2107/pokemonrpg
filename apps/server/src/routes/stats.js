@@ -6,6 +6,7 @@ import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -100,21 +101,11 @@ const toSafeIsoDate = (value) => {
 
 const createEmptyPartySlots = () => Array.from({ length: 6 }, () => null)
 
-const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
-
-const resolveSpeciesForm = (species = {}, formId = 'normal') => {
-    const forms = Array.isArray(species?.forms) ? species.forms : []
-    const normalizedFormId = normalizeFormId(formId)
-    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
-    return forms.find((entry) => normalizeFormId(entry?.formId) === normalizedFormId)
-        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
-        || forms[0]
-        || null
-}
-
 const resolveSpeciesBaseStats = (species = {}, formId = 'normal') => {
-    const form = resolveSpeciesForm(species, formId)
-    return form?.stats || species?.baseStats || {}
+    return resolveEffectivePokemonBaseStats({
+        pokemonLike: species,
+        formId,
+    })
 }
 
 const toStatNumber = (value) => {

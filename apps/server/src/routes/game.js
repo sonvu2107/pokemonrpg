@@ -43,6 +43,7 @@ import {
     getMaxCatchAttempts,
 } from '../utils/autoTrainerUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 
 
@@ -252,10 +253,13 @@ const resolveWildPlayerBattleSnapshot = async (userId) => {
     const species = leadPartyPokemon.pokemonId
     const level = Math.max(1, Number(leadPartyPokemon.level) || 1)
     const { form: resolvedForm } = resolvePokemonForm(species, leadPartyPokemon.formId)
-    const formStats = resolvedForm?.stats || null
     const formSprites = resolvedForm?.sprites || null
     const formImageUrl = resolvedForm?.imageUrl || ''
-    const baseStats = formStats || species.baseStats || {}
+    const baseStats = resolveEffectivePokemonBaseStats({
+        pokemonLike: species,
+        formId: leadPartyPokemon.formId,
+        resolvedForm,
+    })
     const scaledStats = calcStatsForLevel(baseStats, level, species.rarity)
     const maxHp = Math.max(1, calcMaxHp(baseStats?.hp, level, species.rarity))
     const defense = Math.max(
@@ -1500,7 +1504,11 @@ const buildTrainerBattleTeam = (trainer) => {
             if (!pokemon) return null
             const level = Math.max(1, Number(entry?.level) || 1)
             const { form, formId } = resolveTrainerBattleForm(pokemon, entry?.formId)
-            const baseStats = form?.stats || pokemon.baseStats || {}
+            const baseStats = resolveEffectivePokemonBaseStats({
+                pokemonLike: pokemon,
+                formId,
+                resolvedForm: form,
+            })
             const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
             const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
             const types = normalizePokemonTypes(pokemon.types)
@@ -2824,10 +2832,13 @@ router.post('/search', authMiddleware, searchActionGuard, async (req, res, next)
         )
 
         const { form: resolvedForm, formId } = resolvePokemonForm(pokemon, selectedFormId)
-        const formStats = resolvedForm?.stats || null
         const formSprites = resolvedForm?.sprites || null
         const formImageUrl = resolvedForm?.imageUrl || ''
-        const baseStats = formStats || pokemon.baseStats
+        const baseStats = resolveEffectivePokemonBaseStats({
+            pokemonLike: pokemon,
+            formId,
+            resolvedForm,
+        })
 
         const level = Math.floor(Math.random() * (map.levelMax - map.levelMin + 1)) + map.levelMin
         const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
@@ -3100,7 +3111,11 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
             if (wildPokemon) {
                 wildName = String(wildPokemon?.name || '').trim() || wildName
                 const { form: wildForm } = resolvePokemonForm(wildPokemon, encounter.formId)
-                const wildBaseStats = wildForm?.stats || wildPokemon.baseStats || {}
+                const wildBaseStats = resolveEffectivePokemonBaseStats({
+                    pokemonLike: wildPokemon,
+                    formId: encounter.formId,
+                    resolvedForm: wildForm,
+                })
                 const wildScaledStats = calcStatsForLevel(wildBaseStats, encounter.level, wildPokemon.rarity)
                 wildAttack = Math.max(
                     1,
@@ -3648,7 +3663,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         const { form: attackerForm } = resolvePokemonForm(attackerSpecies, activePokemon?.formId)
-        const attackerBaseStats = attackerForm?.stats || attackerSpecies.baseStats || {}
+        const attackerBaseStats = resolveEffectivePokemonBaseStats({
+            pokemonLike: attackerSpecies,
+            formId: activePokemon?.formId,
+            resolvedForm: attackerForm,
+        })
         const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
         const attackerTypes = normalizePokemonTypes(attackerSpecies.types)
         const attackerAtk = Math.max(
@@ -5540,10 +5559,13 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
         }
 
         const { form: resolvedForm, formId } = resolvePokemonForm(pokemon, encounter.formId)
-        const formStats = resolvedForm?.stats || null
         const formSprites = resolvedForm?.sprites || null
         const formImageUrl = resolvedForm?.imageUrl || ''
-        const baseStats = formStats || pokemon.baseStats
+        const baseStats = resolveEffectivePokemonBaseStats({
+            pokemonLike: pokemon,
+            formId,
+            resolvedForm,
+        })
 
         const scaledStats = calcStatsForLevel(baseStats, encounter.level, pokemon.rarity)
 
