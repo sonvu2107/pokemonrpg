@@ -298,7 +298,7 @@ const updateAutoTrainerState = async ({ userId, setPatch = {}, lastAction = null
 }
 
 const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs, resetTrainerSession, deadlineAt }) => {
-    const partyResponse = await callApi({ token, path: '/api/party', deadlineAt })
+    const partyResponse = await callApi({ token, path: '/api/party', deadlineAt, timeoutMs: 10000 })
     const partyData = Array.isArray(partyResponse?.party) ? partyResponse.party : []
 
     const partyState = partyData
@@ -400,6 +400,7 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
                     resetTrainerSession: shouldResetTrainerSession,
                 },
                 deadlineAt,
+                timeoutMs: 12000,
             })
 
             shouldResetTrainerSession = false
@@ -462,6 +463,9 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
             if (normalized.includes('doi hinh huan luyen vien da bi danh bai') || normalized.includes('nhan ket qua tran dau')) {
                 return { ok: true, code: 'WIN' }
             }
+            if (normalized.includes('khong tim thay huan luyen vien battle')) {
+                return { ok: false, code: 'TRAINER_UNAVAILABLE', reason: 'TRAINER_UNAVAILABLE' }
+            }
             if (Number(error?.status) === 409 && (errorCode === 'BATTLE_SESSION_CONFLICT' || normalized.includes('phien battle dang duoc xu ly'))) {
                 return { ok: false, code: 'SESSION_CONFLICT', reason: 'SESSION_CONFLICT' }
             }
@@ -492,7 +496,14 @@ const runAutoTrainerBattleFlow = async ({ token, trainerId, trainerMeta, attackI
     })
 
     let outcome = resumed
-    if (!resumed.ok && resumed.code === 'PLAYER_DEFEATED') {
+    const canRetryFreshSession = (
+        !resumed.ok
+        && resumed.code !== 'TIME_BUDGET'
+        && resumed.code !== 'REQUEST_TIMEOUT'
+        && resumed.code !== 'TRAINER_UNAVAILABLE'
+    )
+
+    if (canRetryFreshSession) {
         outcome = await runSingleBattle({
             token,
             trainerId,
@@ -792,6 +803,30 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         })
         stats.skipped += 1
         stats.skippedReasons.SESSION_CONFLICT = (stats.skippedReasons.SESSION_CONFLICT || 0) + 1
+        return
+    }
+
+    if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'TRAINER_UNAVAILABLE') {
+        await updateAutoTrainerState({
+            userId,
+            setPatch: {
+                ...baseSyncPatch,
+                'autoTrainer.enabled': false,
+                'autoTrainer.startedAt': null,
+                'autoTrainer.lastRuntimeAt': null,
+            },
+            lastAction: {
+                action: 'eligibility',
+                result: 'skipped',
+                reason: 'TRAINER_UNAVAILABLE',
+                targetId: trainerId,
+                at: now,
+            },
+            logMessage: 'Đã dừng auto battle trainer: trainer đã chọn không còn khả dụng.',
+            logType: 'warn',
+        })
+        stats.skipped += 1
+        stats.skippedReasons.TRAINER_UNAVAILABLE = (stats.skippedReasons.TRAINER_UNAVAILABLE || 0) + 1
         return
     }
 
