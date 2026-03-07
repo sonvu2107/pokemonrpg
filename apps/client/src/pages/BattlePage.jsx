@@ -1230,22 +1230,29 @@ export function BattlePage() {
 
     const applyAutoTrainerStatus = (status = {}, options = {}) => {
         const forceConfig = Boolean(options?.forceConfig)
+        const normalizedStatusTrainerId = normalizeEntityId(status?.trainerId)
+        const normalizedLocalTrainerId = normalizeEntityId(autoTrainerTargetId)
+        const shouldKeepLocalTrainerSelection = !Boolean(status?.enabled) && Boolean(normalizedLocalTrainerId)
+        const resolvedTrainerId = shouldKeepLocalTrainerSelection
+            ? normalizedLocalTrainerId
+            : normalizedStatusTrainerId
         const serverSnapshot = buildAutoTrainerConfigSnapshot({
             enabled: Boolean(status?.enabled),
-            trainerId: normalizeEntityId(status?.trainerId),
+            trainerId: normalizedStatusTrainerId,
             attackIntervalMs: Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
         })
         lastAutoTrainerServerSnapshotRef.current = serverSnapshot
 
         const shouldApplyConfig = forceConfig || !autoTrainerConfigDirtyRef.current
         if (shouldApplyConfig) {
-            const normalizedStatusTrainerId = normalizeEntityId(status?.trainerId)
             setAutoTrainerAttackEnabled(Boolean(status?.enabled))
-            setAutoTrainerTargetId(normalizedStatusTrainerId)
-            writeStoredAutoTrainerTargetId(normalizedStatusTrainerId)
+            setAutoTrainerTargetId(resolvedTrainerId)
+            writeStoredAutoTrainerTargetId(resolvedTrainerId)
             setAutoTrainerAttackIntervalMs(Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS))
             setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : 0)
-            syncAutoTrainerConfigDirty(false)
+
+            const serverMatchesLocalSelection = normalizeEntityId(normalizedStatusTrainerId) === normalizeEntityId(resolvedTrainerId)
+            syncAutoTrainerConfigDirty(!serverMatchesLocalSelection)
         }
 
         setAutoTrainerUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
