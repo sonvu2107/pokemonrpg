@@ -26,6 +26,53 @@ const TYPE_COLORS = {
     fairy: 'bg-pink-400',
 }
 
+const QUICK_FORM_UPLOAD_MAX_CONCURRENCY = 3
+const QUICK_FORM_UPLOAD_RETRY_ATTEMPTS = 3
+const QUICK_FORM_UPLOAD_RETRY_BASE_DELAY_MS = 700
+const QUICK_FORM_UPLOAD_STATUS_META = {
+    pending: {
+        label: 'Chờ xử lý',
+        badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+    },
+    uploading: {
+        label: 'Đang tải lên',
+        badgeClass: 'bg-blue-100 text-blue-700 border border-blue-200',
+    },
+    success: {
+        label: 'Thành công',
+        badgeClass: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    },
+    skipped: {
+        label: 'Bỏ qua',
+        badgeClass: 'bg-amber-100 text-amber-700 border border-amber-200',
+    },
+    error: {
+        label: 'Lỗi',
+        badgeClass: 'bg-red-100 text-red-700 border border-red-200',
+    },
+}
+
+const waitForMs = (ms = 0) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
+
+const isRetryableUploadError = (error) => {
+    const message = String(error?.message || '').toLowerCase()
+    if (!message) return false
+
+    const retryableHints = [
+        'lỗi mạng',
+        'network',
+        'timeout',
+        'timed out',
+        '429',
+        '500',
+        '502',
+        '503',
+        '504',
+    ]
+
+    return retryableHints.some((hint) => message.includes(hint))
+}
+
 export default function PokemonListPage() {
     const [pokemon, setPokemon] = useState([])
     const [allPokemon, setAllPokemon] = useState([])
@@ -42,6 +89,15 @@ export default function PokemonListPage() {
     const [pokemonCsvImporting, setPokemonCsvImporting] = useState(false)
     const [pokemonCsvImportReport, setPokemonCsvImportReport] = useState(null)
     const [uploadingImageKey, setUploadingImageKey] = useState('')
+    const [showQuickFormUploadModal, setShowQuickFormUploadModal] = useState(false)
+    const [quickFormUploadPokemon, setQuickFormUploadPokemon] = useState(null)
+    const [quickFormUploadMegaMode, setQuickFormUploadMegaMode] = useState('keep')
+    const [quickFormUploadRows, setQuickFormUploadRows] = useState([])
+    const [quickFormUploadSelectedFiles, setQuickFormUploadSelectedFiles] = useState([])
+    const [quickFormUploading, setQuickFormUploading] = useState(false)
+    const [quickFormUploadProgress, setQuickFormUploadProgress] = useState(0)
+    const [quickFormUploadCount, setQuickFormUploadCount] = useState(0)
+    const [quickFormUploadNotice, setQuickFormUploadNotice] = useState('')
 
     // Scroll Sync
     const tableContainerRef = useRef(null)
@@ -427,11 +483,383 @@ export default function PokemonListPage() {
     }
 
     const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+    const normalizeOptionalFormId = (value = '') => String(value || '').trim().toLowerCase()
+    const normalizeFormName = (value = '') => String(value || '').trim()
+
+    const splitStemTokens = (value = '') => {
+        const normalized = String(value || '').trim()
+        if (!normalized) return []
+
+        return normalized
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .split(/[^a-zA-Z0-9]+/)
+            .map((token) => token.trim().toLowerCase())
+            .filter(Boolean)
+    }
+
+    const toTitleCaseFromTokens = (tokens = []) => (
+        (Array.isArray(tokens) ? tokens : [])
+            .filter(Boolean)
+            .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+            .join(' ')
+    )
+
+    const findPokemonSuffixTokenLength = (stemTokens = [], pokemonName = '') => {
+        if (!Array.isArray(stemTokens) || stemTokens.length === 0) return 0
+        const nameTokens = splitStemTokens(pokemonName)
+        if (nameTokens.length === 0 || nameTokens.length > stemTokens.length) return 0
+
+        const sourceTail = stemTokens.slice(stemTokens.length - nameTokens.length)
+        const isTailMatched = nameTokens.every((token, index) => token === sourceTail[index])
+        return isTailMatched ? nameTokens.length : 0
+    }
+
+    const inferFormFromFileName = (fileName = '', pokemonName = '', options = {}) => {
+        const stemRaw = String(fileName || '').replace(/\.[^.]+$/, '').trim()
+        if (!stemRaw) return { formId: '', formName: '' }
+
+        const stemTokens = splitStemTokens(stemRaw)
+        if (stemTokens.length === 0) return { formId: '', formName: '' }
+
+        const suffixLength = findPokemonSuffixTokenLength(stemTokens, pokemonName)
+        const normalizedTokens = suffixLength > 0
+            ? stemTokens.slice(0, stemTokens.length - suffixLength)
+            : stemTokens
+        const keepMega = options?.keepMega !== false
+        const effectiveTokens = keepMega
+            ? normalizedTokens
+            : normalizedTokens.filter((token) => token !== 'mega')
+
+        if (effectiveTokens.length === 0) return { formId: '', formName: '' }
+        return {
+            formId: effectiveTokens.join('-'),
+            formName: toTitleCaseFromTokens(effectiveTokens),
+        }
+    }
+
+    const formatFormPreviewLabel = (formId = '', formName = '') => {
+        const normalizedId = normalizeOptionalFormId(formId)
+        const normalizedName = normalizeFormName(formName)
+        if (!normalizedId && !normalizedName) return 'Không xác định'
+        if (!normalizedId) return normalizedName
+        if (!normalizedName) return normalizedId
+        return `${normalizedName} (${normalizedId})`
+    }
+
+    const getPokemonForms = (pokemonEntry) => {
+        if (Array.isArray(pokemonEntry?.forms) && pokemonEntry.forms.length > 0) {
+            return pokemonEntry.forms
+        }
+
+        return [{
+            formId: pokemonEntry?.defaultFormId || 'normal',
+            formName: pokemonEntry?.defaultFormId || 'normal',
+            imageUrl: pokemonEntry?.imageUrl || '',
+            sprites: {},
+            stats: {},
+        }]
+    }
 
     const replacePokemonInLocalState = (updatedPokemon) => {
         if (!updatedPokemon?._id) return
         setPokemon((prev) => prev.map((entry) => (entry._id === updatedPokemon._id ? updatedPokemon : entry)))
         setAllPokemon((prev) => prev.map((entry) => (entry._id === updatedPokemon._id ? updatedPokemon : entry)))
+    }
+
+    const hasPendingQuickFormRows = quickFormUploadRows.some((row) => row.status === 'pending')
+    const hasFailedQuickFormRows = quickFormUploadRows.some((row) => row.status === 'error')
+    const quickMegaFileCount = quickFormUploadRows.filter((row) => row.hasMegaKeyword).length
+
+    const buildQuickFormUploadRows = (files = [], megaMode = 'keep', pokemonEntry = null) => {
+        const list = Array.isArray(files) ? files : []
+        const keepMega = megaMode === 'keep'
+        const pokemonName = String(pokemonEntry?.name || '').trim()
+
+        return list.map((file, index) => {
+            const safeFileName = String(file?.name || '').trim()
+            const inferredKeep = inferFormFromFileName(safeFileName, pokemonName, { keepMega: true })
+            const inferredRemove = inferFormFromFileName(safeFileName, pokemonName, { keepMega: false })
+            const applied = keepMega ? inferredKeep : inferredRemove
+            const keepFormId = normalizeOptionalFormId(inferredKeep.formId)
+            const removeFormId = normalizeOptionalFormId(inferredRemove.formId)
+            const keepFormName = normalizeFormName(inferredKeep.formName) || keepFormId
+            const removeFormName = normalizeFormName(inferredRemove.formName) || removeFormId
+            const appliedFormId = normalizeOptionalFormId(applied.formId)
+            const appliedFormName = normalizeFormName(applied.formName) || appliedFormId
+            const stemTokens = splitStemTokens(safeFileName.replace(/\.[^.]+$/, ''))
+            const hasMegaKeyword = stemTokens.includes('mega')
+            const isMegaModeAffecting = hasMegaKeyword && (
+                keepFormId !== removeFormId || keepFormName !== removeFormName
+            )
+
+            return {
+                queueId: `${Date.now()}-${index}-${safeFileName || 'unnamed-file'}`,
+                file,
+                fileName: safeFileName || `file-${index + 1}`,
+                keepFormId,
+                keepFormName,
+                removeFormId,
+                removeFormName,
+                appliedFormId,
+                appliedFormName,
+                hasMegaKeyword,
+                isMegaModeAffecting,
+                status: 'pending',
+                progress: 0,
+                message: isMegaModeAffecting
+                    ? (keepMega ? 'Đang áp dụng chế độ Giữ Mega' : 'Đang áp dụng chế độ Bỏ Mega')
+                    : '',
+            }
+        })
+    }
+
+    const updateQuickFormUploadRow = (queueId, patch = {}) => {
+        setQuickFormUploadRows((prev) => prev.map((row) => (row.queueId === queueId ? { ...row, ...patch } : row)))
+    }
+
+    const openQuickFormUploadModal = (pokemonEntry) => {
+        if (!pokemonEntry?._id || quickFormUploading) return
+        setQuickFormUploadPokemon(pokemonEntry)
+        setQuickFormUploadMegaMode('keep')
+        setQuickFormUploadSelectedFiles([])
+        setQuickFormUploadRows([])
+        setQuickFormUploadProgress(0)
+        setQuickFormUploadCount(0)
+        setQuickFormUploadNotice('')
+        setShowQuickFormUploadModal(true)
+        setError('')
+    }
+
+    const closeQuickFormUploadModal = (force = false) => {
+        if (!force && quickFormUploading) return
+        setShowQuickFormUploadModal(false)
+        setQuickFormUploadPokemon(null)
+        setQuickFormUploadMegaMode('keep')
+        setQuickFormUploadSelectedFiles([])
+        setQuickFormUploadRows([])
+        setQuickFormUploadProgress(0)
+        setQuickFormUploadCount(0)
+        setQuickFormUploadNotice('')
+    }
+
+    const handleQuickFormFilesSelected = (event) => {
+        const files = Array.from(event.target.files || [])
+        event.target.value = ''
+        if (files.length === 0 || !quickFormUploadPokemon) return
+
+        for (const file of files) {
+            const validationError = validateImageFile(file)
+            if (validationError) {
+                setError(`Ảnh "${file.name}" không hợp lệ: ${validationError}`)
+                return
+            }
+        }
+
+        setError('')
+        setQuickFormUploadNotice('')
+        setQuickFormUploadSelectedFiles(files)
+        setQuickFormUploadMegaMode('keep')
+        setQuickFormUploadRows(buildQuickFormUploadRows(files, 'keep', quickFormUploadPokemon))
+        setQuickFormUploadProgress(0)
+        setQuickFormUploadCount(files.length)
+    }
+
+    const handleQuickFormMegaModeChange = (mode) => {
+        if (quickFormUploading || !quickFormUploadPokemon || quickFormUploadSelectedFiles.length === 0 || !hasPendingQuickFormRows) return
+        const normalizedMode = mode === 'remove' ? 'remove' : 'keep'
+        setQuickFormUploadMegaMode(normalizedMode)
+        setQuickFormUploadRows(buildQuickFormUploadRows(quickFormUploadSelectedFiles, normalizedMode, quickFormUploadPokemon))
+    }
+
+    const retryFailedQuickFormRows = () => {
+        if (quickFormUploading || !hasFailedQuickFormRows) return
+        setQuickFormUploadRows((prev) => prev.map((row) => {
+            if (row.status !== 'error') return row
+            return {
+                ...row,
+                status: 'pending',
+                progress: 0,
+                message: 'Đã đưa lại vào hàng chờ để thử lại',
+            }
+        }))
+        setQuickFormUploadProgress(0)
+        setQuickFormUploadNotice('')
+    }
+
+    const startQuickFormUpload = async () => {
+        if (quickFormUploading || !quickFormUploadPokemon || quickFormUploadRows.length === 0) return
+
+        const pendingRows = quickFormUploadRows
+            .filter((row) => row.status === 'pending')
+            .map((row) => ({ ...row }))
+        if (pendingRows.length === 0) return
+
+        const currentPokemon = pokemon.find((entry) => entry._id === quickFormUploadPokemon._id) || quickFormUploadPokemon
+        const currentForms = getPokemonForms(currentPokemon)
+
+        try {
+            setQuickFormUploading(true)
+            setQuickFormUploadNotice('')
+            setQuickFormUploadProgress(0)
+            setQuickFormUploadCount(pendingRows.length)
+
+            const reservedFormIds = new Set(currentForms.map((entry) => normalizeOptionalFormId(entry?.formId)).filter(Boolean))
+            const uploadableRows = []
+            let skippedCount = 0
+            let uploadFailed = 0
+            let completedCount = 0
+            const totalCount = pendingRows.length
+            const updateOverallProgress = () => {
+                setQuickFormUploadProgress(Math.round((completedCount / totalCount) * 100))
+            }
+
+            pendingRows.forEach((row) => {
+                if (!row.file) {
+                    skippedCount += 1
+                    completedCount += 1
+                    updateQuickFormUploadRow(row.queueId, {
+                        status: 'error',
+                        progress: 0,
+                        message: 'Tệp ảnh không hợp lệ, vui lòng chọn lại',
+                    })
+                    updateOverallProgress()
+                    return
+                }
+
+                const normalizedFormId = normalizeOptionalFormId(row.appliedFormId)
+                if (!normalizedFormId) {
+                    skippedCount += 1
+                    completedCount += 1
+                    updateQuickFormUploadRow(row.queueId, {
+                        status: 'skipped',
+                        progress: 0,
+                        message: 'Không đọc được formId từ tên file',
+                    })
+                    updateOverallProgress()
+                    return
+                }
+
+                if (reservedFormIds.has(normalizedFormId)) {
+                    skippedCount += 1
+                    completedCount += 1
+                    updateQuickFormUploadRow(row.queueId, {
+                        status: 'skipped',
+                        progress: 0,
+                        message: `Đã tồn tại formId ${normalizedFormId}, bỏ qua để tránh ghi đè`,
+                    })
+                    updateOverallProgress()
+                    return
+                }
+
+                reservedFormIds.add(normalizedFormId)
+                uploadableRows.push({ ...row, normalizedFormId })
+            })
+
+            const createdForms = []
+            if (uploadableRows.length > 0) {
+                let cursor = 0
+                const workerCount = Math.min(QUICK_FORM_UPLOAD_MAX_CONCURRENCY, uploadableRows.length)
+
+                const workers = new Array(workerCount).fill(0).map(async () => {
+                    while (true) {
+                        const currentIndex = cursor
+                        cursor += 1
+                        if (currentIndex >= uploadableRows.length) break
+
+                        const row = uploadableRows[currentIndex]
+                        updateQuickFormUploadRow(row.queueId, {
+                            status: 'uploading',
+                            progress: 0,
+                            message: `Đang tải lên: ${row.appliedFormName || row.normalizedFormId}`,
+                        })
+
+                        try {
+                            let uploadedUrl = ''
+                            let lastUploadError = null
+
+                            for (let attempt = 1; attempt <= QUICK_FORM_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
+                                if (attempt > 1) {
+                                    updateQuickFormUploadRow(row.queueId, {
+                                        status: 'uploading',
+                                        progress: 0,
+                                        message: `Thử lại ${attempt}/${QUICK_FORM_UPLOAD_RETRY_ATTEMPTS}: ${row.appliedFormName || row.normalizedFormId}`,
+                                    })
+                                }
+
+                                try {
+                                    const url = await uploadToCloudinary(row.file, (percentage) => {
+                                        updateQuickFormUploadRow(row.queueId, { progress: percentage })
+                                    })
+                                    uploadedUrl = url
+                                    lastUploadError = null
+                                    break
+                                } catch (err) {
+                                    lastUploadError = err
+                                    const shouldRetry = attempt < QUICK_FORM_UPLOAD_RETRY_ATTEMPTS && isRetryableUploadError(err)
+                                    if (!shouldRetry) break
+
+                                    const delayMs = QUICK_FORM_UPLOAD_RETRY_BASE_DELAY_MS * attempt
+                                    updateQuickFormUploadRow(row.queueId, {
+                                        status: 'uploading',
+                                        progress: 0,
+                                        message: `Mạng không ổn định, sẽ thử lại sau ${Math.ceil(delayMs / 1000)}s...`,
+                                    })
+                                    await waitForMs(delayMs)
+                                }
+                            }
+
+                            if (!uploadedUrl) {
+                                throw lastUploadError || new Error('Tải lên thất bại')
+                            }
+
+                            createdForms.push({
+                                formId: row.normalizedFormId,
+                                formName: row.appliedFormName || row.normalizedFormId,
+                                imageUrl: uploadedUrl,
+                                sprites: {},
+                                stats: {},
+                            })
+                            updateQuickFormUploadRow(row.queueId, {
+                                status: 'success',
+                                progress: 100,
+                                message: `Đã tải lên xong và xếp vào dạng ${row.normalizedFormId}`,
+                            })
+                        } catch (err) {
+                            uploadFailed += 1
+                            updateQuickFormUploadRow(row.queueId, {
+                                status: 'error',
+                                progress: 0,
+                                message: err.message || 'Tải lên thất bại',
+                            })
+                        } finally {
+                            completedCount += 1
+                            updateOverallProgress()
+                        }
+                    }
+                })
+
+                await Promise.all(workers)
+            }
+
+            let createdCount = 0
+            if (createdForms.length > 0) {
+                const nextForms = [...currentForms, ...createdForms]
+                const result = await pokemonApi.update(currentPokemon._id, { forms: nextForms })
+                replacePokemonInLocalState(result?.pokemon)
+                setQuickFormUploadPokemon(result?.pokemon || currentPokemon)
+                createdCount = createdForms.length
+            }
+
+            const summaryParts = [`Đã thêm ${createdCount} dạng mới`]
+            if (skippedCount > 0) summaryParts.push(`bỏ qua ${skippedCount} ảnh trùng/không hợp lệ`)
+            if (uploadFailed > 0) summaryParts.push(`${uploadFailed} ảnh tải lên lỗi`)
+            setQuickFormUploadNotice(`${summaryParts.join(', ')}.`)
+        } catch (err) {
+            setError(err.message || 'Tải nhanh ảnh form thất bại')
+        } finally {
+            setQuickFormUploading(false)
+        }
     }
 
     const buildFormUpdatePayload = (pokemonEntry, targetFormId, nextImageUrl) => {
@@ -985,6 +1413,16 @@ export default function PokemonListPage() {
                                                             >
                                                                 {uploadingImageKey === `${p._id}:base` ? 'Đang up...' : 'Up ảnh'}
                                                             </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openQuickFormUploadModal(p)}
+                                                                title="Mở modal tải nhanh nhiều ảnh form"
+                                                                className={`px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap transition-colors ${uploadingImageKey
+                                                                    ? 'bg-slate-100 border-slate-200 text-slate-400 pointer-events-none'
+                                                                    : 'bg-cyan-50 border-cyan-200 text-cyan-700 hover:bg-cyan-100'}`}
+                                                            >
+                                                                Up nhanh form
+                                                            </button>
                                                         </div>
                                                     </td>
                                                     <td className="px-3 py-3 text-slate-800 font-bold text-sm truncate max-w-[150px]" title={p.name}>
@@ -1269,6 +1707,194 @@ export default function PokemonListPage() {
                     </>
                 )}
             </div>
+
+            {showQuickFormUploadModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+                    onClick={() => closeQuickFormUploadModal()}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[96vw] sm:max-w-4xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-lg font-bold text-slate-800">
+                                Tải nhanh ảnh form - {quickFormUploadPokemon?.name || 'Pokemon'}
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => closeQuickFormUploadModal()}
+                                disabled={quickFormUploading}
+                                className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <input
+                            id="quick-form-upload-modal-input"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={handleQuickFormFilesSelected}
+                            disabled={quickFormUploading}
+                        />
+
+                        <div className="mb-4 flex justify-between items-center gap-2 flex-wrap">
+                            <label
+                                htmlFor="quick-form-upload-modal-input"
+                                className={`px-3 py-1.5 rounded border text-xs font-bold whitespace-nowrap transition-colors ${quickFormUploading
+                                    ? 'bg-cyan-100 border-cyan-200 text-cyan-700 cursor-wait'
+                                    : 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-100 cursor-pointer'}`}
+                            >
+                                {quickFormUploading ? 'Đang tải lên...' : 'Chọn nhiều ảnh form'}
+                            </label>
+                            <div className="text-xs text-slate-600 font-semibold">
+                                {quickFormUploading
+                                    ? `Đang tải lên tối đa ${QUICK_FORM_UPLOAD_MAX_CONCURRENCY} ảnh song song (${quickFormUploadCount} ảnh trong hàng xử lý)`
+                                    : hasPendingQuickFormRows
+                                        ? `Đã nạp ${quickFormUploadRows.length} ảnh, chờ xác nhận tải lên`
+                                        : `Đã xử lý ${quickFormUploadRows.length} ảnh`}
+                            </div>
+                        </div>
+
+                        <div className="mb-4 rounded border border-cyan-200 bg-cyan-50 p-3">
+                            <div className="flex items-center justify-between text-xs font-semibold text-cyan-900 mb-2">
+                                <span>Tiến trình</span>
+                                <span>{quickFormUploadProgress}%</span>
+                            </div>
+                            <div className="w-full bg-cyan-100 rounded-full h-2">
+                                <div className="bg-cyan-500 h-2 rounded-full transition-all" style={{ width: `${quickFormUploadProgress}%` }} />
+                            </div>
+                            {quickFormUploadNotice && (
+                                <div className="mt-2 text-[11px] font-semibold text-cyan-900">{quickFormUploadNotice}</div>
+                            )}
+                        </div>
+
+                        <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-bold text-slate-700 uppercase mb-2">Tùy chọn Mega trước khi tải lên</div>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleQuickFormMegaModeChange('keep')}
+                                    disabled={quickFormUploading || !hasPendingQuickFormRows}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold border whitespace-nowrap transition-colors ${quickFormUploadMegaMode === 'keep'
+                                        ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    Giữ Mega
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleQuickFormMegaModeChange('remove')}
+                                    disabled={quickFormUploading || !hasPendingQuickFormRows}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold border whitespace-nowrap transition-colors ${quickFormUploadMegaMode === 'remove'
+                                        ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    Bỏ Mega
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                                Có {quickMegaFileCount} ảnh chứa từ khóa Mega. Nếu trùng formId đã có thì hệ thống sẽ bỏ qua để tránh ghi đè.
+                            </p>
+                        </div>
+
+                        <div className="max-h-[46vh] overflow-y-auto rounded border border-slate-200 divide-y divide-slate-100">
+                            <div className="hidden sm:grid sm:grid-cols-12 px-4 py-2 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                <div className="sm:col-span-4">Tệp</div>
+                                <div className="sm:col-span-3">Xem trước giữ Mega</div>
+                                <div className="sm:col-span-3">Xem trước bỏ Mega</div>
+                                <div className="sm:col-span-2 text-right">Trạng thái</div>
+                            </div>
+
+                            {quickFormUploadRows.length === 0 ? (
+                                <div className="px-4 py-6 text-sm text-slate-500 text-center">Chưa có ảnh nào trong hàng chờ tải lên.</div>
+                            ) : (
+                                quickFormUploadRows.map((row, index) => {
+                                    const statusMeta = QUICK_FORM_UPLOAD_STATUS_META[row.status] || QUICK_FORM_UPLOAD_STATUS_META.pending
+                                    const keepPreviewLabel = formatFormPreviewLabel(row.keepFormId, row.keepFormName)
+                                    const removePreviewLabel = formatFormPreviewLabel(row.removeFormId, row.removeFormName)
+                                    const isKeepActive = quickFormUploadMegaMode === 'keep'
+                                    const isRemoveActive = quickFormUploadMegaMode === 'remove'
+
+                                    return (
+                                        <div key={row.queueId} className={`px-4 py-3 bg-white ${row.isMegaModeAffecting && hasPendingQuickFormRows ? 'border-l-4 border-l-amber-300' : ''}`}>
+                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                <div className="sm:col-span-4 min-w-0">
+                                                    <div className="text-sm font-semibold text-slate-800 truncate">{index + 1}. {row.fileName}</div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">Dạng đang áp dụng: {formatFormPreviewLabel(row.appliedFormId, row.appliedFormName)}</div>
+                                                    {row.message && (
+                                                        <div className={`text-[11px] mt-1 ${row.isMegaModeAffecting ? 'text-amber-700 font-semibold' : 'text-slate-600'}`}>
+                                                            {row.message}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className={`sm:col-span-3 text-[11px] rounded border px-2 py-1.5 ${isKeepActive
+                                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 font-semibold'
+                                                    : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                                                    {keepPreviewLabel}
+                                                </div>
+
+                                                <div className={`sm:col-span-3 text-[11px] rounded border px-2 py-1.5 ${isRemoveActive
+                                                    ? 'border-amber-300 bg-amber-50 text-amber-700 font-semibold'
+                                                    : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                                                    {removePreviewLabel}
+                                                </div>
+
+                                                <div className="sm:col-span-2 sm:text-right">
+                                                    <span className={`inline-flex px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${statusMeta.badgeClass}`}>
+                                                        {statusMeta.label}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {(row.status === 'uploading' || row.status === 'success') && (
+                                                <div className="mt-2">
+                                                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                        <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${row.progress || 0}%` }} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={retryFailedQuickFormRows}
+                                disabled={quickFormUploading || !hasFailedQuickFormRows}
+                                className="mr-2 px-4 py-2 bg-white border border-red-300 rounded text-sm font-bold text-red-700 whitespace-nowrap hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Thử lại ảnh lỗi
+                            </button>
+                            <button
+                                type="button"
+                                onClick={startQuickFormUpload}
+                                disabled={quickFormUploading || !hasPendingQuickFormRows}
+                                className="mr-2 px-4 py-2 bg-cyan-600 border border-cyan-600 rounded text-sm font-bold text-white whitespace-nowrap hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {quickFormUploading ? 'Đang tải lên...' : (hasPendingQuickFormRows ? 'Bắt đầu tải lên' : 'Đã tải lên xong')}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => closeQuickFormUploadModal()}
+                                disabled={quickFormUploading}
+                                className="px-4 py-2 bg-white border border-slate-300 rounded text-sm font-bold text-slate-700 whitespace-nowrap hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {quickFormUploading ? 'Đang tải lên...' : 'Đóng'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="text-center mt-6 p-4">
                 <Link

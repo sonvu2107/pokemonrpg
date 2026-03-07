@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams, useLocation, Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 import { uploadOneToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
@@ -275,6 +275,7 @@ const GROWTH_RATES = ['fast', 'medium_fast', 'medium_slow', 'slow', 'erratic', '
 export default function PokemonFormPage() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const location = useLocation()
     const isEdit = Boolean(id)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -368,6 +369,11 @@ export default function PokemonFormPage() {
         if (inferredCustomVariants.length === 0) return
         setCustomFormVariants((prev) => mergeFormVariants(prev, inferredCustomVariants))
     }, [forms])
+
+    useEffect(() => {
+        if (!location.state?.openBulkFormUploadModal) return
+        setShowBulkUploadModal(true)
+    }, [location.state])
 
     const canonicalizeMoveName = (value) => {
         const normalized = String(value || '').trim()
@@ -1096,7 +1102,7 @@ export default function PokemonFormPage() {
                     {/* --- Forms --- */}
                     <div>
                         <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">2. Các Dạng</h3>
-                        <div className="mb-4 rounded border border-cyan-200 bg-cyan-50/60 p-3">
+                        <div id="bulk-form-quick-upload" className="mb-4 rounded border border-cyan-200 bg-cyan-50/60 p-3 scroll-mt-24">
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Upload nhanh nhiều ảnh form</label>
                             <p className="text-[11px] text-cyan-800 mb-2">
                                 Chọn nhiều ảnh một lần, hệ thống sẽ tự tạo form mới theo tên file cho Pokemon hiện tại.
@@ -1642,6 +1648,26 @@ export default function PokemonFormPage() {
                             </button>
                         </div>
 
+                        <input
+                            id="bulk-form-image-upload-modal"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleBulkFormImagesSelected}
+                            className="hidden"
+                            disabled={bulkFormUploading}
+                        />
+                        <div className="mb-4 flex justify-end">
+                            <label
+                                htmlFor="bulk-form-image-upload-modal"
+                                className={`px-3 py-1.5 rounded border text-xs font-bold whitespace-nowrap transition-colors ${bulkFormUploading
+                                    ? 'bg-cyan-100 border-cyan-200 text-cyan-700 cursor-wait'
+                                    : 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-100 cursor-pointer'}`}
+                            >
+                                {bulkFormUploading ? 'Đang tải lên...' : 'Chọn ảnh form'}
+                            </label>
+                        </div>
+
                         <div className="mb-4 rounded border border-cyan-200 bg-cyan-50 p-3">
                             <div className="flex items-center justify-between text-xs font-semibold text-cyan-900 mb-2">
                                 <span>
@@ -1805,9 +1831,6 @@ export default function PokemonFormPage() {
         </div>
     )
 }
-
-
-
 
 
 
