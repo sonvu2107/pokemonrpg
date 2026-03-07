@@ -779,13 +779,19 @@ export default function PokemonFormPage() {
             }
 
             preparedRows.forEach((row) => {
-                if (row.megaSkipReason) {
+                const skipByMegaMode = bulkUploadMegaMode === 'keep'
+                    ? !row.hasMegaKeyword
+                    : row.hasMegaKeyword
+                if (skipByMegaMode) {
                     skippedBeforeUpload += 1
                     completedCount += 1
+                    const skipReason = bulkUploadMegaMode === 'keep'
+                        ? 'Ảnh không có Mega, bỏ qua theo chế độ Giữ Mega'
+                        : 'Ảnh có Mega, bỏ qua theo chế độ Bỏ Mega'
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'skipped',
                         progress: 0,
-                        message: row.megaSkipReason,
+                        message: skipReason,
                     })
                     updateOverallProgress()
                     return
