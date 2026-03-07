@@ -103,6 +103,7 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
@@ -110,7 +111,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? clamp(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            ? clamp(parsed, MAP_RARITY_CATCH_BONUS_MIN_PERCENT, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
             : 0
         return acc
     }, {})
@@ -120,7 +121,7 @@ const resolveMapRarityCatchBonusPercent = ({ mapLike, rarity }) => {
     const normalizedRarity = String(rarity || '').trim().toLowerCase()
     if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
     const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
-    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+    return Number(normalizedMapBonus?.[normalizedRarity] || 0)
 }
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
@@ -3351,7 +3352,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
         const ssCatchBonusPercent = pokemonRarity === 'ss'
             ? Math.max(0, Number(effectiveVipBonusBenefits?.ssCatchRateBonusPercent || 0))
             : 0
-        const totalRarityCatchBonusPercent = Math.max(0, mapRarityCatchBonusPercent + ssCatchBonusPercent)
+        const totalRarityCatchBonusPercent = mapRarityCatchBonusPercent + ssCatchBonusPercent
         const chanceBeforeLowHpBonus = Math.min(0.95, baseChance * (1 + (totalRarityCatchBonusPercent / 100)))
         const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({
             hp: encounter.hp,

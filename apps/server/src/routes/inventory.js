@@ -33,6 +33,7 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
@@ -40,7 +41,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? clampChance(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            ? clampChance(parsed, MAP_RARITY_CATCH_BONUS_MIN_PERCENT, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
             : 0
         return acc
     }, {})
@@ -50,7 +51,7 @@ const resolveMapRarityCatchBonusPercent = ({ mapLike, rarity }) => {
     const normalizedRarity = String(rarity || '').trim().toLowerCase()
     if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
     const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
-    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+    return Number(normalizedMapBonus?.[normalizedRarity] || 0)
 }
 
 const serializePlayerWallet = (playerState) => {
@@ -133,7 +134,7 @@ const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity, rarityCatchBo
     const chanceBeforeLowHpBonus = hasFixedCatchRate
         ? clampChance(Number(item.effectValue) / 100, 0, 1)
         : clampChance(
-            clampChance(baseChance, 0.02, 0.95) * (1 + (Math.max(0, Number(rarityCatchBonusPercent) || 0) / 100)),
+            clampChance(baseChance, 0.02, 0.95) * (1 + ((Number(rarityCatchBonusPercent) || 0) / 100)),
             0.02,
             0.95
         )

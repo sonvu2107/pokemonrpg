@@ -23,6 +23,7 @@ const specialPokemonConfigSchema = new mongoose.Schema(
 )
 
 const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const rarityCatchBonusPercentSchema = new mongoose.Schema(
@@ -30,19 +31,19 @@ const rarityCatchBonusPercentSchema = new mongoose.Schema(
         s: {
             type: Number,
             default: 0,
-            min: 0,
+            min: MAP_RARITY_CATCH_BONUS_MIN_PERCENT,
             max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
         },
         ss: {
             type: Number,
             default: 0,
-            min: 0,
+            min: MAP_RARITY_CATCH_BONUS_MIN_PERCENT,
             max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
         },
         sss: {
             type: Number,
             default: 0,
-            min: 0,
+            min: MAP_RARITY_CATCH_BONUS_MIN_PERCENT,
             max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
         },
     },
@@ -54,7 +55,7 @@ const toSafeRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         const normalized = Number.isFinite(parsed)
-            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            ? Math.max(MAP_RARITY_CATCH_BONUS_MIN_PERCENT, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
             : 0
         acc[key] = normalized
         return acc

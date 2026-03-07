@@ -125,6 +125,7 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
@@ -132,7 +133,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            ? Math.max(MAP_RARITY_CATCH_BONUS_MIN_PERCENT, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
             : 0
         return acc
     }, {})
@@ -142,7 +143,7 @@ const resolveMapRarityCatchBonusPercent = (mapLike = null, rarity = '') => {
     const normalizedRarity = String(rarity || '').trim().toLowerCase()
     if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
     const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
-    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+    return Number(normalizedMapBonus?.[normalizedRarity] || 0)
 }
 
 const isSameAutoActionByRarity = (left = {}, right = {}) => {
@@ -991,7 +992,7 @@ export default function MapPage() {
             ? Math.min(1, Math.max(0, Number(item.effectValue) / 100))
             : Math.min(
                 0.95,
-                Math.max(0.02, safeBaseChance) * (1 + (Math.max(0, Number(rarityCatchBonusPercent) || 0) / 100))
+                Math.max(0.02, safeBaseChance) * (1 + ((Number(rarityCatchBonusPercent) || 0) / 100))
             )
         const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp, rarity })
         const minChance = hasFixedCatchRate ? 0 : 0.02

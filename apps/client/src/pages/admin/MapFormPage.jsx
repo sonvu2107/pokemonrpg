@@ -7,6 +7,7 @@ const MIN_SPECIAL_WEIGHT = 0.0001
 const SPECIAL_POKEMON_MODAL_PAGE_SIZE = 40
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 const MAP_RARITY_CATCH_BONUS_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 const DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT = Object.freeze({ s: 0, ss: 0, sss: 0 })
 const PREVIEW_CATCH_RATE = 45
@@ -31,7 +32,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? clampValue(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            ? clampValue(parsed, MAP_RARITY_CATCH_BONUS_MIN_PERCENT, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
             : 0
         return acc
     }, {})
@@ -342,7 +343,7 @@ export default function MapFormPage() {
         if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(rarityKey)) return
         const parsed = Number.parseFloat(nextValueRaw)
         const nextValue = Number.isFinite(parsed)
-            ? clampValue(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            ? clampValue(parsed, MAP_RARITY_CATCH_BONUS_MIN_PERCENT, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
             : 0
         setFormData((prev) => ({
             ...prev,
@@ -359,6 +360,11 @@ export default function MapFormPage() {
 
     const clampRate = (value) => Math.max(0, Math.min(1, Number(value) || 0))
     const formatPercent = (rate) => `${(Math.max(0, Number(rate) || 0) * 100).toFixed(3).replace(/\.?0+$/, '')}%`
+    const formatSignedPercentValue = (value = 0) => {
+        const normalized = Number.isFinite(Number(value)) ? Number(value) : 0
+        const text = normalized.toFixed(3).replace(/\.?0+$/, '')
+        return `${normalized >= 0 ? '+' : ''}${text}%`
+    }
     const hasSpecialPokemonPool = formData.specialPokemonConfigs.length > 0
     const encounterRatePreview = clampRate(formData.encounterRate)
     const specialPokemonRatePreview = clampRate(formData.specialPokemonEncounterRate)
@@ -666,20 +672,20 @@ export default function MapFormPage() {
                                 <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-4">
                                     <div>
                                         <h3 className="text-sm font-bold text-blue-900 uppercase">Tỷ Lệ Bắt Theo Độ Hiếm</h3>
-                                        <p className="text-xs text-blue-700 mt-1">Điều chỉnh % thưởng tỉ lệ bắt cho Pokemon S/SS/SSS trong map này.</p>
+                                        <p className="text-xs text-blue-700 mt-1">Điều chỉnh tăng/giảm % tỉ lệ bắt cho Pokemon S/SS/SSS trong map này.</p>
                                     </div>
-                                    <span className="text-[11px] text-slate-500 font-semibold">0 - {MAP_RARITY_CATCH_BONUS_MAX_PERCENT}%</span>
+                                    <span className="text-[11px] text-slate-500 font-semibold">{MAP_RARITY_CATCH_BONUS_MIN_PERCENT}% đến +{MAP_RARITY_CATCH_BONUS_MAX_PERCENT}%</span>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {rarityCatchPreviewRows.map((row) => (
                                         <div key={row.key}>
                                             <label className="block text-slate-700 text-sm font-bold mb-2">
-                                                Thưởng tỉ lệ bắt {row.label} (%)
+                                                Bonus tỉ lệ bắt {row.label} (%)
                                             </label>
                                             <input
                                                 type="number"
-                                                min="0"
+                                                min={MAP_RARITY_CATCH_BONUS_MIN_PERCENT}
                                                 max={MAP_RARITY_CATCH_BONUS_MAX_PERCENT}
                                                 step="0.1"
                                                 value={row.mapBonusPercent}
@@ -687,7 +693,7 @@ export default function MapFormPage() {
                                                 className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                             />
                                             <p className="text-xs text-slate-500 mt-1">
-                                                Ví dụ: {row.mapBonusPercent || 0}% = nhân {(1 + ((row.mapBonusPercent || 0) / 100)).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}x trước bonus máu thấp.
+                                                Hệ số trước bonus máu thấp: {(1 + ((row.mapBonusPercent || 0) / 100)).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}x.
                                             </p>
                                         </div>
                                     ))}
@@ -707,7 +713,7 @@ export default function MapFormPage() {
                                             {rarityCatchPreviewRows.map((row) => (
                                                 <tr key={`preview-${row.key}`}>
                                                     <td className="px-3 py-2 font-bold text-slate-700">{row.label}</td>
-                                                    <td className="px-3 py-2 text-center text-blue-700 font-semibold">+{row.mapBonusPercent}%</td>
+                                                    <td className={`px-3 py-2 text-center font-semibold ${row.mapBonusPercent > 0 ? 'text-blue-700' : (row.mapBonusPercent < 0 ? 'text-red-600' : 'text-slate-600')}`}>{formatSignedPercentValue(row.mapBonusPercent)}</td>
                                                     <td className="px-3 py-2 text-center text-emerald-700 font-bold">{formatPercent(row.fullHpChance)}</td>
                                                     <td className="px-3 py-2 text-center text-violet-700 font-bold">{formatPercent(row.lowHpChance)}</td>
                                                 </tr>

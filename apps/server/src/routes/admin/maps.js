@@ -41,6 +41,7 @@ const normalizeSpecialPokemonIds = (value) => {
 }
 
 const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
@@ -48,7 +49,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            ? Math.max(MAP_RARITY_CATCH_BONUS_MIN_PERCENT, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
             : 0
         return acc
     }, {})
@@ -62,8 +63,8 @@ const validateMapRarityCatchBonusPercent = (value) => {
 
     for (const key of MAP_RARITY_CATCH_KEYS) {
         const parsed = Number(value?.[key] ?? 0)
-        if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAP_RARITY_CATCH_BONUS_MAX_PERCENT) {
-            return `rarityCatchBonusPercent.${key} phải trong khoảng 0 đến ${MAP_RARITY_CATCH_BONUS_MAX_PERCENT}`
+        if (!Number.isFinite(parsed) || parsed < MAP_RARITY_CATCH_BONUS_MIN_PERCENT || parsed > MAP_RARITY_CATCH_BONUS_MAX_PERCENT) {
+            return `rarityCatchBonusPercent.${key} phải trong khoảng ${MAP_RARITY_CATCH_BONUS_MIN_PERCENT} đến ${MAP_RARITY_CATCH_BONUS_MAX_PERCENT}`
         }
     }
 

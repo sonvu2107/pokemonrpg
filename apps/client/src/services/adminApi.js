@@ -54,6 +54,7 @@ const normalizeMapSpecialPokemonConfigs = (value) => {
 }
 
 const MAP_RARITY_CATCH_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
@@ -61,7 +62,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
         const parsed = Number(source?.[key])
         acc[key] = Number.isFinite(parsed)
-            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            ? Math.max(MAP_RARITY_CATCH_BONUS_MIN_PERCENT, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
             : 0
         return acc
     }, {})
