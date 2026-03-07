@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { pokemonApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
-import { uploadManyToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
+import { uploadOneToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
 const TYPES = [
     'normal', 'fire', 'water', 'grass', 'electric', 'ice',
@@ -37,6 +37,28 @@ const FORM_VARIANTS = [
 const FORM_VARIANT_NAME_BY_ID = Object.fromEntries(FORM_VARIANTS.map(v => [v.id, v.name]))
 const BUILT_IN_FORM_VARIANT_IDS = new Set(FORM_VARIANTS.map(v => String(v.id || '').trim().toLowerCase()).filter(Boolean))
 const FORM_VARIANT_MODAL_PAGE_SIZE = 12
+const BULK_UPLOAD_STATUS_META = {
+    pending: {
+        label: 'Chờ xử lý',
+        badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+    },
+    uploading: {
+        label: 'Đang upload',
+        badgeClass: 'bg-blue-100 text-blue-700 border border-blue-200',
+    },
+    success: {
+        label: 'Thành công',
+        badgeClass: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    },
+    skipped: {
+        label: 'Bỏ qua',
+        badgeClass: 'bg-amber-100 text-amber-700 border border-amber-200',
+    },
+    error: {
+        label: 'Lỗi',
+        badgeClass: 'bg-red-100 text-red-700 border border-red-200',
+    },
+}
 
 const RARITY_ALIASES = {
     superlegendary: 'ss',
@@ -231,6 +253,8 @@ export default function PokemonFormPage() {
     const [bulkFormUploadProgress, setBulkFormUploadProgress] = useState(0)
     const [bulkFormUploadCount, setBulkFormUploadCount] = useState(0)
     const [bulkFormUploadNotice, setBulkFormUploadNotice] = useState('')
+    const [showBulkUploadModal, setShowBulkUploadModal] = useState(false)
+    const [bulkUploadQueueRows, setBulkUploadQueueRows] = useState([])
     const [customFormVariants, setCustomFormVariants] = useState([])
     const [showFormVariantModal, setShowFormVariantModal] = useState(false)
     const [formVariantModalTargetIndex, setFormVariantModalTargetIndex] = useState(null)
@@ -503,13 +527,23 @@ export default function PokemonFormPage() {
         setForms(prev => [...prev, { formId: '', formName: '', imageUrl: '', sprites: {}, stats: {} }])
     }
 
-    const applyBulkFormUploadResults = (items = []) => {
-        if (!Array.isArray(items) || items.length === 0) {
-            return { createdCount: 0, skippedCount: 0 }
-        }
+    const closeBulkUploadModal = (force = false) => {
+        if (!force && bulkFormUploading) return
+        setShowBulkUploadModal(false)
+        setBulkUploadQueueRows([])
+    }
 
-        let createdCount = 0
-        let skippedCount = 0
+    const updateBulkUploadQueueRow = (queueId, patch = {}) => {
+        setBulkUploadQueueRows((prev) => prev.map((row) => (row.queueId === queueId ? { ...row, ...patch } : row)))
+    }
+
+    const applyBulkFormUploadResults = (items = [], onSummary = null) => {
+        if (!Array.isArray(items) || items.length === 0) {
+            if (typeof onSummary === 'function') {
+                onSummary({ createdCount: 0, skippedCount: 0 })
+            }
+            return
+        }
 
         setForms((prev) => {
             const next = [...prev]
@@ -518,6 +552,8 @@ export default function PokemonFormPage() {
                     .map((entry) => normalizeFormId(entry?.formId).toLowerCase())
                     .filter(Boolean)
             )
+            let createdCount = 0
+            let skippedCount = 0
 
             items.forEach(({ fileName, url }) => {
                 if (!url) return
@@ -553,10 +589,11 @@ export default function PokemonFormPage() {
             })
 
             setDefaultFormId((prevDefault) => resolveDefaultFormId(next, prevDefault))
+            if (typeof onSummary === 'function') {
+                onSummary({ createdCount, skippedCount })
+            }
             return next
         })
-
-        return { createdCount, skippedCount }
     }
 
     const handleBulkFormImagesSelected = async (event) => {
@@ -575,33 +612,117 @@ export default function PokemonFormPage() {
         try {
             setError('')
             setBulkFormUploadNotice('')
+            setShowBulkUploadModal(true)
             setBulkFormUploading(true)
             setBulkFormUploadProgress(0)
             setBulkFormUploadCount(files.length)
 
-            const urls = await uploadManyToCloudinary(files, {
-                onProgress: (percentage) => {
-                    setBulkFormUploadProgress(percentage)
-                },
+            const pokemonNames = allPokemon
+                .map((entry) => String(entry?.name || '').trim())
+                .filter(Boolean)
+
+            const preparedRows = files.map((file, index) => {
+                const inferred = inferFormVariantFromFileName(file.name, formVariantOptions, pokemonNames)
+                const inferredFormId = normalizeFormId(inferred.formId).toLowerCase()
+                const inferredFormName = normalizeFormName(inferred.formName) || inferredFormId
+                return {
+                    queueId: `${Date.now()}-${index}-${file.name}`,
+                    file,
+                    fileName: file.name,
+                    inferredFormId,
+                    inferredFormName,
+                    status: 'pending',
+                    progress: 0,
+                    message: '',
+                }
             })
 
-            const result = applyBulkFormUploadResults(
-                urls.map((url, index) => ({
-                    fileName: files[index]?.name || '',
-                    url,
-                }))
+            setBulkUploadQueueRows(preparedRows)
+
+            const existingFormIds = new Set(
+                forms
+                    .map((entry) => normalizeFormId(entry?.formId).toLowerCase())
+                    .filter(Boolean)
             )
 
-            if (result.skippedCount > 0) {
-                setBulkFormUploadNotice(`Đã thêm ${result.createdCount} dạng mới, bỏ qua ${result.skippedCount} ảnh trùng formId đã có.`)
-            } else if (result.createdCount > 0) {
-                setBulkFormUploadNotice(`Đã thêm ${result.createdCount} dạng mới.`)
+            const uploadedItems = []
+            let skippedBeforeUpload = 0
+            let uploadFailed = 0
+
+            for (let index = 0; index < preparedRows.length; index += 1) {
+                const row = preparedRows[index]
+                const normalizedFormId = normalizeFormId(row.inferredFormId).toLowerCase()
+
+                if (!normalizedFormId) {
+                    skippedBeforeUpload += 1
+                    updateBulkUploadQueueRow(row.queueId, {
+                        status: 'skipped',
+                        progress: 0,
+                        message: 'Không đọc được formId từ tên file',
+                    })
+                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
+                    continue
+                }
+
+                if (existingFormIds.has(normalizedFormId)) {
+                    skippedBeforeUpload += 1
+                    updateBulkUploadQueueRow(row.queueId, {
+                        status: 'skipped',
+                        progress: 0,
+                        message: `Đã tồn tại formId ${normalizedFormId}, bỏ qua để tránh ghi đè`,
+                    })
+                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
+                    continue
+                }
+
+                updateBulkUploadQueueRow(row.queueId, {
+                    status: 'uploading',
+                    progress: 0,
+                    message: `Đang upload: ${row.inferredFormName || normalizedFormId}`,
+                })
+
+                try {
+                    const url = await uploadOneToCloudinary(row.file, (percentage) => {
+                        updateBulkUploadQueueRow(row.queueId, { progress: percentage })
+                    })
+
+                    existingFormIds.add(normalizedFormId)
+                    uploadedItems.push({ fileName: row.fileName, url })
+                    updateBulkUploadQueueRow(row.queueId, {
+                        status: 'success',
+                        progress: 100,
+                        message: `Đã upload xong và xếp vào dạng ${normalizedFormId}`,
+                    })
+                } catch (err) {
+                    uploadFailed += 1
+                    updateBulkUploadQueueRow(row.queueId, {
+                        status: 'error',
+                        progress: 0,
+                        message: err.message || 'Upload thất bại',
+                    })
+                } finally {
+                    setBulkFormUploadProgress(Math.round(((index + 1) / preparedRows.length) * 100))
+                }
             }
+
+            await new Promise((resolve) => {
+                applyBulkFormUploadResults(uploadedItems, (result) => {
+                    const totalSkipped = skippedBeforeUpload + result.skippedCount
+                    if (result.createdCount > 0 || totalSkipped > 0 || uploadFailed > 0) {
+                        const summaryParts = [`Đã thêm ${result.createdCount} dạng mới`]
+                        if (totalSkipped > 0) summaryParts.push(`bỏ qua ${totalSkipped} ảnh trùng/không hợp lệ`)
+                        if (uploadFailed > 0) summaryParts.push(`${uploadFailed} ảnh upload lỗi`)
+                        setBulkFormUploadNotice(`${summaryParts.join(', ')}.`)
+                    } else {
+                        setBulkFormUploadNotice('Không thêm được dạng mới từ bộ ảnh đã chọn.')
+                    }
+                    resolve()
+                })
+            })
         } catch (err) {
             setError(err.message || 'Upload ảnh form hàng loạt thất bại')
         } finally {
             setBulkFormUploading(false)
-            setBulkFormUploadProgress(0)
             setBulkFormUploadCount(0)
         }
     }
@@ -794,6 +915,9 @@ export default function PokemonFormPage() {
                             </p>
                             <p className="text-[11px] text-cyan-800 mb-2">
                                 Nếu trùng formId đã có trong dữ liệu, hệ thống sẽ bỏ qua, không ghi đè.
+                            </p>
+                            <p className="text-[11px] text-cyan-800 mb-2">
+                                Sau khi chọn ảnh, modal tiến trình sẽ hiện theo từng file: xong ảnh này rồi mới sang ảnh tiếp theo.
                             </p>
                             <input
                                 id="bulk-form-image-upload"
@@ -1299,6 +1423,98 @@ export default function PokemonFormPage() {
                             {formVariantModalError && (
                                 <div className="text-sm font-bold text-red-600">{formVariantModalError}</div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showBulkUploadModal && (
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+                    onClick={() => closeBulkUploadModal()}
+                >
+                    <div
+                        className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6 w-full max-w-[96vw] sm:max-w-3xl shadow-2xl max-h-[92vh] overflow-y-auto"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-lg font-bold text-slate-800">Tiến trình upload ảnh form</h3>
+                            <button
+                                type="button"
+                                onClick={() => closeBulkUploadModal()}
+                                disabled={bulkFormUploading}
+                                className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="mb-4 rounded border border-cyan-200 bg-cyan-50 p-3">
+                            <div className="flex items-center justify-between text-xs font-semibold text-cyan-900 mb-2">
+                                <span>
+                                    {bulkFormUploading
+                                        ? `Đang xử lý tuần tự ${bulkFormUploadCount} ảnh...`
+                                        : `Đã xử lý xong ${bulkUploadQueueRows.length} ảnh.`}
+                                </span>
+                                <span>{bulkFormUploadProgress}%</span>
+                            </div>
+                            <div className="w-full bg-cyan-100 rounded-full h-2">
+                                <div
+                                    className="bg-cyan-500 h-2 rounded-full transition-all"
+                                    style={{ width: `${bulkFormUploadProgress}%` }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="max-h-[52vh] overflow-y-auto rounded border border-slate-200 divide-y divide-slate-100">
+                            {bulkUploadQueueRows.length === 0 ? (
+                                <div className="px-4 py-6 text-sm text-slate-500 text-center">Chưa có ảnh nào trong hàng đợi upload.</div>
+                            ) : (
+                                bulkUploadQueueRows.map((row, index) => {
+                                    const statusMeta = BULK_UPLOAD_STATUS_META[row.status] || BULK_UPLOAD_STATUS_META.pending
+                                    return (
+                                        <div key={row.queueId} className="px-4 py-3 bg-white">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold text-slate-800 truncate">{index + 1}. {row.fileName}</div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                                        Dạng dự kiến: {row.inferredFormName ? `${row.inferredFormName} (${row.inferredFormId || 'n/a'})` : (row.inferredFormId || 'Không xác định')}
+                                                    </div>
+                                                    {row.message && (
+                                                        <div className="text-[11px] text-slate-600 mt-1">{row.message}</div>
+                                                    )}
+                                                </div>
+                                                <span className={`shrink-0 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide ${statusMeta.badgeClass}`}>
+                                                    {statusMeta.label}
+                                                </span>
+                                            </div>
+                                            {(row.status === 'uploading' || row.status === 'success') && (
+                                                <div className="mt-2">
+                                                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                        <div
+                                                            className="bg-blue-500 h-1.5 rounded-full transition-all"
+                                                            style={{ width: `${row.progress || 0}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => closeBulkUploadModal()}
+                                disabled={bulkFormUploading}
+                                className="px-4 py-2 bg-white border border-slate-300 rounded text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {bulkFormUploading ? 'Đang upload...' : 'Đóng'}
+                            </button>
                         </div>
                     </div>
                 </div>
