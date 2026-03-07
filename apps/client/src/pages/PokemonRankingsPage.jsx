@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import VipAvatar from '../components/VipAvatar'
@@ -12,6 +12,8 @@ const SectionHeader = ({ title }) => (
     </div>
 )
 
+const RANKINGS_CLIENT_CACHE_TTL_MS = 60 * 1000
+
 export default function PokemonRankingsPage() {
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
@@ -20,6 +22,7 @@ export default function PokemonRankingsPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
+    const rankingsCacheRef = useRef(new Map())
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: '/rankings/pokemon' })
 
     const isPowerMode = rankingMode === 'power'
@@ -28,6 +31,8 @@ export default function PokemonRankingsPage() {
 
     useEffect(() => {
         setCurrentPage(1)
+        setRankings([])
+        setPagination(null)
     }, [rankingMode])
 
     useEffect(() => {
@@ -35,13 +40,34 @@ export default function PokemonRankingsPage() {
     }, [currentPage, rankingMode])
 
     const loadRankings = async (page) => {
+        const cacheKey = `${rankingMode}:${page}`
+        const cached = rankingsCacheRef.current.get(cacheKey)
+        if (cached && cached.expiresAt > Date.now()) {
+            setRankings(cached.rankings)
+            setPagination(cached.pagination)
+            setTotalSpecies(cached.totalSpecies)
+            setError('')
+            setLoading(false)
+            return
+        }
+
         try {
             setLoading(true)
             setError('')
             const data = await gameApi.getPokemonRankings({ page, limit: 35, mode: rankingMode })
-            setRankings(Array.isArray(data.rankings) ? data.rankings : [])
-            setPagination(data.pagination || null)
-            setTotalSpecies(Math.max(0, Number((data.totalDexEntries ?? data.totalSpecies) || 0)))
+            const nextRankings = Array.isArray(data.rankings) ? data.rankings : []
+            const nextPagination = data.pagination || null
+            const nextTotalSpecies = Math.max(0, Number((data.totalDexEntries ?? data.totalSpecies) || 0))
+
+            setRankings(nextRankings)
+            setPagination(nextPagination)
+            setTotalSpecies(nextTotalSpecies)
+            rankingsCacheRef.current.set(cacheKey, {
+                rankings: nextRankings,
+                pagination: nextPagination,
+                totalSpecies: nextTotalSpecies,
+                expiresAt: Date.now() + RANKINGS_CLIENT_CACHE_TTL_MS,
+            })
         } catch (err) {
             setError(err.message || 'Không thể tải bảng xếp hạng Pokémon')
         } finally {
@@ -167,20 +193,19 @@ export default function PokemonRankingsPage() {
                 <SectionHeader title={sectionTitle} />
                 <div className="overflow-x-auto">
                     {isPowerMode ? (
-                        <table className="w-full table-fixed text-sm sm:text-base">
+                        <table className="w-full min-w-[680px] md:min-w-0 text-sm sm:text-base">
                             <thead>
                                 <tr className="bg-blue-100 border-b-2 border-slate-800 text-slate-800 font-bold">
-                                    <th className="px-2 py-2 text-left w-[10%] border-r border-slate-400">Hạng</th>
-                                    <th className="px-2 py-2 text-left w-[42%] border-r border-slate-400">Pokémon</th>
-                                    <th className="px-2 py-2 text-right w-[16%] border-r border-slate-400">Lực Chiến</th>
-                                    <th className="px-2 py-2 text-right w-[8%] border-r border-slate-400">Cấp</th>
-                                    <th className="px-2 py-2 text-left w-[24%]">Người Chơi</th>
+                                    <th className="px-3 py-2 text-left w-16 md:w-20 border-r border-slate-400">Hạng</th>
+                                    <th className="px-3 py-2 text-left w-40 md:w-auto border-r border-slate-400">Người Chơi</th>
+                                    <th className="px-3 py-2 text-left w-60 md:w-56 border-r border-slate-400">Pokémon</th>
+                                    <th className="px-3 py-2 text-right w-36 md:w-40">Lực Chiến / Cấp</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {rankings.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                                        <td colSpan={4} className="py-8 text-center text-slate-400 italic">
                                             Chưa có dữ liệu
                                         </td>
                                     </tr>
@@ -192,32 +217,9 @@ export default function PokemonRankingsPage() {
                                         const combatPower = resolveCombatPower(entry)
                                         return (
                                             <tr key={`${detailId || 'unknown'}-${entry.rank}`} className="border-b border-slate-200 hover:bg-blue-50 transition-colors">
-                                                <td className="px-2 py-2.5 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
-                                                <td className="px-2 py-2.5 border-r border-slate-200">
-                                                    <div className="flex items-center gap-2 min-w-0">
-                                                        <Link to={`/pokemon/${detailId}`}>
-                                                            <img
-                                                                src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
-                                                                alt={displayName}
-                                                                className="w-14 h-14 sm:w-16 sm:h-16 object-contain pixelated"
-                                                            />
-                                                        </Link>
-                                                        <div className="min-w-0 flex-1">
-                                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline block truncate">
-                                                                {displayName}
-                                                            </Link>
-                                                            <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-2 py-2.5 text-right font-extrabold text-rose-700 border-r border-slate-200">
-                                                    {numberFormat(combatPower)}
-                                                </td>
-                                                <td className="px-2 py-2.5 text-right font-bold text-slate-700 border-r border-slate-200">
-                                                    {numberFormat(entry.level)}
-                                                </td>
-                                                <td className="px-2 py-2.5">
-                                                    <div className="flex items-center gap-2">
+                                                <td className="px-3 py-3 font-extrabold text-slate-800 border-r border-slate-200">#{entry.rank}</td>
+                                                <td className="px-3 py-3 border-r border-slate-200">
+                                                    <div className="flex items-center gap-3 min-w-0">
                                                         <VipAvatar
                                                             userLike={entry.owner}
                                                             avatar={entry.owner?.avatar}
@@ -241,7 +243,7 @@ export default function PokemonRankingsPage() {
                                                                         vipTierCode: entry.owner?.vipTierCode,
                                                                         vipBenefits: entry.owner?.vipBenefits,
                                                                     }, { returnTo: '/rankings/pokemon' })}
-                                                                    className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 truncate ${getUsernameColor(entry.rank)}`}
+                                                                    className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
                                                                 >
                                                                     {entry.owner?.username || 'Không rõ'}
                                                                 </button>
@@ -249,6 +251,29 @@ export default function PokemonRankingsPage() {
                                                             </div>
                                                         </div>
                                                     </div>
+                                                </td>
+                                                <td className="px-3 py-3 border-r border-slate-200">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <Link to={`/pokemon/${detailId}`}>
+                                                            <img
+                                                                src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                                alt={displayName}
+                                                                loading="lazy"
+                                                                decoding="async"
+                                                                className="w-14 h-14 object-contain pixelated"
+                                                            />
+                                                        </Link>
+                                                        <div className="min-w-0 flex-1">
+                                                            <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline block truncate">
+                                                                {displayName}
+                                                            </Link>
+                                                            <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-right">
+                                                    <div className="font-extrabold text-rose-700">{numberFormat(combatPower)}</div>
+                                                    <div className="text-xs font-semibold text-slate-600">Cấp {numberFormat(entry.level)}</div>
                                                 </td>
                                             </tr>
                                         )

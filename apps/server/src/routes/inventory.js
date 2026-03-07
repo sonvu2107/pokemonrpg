@@ -10,6 +10,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
+import { calcMaxHp } from '../utils/gameUtils.js'
 
 const router = express.Router()
 const useItemActionGuard = createActionGuard({
@@ -163,6 +164,28 @@ const normalizeObjectIdInput = (value) => {
 }
 
 const isValidObjectIdLike = (value = '') => /^[a-f\d]{24}$/i.test(String(value || '').trim())
+const ALLOWED_ITEM_USE_BATTLE_MODES = new Set(['trainer', 'duel', 'online'])
+
+const normalizeItemUseBattleMode = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return ALLOWED_ITEM_USE_BATTLE_MODES.has(normalized) ? normalized : ''
+}
+
+const normalizeItemUseContext = (requestBody = {}) => {
+    const body = requestBody && typeof requestBody === 'object' ? requestBody : {}
+    const rawContext = body.context && typeof body.context === 'object' ? body.context : {}
+    const mode = normalizeItemUseBattleMode(rawContext.mode ?? body.mode)
+    const trainerId = normalizeObjectIdInput(rawContext.trainerId ?? body.trainerId)
+    const playerCurrentHpRaw = Number(rawContext.playerCurrentHp ?? body.playerCurrentHp)
+    const playerMaxHpRaw = Number(rawContext.playerMaxHp ?? body.playerMaxHp)
+
+    return {
+        mode,
+        trainerId: isValidObjectIdLike(trainerId) ? trainerId : '',
+        playerCurrentHp: Number.isFinite(playerCurrentHpRaw) ? Math.max(0, Math.floor(playerCurrentHpRaw)) : null,
+        playerMaxHp: Number.isFinite(playerMaxHpRaw) ? Math.max(1, Math.floor(playerMaxHpRaw)) : null,
+    }
+}
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const resolvePokemonImageForEncounter = (pokemon, formId, isShiny = false) => {
@@ -220,12 +243,20 @@ router.get('/', async (req, res) => {
 
 router.post('/use', useItemActionGuard, async (req, res) => {
     try {
-        const { itemId, quantity = 1, encounterId, activePokemonId = null, moveName = '' } = req.body
+        const requestBody = req.body && typeof req.body === 'object' ? req.body : {}
+        const {
+            itemId,
+            quantity = 1,
+            encounterId,
+            activePokemonId = null,
+            moveName = '',
+        } = requestBody
         const qty = Number(quantity)
         const userId = req.user.userId
         const normalizedItemId = normalizeObjectIdInput(itemId)
         const normalizedEncounterId = normalizeObjectIdInput(encounterId)
         const normalizedActivePokemonId = normalizeObjectIdInput(activePokemonId)
+        const itemUseContext = normalizeItemUseContext(requestBody)
 
         if (!normalizedItemId || !isValidObjectIdLike(normalizedItemId) || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
             return res.status(400).json({ ok: false, message: 'Vật phẩm hoặc số lượng không hợp lệ' })
@@ -409,19 +440,32 @@ router.post('/use', useItemActionGuard, async (req, res) => {
         }
 
         if (item.type === 'healing') {
-            const playerState = await PlayerState.findOne({ userId })
-            if (!playerState) {
-                return res.status(404).json({ ok: false, message: 'Không tìm thấy trạng thái người chơi' })
+            const { hpAmount, ppAmount } = getHealAmounts(item)
+            if (hpAmount <= 0 && ppAmount <= 0) {
+                console.warn('inventory_use_no_effect', {
+                    userId: String(userId),
+                    itemId: normalizedItemId,
+                    reason: 'item_effect_zero',
+                })
+                return res.status(400).json({ ok: false, message: 'Vật phẩm này không có hiệu ứng hồi phục' })
             }
 
-            const { hpAmount, ppAmount } = getHealAmounts(item)
+            if (itemUseContext.mode === 'duel' || itemUseContext.mode === 'online') {
+                console.warn('inventory_use_blocked_mode', {
+                    userId: String(userId),
+                    itemId: normalizedItemId,
+                    mode: itemUseContext.mode,
+                })
+                return res.status(403).json({ ok: false, message: 'Không thể dùng vật phẩm ở chế độ battle này' })
+            }
+
+            const isTrainerBattleContext = itemUseContext.mode === 'trainer'
+            if (isTrainerBattleContext && !itemUseContext.trainerId) {
+                return res.status(400).json({ ok: false, message: 'Thiếu trainerId cho ngữ cảnh battle trainer' })
+            }
+
             const totalHpHeal = hpAmount * qty
             const totalPpHeal = Math.max(0, Math.floor(ppAmount * qty))
-
-            let hpContext = 'player'
-            let beforeHp = Math.max(0, Number(playerState.hp || 0))
-            let maxHp = Math.max(1, Number(playerState.maxHp || 1))
-            let nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
 
             let targetPokemon = null
             if (normalizedActivePokemonId) {
@@ -431,17 +475,56 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 targetPokemon = await UserPokemon.findOne({
                     _id: normalizedActivePokemonId,
                     userId,
-                }).populate('pokemonId', 'levelUpMoves')
+                }).populate('pokemonId', 'levelUpMoves baseStats rarity')
+                if (!targetPokemon) {
+                    return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon đang chọn' })
+                }
+            }
+
+            let activeBattleSession = null
+            if (isTrainerBattleContext) {
+                activeBattleSession = await BattleSession.findOne({
+                    userId,
+                    trainerId: itemUseContext.trainerId,
+                    expiresAt: { $gt: new Date() },
+                })
+
+                if (!activeBattleSession) {
+                    console.warn('inventory_use_trainer_session_missing', {
+                        userId: String(userId),
+                        itemId: normalizedItemId,
+                        trainerId: itemUseContext.trainerId,
+                    })
+                    return res.status(409).json({ ok: false, message: 'Không tìm thấy phiên battle trainer. Vui lòng vào lại trận.' })
+                }
+
+                const team = Array.isArray(activeBattleSession.team) ? activeBattleSession.team : []
+                const currentIndex = Math.max(0, Number(activeBattleSession.currentIndex) || 0)
+                if (team.length === 0 || currentIndex >= team.length) {
+                    console.warn('inventory_use_trainer_session_missing', {
+                        userId: String(userId),
+                        itemId: normalizedItemId,
+                        trainerId: itemUseContext.trainerId,
+                        reason: 'session_inactive_or_finished',
+                    })
+                    return res.status(409).json({ ok: false, message: 'Phiên battle trainer đã kết thúc. Vui lòng vào trận mới.' })
+                }
+
+                if (!targetPokemon && activeBattleSession.playerPokemonId) {
+                    targetPokemon = await UserPokemon.findOne({
+                        _id: activeBattleSession.playerPokemonId,
+                        userId,
+                    }).populate('pokemonId', 'levelUpMoves baseStats rarity')
+                }
             }
 
             if (!targetPokemon) {
                 targetPokemon = await UserPokemon.findOne({ userId, location: 'party' })
                     .sort({ partyIndex: 1 })
-                    .populate('pokemonId', 'levelUpMoves')
+                    .populate('pokemonId', 'levelUpMoves baseStats rarity')
             }
 
-            let activeBattleSession = null
-            if (!normalizedEncounterId && targetPokemon) {
+            if (!isTrainerBattleContext && !normalizedEncounterId && targetPokemon) {
                 activeBattleSession = await BattleSession.findOne({
                     userId,
                     playerPokemonId: targetPokemon._id,
@@ -449,10 +532,58 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 })
             }
 
+            let hpContext = 'player'
+            let beforeHp = 0
+            let maxHp = 1
+            let nextHp = 1
+            let playerState = null
+
             if (activeBattleSession) {
                 hpContext = 'battle'
+
+                if (
+                    isTrainerBattleContext
+                    && targetPokemon
+                    && String(activeBattleSession.playerPokemonId || '') !== String(targetPokemon._id)
+                ) {
+                    const calculatedMaxHp = calcMaxHp(
+                        Number(targetPokemon?.pokemonId?.baseStats?.hp || 1),
+                        Math.max(1, Number(targetPokemon.level || 1)),
+                        targetPokemon?.pokemonId?.rarity || 'd'
+                    )
+                    const requestedMaxHp = Number.isFinite(itemUseContext.playerMaxHp)
+                        ? itemUseContext.playerMaxHp
+                        : calculatedMaxHp
+                    const resolvedMaxHp = clampChance(
+                        Math.floor(requestedMaxHp),
+                        1,
+                        calculatedMaxHp
+                    )
+                    const fallbackCurrentHpRaw = Number(activeBattleSession.playerCurrentHp || resolvedMaxHp)
+                    const resolvedCurrentHpRaw = Number.isFinite(itemUseContext.playerCurrentHp)
+                        ? itemUseContext.playerCurrentHp
+                        : fallbackCurrentHpRaw
+
+                    activeBattleSession.playerPokemonId = targetPokemon._id
+                    activeBattleSession.playerMaxHp = Math.max(1, Math.floor(resolvedMaxHp))
+                    activeBattleSession.playerCurrentHp = clampChance(
+                        Math.floor(resolvedCurrentHpRaw),
+                        0,
+                        activeBattleSession.playerMaxHp
+                    )
+                }
+
                 beforeHp = Math.max(0, Number(activeBattleSession.playerCurrentHp || 0))
                 maxHp = Math.max(1, Number(activeBattleSession.playerMaxHp || 1))
+                nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
+            } else {
+                playerState = await PlayerState.findOne({ userId })
+                if (!playerState) {
+                    return res.status(404).json({ ok: false, message: 'Không tìm thấy trạng thái người chơi' })
+                }
+
+                beforeHp = Math.max(0, Number(playerState.hp || 0))
+                maxHp = Math.max(1, Number(playerState.maxHp || 1))
                 nextHp = Math.min(maxHp, beforeHp + totalHpHeal)
             }
 
@@ -519,16 +650,31 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             }
 
             if (healedHp === 0 && healedPp === 0) {
+                console.warn('inventory_use_no_effect', {
+                    userId: String(userId),
+                    itemId: normalizedItemId,
+                    reason: 'hp_pp_already_full',
+                    contextMode: itemUseContext.mode || 'none',
+                    hpContext,
+                })
                 return res.status(400).json({ ok: false, message: 'HP/PP đã đầy' })
-            }
-
-            if (hpAmount <= 0 && ppAmount <= 0) {
-                return res.status(400).json({ ok: false, message: 'Vật phẩm này không có hiệu ứng hồi phục' })
             }
 
             if (hpContext === 'battle' && activeBattleSession) {
                 activeBattleSession.playerCurrentHp = nextHp
                 await activeBattleSession.save()
+                if (isTrainerBattleContext) {
+                    console.info('inventory_use_trainer_heal_applied', {
+                        userId: String(userId),
+                        itemId: normalizedItemId,
+                        trainerId: itemUseContext.trainerId,
+                        targetPokemonId: String(targetPokemon?._id || activeBattleSession.playerPokemonId || ''),
+                        healedHp,
+                        healedPp,
+                        hpAfter: nextHp,
+                        maxHp,
+                    })
+                }
             } else {
                 playerState.hp = nextHp
                 await playerState.save()

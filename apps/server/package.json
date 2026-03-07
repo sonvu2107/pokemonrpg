@@ -20,6 +20,7 @@
         "analyze:skill-effects:apply": "node src/scripts/analyzeSkillEffectSpecs.js --apply",
         "effects:add-to-skills": "node src/scripts/addEffectsToSkills.js",
         "test:effect-engine": "node src/scripts/testEffectEngine.js",
+        "test:inventory-healing-flow": "node src/testInventoryUseHealingFlow.js",
         "test:rate-limit": "node src/testGlobalRateLimit.js",
         "test:battle-attack-flow": "node src/scripts/testBattleAttackFlow.js",
         "test:skill-shop-teach-flow": "node scripts/testSkillShopTeachFlow.js",

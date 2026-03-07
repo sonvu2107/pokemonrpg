@@ -9,6 +9,18 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+const POKEMON_POWER_META_CACHE_TTL_MS = 5 * 60 * 1000
+const POWER_RANKING_CACHE_TTL_MS = 10 * 60 * 1000
+const POWER_RANKING_CACHE_WARMUP_DELAY_MS = 10 * 1000
+const POWER_RANKING_CACHE_WARM_INTERVAL_MS = 3 * 60 * 1000
+
+const pokemonPowerMetaCache = {
+    expiresAt: 0,
+    byId: new Map(),
+    inFlight: null,
+}
+
+const powerRankingSnapshotCache = new Map()
 
 const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
@@ -256,6 +268,170 @@ const getTotalDexEntries = async () => {
     return speciesRows.reduce((total, species) => total + countDexEntriesForSpecies(species), 0)
 }
 
+const getPokemonPowerMetaLookup = async () => {
+    const now = Date.now()
+    if (pokemonPowerMetaCache.byId.size > 0 && pokemonPowerMetaCache.expiresAt > now) {
+        return pokemonPowerMetaCache.byId
+    }
+
+    if (pokemonPowerMetaCache.inFlight) {
+        return pokemonPowerMetaCache.inFlight
+    }
+
+    const refreshPromise = Pokemon.find({})
+        .select('_id name pokedexNumber types rarity forms baseStats defaultFormId imageUrl sprites')
+        .lean()
+        .then((rows) => {
+            const byId = new Map()
+            for (const entry of rows) {
+                const key = String(entry?._id || '').trim()
+                if (!key) continue
+                byId.set(key, entry)
+            }
+            pokemonPowerMetaCache.byId = byId
+            pokemonPowerMetaCache.expiresAt = Date.now() + POKEMON_POWER_META_CACHE_TTL_MS
+            pokemonPowerMetaCache.inFlight = null
+            return byId
+        })
+        .catch((error) => {
+            pokemonPowerMetaCache.inFlight = null
+            throw error
+        })
+
+    pokemonPowerMetaCache.inFlight = refreshPromise
+    return refreshPromise
+}
+
+const buildPowerRankingSnapshot = async (adminUserIds = []) => {
+    const pokemonLookup = await getPokemonPowerMetaLookup()
+    const baseMatch = {}
+    if (Array.isArray(adminUserIds) && adminUserIds.length > 0) {
+        baseMatch.userId = { $nin: adminUserIds }
+    }
+
+    const rows = await UserPokemon.find(baseMatch)
+        .select('_id userId pokemonId level experience nickname isShiny formId ivs evs')
+        .lean()
+
+    const normalizedRows = []
+
+    for (const entry of rows) {
+        const pokemonId = String(entry?.pokemonId || '').trim()
+        if (!pokemonId) continue
+        const pokemon = pokemonLookup.get(pokemonId)
+        if (!pokemon) continue
+
+        const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
+        const experience = Math.max(0, Number(entry?.experience || 0))
+        const combatPower = toSafePositiveInt(calcPokemonCombatPower({ ...entry, pokemon }), Math.max(1, level * 10))
+
+        normalizedRows.push({
+            sortId: String(entry?._id || '').trim(),
+            userPokemonId: entry?._id || null,
+            ownerId: entry?.userId || null,
+            level,
+            experience,
+            nickname: String(entry?.nickname || '').trim(),
+            isShiny: Boolean(entry?.isShiny),
+            formId: String(entry?.formId || 'normal').trim() || 'normal',
+            combatPower,
+            sprite: resolvePokemonSprite({ ...entry, pokemon }),
+            pokemon: {
+                _id: pokemon?._id || null,
+                name: String(pokemon?.name || '').trim() || 'Unknown',
+                pokedexNumber: Math.max(0, Number(pokemon?.pokedexNumber || 0)),
+                types: Array.isArray(pokemon?.types) ? pokemon.types : [],
+            },
+        })
+    }
+
+    normalizedRows.sort((a, b) => {
+        if (b.combatPower !== a.combatPower) return b.combatPower - a.combatPower
+        if (b.level !== a.level) return b.level - a.level
+        if (b.experience !== a.experience) return b.experience - a.experience
+        return a.sortId.localeCompare(b.sortId)
+    })
+
+    return normalizedRows.map(({ sortId, ...entry }) => entry)
+}
+
+const getPowerRankingSnapshot = async (adminUserIds = []) => {
+    const normalizedAdminKeys = Array.isArray(adminUserIds)
+        ? adminUserIds.map((entry) => String(entry || '').trim()).filter(Boolean).sort()
+        : []
+    const cacheKey = normalizedAdminKeys.join(',') || 'all-users'
+    const now = Date.now()
+    const cached = powerRankingSnapshotCache.get(cacheKey)
+
+    if (cached?.snapshot && cached.expiresAt > now) {
+        return cached.snapshot
+    }
+
+    if (cached?.inFlight) {
+        return cached.inFlight
+    }
+
+    const refreshPromise = buildPowerRankingSnapshot(adminUserIds)
+        .then((snapshot) => {
+            powerRankingSnapshotCache.set(cacheKey, {
+                snapshot,
+                expiresAt: Date.now() + POWER_RANKING_CACHE_TTL_MS,
+                inFlight: null,
+            })
+            return snapshot
+        })
+        .catch((error) => {
+            const previous = powerRankingSnapshotCache.get(cacheKey)
+            if (previous) {
+                powerRankingSnapshotCache.set(cacheKey, {
+                    ...previous,
+                    inFlight: null,
+                })
+            }
+            throw error
+        })
+
+    powerRankingSnapshotCache.set(cacheKey, {
+        snapshot: cached?.snapshot || null,
+        expiresAt: cached?.expiresAt || 0,
+        inFlight: refreshPromise,
+    })
+
+    if (cached?.snapshot) {
+        refreshPromise.catch(() => {})
+        return cached.snapshot
+    }
+
+    return refreshPromise
+}
+
+const warmPowerRankingSnapshot = async () => {
+    const adminUserIds = await getAdminUserIds()
+    await getPowerRankingSnapshot(adminUserIds)
+}
+
+if (process.env.NODE_ENV !== 'test') {
+    const warmupTimeout = setTimeout(() => {
+        warmPowerRankingSnapshot().catch((error) => {
+            console.warn('rankings power snapshot warmup failed:', error?.message || error)
+        })
+
+        const warmupInterval = setInterval(() => {
+            warmPowerRankingSnapshot().catch((error) => {
+                console.warn('rankings power snapshot refresh failed:', error?.message || error)
+            })
+        }, POWER_RANKING_CACHE_WARM_INTERVAL_MS)
+
+        if (typeof warmupInterval.unref === 'function') {
+            warmupInterval.unref()
+        }
+    }, POWER_RANKING_CACHE_WARMUP_DELAY_MS)
+
+    if (typeof warmupTimeout.unref === 'function') {
+        warmupTimeout.unref()
+    }
+}
+
 // GET /api/rankings/daily - Daily rankings by searches/map exp/moon points
 router.get('/daily', async (req, res, next) => {
     try {
@@ -402,118 +578,57 @@ router.get('/pokemon', async (req, res, next) => {
         }
 
         if (rankingMode === 'power') {
-            const rows = await UserPokemon.aggregate([
-                { $match: baseMatch },
-                {
-                    $lookup: {
-                        from: 'pokemons',
-                        localField: 'pokemonId',
-                        foreignField: '_id',
-                        as: 'pokemon',
-                    },
-                },
-                { $unwind: '$pokemon' },
-                {
-                    $lookup: {
-                        from: 'users',
-                        localField: 'userId',
-                        foreignField: '_id',
-                        as: 'owner',
-                    },
-                },
-                {
-                    $unwind: {
-                        path: '$owner',
-                        preserveNullAndEmptyArrays: true,
-                    },
-                },
-                {
-                    $project: {
-                        level: 1,
-                        experience: 1,
-                        nickname: 1,
-                        isShiny: 1,
-                        formId: 1,
-                        ivs: 1,
-                        evs: 1,
-                        pokemon: {
-                            _id: '$pokemon._id',
-                            name: '$pokemon.name',
-                            pokedexNumber: '$pokemon.pokedexNumber',
-                            types: '$pokemon.types',
-                            rarity: '$pokemon.rarity',
-                            forms: '$pokemon.forms',
-                            baseStats: '$pokemon.baseStats',
-                            defaultFormId: '$pokemon.defaultFormId',
-                            imageUrl: '$pokemon.imageUrl',
-                            sprites: '$pokemon.sprites',
-                        },
-                        owner: {
-                            _id: '$owner._id',
-                            username: '$owner.username',
-                            avatar: '$owner.avatar',
-                            role: '$owner.role',
-                            vipTierId: '$owner.vipTierId',
-                            vipTierLevel: '$owner.vipTierLevel',
-                            vipTierCode: '$owner.vipTierCode',
-                            vipBenefits: '$owner.vipBenefits',
-                        },
-                    },
-                },
-            ]).allowDiskUse(true)
-
-            const sortedRows = rows
-                .map((entry) => {
-                    const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
-                    const experience = Math.max(0, Number(entry?.experience || 0))
-                    const combatPower = toSafePositiveInt(calcPokemonCombatPower(entry), Math.max(1, level * 10))
-                    return {
-                        ...entry,
-                        level,
-                        experience,
-                        combatPower,
-                    }
-                })
-                .sort((a, b) => {
-                    if (b.combatPower !== a.combatPower) return b.combatPower - a.combatPower
-                    if (b.level !== a.level) return b.level - a.level
-                    if (b.experience !== a.experience) return b.experience - a.experience
-                    return String(a._id || '').localeCompare(String(b._id || ''))
-                })
+            const sortedRows = await getPowerRankingSnapshot(adminUserIds)
 
             const total = sortedRows.length
             const totalPages = Math.max(1, Math.ceil(total / limit))
             const pageRows = sortedRows.slice(skip, skip + limit)
-            const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(
-                pageRows.map((entry) => entry?.owner)
+            const ownerIds = Array.from(new Set(
+                pageRows
+                    .map((entry) => String(entry?.ownerId || '').trim())
+                    .filter(Boolean)
+            ))
+            const owners = ownerIds.length > 0
+                ? await User.find({ _id: { $in: ownerIds } })
+                    .select('username avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
+                    .lean()
+                : []
+            const ownerById = new Map(
+                owners.map((entry) => [String(entry?._id || '').trim(), entry])
             )
-            const rankings = pageRows.map((entry, index) => ({
-                rank: skip + index + 1,
-                userPokemonId: entry._id,
-                level: entry.level,
-                experience: entry.experience,
-                nickname: entry.nickname || '',
-                isShiny: Boolean(entry.isShiny),
-                formId: entry.formId || 'normal',
-                combatPower: entry.combatPower,
-                power: entry.combatPower,
-                sprite: resolvePokemonSprite(entry),
-                pokemon: {
-                    _id: entry.pokemon?._id,
-                    name: entry.pokemon?.name || 'Unknown',
-                    pokedexNumber: entry.pokemon?.pokedexNumber || 0,
-                    types: Array.isArray(entry.pokemon?.types) ? entry.pokemon.types : [],
-                },
-                owner: {
-                    _id: entry.owner?._id || null,
-                    username: entry.owner?.username || 'Unknown',
-                    avatar: normalizeAvatarUrl(entry.owner?.avatar),
-                    role: String(entry?.owner?.role || 'user').trim() || 'user',
-                    vipTierLevel: Math.max(0, parseInt(entry?.owner?.vipTierLevel, 10) || 0),
-                    vipTierCode: String(entry?.owner?.vipTierCode || '').trim().toUpperCase(),
-                    vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(entry?.owner?._id || ''))),
-                },
-            }))
+            const benefitsByUserId = await buildEffectiveVipBenefitsByUserId(
+                owners
+            )
+            const rankings = pageRows.map((entry, index) => {
+                const owner = ownerById.get(String(entry?.ownerId || '').trim())
+                return {
+                    rank: skip + index + 1,
+                    userPokemonId: entry.userPokemonId,
+                    level: entry.level,
+                    experience: entry.experience,
+                    nickname: entry.nickname || '',
+                    isShiny: Boolean(entry.isShiny),
+                    formId: entry.formId || 'normal',
+                    combatPower: entry.combatPower,
+                    power: entry.combatPower,
+                    sprite: entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
+                    pokemon: {
+                        _id: entry.pokemon?._id,
+                        name: entry.pokemon?.name || 'Unknown',
+                        pokedexNumber: entry.pokemon?.pokedexNumber || 0,
+                        types: Array.isArray(entry.pokemon?.types) ? entry.pokemon.types : [],
+                    },
+                    owner: {
+                        _id: owner?._id || null,
+                        username: owner?.username || 'Unknown',
+                        avatar: normalizeAvatarUrl(owner?.avatar),
+                        role: String(owner?.role || 'user').trim() || 'user',
+                        vipTierLevel: Math.max(0, parseInt(owner?.vipTierLevel, 10) || 0),
+                        vipTierCode: String(owner?.vipTierCode || '').trim().toUpperCase(),
+                        vipBenefits: normalizeVipBenefits(benefitsByUserId.get(String(owner?._id || ''))),
+                    },
+                }
+            })
 
             return res.json({
                 ok: true,

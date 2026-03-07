@@ -2157,9 +2157,72 @@ export function BattlePage() {
             appendBattleLog([message])
             return
         }
+        if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
+            const message = 'Không thể dùng vật phẩm trong chế độ khiêu chiến này.'
+            setActionMessage(message)
+            appendBattleLog([message])
+            return
+        }
+        if (activeBattleMode !== 'trainer') {
+            const message = 'Không xác định được ngữ cảnh battle để dùng vật phẩm.'
+            setActionMessage(message)
+            appendBattleLog([message])
+            return
+        }
         try {
             const activeSlot = party[battlePlayerIndex] || party.find((slot) => Boolean(slot)) || null
-            const res = await gameApi.useItem(entry.item._id, 1, null, activeSlot?._id || null)
+            if (!activeSlot?._id) {
+                const message = 'Không tìm thấy Pokemon đang chiến đấu để dùng vật phẩm.'
+                setActionMessage(message)
+                appendBattleLog([message])
+                return
+            }
+
+            const fallbackTrainerByOrder = Number.isInteger(Number(battleOpponent?.trainerOrder))
+                ? masterPokemon[Math.max(0, Math.floor(Number(battleOpponent?.trainerOrder)))]
+                : null
+            const resolvedTrainerId = normalizeEntityId(
+                battleOpponent?.trainerId
+                || opponent?.trainerId
+                || fallbackTrainerByOrder?._id
+                || fallbackTrainerByOrder?.id
+            )
+            if (!resolvedTrainerId) {
+                const message = 'Không xác định được battle trainer hiện tại để dùng vật phẩm.'
+                setActionMessage(message)
+                appendBattleLog([message])
+                return
+            }
+
+            const activeHpEntry = Array.isArray(battlePartyHpState) ? battlePartyHpState[battlePlayerIndex] : null
+            const playerMaxHpForContext = Math.max(
+                1,
+                Number(activeHpEntry?.maxHp)
+                || Number(activeSlot?.battleMaxHp)
+                || Number(activeSlot?.stats?.hp)
+                || 1
+            )
+            const playerCurrentHpForContext = clampValue(
+                Number.isFinite(Number(activeHpEntry?.currentHp))
+                    ? Number(activeHpEntry.currentHp)
+                    : (Number.isFinite(Number(activeSlot?.battleCurrentHp)) ? Number(activeSlot.battleCurrentHp) : playerMaxHpForContext),
+                0,
+                playerMaxHpForContext
+            )
+
+            const res = await gameApi.useItem(
+                entry.item._id,
+                1,
+                null,
+                activeSlot._id,
+                '',
+                {
+                    mode: 'trainer',
+                    trainerId: resolvedTrainerId,
+                    playerCurrentHp: playerCurrentHpForContext,
+                    playerMaxHp: playerMaxHpForContext,
+                }
+            )
             setActionMessage(res.message || 'Đã dùng vật phẩm.')
             appendBattleLog([res.message || 'Đã dùng vật phẩm.'])
 

@@ -57,6 +57,7 @@ const WILD_REWARD_LEVEL_DIVISOR = 4
 const WILD_REWARD_PLATINUM_COINS_CAP = 20
 const WILD_REWARD_HALF_RATE_AFTER = 100
 const WILD_REWARD_REDUCED_RATE_AFTER = 200
+const WILD_POKEMON_EXP_SCALE = 0.8
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
 const USER_POKEMON_MAX_LEVEL = 1000
 const TRAINER_POKEMON_DAMAGE_PERCENT_MIN = 0
@@ -3062,6 +3063,7 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
         let counterAttack = null
         let playerDefeated = false
         let playerState = null
+        let wildPokemonReward = null
 
         if (defeatedWild) {
             encounter.isActive = false
@@ -3182,13 +3184,85 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
                 await trackDailyActivity(userId, { platinumCoins: reward.platinumCoins })
             }
 
+            const leadPartyPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+                .sort({ partyIndex: 1, _id: 1 })
+                .populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
+
+            if (leadPartyPokemon?.pokemonId) {
+                const defeatedWildPokemon = await Pokemon.findById(encounter.pokemonId)
+                    .select('rarity name')
+                    .lean()
+                const basePokemonExp = Math.max(6, Math.floor(Number(encounter.level || 1) * 4))
+                const defeatedWildRarity = String(defeatedWildPokemon?.rarity || '').trim().toLowerCase()
+                const expMultiplier = getRarityExpMultiplier(defeatedWildRarity)
+                const expGained = Math.max(0, Math.floor(basePokemonExp * expMultiplier * WILD_POKEMON_EXP_SCALE))
+
+                const expBefore = Math.max(0, Math.floor(Number(leadPartyPokemon.experience) || 0))
+                let levelsGained = 0
+
+                if (leadPartyPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                    leadPartyPokemon.level = USER_POKEMON_MAX_LEVEL
+                    leadPartyPokemon.experience = 0
+                } else if (expGained > 0) {
+                    leadPartyPokemon.experience = expBefore + expGained
+                    while (
+                        leadPartyPokemon.level < USER_POKEMON_MAX_LEVEL
+                        && leadPartyPokemon.experience >= expToNext(leadPartyPokemon.level)
+                    ) {
+                        leadPartyPokemon.experience -= expToNext(leadPartyPokemon.level)
+                        leadPartyPokemon.level += 1
+                        levelsGained += 1
+                    }
+
+                    if (leadPartyPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                        leadPartyPokemon.level = USER_POKEMON_MAX_LEVEL
+                        leadPartyPokemon.experience = 0
+                    }
+                }
+
+                const evolutions = levelsGained > 0 ? await applyLevelEvolution(leadPartyPokemon) : []
+                await leadPartyPokemon.save()
+                await leadPartyPokemon.populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
+
+                wildPokemonReward = {
+                    userPokemonId: leadPartyPokemon._id,
+                    name: leadPartyPokemon.nickname || leadPartyPokemon.pokemonId?.name || 'Pokemon',
+                    imageUrl: resolvePokemonImageForForm(
+                        leadPartyPokemon.pokemonId,
+                        leadPartyPokemon.formId,
+                        Boolean(leadPartyPokemon.isShiny)
+                    ),
+                    level: leadPartyPokemon.level,
+                    exp: leadPartyPokemon.experience,
+                    expBefore,
+                    expGained,
+                    expToNext: leadPartyPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(leadPartyPokemon.level),
+                    levelsGained,
+                    evolution: evolutions,
+                }
+
+                if (expGained > 0 || levelsGained > 0) {
+                    await trackDailyActivity(userId, {
+                        levels: Math.max(0, levelsGained),
+                        trainerExp: Math.max(0, expGained),
+                    })
+                }
+
+                reward.pokemonExp = expGained
+                reward.pokemonLevelsGained = levelsGained
+                reward.pokemonName = wildPokemonReward.name
+                reward.expMultiplierByWildRarity = expMultiplier
+                reward.wildRarity = defeatedWildRarity || 'normal'
+                reward.expScale = WILD_POKEMON_EXP_SCALE
+            }
+
             reward.wildDefeatsToday = wildDefeatsToday
         }
 
         const finalPlayerState = playerState?.toObject ? playerState.toObject() : playerState
         const playerBattle = formatWildPlayerBattleState(encounter)
         const message = defeatedWild
-            ? `Pokemon hoang dã đã bị hạ! +${Number(reward?.platinumCoins || 0).toLocaleString('vi-VN')} Xu Bạch Kim`
+            ? `Pokemon hoang dã đã bị hạ! +${Number(reward?.platinumCoins || 0).toLocaleString('vi-VN')} Xu Bạch Kim${Number(reward?.pokemonExp || 0) > 0 ? ` · +${Number(reward?.pokemonExp || 0).toLocaleString('vi-VN')} EXP cho ${reward?.pokemonName || 'Pokemon'}` : ''}`
             : (playerDefeated
                 ? `Gây ${damage} sát thương! ${counterAttack?.log || ''} Bạn đã kiệt sức và phải rút lui.`.trim()
                 : `Gây ${damage} sát thương! ${counterAttack?.log || ''}`.trim())
@@ -3203,6 +3277,7 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
             playerDefeated,
             message,
             reward,
+            pokemonReward: wildPokemonReward,
             counterAttack,
             playerBattle,
             playerState: finalPlayerState

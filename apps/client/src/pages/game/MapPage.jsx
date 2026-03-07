@@ -147,6 +147,33 @@ const DEFAULT_AUTO_SEARCH_HISTORY = {
     catchSuccessCount: 0,
 }
 
+const normalizeActionByRaritySnapshot = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return AUTO_SEARCH_RARITY_KEYS.reduce((acc, rarityKey) => {
+        const normalized = String(source?.[rarityKey] || DEFAULT_AUTO_ACTION_BY_RARITY[rarityKey] || 'battle').trim().toLowerCase()
+        acc[rarityKey] = (normalized === 'catch' || normalized === 'run') ? normalized : 'battle'
+        return acc
+    }, {})
+}
+
+const buildAutoSearchConfigSnapshot = ({
+    enabled,
+    mapSlug,
+    searchIntervalMs,
+    actionByRarity,
+    catchFormMode,
+    catchBallItemId,
+}) => {
+    return JSON.stringify({
+        enabled: Boolean(enabled),
+        mapSlug: String(mapSlug || '').trim().toLowerCase(),
+        searchIntervalMs: Math.max(900, Number(searchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
+        actionByRarity: normalizeActionByRaritySnapshot(actionByRarity),
+        catchFormMode: String(catchFormMode || 'all').trim().toLowerCase() || 'all',
+        catchBallItemId: String(catchBallItemId || '').trim(),
+    })
+}
+
 const isSearchDebugModeEnabled = () => {
     return Boolean(import.meta.env.DEV)
 }
@@ -222,6 +249,7 @@ export default function MapPage() {
     const [autoSearchServerStatus, setAutoSearchServerStatus] = useState('')
     const [autoSearchServerLogs, setAutoSearchServerLogs] = useState([])
     const [autoSearchHistory, setAutoSearchHistory] = useState(DEFAULT_AUTO_SEARCH_HISTORY)
+    const [isAutoSearchConfigDirty, setIsAutoSearchConfigDirty] = useState(false)
     const [autoSearchUsageToday, setAutoSearchUsageToday] = useState(0)
     const [autoSearchUsesPerDayLimit, setAutoSearchUsesPerDayLimit] = useState(0)
     const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
@@ -233,6 +261,8 @@ export default function MapPage() {
     const searchSpamCountRef = useRef(0)
     const lastSearchRequestAtRef = useRef(0)
     const searchButtonRepositionTimerRef = useRef(null)
+    const autoSearchConfigDirtyRef = useRef(false)
+    const lastAutoSearchServerSnapshotRef = useRef('')
     const lastSearchChallengeAtRef = useRef(0)
     const lastSearchButtonRepositionAtRef = useRef(0)
     const lastSearchSpamAttemptAtRef = useRef(0)
@@ -274,6 +304,17 @@ export default function MapPage() {
     const hasCatchActionConfigured = AUTO_SEARCH_RARITY_KEYS.some((rarityKey) => {
         return String(autoActionByRarity?.[rarityKey] || '').trim().toLowerCase() === 'catch'
     })
+
+    const markAutoSearchConfigDirty = () => {
+        autoSearchConfigDirtyRef.current = true
+        setIsAutoSearchConfigDirty(true)
+    }
+
+    const syncAutoSearchConfigDirty = (nextDirty) => {
+        const normalizedDirty = Boolean(nextDirty)
+        autoSearchConfigDirtyRef.current = normalizedDirty
+        setIsAutoSearchConfigDirty((prev) => (prev === normalizedDirty ? prev : normalizedDirty))
+    }
 
     useEffect(() => {
         setAutoSearchUsesPerDayLimit(autoSearchLimitConfig.usesPerDay)
@@ -654,16 +695,32 @@ export default function MapPage() {
         }
     }
 
-    const applyAutoSearchStatus = (status = {}) => {
-        setAutoSearchEnabled(Boolean(status?.enabled))
-        setAutoSearchIntervalMs(Math.max(900, Number(status?.searchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS))
-        const nextActionByRarity = {
-            ...DEFAULT_AUTO_ACTION_BY_RARITY,
-            ...(status?.actionByRarity || {}),
+    const applyAutoSearchStatus = (status = {}, options = {}) => {
+        const forceConfig = Boolean(options?.forceConfig)
+        const serverSnapshot = buildAutoSearchConfigSnapshot({
+            enabled: Boolean(status?.enabled),
+            mapSlug: String(status?.mapSlug || slug || '').trim().toLowerCase(),
+            searchIntervalMs: Math.max(900, Number(status?.searchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
+            actionByRarity: status?.actionByRarity || DEFAULT_AUTO_ACTION_BY_RARITY,
+            catchFormMode: String(status?.catchFormMode || 'all').trim().toLowerCase() || 'all',
+            catchBallItemId: String(status?.catchBallItemId || '').trim(),
+        })
+        lastAutoSearchServerSnapshotRef.current = serverSnapshot
+
+        const shouldApplyConfig = forceConfig || !autoSearchConfigDirtyRef.current
+        if (shouldApplyConfig) {
+            setAutoSearchEnabled(Boolean(status?.enabled))
+            setAutoSearchIntervalMs(Math.max(900, Number(status?.searchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS))
+            const nextActionByRarity = {
+                ...DEFAULT_AUTO_ACTION_BY_RARITY,
+                ...(status?.actionByRarity || {}),
+            }
+            setAutoActionByRarity((prev) => (isSameAutoActionByRarity(prev, nextActionByRarity) ? prev : nextActionByRarity))
+            setAutoCatchFormMode(String(status?.catchFormMode || 'all').trim().toLowerCase() || 'all')
+            setAutoCatchBallId(String(status?.catchBallItemId || '').trim())
+            syncAutoSearchConfigDirty(false)
         }
-        setAutoActionByRarity((prev) => (isSameAutoActionByRarity(prev, nextActionByRarity) ? prev : nextActionByRarity))
-        setAutoCatchFormMode(String(status?.catchFormMode || 'all').trim().toLowerCase() || 'all')
-        setAutoCatchBallId(String(status?.catchBallItemId || '').trim())
+
         setAutoSearchUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
         setAutoSearchUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || autoSearchLimitConfig.usesPerDay || 0))
         setAutoSearchHistory({
@@ -680,6 +737,30 @@ export default function MapPage() {
                 : (String(logs[0]?.message || '').trim() || 'Tự tìm kiếm đang tắt.'))
         )
     }
+
+    useEffect(() => {
+        const serverSnapshot = String(lastAutoSearchServerSnapshotRef.current || '')
+        if (!serverSnapshot) return
+
+        const localSnapshot = buildAutoSearchConfigSnapshot({
+            enabled: autoSearchEnabled,
+            mapSlug: slug,
+            searchIntervalMs: autoSearchIntervalMs,
+            actionByRarity: autoActionByRarity,
+            catchFormMode: autoCatchFormMode,
+            catchBallItemId: autoCatchBallId,
+        })
+
+        const isDirty = localSnapshot !== serverSnapshot
+        syncAutoSearchConfigDirty(isDirty)
+    }, [
+        autoSearchEnabled,
+        slug,
+        autoSearchIntervalMs,
+        autoActionByRarity,
+        autoCatchFormMode,
+        autoCatchBallId,
+    ])
 
     useEffect(() => {
         if (!user) return undefined
@@ -720,19 +801,19 @@ export default function MapPage() {
     }, [user?.id, slug, autoSearchEnabled])
 
     useEffect(() => {
-        if (!user || !autoSearchEnabled) return undefined
+        if (!user || !isAutoSearchConfigDirty) return undefined
 
         const timer = window.setTimeout(async () => {
             try {
                 const res = await gameApi.updateAutoSearchSettings({
-                    enabled: true,
+                    enabled: autoSearchEnabled,
                     mapSlug: slug,
                     searchIntervalMs: Math.max(900, Number(autoSearchIntervalMs) || DEFAULT_AUTO_SEARCH_INTERVAL_MS),
                     actionByRarity: autoActionByRarity,
                     catchFormMode: autoCatchFormMode,
                     catchBallItemId: String(autoCatchBallId || '').trim(),
                 })
-                applyAutoSearchStatus(res?.autoSearch || {})
+                applyAutoSearchStatus(res?.autoSearch || {}, { forceConfig: true })
             } catch (error) {
                 setActionMessage(String(error?.message || 'Không thể đồng bộ cấu hình tự tìm kiếm.'))
             }
@@ -743,6 +824,7 @@ export default function MapPage() {
         }
     }, [
         user?.id,
+        isAutoSearchConfigDirty,
         autoSearchEnabled,
         slug,
         autoSearchIntervalMs,
@@ -1194,7 +1276,7 @@ export default function MapPage() {
                                                         catchFormMode: autoCatchFormMode,
                                                         catchBallItemId: String(autoCatchBallId || '').trim(),
                                                     })
-                                                    applyAutoSearchStatus(res?.autoSearch || {})
+                                                    applyAutoSearchStatus(res?.autoSearch || {}, { forceConfig: true })
                                                     setActionMessage('Đã tắt tự tìm kiếm.')
                                                     return
                                                 }
@@ -1232,7 +1314,7 @@ export default function MapPage() {
                                                     catchFormMode: autoCatchFormMode,
                                                     catchBallItemId: String(autoCatchBallId || '').trim(),
                                                 })
-                                                applyAutoSearchStatus(res?.autoSearch || {})
+                                                applyAutoSearchStatus(res?.autoSearch || {}, { forceConfig: true })
 
                                                 const remaining = Number(res?.autoSearch?.daily?.remaining)
                                                 if (Number.isFinite(remaining)) {
@@ -1263,6 +1345,7 @@ export default function MapPage() {
                                         value={autoSearchIntervalMs}
                                         onChange={(e) => {
                                             const nextValue = Number.parseInt(e.target.value, 10)
+                                            markAutoSearchConfigDirty()
                                             setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
                                         }}
                                         disabled={!canUseVipAutoSearch}
@@ -1278,7 +1361,10 @@ export default function MapPage() {
                                     <span className="text-[11px] font-semibold text-slate-700">Dạng sẽ bắt</span>
                                     <select
                                         value={autoCatchFormMode}
-                                        onChange={(e) => setAutoCatchFormMode(String(e.target.value || 'all'))}
+                                        onChange={(e) => {
+                                            markAutoSearchConfigDirty()
+                                            setAutoCatchFormMode(String(e.target.value || 'all'))
+                                        }}
                                         disabled={!canUseVipAutoSearch}
                                         className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
                                     >
@@ -1294,7 +1380,10 @@ export default function MapPage() {
                                 <span className="text-[11px] font-semibold text-slate-700">Bóng dùng để bắt</span>
                                 <select
                                     value={autoCatchBallId}
-                                    onChange={(e) => setAutoCatchBallId(String(e.target.value || ''))}
+                                    onChange={(e) => {
+                                        markAutoSearchConfigDirty()
+                                        setAutoCatchBallId(String(e.target.value || ''))
+                                    }}
                                     disabled={!canUseVipAutoSearch}
                                     className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
                                 >
@@ -1322,6 +1411,7 @@ export default function MapPage() {
                                                     value={currentAction}
                                                     onChange={(e) => {
                                                         const nextAction = String(e.target.value || 'battle')
+                                                        markAutoSearchConfigDirty()
                                                         setAutoActionByRarity((prev) => ({
                                                             ...prev,
                                                             [rarityKey]: nextAction,
