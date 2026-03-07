@@ -17,8 +17,8 @@ const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
-const TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
-const TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD = 8
+const TRAINER_ATTACK_BUTTON_REPOSITION_COOLDOWN_MS = 10 * 60 * 1000
+const TRAINER_ATTACK_CHALLENGE_INTERVAL_MS = 10 * 60 * 1000
 const AUTO_TRAINER_TARGET_STORAGE_KEY = 'battle_auto_trainer_target_id_v1'
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
@@ -29,20 +29,6 @@ const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
 const DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS = AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS[1].value
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
-const shuffleList = (list = []) => {
-    const copied = Array.isArray(list) ? [...list] : []
-    for (let index = copied.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(Math.random() * (index + 1))
-        const tmp = copied[index]
-        copied[index] = copied[swapIndex]
-        copied[swapIndex] = tmp
-    }
-    return copied
-}
-const isMobileClient = () => {
-    if (typeof window === 'undefined') return false
-    return Number(window.innerWidth || 1024) <= 768
-}
 const createTrainerAttackChallenge = () => {
     const left = 5 + Math.floor(Math.random() * 20)
     const right = 3 + Math.floor(Math.random() * 15)
@@ -51,21 +37,10 @@ const createTrainerAttackChallenge = () => {
     const prompt = useAddition
         ? `Mật mã Pokeball: ${left} + ${right} = ?`
         : `Mật mã Pokeball: ${left} - ${right} = ?`
-    const wrongCandidates = [
-        answer + 1,
-        answer + 2,
-        Math.max(0, answer - 1),
-        Math.max(0, answer - 2),
-        answer + 4,
-    ].filter((value) => value !== answer)
-    const uniqueWrongs = [...new Set(wrongCandidates)].slice(0, 3)
-    const options = shuffleList([answer, ...uniqueWrongs])
-
     return {
         id: Date.now(),
         prompt,
         answer,
-        options,
     }
 }
 const normalizeEntityId = (value = '') => String(value || '').trim()
@@ -988,6 +963,7 @@ export function BattlePage() {
     const [shouldResetTrainerSession, setShouldResetTrainerSession] = useState(false)
     const [trainerAttackButtonOffset, setTrainerAttackButtonOffset] = useState({ x: 0, y: 0 })
     const [trainerAttackChallenge, setTrainerAttackChallenge] = useState(null)
+    const [trainerAttackChallengeInput, setTrainerAttackChallengeInput] = useState('')
     const [trainerAttackChallengeError, setTrainerAttackChallengeError] = useState('')
     const [autoTrainerAttackEnabled, setAutoTrainerAttackEnabled] = useState(false)
     const [autoTrainerStartedAtMs, setAutoTrainerStartedAtMs] = useState(0)
@@ -1007,7 +983,7 @@ export function BattlePage() {
     const didInitLoadRef = useRef(false)
     const trainerAttackSpamCountRef = useRef(0)
     const trainerAttackRepositionTimerRef = useRef(null)
-    const lastTrainerAttackChallengeAtRef = useRef(0)
+    const lastTrainerAttackChallengeAtRef = useRef(Date.now())
     const lastTrainerAttackRepositionAtRef = useRef(0)
     const autoTrainerConfigDirtyRef = useRef(false)
     const warmedTrainerImageSetRef = useRef(new Set())
@@ -1046,6 +1022,7 @@ export function BattlePage() {
         trainerAttackSpamCountRef.current = 0
         setTrainerAttackButtonOffset({ x: 0, y: 0 })
         setTrainerAttackChallenge(null)
+        setTrainerAttackChallengeInput('')
         setTrainerAttackChallengeError('')
     }, [activeBattleMode])
 
@@ -1633,7 +1610,7 @@ export function BattlePage() {
     }
 
     const shouldUseTrainerAttackChallenge = () => {
-        return activeBattleMode === 'trainer' && isMobileClient()
+        return activeBattleMode === 'trainer'
     }
 
     const resetTrainerAttackButtonOffset = () => {
@@ -1644,17 +1621,24 @@ export function BattlePage() {
     const openTrainerAttackChallenge = () => {
         lastTrainerAttackChallengeAtRef.current = Date.now()
         setTrainerAttackChallenge(createTrainerAttackChallenge())
+        setTrainerAttackChallengeInput('')
         setTrainerAttackChallengeError('')
     }
 
-    const handleTrainerAttackChallengeAnswer = (selectedValue) => {
+    const handleTrainerAttackChallengeAnswer = () => {
         if (!trainerAttackChallenge) return
 
-        const numericChoice = Number(selectedValue)
+        const numericChoice = Number.parseInt(String(trainerAttackChallengeInput || '').trim(), 10)
         const correctAnswer = Number(trainerAttackChallenge.answer)
+
+        if (!Number.isFinite(numericChoice)) {
+            setTrainerAttackChallengeError('Nhập đáp án hợp lệ để tiếp tục.')
+            return
+        }
 
         if (numericChoice === correctAnswer) {
             setTrainerAttackChallenge(null)
+            setTrainerAttackChallengeInput('')
             setTrainerAttackChallengeError('')
             trainerAttackSpamCountRef.current = 0
             resetTrainerAttackButtonOffset()
@@ -1664,6 +1648,7 @@ export function BattlePage() {
 
         setTrainerAttackChallengeError('Sai mật mã. Hãy thử lại câu khác.')
         setTrainerAttackChallenge(createTrainerAttackChallenge())
+        setTrainerAttackChallengeInput('')
     }
 
     const resolveTrainerAttackButtonOffset = () => {
@@ -1707,20 +1692,12 @@ export function BattlePage() {
         const nextSpamCount = trainerAttackSpamCountRef.current + 1
         trainerAttackSpamCountRef.current = nextSpamCount
 
-        if (shouldUseTrainerAttackChallenge()) {
-            const shouldTriggerChallenge = nextSpamCount % TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD === 0
-            const canTriggerChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS
-            if (!trainerAttackChallenge && shouldTriggerChallenge && canTriggerChallenge) {
-                openTrainerAttackChallenge()
-            }
-
-            if (trainerAttackChallenge || (shouldTriggerChallenge && canTriggerChallenge)) {
-                setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
-            }
+        if (trainerAttackChallenge) {
+            setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
             return
         }
 
-        const canRepositionButton = (nowMs - Number(lastTrainerAttackRepositionAtRef.current || 0)) >= TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS
+        const canRepositionButton = (nowMs - Number(lastTrainerAttackRepositionAtRef.current || 0)) >= TRAINER_ATTACK_BUTTON_REPOSITION_COOLDOWN_MS
         if (!isTrainerAttackButtonShifted() && canRepositionButton && (nextSpamCount % TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD === 0)) {
             nudgeTrainerAttackButton()
         }
@@ -1771,6 +1748,16 @@ export function BattlePage() {
         if (isTrainerBattle && trainerAttackChallenge) {
             setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
             return
+        }
+
+        if (isTrainerBattle && shouldUseTrainerAttackChallenge()) {
+            const nowMs = Date.now()
+            const shouldTriggerPeriodicChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_CHALLENGE_INTERVAL_MS
+            if (shouldTriggerPeriodicChallenge) {
+                openTrainerAttackChallenge()
+                setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
+                return
+            }
         }
 
         if (isTrainerBattle && isTrainerAttackButtonShifted()) {
@@ -2725,6 +2712,19 @@ export function BattlePage() {
     }
 
     const startBattleWithOpponent = (candidateOpponent = null) => {
+        if (trainerAttackChallenge) {
+            setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
+            return
+        }
+
+        const nowMs = Date.now()
+        const shouldTriggerPeriodicChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_CHALLENGE_INTERVAL_MS
+        if (shouldTriggerPeriodicChallenge) {
+            openTrainerAttackChallenge()
+            setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
+            return
+        }
+
         const fallbackSelection = getTrainerByOrder(masterPokemon)
         const nextOpponent = candidateOpponent || opponent || buildOpponent(null, fallbackSelection.trainer, fallbackSelection.trainerOrder)
 
@@ -3266,21 +3266,32 @@ export function BattlePage() {
                             <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-3 text-center">
                                 <div className="text-[11px] font-black uppercase tracking-wide text-blue-700">Kiểm tra anti auto click</div>
                                 <div className="mt-2 text-sm font-bold text-slate-800">{trainerAttackChallenge.prompt}</div>
-                                <div className="mt-1 text-xs text-slate-600">Chọn đáp án đúng để tiếp tục trận đấu.</div>
+                                <div className="mt-1 text-xs text-slate-600">Nhập đáp án đúng để tiếp tục trận đấu.</div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                                {trainerAttackChallenge.options.map((option) => (
-                                    <button
-                                        key={`${trainerAttackChallenge.id}-${option}`}
-                                        type="button"
-                                        onClick={() => handleTrainerAttackChallengeAnswer(option)}
-                                        className="rounded border-2 border-slate-300 bg-white py-2 text-sm font-bold text-slate-800 hover:border-blue-400 hover:bg-blue-50"
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
+                            <form
+                                className="space-y-2"
+                                onSubmit={(event) => {
+                                    event.preventDefault()
+                                    handleTrainerAttackChallengeAnswer()
+                                }}
+                            >
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={trainerAttackChallengeInput}
+                                    onChange={(event) => setTrainerAttackChallengeInput(event.target.value)}
+                                    className="w-full rounded border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                    placeholder="Nhập kết quả"
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    className="w-full rounded border-2 border-blue-400 bg-blue-500 py-2 text-sm font-bold text-white hover:bg-blue-600"
+                                >
+                                    Xác nhận
+                                </button>
+                            </form>
 
                             {trainerAttackChallengeError && (
                                 <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">

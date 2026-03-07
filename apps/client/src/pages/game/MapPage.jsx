@@ -44,22 +44,12 @@ const extractObjectIdLike = (value) => {
 }
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 24
-const SEARCH_ANTI_SPAM_UI_COOLDOWN_MS = 5 * 60 * 1000
+const SEARCH_BUTTON_REPOSITION_COOLDOWN_MS = 5 * 60 * 1000
+const SEARCH_CHALLENGE_INTERVAL_MS = 10 * 60 * 1000
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 300
-const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 4
 const SEARCH_VERY_FAST_SPAM_INTERVAL_MS = 180
 const SEARCH_VERY_FAST_SPAM_STREAK_THRESHOLD = 3
 const SEARCH_VERY_FAST_SPAM_REPOSITION_THRESHOLD = 4
-const shuffleList = (list = []) => {
-    const copied = Array.isArray(list) ? [...list] : []
-    for (let index = copied.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(Math.random() * (index + 1))
-        const tmp = copied[index]
-        copied[index] = copied[swapIndex]
-        copied[swapIndex] = tmp
-    }
-    return copied
-}
 
 const createSearchChallenge = () => {
     const left = 5 + Math.floor(Math.random() * 20)
@@ -69,21 +59,10 @@ const createSearchChallenge = () => {
     const prompt = useAddition
         ? `Mật mã Pokeball: ${left} + ${right} = ?`
         : `Mật mã Pokeball: ${left} - ${right} = ?`
-    const wrongCandidates = [
-        answer + 1,
-        answer + 2,
-        Math.max(0, answer - 1),
-        Math.max(0, answer - 2),
-        answer + 4,
-    ].filter((value) => value !== answer)
-    const uniqueWrongs = [...new Set(wrongCandidates)].slice(0, 3)
-    const options = shuffleList([answer, ...uniqueWrongs])
-
     return {
         id: Date.now(),
         prompt,
         answer,
-        options,
     }
 }
 const AUTO_SEARCH_INTERVAL_OPTIONS = [
@@ -297,6 +276,7 @@ export default function MapPage() {
     const [autoSearchRuntimeLimitMinutes, setAutoSearchRuntimeLimitMinutes] = useState(0)
     const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
     const [searchChallenge, setSearchChallenge] = useState(null)
+    const [searchChallengeInput, setSearchChallengeInput] = useState('')
     const [searchChallengeError, setSearchChallengeError] = useState('')
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
     const searchScrollYRef = useRef(0)
@@ -305,7 +285,7 @@ export default function MapPage() {
     const lastSearchRequestAtRef = useRef(0)
     const autoSearchConfigDirtyRef = useRef(false)
     const lastAutoSearchServerSnapshotRef = useRef('')
-    const lastSearchChallengeAtRef = useRef(0)
+    const lastSearchChallengeAtRef = useRef(Date.now())
     const lastSearchButtonRepositionAtRef = useRef(0)
     const lastSearchSpamAttemptAtRef = useRef(0)
     const searchVeryFastSpamStreakRef = useRef(0)
@@ -399,7 +379,9 @@ export default function MapPage() {
         lastSearchSpamAttemptAtRef.current = 0
         setSearchButtonOffset({ x: 0, y: 0 })
         setSearchChallenge(null)
+        setSearchChallengeInput('')
         setSearchChallengeError('')
+        lastSearchChallengeAtRef.current = Date.now()
     }, [slug])
 
     useEffect(() => {
@@ -511,17 +493,24 @@ export default function MapPage() {
     const openSearchChallenge = () => {
         lastSearchChallengeAtRef.current = Date.now()
         setSearchChallenge(createSearchChallenge())
+        setSearchChallengeInput('')
         setSearchChallengeError('')
     }
 
-    const handleSearchChallengeAnswer = (selectedValue) => {
+    const handleSearchChallengeAnswer = () => {
         if (!searchChallenge) return
 
-        const numericChoice = Number(selectedValue)
+        const numericChoice = Number.parseInt(String(searchChallengeInput || '').trim(), 10)
         const correctAnswer = Number(searchChallenge.answer)
+
+        if (!Number.isFinite(numericChoice)) {
+            setSearchChallengeError('Nhập đáp án hợp lệ để tiếp tục.')
+            return
+        }
 
         if (numericChoice === correctAnswer) {
             setSearchChallenge(null)
+            setSearchChallengeInput('')
             setSearchChallengeError('')
             searchSpamCountRef.current = 0
             searchVeryFastSpamStreakRef.current = 0
@@ -533,6 +522,7 @@ export default function MapPage() {
 
         setSearchChallengeError('Sai mật mã. Hãy thử lại câu khác.')
         setSearchChallenge(createSearchChallenge())
+        setSearchChallengeInput('')
     }
 
     const nudgeSearchButton = ({ veryFastSpam = false } = {}) => {
@@ -570,21 +560,13 @@ export default function MapPage() {
         const nextSpamCount = searchSpamCountRef.current + 1
         searchSpamCountRef.current = nextSpamCount
 
-        if (shouldUseSearchChallenge()) {
-            const shouldTriggerChallenge = nextSpamCount % SEARCH_MOBILE_CHALLENGE_THRESHOLD === 0
-            const canTriggerChallenge = (nowMs - Number(lastSearchChallengeAtRef.current || 0)) >= SEARCH_ANTI_SPAM_UI_COOLDOWN_MS
-            if (!searchChallenge && shouldTriggerChallenge && canTriggerChallenge) {
-                openSearchChallenge()
-            }
-
-            if (searchChallenge || (shouldTriggerChallenge && canTriggerChallenge)) {
-                setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
-                return
-            }
+        if (searchChallenge) {
+            setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
+            return
         }
 
         const isButtonCurrentlyShifted = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
-        const canRepositionButton = (nowMs - Number(lastSearchButtonRepositionAtRef.current || 0)) >= SEARCH_ANTI_SPAM_UI_COOLDOWN_MS
+        const canRepositionButton = (nowMs - Number(lastSearchButtonRepositionAtRef.current || 0)) >= SEARCH_BUTTON_REPOSITION_COOLDOWN_MS
         const shouldForceReposition = isVeryFastSpamBurst && (nextSpamCount % SEARCH_VERY_FAST_SPAM_REPOSITION_THRESHOLD === 0)
         if (shouldForceReposition) {
             nudgeSearchButton({ veryFastSpam: true })
@@ -621,6 +603,15 @@ export default function MapPage() {
         }
 
         const nowMs = Date.now()
+        if (shouldUseSearchChallenge()) {
+            const shouldTriggerPeriodicChallenge = (nowMs - Number(lastSearchChallengeAtRef.current || 0)) >= SEARCH_CHALLENGE_INTERVAL_MS
+            if (shouldTriggerPeriodicChallenge) {
+                openSearchChallenge()
+                setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
+                return
+            }
+        }
+
         const elapsedSinceLastRequest = nowMs - Number(lastSearchRequestAtRef.current || 0)
         if (lastSearchRequestAtRef.current > 0 && elapsedSinceLastRequest < LOCAL_SEARCH_SPAM_COOLDOWN_MS) {
             registerSearchSpamAttempt(LOCAL_SEARCH_SPAM_COOLDOWN_MS - elapsedSinceLastRequest)
@@ -1687,21 +1678,32 @@ export default function MapPage() {
                         <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-3 text-center">
                             <div className="text-[11px] font-black uppercase tracking-wide text-blue-700">Kiểm tra anti auto click</div>
                             <div className="mt-2 text-sm font-bold text-slate-800">{searchChallenge.prompt}</div>
-                            <div className="mt-1 text-xs text-slate-600">Chọn đáp án đúng để tiếp tục tìm kiếm.</div>
+                            <div className="mt-1 text-xs text-slate-600">Nhập đáp án đúng để tiếp tục tìm kiếm.</div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                            {searchChallenge.options.map((option) => (
-                                <button
-                                    key={`${searchChallenge.id}-${option}`}
-                                    type="button"
-                                    onClick={() => handleSearchChallengeAnswer(option)}
-                                    className="rounded border-2 border-slate-300 bg-white py-2 text-sm font-bold text-slate-800 hover:border-blue-400 hover:bg-blue-50"
-                                >
-                                    {option}
-                                </button>
-                            ))}
-                        </div>
+                        <form
+                            className="space-y-2"
+                            onSubmit={(event) => {
+                                event.preventDefault()
+                                handleSearchChallengeAnswer()
+                            }}
+                        >
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={searchChallengeInput}
+                                onChange={(event) => setSearchChallengeInput(event.target.value)}
+                                className="w-full rounded border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                                placeholder="Nhập kết quả"
+                                autoFocus
+                            />
+                            <button
+                                type="submit"
+                                className="w-full rounded border-2 border-blue-400 bg-blue-500 py-2 text-sm font-bold text-white hover:bg-blue-600"
+                            >
+                                Xác nhận
+                            </button>
+                        </form>
 
                         {searchChallengeError && (
                             <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">

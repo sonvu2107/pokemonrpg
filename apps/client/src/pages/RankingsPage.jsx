@@ -26,12 +26,54 @@ const OVERALL_TABS = [
     { label: 'LC', value: 'lc' },
 ]
 const WEEKDAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+const GAME_TIMEZONE = 'Asia/Ho_Chi_Minh'
 
 const toDateKey = (date = new Date()) => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
+}
+
+const toUtcDateKey = (date = new Date()) => {
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
+const toDateKeyInTimezone = (date = new Date(), timezone = GAME_TIMEZONE) => {
+    try {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(date)
+    } catch {
+        return toDateKey(date)
+    }
+}
+
+const isDateKey = (value = '') => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim())
+
+const buildWeeklyPeriodByDateKey = (dateKey = '') => {
+    if (!isDateKey(dateKey)) return null
+    const [year, month, day] = dateKey.split('-').map(Number)
+    const weekEnd = new Date(Date.UTC(year, month - 1, day))
+    const mondayOffset = (weekEnd.getUTCDay() + 6) % 7
+    const weekStart = new Date(weekEnd)
+    weekStart.setUTCDate(weekEnd.getUTCDate() - mondayOffset)
+
+    return {
+        weekStart: toUtcDateKey(weekStart),
+        weekEnd: dateKey,
+    }
+}
+
+const buildWeeklyPeriodInTimezone = (date = new Date(), timezone = GAME_TIMEZONE) => {
+    const dateKey = toDateKeyInTimezone(date, timezone)
+    return buildWeeklyPeriodByDateKey(dateKey)
 }
 
 const buildDateButtons = (today = new Date()) => {
@@ -50,6 +92,7 @@ const buildDateButtons = (today = new Date()) => {
 
 export default function RankingsPage() {
     const { user, canAccessAdminModule } = useAuth()
+    const [clockTick, setClockTick] = useState(() => Date.now())
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -61,10 +104,36 @@ export default function RankingsPage() {
     const location = useLocation()
     const isDaily = location.pathname.includes('daily')
     const rankingType = isDaily ? 'daily' : 'overall'
-    const todayKey = useMemo(() => toDateKey(new Date()), [])
+    const nowDate = useMemo(() => new Date(clockTick), [clockTick])
+    const todayKey = useMemo(() => toDateKeyInTimezone(nowDate, GAME_TIMEZONE), [nowDate])
     const [selectedDate, setSelectedDate] = useState(todayKey)
     const [overallPeriod, setOverallPeriod] = useState(null)
-    const dateButtons = useMemo(() => buildDateButtons(new Date()), [])
+    const dateButtons = useMemo(() => buildDateButtons(nowDate), [nowDate])
+    const liveOverallPeriod = useMemo(
+        () => buildWeeklyPeriodInTimezone(nowDate, GAME_TIMEZONE),
+        [nowDate]
+    )
+    const displayOverallPeriod = useMemo(() => {
+        const localPeriod = liveOverallPeriod
+        if (!localPeriod?.weekStart || !localPeriod?.weekEnd) {
+            return null
+        }
+
+        const serverWeekStart = String(overallPeriod?.weekStart || '').trim()
+        const serverWeekEnd = String(overallPeriod?.weekEnd || '').trim()
+        if (!isDateKey(serverWeekStart) || !isDateKey(serverWeekEnd)) {
+            return localPeriod
+        }
+
+        if (serverWeekStart !== localPeriod.weekStart) {
+            return localPeriod
+        }
+
+        return {
+            weekStart: serverWeekStart,
+            weekEnd: serverWeekEnd < localPeriod.weekEnd ? localPeriod.weekEnd : serverWeekEnd,
+        }
+    }, [overallPeriod, liveOverallPeriod])
     const dailyTitleMap = {
         search: 'Bảng Xếp Hạng Tìm Kiếm Hằng Ngày',
         mapExp: 'Bảng Xếp Hạng EXP Bản Đồ Hằng Ngày',
@@ -81,6 +150,13 @@ export default function RankingsPage() {
     const defaultReturnTo = isDaily ? '/rankings/daily' : '/rankings/overall'
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo })
     const canOpenWeeklyRewardManager = user?.role === 'admin' && canAccessAdminModule(ADMIN_PERMISSIONS.REWARDS)
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setClockTick(Date.now())
+        }, 60000)
+        return () => clearInterval(timer)
+    }, [])
 
     useEffect(() => {
         setCurrentPage(1)
@@ -253,8 +329,8 @@ export default function RankingsPage() {
                         </div>
                         <div className="text-xs font-semibold text-slate-600">
                             Reset mỗi T2 hằng tuần
-                            {overallPeriod?.weekStart && overallPeriod?.weekEnd
-                                ? ` (${overallPeriod.weekStart} - ${overallPeriod.weekEnd})`
+                            {displayOverallPeriod?.weekStart && displayOverallPeriod?.weekEnd
+                                ? ` (${displayOverallPeriod.weekStart} - ${displayOverallPeriod.weekEnd})`
                                 : ''}
                         </div>
                         {canOpenWeeklyRewardManager && (
