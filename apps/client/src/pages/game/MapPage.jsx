@@ -42,9 +42,9 @@ const extractObjectIdLike = (value) => {
 }
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 24
-const SEARCH_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
+const SEARCH_ANTI_SPAM_UI_COOLDOWN_MS = 5 * 60 * 1000
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 300
-const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 8
+const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 4
 const SEARCH_VERY_FAST_SPAM_INTERVAL_MS = 180
 const SEARCH_VERY_FAST_SPAM_STREAK_THRESHOLD = 3
 const SEARCH_VERY_FAST_SPAM_REPOSITION_THRESHOLD = 4
@@ -57,11 +57,6 @@ const shuffleList = (list = []) => {
         copied[swapIndex] = tmp
     }
     return copied
-}
-
-const isMobileClient = () => {
-    if (typeof window === 'undefined') return false
-    return Number(window.innerWidth || 1024) <= 768
 }
 
 const createSearchChallenge = () => {
@@ -455,7 +450,7 @@ export default function MapPage() {
     }
 
     const shouldUseSearchChallenge = () => {
-        return !autoSearchEnabled && isMobileClient()
+        return !autoSearchEnabled
     }
 
     const openSearchChallenge = () => {
