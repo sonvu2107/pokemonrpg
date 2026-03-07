@@ -23,15 +23,15 @@ const useItemActionGuard = createActionGuard({
 
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
-    d: 24,
-    c: 22,
-    b: 20,
-    a: 18,
-    s: 14,
-    ss: 10,
-    sss: 7,
+    d: 31,
+    c: 29,
+    b: 27,
+    a: 25,
+    s: 21,
+    ss: 17,
+    sss: 14,
 })
-const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 16
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 const serializePlayerWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
     return {

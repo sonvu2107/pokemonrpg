@@ -93,15 +93,15 @@ const battleAttackActionGuard = createActionGuard({
 const AUTO_TRAINER_LOGS_LIMIT = 12
 const AUTO_SEARCH_LOGS_LIMIT = 12
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
-    d: 24,
-    c: 22,
-    b: 20,
-    a: 18,
-    s: 14,
-    ss: 10,
-    sss: 7,
+    d: 31,
+    c: 29,
+    b: 27,
+    a: 25,
+    s: 21,
+    ss: 17,
+    sss: 14,
 })
-const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 16
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
     const normalizedLevel = Math.max(1, Number(level) || 1)
