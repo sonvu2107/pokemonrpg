@@ -456,6 +456,7 @@ export default function PokemonInfoPage() {
         }
     }
     const translateOriginPlace = (token = '') => {
+        const wildCaughtMapName = String(pokemon?.obtainedMapName || '').trim()
         switch (String(token || '').trim().toLowerCase()) {
             case 'trade':
                 return 'Trao đổi'
@@ -469,7 +470,7 @@ export default function PokemonInfoPage() {
             case 'system_grant':
                 return ''
             default:
-                return 'Bắt hoang dã'
+                return wildCaughtMapName || 'Bắt hoang dã'
         }
     }
     const translateOriginTrainer = ({ token, payload }) => {

@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import authRoutes from './routes/auth.js'
 import gameRoutes from './routes/game.js'
@@ -24,6 +25,7 @@ import leaderboardRewardsAdminRoutes from './routes/admin/leaderboardRewards.js'
 import messagesRoutes from './routes/messages.js'
 import promoCodeRoutes from './routes/promoCodes.js'
 import friendsRoutes from './routes/friends.js'
+import valleyRoutes from './routes/valley.js'
 import { authMiddleware, requireAdmin, requireAdminPermission } from './middleware/auth.js'
 import { apiLogger } from './middleware/apiLogger.js'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions.js'
@@ -48,6 +50,7 @@ app.set('trust proxy', String(process.env.TRUST_PROXY || '').trim().toLowerCase(
 
 // Security middleware
 app.use(helmet())
+app.use(compression())
 
 // CORS configuration — supports multiple origins via comma-separated CLIENT_URL
 const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
@@ -184,6 +187,7 @@ app.use('/api/daily-checkin', dailyCheckinRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/promo-codes', promoCodeRoutes)
 app.use('/api/friends', friendsRoutes)
+app.use('/api/valley', valleyRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.POKEMON), pokemonAdminRoutes)

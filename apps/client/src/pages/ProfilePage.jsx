@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import SmartImage from '../components/SmartImage'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import { getPublicRoleLabel } from '../utils/vip'
@@ -259,13 +260,13 @@ export default function ProfilePage() {
                                             <span className="invisible text-xs">-</span>
                                         )}
                                         <div className="relative w-20 h-20 flex items-center justify-center my-1">
-                                            <img
+                                            <SmartImage
                                                 src={sprite || '/placeholder.png'}
+                                                alt={name}
+                                                width={80}
+                                                height={80}
                                                 className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
-                                                onError={(e) => {
-                                                    e.target.onerror = null;
-                                                    e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                }}
+                                                fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                             />
                                             {p.isShiny && (
                                                 <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">★</span>

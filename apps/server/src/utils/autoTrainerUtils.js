@@ -58,6 +58,20 @@ export const hasVipAutoSearchAccess = (userLike = {}) => {
     return vipEnabled && (roleEligible || vipTierLevel > 0)
 }
 
+// Base max catch attempts for free accounts: 3 failed throws before Pokemon flees
+// VIP accounts get +1 per VIP tier level (VIP1=4, VIP2=5, VIP3=6, ...)
+export const BASE_MAX_CATCH_ATTEMPTS = 3
+
+export const getMaxCatchAttempts = (userLike = {}) => {
+    const role = String(userLike?.role || '').trim().toLowerCase()
+    const vipTierLevel = toSafeInt(userLike?.vipTierLevel, 0)
+    const isVip = role === 'vip' || role === 'admin'
+    if (isVip && vipTierLevel > 0) {
+        return BASE_MAX_CATCH_ATTEMPTS + vipTierLevel
+    }
+    return BASE_MAX_CATCH_ATTEMPTS
+}
+
 const normalizeAutoSearchAction = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
     if (normalized === 'catch' || normalized === 'run') return normalized
@@ -127,7 +141,7 @@ export const normalizeAutoTrainerState = (stateLike = {}) => {
     return {
         enabled: Boolean(stateLike?.enabled),
         trainerId: normalizeId(stateLike?.trainerId),
-        attackIntervalMs: Math.max(450, toSafeInt(stateLike?.attackIntervalMs, 700)),
+        attackIntervalMs: Math.max(100, toSafeInt(stateLike?.attackIntervalMs, 200)),
         startedAt: stateLike?.startedAt ? new Date(stateLike.startedAt) : null,
         dayKey: String(stateLike?.dayKey || '').trim(),
         dayCount: toSafeInt(stateLike?.dayCount, 0),
@@ -160,7 +174,7 @@ export const normalizeAutoSearchState = (stateLike = {}) => {
     return {
         enabled: Boolean(stateLike?.enabled),
         mapSlug: String(stateLike?.mapSlug || '').trim().toLowerCase(),
-        searchIntervalMs: Math.max(900, toSafeInt(stateLike?.searchIntervalMs, 1200)),
+        searchIntervalMs: Math.max(400, toSafeInt(stateLike?.searchIntervalMs, 600)),
         actionByRarity: normalizeAutoSearchActionByRarity(stateLike?.actionByRarity),
         catchFormMode: normalizeAutoCatchFormMode(stateLike?.catchFormMode),
         catchBallItemId: normalizeId(stateLike?.catchBallItemId),

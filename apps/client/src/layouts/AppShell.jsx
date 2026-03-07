@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react"
 import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
-import { api } from "../services/api"
 import VipAvatar from "../components/VipAvatar"
 import { isVipRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
 import GlobalNotification from "../components/GlobalNotification"
+import { useProfileQuery } from "../hooks/queries/gameQueries"
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
 export default function AppShell() {
     const { user, logout } = useAuth()
+    const { data: profilePayload } = useProfileQuery({ enabled: Boolean(user) })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [mobileProfile, setMobileProfile] = useState({
         avatar: '',
@@ -20,47 +21,25 @@ export default function AppShell() {
     })
 
     useEffect(() => {
-        let isCancelled = false
-
         const fallbackAvatar = String(user?.avatar || '').trim()
         const fallbackLevel = Math.max(1, Number(user?.level || user?.playerState?.level || 1))
 
         if (!user) {
             setMobileProfile({ avatar: '', level: 1 })
-            return () => {
-                isCancelled = true
-            }
+            return
         }
+
+        const resolvedAvatar = String(profilePayload?.user?.avatar || fallbackAvatar).trim()
+        const resolvedLevel = Math.max(
+            1,
+            Number(profilePayload?.playerState?.level || fallbackLevel || 1)
+        )
 
         setMobileProfile({
-            avatar: fallbackAvatar,
-            level: fallbackLevel,
+            avatar: resolvedAvatar,
+            level: resolvedLevel,
         })
-
-        const loadProfileState = async () => {
-            try {
-                const profileData = await api.getProfile()
-                if (isCancelled) return
-
-                const resolvedAvatar = String(profileData?.user?.avatar || fallbackAvatar).trim()
-                const resolvedLevel = Math.max(
-                    1,
-                    Number(profileData?.playerState?.level || fallbackLevel || 1)
-                )
-
-                setMobileProfile({
-                    avatar: resolvedAvatar,
-                    level: resolvedLevel,
-                })
-            } catch {}
-        }
-
-        loadProfileState()
-
-        return () => {
-            isCancelled = true
-        }
-    }, [user?.id, user?.avatar, user?.level])
+    }, [user?.id, user?.avatar, user?.level, user?.playerState?.level, profilePayload?.user?.avatar, profilePayload?.playerState?.level])
 
     const vipTitle = getVipTitle(user)
     const vipBadgeLabel = getVipBadgeLabel(user)

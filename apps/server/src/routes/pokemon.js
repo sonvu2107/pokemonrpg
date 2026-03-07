@@ -12,6 +12,7 @@ import {
     syncUserPokemonMovesAndPp,
 } from '../utils/movePpUtils.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 
@@ -371,6 +372,57 @@ const buildPokedexRows = (speciesRows = [], ownedFormSet = new Set()) => {
     return rows
 }
 
+const POKEDEX_SPECIES_CACHE_TTL_MS = 5 * 60 * 1000
+const POKEDEX_SPECIES_SELECT = 'name pokedexNumber imageUrl sprites types forms defaultFormId'
+
+let pokedexSpeciesCache = {
+    rows: [],
+    expiresAt: 0,
+}
+
+const loadPokedexSpeciesRows = async () => {
+    const now = Date.now()
+    if (pokedexSpeciesCache.expiresAt > now && Array.isArray(pokedexSpeciesCache.rows) && pokedexSpeciesCache.rows.length > 0) {
+        return pokedexSpeciesCache.rows
+    }
+
+    const rows = await Pokemon.find({})
+        .sort({ pokedexNumber: 1 })
+        .select(POKEDEX_SPECIES_SELECT)
+        .lean()
+
+    pokedexSpeciesCache = {
+        rows,
+        expiresAt: now + POKEDEX_SPECIES_CACHE_TTL_MS,
+    }
+
+    return rows
+}
+
+const matchesPokedexSpeciesSearch = (species = {}, normalizedSearch = '', numericSearch = null) => {
+    if (!normalizedSearch) return true
+
+    if (Number.isFinite(numericSearch) && Number(species?.pokedexNumber || 0) === numericSearch) {
+        return true
+    }
+
+    const speciesName = String(species?.name || '').trim().toLowerCase()
+    if (speciesName.includes(normalizedSearch)) {
+        return true
+    }
+
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    for (const form of forms) {
+        const formName = String(form?.formName || '').trim().toLowerCase()
+        const formId = String(form?.formId || '').trim().toLowerCase()
+        if (formName.includes(normalizedSearch) || formId.includes(normalizedSearch)) {
+            return true
+        }
+    }
+
+    return false
+}
+
 const POKEMON_SERVER_STATS_CACHE_TTL_MS = 30 * 1000
 
 let pokemonServerStatsCache = {
@@ -388,6 +440,7 @@ const loadPokemonServerStatsCache = async () => {
 
     const [totalRows, speciesRows] = await Promise.all([
         UserPokemon.aggregate([
+            { $match: withActiveUserPokemonFilter({}) },
             {
                 $group: {
                     _id: null,
@@ -396,6 +449,7 @@ const loadPokemonServerStatsCache = async () => {
             },
         ]).allowDiskUse(true),
         UserPokemon.aggregate([
+            { $match: withActiveUserPokemonFilter({}) },
             {
                 $group: {
                     _id: '$pokemonId',
@@ -487,7 +541,7 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
         const showIncomplete = toBoolean(req.query.incomplete)
 
         const userId = req.user.userId
-        const ownedEntries = await UserPokemon.find({ userId })
+        const ownedEntries = await UserPokemon.find(withActiveUserPokemonFilter({ userId }))
             .select('pokemonId formId')
             .lean()
 
@@ -499,40 +553,18 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
             ownedFormSet.add(`${speciesId}:${normalizedFormId}`)
         }
 
-        const query = {}
+        const allSpeciesRows = await loadPokedexSpeciesRows()
+        const normalizedSearch = String(search || '').trim().toLowerCase()
+        const numericSearch = Number.parseInt(search, 10)
 
-        if (search) {
-            const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-            const numericSearch = Number.parseInt(search, 10)
-            if (Number.isFinite(numericSearch)) {
-                query.$or = [
-                    { pokedexNumber: numericSearch },
-                    { name: searchRegex },
-                    { 'forms.formName': searchRegex },
-                    { 'forms.formId': searchRegex },
-                ]
-            } else {
-                query.$or = [
-                    { name: searchRegex },
-                    { 'forms.formName': searchRegex },
-                    { 'forms.formId': searchRegex },
-                ]
-            }
-        }
-
-        const [filteredSpeciesRows, allSpeciesRows] = await Promise.all([
-            Pokemon.find(query)
-                .sort({ pokedexNumber: 1 })
-                .select('name pokedexNumber imageUrl sprites types forms defaultFormId')
-                .lean(),
-            Pokemon.find({})
-                .sort({ pokedexNumber: 1 })
-                .select('name pokedexNumber imageUrl sprites types forms defaultFormId')
-                .lean(),
-        ])
+        const filteredSpeciesRows = normalizedSearch
+            ? allSpeciesRows.filter((species) => matchesPokedexSpeciesSearch(species, normalizedSearch, numericSearch))
+            : allSpeciesRows
 
         const allRows = buildPokedexRows(allSpeciesRows, ownedFormSet)
-        const filteredRows = buildPokedexRows(filteredSpeciesRows, ownedFormSet)
+        const filteredRows = normalizedSearch
+            ? buildPokedexRows(filteredSpeciesRows, ownedFormSet)
+            : allRows
         const dexEntryNumberById = new Map(
             allRows.map((entry, index) => [String(entry?._id || ''), index + 1])
         )
@@ -581,7 +613,7 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
         const limit = Math.min(60, Math.max(1, parseInt(req.query.limit, 10) || 24))
         const skip = (page - 1) * limit
         const search = String(req.query.search || '').trim()
-        const query = { userId: req.user.userId }
+        const query = withActiveUserPokemonFilter({ userId: req.user.userId })
 
         if (search) {
             const searchRegex = new RegExp(escapeRegExp(search), 'i')
@@ -895,7 +927,7 @@ router.get('/:id', async (req, res) => {
 router.get('/:id/skills', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
-        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+        const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
             .select('moves pokemonId level')
             .populate('pokemonId', 'types rarity levelUpMoves')
             .lean()
@@ -999,7 +1031,7 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
         }
 
         const [userPokemon, move] = await Promise.all([
-            UserPokemon.findOne({ _id: req.params.id, userId })
+            UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
                 .populate('pokemonId', 'types rarity levelUpMoves'),
             Move.findOne({ _id: moveId, isActive: true })
                 .select('name type category power accuracy pp priority learnScope allowedTypes allowedPokemonIds allowedRarities')
@@ -1140,7 +1172,7 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
         const rawMoveName = String(req.body?.moveName || '').trim()
         const rawMoveIndex = req.body?.moveIndex
 
-        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+        const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
             .populate('pokemonId', 'levelUpMoves')
 
         if (!userPokemon) {
@@ -1229,7 +1261,7 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
 router.post('/:id/evolve', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
-        const userPokemon = await UserPokemon.findOne({ _id: req.params.id, userId })
+        const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
             .populate('pokemonId')
 
         if (!userPokemon) {

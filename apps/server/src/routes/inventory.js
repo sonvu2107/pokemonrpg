@@ -3,6 +3,7 @@ import UserInventory from '../models/UserInventory.js'
 import PlayerState from '../models/PlayerState.js'
 import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
+import MapModel from '../models/Map.js'
 import BattleSession from '../models/BattleSession.js'
 import User from '../models/User.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
@@ -11,6 +12,7 @@ import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 import { calcMaxHp } from '../utils/gameUtils.js'
+import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
 
 const router = express.Router()
 const useItemActionGuard = createActionGuard({
@@ -279,7 +281,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             }
 
             const encounter = await Encounter.findOne({ _id: normalizedEncounterId, userId, isActive: true })
-                .select('pokemonId level hp maxHp isShiny formId')
+                .select('pokemonId mapId level hp maxHp isShiny formId catchAttempts')
                 .lean()
             if (!encounter) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy trận chiến hoặc đã kết thúc. Vui lòng tải lại.' })
@@ -347,6 +349,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
                 }
 
+                let obtainedMapName = ''
+                if (encounter?.mapId) {
+                    const encounterMap = await MapModel.findById(encounter.mapId)
+                        .select('name')
+                        .lean()
+                    obtainedMapName = String(encounterMap?.name || '').trim()
+                }
+
                 await UserPokemon.create({
                     userId,
                     pokemonId: encounter.pokemonId,
@@ -356,6 +366,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     movePpState: [],
                     formId: encounter.formId || 'normal',
                     isShiny: encounter.isShiny,
+                    obtainedMapName,
                     location: 'box',
                 })
 
@@ -421,15 +432,54 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
             }
 
+            // Catch failed - increment catchAttempts and check if Pokemon should flee
+            const catchUser = await User.findById(userId)
+                .select('role vipTierLevel vipBenefits')
+                .lean()
+            const maxAttempts = getMaxCatchAttempts(catchUser)
+            const nextAttempts = Math.max(0, Number(encounter.catchAttempts || 0)) + 1
+
+            if (nextAttempts >= maxAttempts) {
+                // Pokemon flees
+                await Encounter.findOneAndUpdate(
+                    { _id: normalizedEncounterId, userId, isActive: true },
+                    { $set: { isActive: false, endedAt: new Date(), catchAttempts: nextAttempts } }
+                )
+                return res.json({
+                    ok: true,
+                    caught: false,
+                    fled: true,
+                    encounterId: normalizedEncounterId,
+                    hp: encounter.hp,
+                    maxHp: encounter.maxHp,
+                    catchChancePercent: Number((chance * 100).toFixed(2)),
+                    lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
+                    catchAttempts: nextAttempts,
+                    maxCatchAttempts: maxAttempts,
+                    message: `Pokemon đã thoát khỏi bóng và bỏ chạy! (Đã thử ${nextAttempts}/${maxAttempts} lần)`,
+                })
+            }
+
+            // Still within attempt limit
+            await Encounter.findOneAndUpdate(
+                { _id: normalizedEncounterId, userId, isActive: true },
+                { $set: { catchAttempts: nextAttempts } }
+            )
+
+            const remainingAttempts = maxAttempts - nextAttempts
             return res.json({
                 ok: true,
                 caught: false,
+                fled: false,
                 encounterId: normalizedEncounterId,
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
                 catchChancePercent: Number((chance * 100).toFixed(2)),
                 lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
-                message: 'Pokemon đã thoát khỏi bóng!',
+                catchAttempts: nextAttempts,
+                maxCatchAttempts: maxAttempts,
+                remainingAttempts,
+                message: `Pokemon đã thoát khỏi bóng! Còn ${remainingAttempts} lần thử.`,
             })
         }
 

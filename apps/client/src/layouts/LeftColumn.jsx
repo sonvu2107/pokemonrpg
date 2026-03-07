@@ -249,6 +249,7 @@ export default function LeftColumn() {
             {/* EXPLORE */}
             <SidebarSection title="Khám Phá" iconId={138}>
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
+                <SidebarLink to="/valley">Thung Lũng Pokémon</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Hầm Mỏ')}>Hầm Mỏ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Trung Tâm Pokemon')}>Trung Tâm Pokemon</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Minigame')}>Minigame</SidebarLink>

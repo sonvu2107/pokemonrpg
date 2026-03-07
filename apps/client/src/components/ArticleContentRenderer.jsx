@@ -171,6 +171,8 @@ export default function ArticleContentRenderer({ content, title = '', framedImag
                                 <img
                                     src={block.imageUrl}
                                     alt={block.altText || `${title} - ảnh minh họa`}
+                                    loading="lazy"
+                                    decoding="async"
                                     className="w-full max-h-[420px] object-cover"
                                 />
                             </div>

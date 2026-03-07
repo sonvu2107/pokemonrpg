@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
+import { valleyApi } from '../services/valleyApi'
 import { getRarityStyle } from '../utils/rarityStyles'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
+import SmartImage from '../components/SmartImage'
+import { useProfileQuery } from '../hooks/queries/gameQueries'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
@@ -47,6 +50,7 @@ const resolvePokemonDisplay = (entry) => {
 }
 
 export default function PokemonBoxPage() {
+    const { data: profilePayload } = useProfileQuery()
     const [pokemon, setPokemon] = useState([])
     const [loading, setLoading] = useState(true)
     const [counts, setCounts] = useState({ total: 0, box: 0, party: 0 })
@@ -60,6 +64,8 @@ export default function PokemonBoxPage() {
     const [nowMs, setNowMs] = useState(() => Date.now())
     const [page, setPage] = useState(1)
     const [debouncedSearch, setDebouncedSearch] = useState('')
+    const [releaseConfirmId, setReleaseConfirmId] = useState(null)
+    const [releasingId, setReleasingId] = useState(null)
     const wallet = {
         platinumCoins: Number(liveUser?.playerState?.platinumCoins ?? 0),
         moonPoints: Number(liveUser?.playerState?.moonPoints || 0),
@@ -83,19 +89,12 @@ export default function PokemonBoxPage() {
     }, [])
 
     useEffect(() => {
-        const fetchUserData = async () => {
-            try {
-                const freshUser = await api.getProfile()
-                if (freshUser) {
-                    setLiveUser(freshUser)
-                    if (typeof setUser === 'function') setUser(freshUser)
-                }
-            } catch (err) {
-                console.error("Failed to fetch fresh user data:", err)
-            }
+        if (!profilePayload) return
+        setLiveUser(profilePayload)
+        if (typeof setUser === 'function' && profilePayload?.user) {
+            setUser(profilePayload.user)
         }
-        fetchUserData()
-    }, [])
+    }, [profilePayload, setUser])
 
     useEffect(() => {
         loadBox()
@@ -118,6 +117,20 @@ export default function PokemonBoxPage() {
             console.error(err)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleReleaseToValley = async (pokemonId) => {
+        setReleasingId(pokemonId)
+        try {
+            const data = await valleyApi.release(pokemonId)
+            toast.showSuccess(data.message || 'Đã thả vào Thung Lũng!')
+            setReleaseConfirmId(null)
+            loadBox()
+        } catch (err) {
+            toast.showError(err.message || 'Thả Pokémon thất bại')
+        } finally {
+            setReleasingId(null)
         }
     }
 
@@ -327,14 +340,13 @@ export default function PokemonBoxPage() {
                                                 </span>
 
                                                 <div className="relative w-24 h-24 flex items-center justify-center mb-1">
-                                                    <img
+                                                    <SmartImage
                                                         src={sprite || '/placeholder.png'}
                                                         alt={name}
+                                                        width={80}
+                                                        height={80}
                                                         className="w-20 h-20 object-contain pixelated rendering-pixelated drop-shadow-sm transition-transform group-hover:scale-110"
-                                                        onError={(e) => {
-                                                            e.target.onerror = null
-                                                            e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                        }}
+                                                        fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                     />
                                                 </div>
                                                 <div className={`mt-1 text-[10px] font-bold truncate w-full text-center ${style.text}`}>
@@ -370,6 +382,31 @@ export default function PokemonBoxPage() {
                                                 >
                                                     Vào Đội
                                                 </button>
+                                            )}
+                                            {p.location !== 'party' && releaseConfirmId !== p._id && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setReleaseConfirmId(p._id) }}
+                                                    className="mt-1 w-full text-center px-2 py-1 text-[10px] font-bold uppercase rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-sm"
+                                                >
+                                                    Thả vào Thung Lũng
+                                                </button>
+                                            )}
+                                            {p.location !== 'party' && releaseConfirmId === p._id && (
+                                                <div className="mt-1 flex gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        onClick={() => handleReleaseToValley(p._id)}
+                                                        disabled={releasingId === p._id}
+                                                        className="flex-1 text-center px-1 py-1 text-[9px] font-bold uppercase rounded border border-rose-400 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors shadow-sm"
+                                                    >
+                                                        {releasingId === p._id ? '...' : 'Xác nhận'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setReleaseConfirmId(null)}
+                                                        className="flex-1 text-center px-1 py-1 text-[9px] font-bold uppercase rounded border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors shadow-sm"
+                                                    >
+                                                        Hủy
+                                                    </button>
+                                                </div>
                                             )}
                                             {p.location === 'party' && (
                                                 <div className={`absolute left-0 ${isEvolvable ? 'top-5' : 'top-0'}`}>

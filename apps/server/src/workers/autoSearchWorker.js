@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import MapModel from '../models/Map.js'
 import WorkerLock from '../models/WorkerLock.js'
+import { getActiveEncounterDirect, runFromEncounterDirect, getInventoryDirect } from '../services/workerService.js'
 import {
     getGameDayKey,
     hasVipAutoSearchAccess,
@@ -20,12 +21,12 @@ import {
 const WORKER_LOCK_KEY_PREFIX = 'auto-search:tick-lock'
 const OWNER_ID = `auto-search-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
 
-const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_SEARCH_TICK_MS, 6000, 3000, 60000)
-const LOCK_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_LOCK_TTL_MS, 25000, 5000, 300000)
-const BATCH_SIZE = toSafeInt(process.env.AUTO_SEARCH_BATCH_SIZE, 120, 10, 500)
-const CONCURRENCY = toSafeInt(process.env.AUTO_SEARCH_CONCURRENCY, 10, 1, 50)
-const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_SEARCH_TIME_BUDGET_MS, 14000, 1000, 120000)
-const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_SEARCH_POST_USER_COOLDOWN_MS, 80, 0, 5000)
+const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_SEARCH_TICK_MS, 4000, 3000, 60000)
+const LOCK_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_LOCK_TTL_MS, 30000, 5000, 300000)
+const BATCH_SIZE = toSafeInt(process.env.AUTO_SEARCH_BATCH_SIZE, 150, 10, 500)
+const CONCURRENCY = toSafeInt(process.env.AUTO_SEARCH_CONCURRENCY, 15, 1, 50)
+const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_SEARCH_TIME_BUDGET_MS, 22000, 1000, 120000)
+const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_SEARCH_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const MAP_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_MAP_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_SEARCH_LOGS_LIMIT = 12
 
@@ -120,6 +121,25 @@ const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = 
     }
 
     return data
+}
+
+const RETRYABLE_CODES = new Set(['REQUEST_TIMEOUT', 'ECONNRESET', 'ECONNREFUSED', 'UND_ERR_SOCKET'])
+
+const callApiWithRetry = async (opts, maxRetries = 2) => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await callApi(opts)
+        } catch (error) {
+            const code = String(error?.code || '').trim().toUpperCase()
+            const isRetryable = RETRYABLE_CODES.has(code)
+                || (code === '' && String(error?.message || '').includes('fetch failed'))
+            if (attempt < maxRetries && isRetryable) {
+                await sleep(250 * (attempt + 1))
+                continue
+            }
+            throw error
+        }
+    }
 }
 
 const getMapMetaCached = async (mapSlug = '') => {
@@ -253,9 +273,9 @@ const formatItemDropLabel = (itemDropInfo = null) => {
         : itemDropInfo.name
 }
 
-const findAutoCatchBallItemId = async (token, preferredBallId = '', deadlineAt = null) => {
+const findAutoCatchBallItemId = async (userId, preferredBallId = '') => {
     const preferred = normalizeId(preferredBallId)
-    const inventoryRes = await callApi({ token, path: '/api/inventory', deadlineAt })
+    const inventoryRes = await getInventoryDirect(userId)
     const entries = Array.isArray(inventoryRes?.inventory) ? inventoryRes.inventory : []
     const pokeballs = entries.filter((entry) => {
         const itemType = String(entry?.item?.type || '').trim().toLowerCase()
@@ -454,7 +474,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     const lastActionAtMs = autoState.lastAction?.at ? new Date(autoState.lastAction.at).getTime() : 0
-    const intervalMs = Math.max(900, toSafeInt(autoState.searchIntervalMs, 1200))
+    const intervalMs = Math.max(400, toSafeInt(autoState.searchIntervalMs, 600))
     if (lastActionAtMs > 0 && (nowMs - lastActionAtMs) < intervalMs) {
         await updateAutoSearchState({
             userId,
@@ -483,7 +503,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     let activeEncounter = null
     try {
-        const encounterRes = await callApi({ token, path: '/api/game/encounter/active', deadlineAt })
+        const encounterRes = await getActiveEncounterDirect(userId)
         activeEncounter = encounterRes?.encounter || null
     } catch (error) {
         if (Number(error?.status) !== 404) {
@@ -493,7 +513,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     if (!activeEncounter) {
         try {
-            const searchRes = await callApi({
+            const searchRes = await callApiWithRetry({
                 token,
                 path: '/api/game/search',
                 method: 'POST',
@@ -645,7 +665,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     if (action === 'run') {
         try {
-            await callApi({ token, path: `/api/game/encounter/${encounterId}/run`, method: 'POST', deadlineAt })
+            await runFromEncounterDirect(userId, encounterId)
             await updateAutoSearchState({
                 userId,
                 setPatch: {
@@ -679,7 +699,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     if (action === 'catch') {
-        const ballItemId = await findAutoCatchBallItemId(token, autoState.catchBallItemId, deadlineAt)
+        const ballItemId = await findAutoCatchBallItemId(userId, autoState.catchBallItemId)
         if (!ballItemId) {
             await updateAutoSearchState({
                 userId,
@@ -704,7 +724,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         }
 
         try {
-            const catchRes = await callApi({
+            const catchRes = await callApiWithRetry({
                 token,
                 path: '/api/inventory/use',
                 method: 'POST',
@@ -779,7 +799,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     try {
-        const attackRes = await callApi({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
+        const attackRes = await callApiWithRetry({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
         const playerDefeated = Boolean(attackRes?.playerDefeated)
         const defeated = Boolean(attackRes?.defeated)
         const isFirstBattleForEncounter = userLastBattleEncounterId.get(userId) !== encounterId

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import newsApi from '../services/newsApi'
-import ArticleContentRenderer, { hasInlineImageInContent } from '../components/ArticleContentRenderer'
+import SmartImage from '../components/SmartImage'
 
 const VIEW_OPTIONS = [
     { key: 'notification', label: 'Thông báo' },
@@ -173,7 +173,7 @@ export default function HomePage() {
                 news.map((post) => {
                     const postImages = resolvePostImages(post)
                     const isGuidePost = hasGuideTag(post)
-                    const hasInlineImage = hasInlineImageInContent(post.content)
+                    const excerpt = String(post?.excerpt || '').trim()
                     return (
                         <div
                             key={post._id}
@@ -210,15 +210,20 @@ export default function HomePage() {
                                 </span>
                             </div>
                             <div className="p-4 text-slate-700">
-                                <ArticleContentRenderer content={post.content} title={post.title} framedImages />
-                                {!hasInlineImage && postImages.length > 0 && (
+                                {excerpt && (
+                                    <p className="text-sm leading-relaxed text-slate-700">{excerpt}</p>
+                                )}
+                                {postImages.length > 0 && (
                                     <div className="mt-3">
                                         <div className="rounded-xl bg-gradient-to-b from-blue-400 to-cyan-400 p-1 shadow-md">
                                             <div className="relative overflow-hidden rounded border-2 border-white">
-                                                <img
+                                                <SmartImage
                                                     src={postImages[0]}
                                                     alt={`${post.title} - 1`}
+                                                    width={960}
+                                                    height={420}
                                                     className="w-full max-h-80 object-cover"
+                                                    fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                 />
                                                 {postImages.length > 1 && (
                                                     <span className="absolute top-2 right-2 bg-black/65 text-white text-xs font-bold px-2 py-1 rounded">

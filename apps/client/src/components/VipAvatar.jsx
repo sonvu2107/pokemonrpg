@@ -22,6 +22,7 @@ export default function VipAvatar({
                         src={resolvedAvatar}
                         alt={alt}
                         loading={loading}
+                        decoding="async"
                         className={imageClassName}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         onError={(event) => {
@@ -49,6 +50,7 @@ export default function VipAvatar({
                 src={resolvedAvatar}
                 alt={alt}
                 loading={loading}
+                decoding="async"
                 className={imageClassName}
                 style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9999px' }}
                 onError={(event) => {

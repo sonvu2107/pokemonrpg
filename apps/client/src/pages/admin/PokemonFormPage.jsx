@@ -119,6 +119,12 @@ const splitStemTokens = (value = '') => {
         .filter(Boolean)
 }
 
+const hasGigantamaxKeywordInStem = (stem = '') => {
+    const compact = String(stem || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+    if (!compact) return false
+    return compact.includes('gigantamax') || compact.includes('gmax')
+}
+
 const stripTrailingArtifactTokens = (tokens = []) => {
     const next = Array.isArray(tokens) ? [...tokens] : []
     while (next.length > 0) {
@@ -301,6 +307,7 @@ export default function PokemonFormPage() {
     const [bulkFormUploadNotice, setBulkFormUploadNotice] = useState('')
     const [showBulkUploadModal, setShowBulkUploadModal] = useState(false)
     const [bulkUploadMegaMode, setBulkUploadMegaMode] = useState('keep')
+    const [bulkUploadGigantamaxMode, setBulkUploadGigantamaxMode] = useState('keep')
     const [bulkUploadSelectedFiles, setBulkUploadSelectedFiles] = useState([])
     const [bulkUploadQueueRows, setBulkUploadQueueRows] = useState([])
     const [customFormVariants, setCustomFormVariants] = useState([])
@@ -373,6 +380,7 @@ export default function PokemonFormPage() {
     const hasPendingBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'pending')
     const hasFailedBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'error')
     const bulkMegaFileCount = bulkUploadQueueRows.filter((row) => row.hasMegaKeyword).length
+    const bulkGigantamaxFileCount = bulkUploadQueueRows.filter((row) => row.hasGigantamaxKeyword).length
 
     useEffect(() => {
         loadData()
@@ -582,12 +590,13 @@ export default function PokemonFormPage() {
         setForms(prev => [...prev, { formId: '', formName: '', imageUrl: '', sprites: {}, stats: {} }])
     }
 
-    const buildBulkUploadQueueRows = (files = [], megaMode = 'keep') => {
+    const buildBulkUploadQueueRows = (files = [], megaMode = 'keep', gigantamaxMode = 'keep') => {
         const list = Array.isArray(files) ? files : []
         const pokemonNames = allPokemon
             .map((entry) => String(entry?.name || '').trim())
             .filter(Boolean)
         const keepMega = megaMode === 'keep'
+        const keepGigantamax = gigantamaxMode === 'keep'
 
         return list.map((file, index) => {
             const safeFileName = String(file?.name || '').trim()
@@ -598,8 +607,10 @@ export default function PokemonFormPage() {
             )
             const baseFormId = normalizeFormId(inferredBase.formId).toLowerCase()
             const baseFormName = normalizeFormName(inferredBase.formName) || baseFormId
-            const stemTokens = splitStemTokens(safeFileName.replace(/\.[^.]+$/, ''))
+            const stemRaw = safeFileName.replace(/\.[^.]+$/, '')
+            const stemTokens = splitStemTokens(stemRaw)
             const hasMegaKeyword = stemTokens.includes('mega')
+            const hasGigantamaxKeyword = hasGigantamaxKeywordInStem(stemRaw)
             const inferredKeepFormId = hasMegaKeyword ? baseFormId : ''
             const inferredKeepFormName = hasMegaKeyword ? baseFormName : 'Bỏ qua (không có Mega)'
             const inferredRemoveFormId = hasMegaKeyword ? '' : baseFormId
@@ -609,8 +620,18 @@ export default function PokemonFormPage() {
             const megaSkipReason = keepMega
                 ? (hasMegaKeyword ? '' : 'Ảnh không có Mega, bỏ qua theo chế độ Giữ Mega')
                 : (hasMegaKeyword ? 'Ảnh có Mega, bỏ qua theo chế độ Bỏ Mega' : '')
+            const gigantamaxSkipReason = keepGigantamax
+                ? (hasGigantamaxKeyword ? '' : 'Ảnh không có Gigantamax, bỏ qua theo chế độ Giữ Gigantamax')
+                : (hasGigantamaxKeyword ? 'Ảnh có Gigantamax, bỏ qua theo chế độ Bỏ Gigantamax' : '')
             const isMegaModeAffecting = inferredKeepFormId !== inferredRemoveFormId || inferredKeepFormName !== inferredRemoveFormName
-            const modeMessage = megaSkipReason || (keepMega ? 'Ảnh có Mega: sẽ giữ lại để tải lên' : 'Ảnh không có Mega: sẽ giữ lại để tải lên')
+            const skipReasonPreview = [megaSkipReason, gigantamaxSkipReason].filter(Boolean).join(' | ')
+            const keepMessage = keepGigantamax
+                ? 'Ảnh có Mega/Gigantamax đúng bộ lọc: sẽ giữ lại để tải lên'
+                : 'Ảnh có Mega và không có Gigantamax: sẽ giữ lại để tải lên'
+            const removeMessage = keepGigantamax
+                ? 'Ảnh không có Mega và có Gigantamax: sẽ giữ lại để tải lên'
+                : 'Ảnh không có Mega/Gigantamax: sẽ giữ lại để tải lên'
+            const modeMessage = skipReasonPreview || (keepMega ? keepMessage : removeMessage)
 
             return {
                 queueId: `${Date.now()}-${index}-${safeFileName || 'unnamed-file'}`,
@@ -623,6 +644,7 @@ export default function PokemonFormPage() {
                 inferredRemoveFormId,
                 inferredRemoveFormName,
                 hasMegaKeyword,
+                hasGigantamaxKeyword,
                 isMegaModeAffecting,
                 megaSkipReason,
                 status: 'pending',
@@ -636,6 +658,7 @@ export default function PokemonFormPage() {
         if (!force && bulkFormUploading) return
         setShowBulkUploadModal(false)
         setBulkUploadMegaMode('keep')
+        setBulkUploadGigantamaxMode('keep')
         setBulkUploadSelectedFiles([])
         setBulkUploadQueueRows([])
         setBulkFormUploadProgress(0)
@@ -650,7 +673,14 @@ export default function PokemonFormPage() {
         if (bulkFormUploading || bulkUploadSelectedFiles.length === 0 || !hasPendingBulkQueueRows) return
         const normalizedMode = mode === 'remove' ? 'remove' : 'keep'
         setBulkUploadMegaMode(normalizedMode)
-        setBulkUploadQueueRows(buildBulkUploadQueueRows(bulkUploadSelectedFiles, normalizedMode))
+        setBulkUploadQueueRows(buildBulkUploadQueueRows(bulkUploadSelectedFiles, normalizedMode, bulkUploadGigantamaxMode))
+    }
+
+    const handleBulkGigantamaxModeChange = (mode) => {
+        if (bulkFormUploading || bulkUploadSelectedFiles.length === 0 || !hasPendingBulkQueueRows) return
+        const normalizedMode = mode === 'remove' ? 'remove' : 'keep'
+        setBulkUploadGigantamaxMode(normalizedMode)
+        setBulkUploadQueueRows(buildBulkUploadQueueRows(bulkUploadSelectedFiles, bulkUploadMegaMode, normalizedMode))
     }
 
     const retryFailedBulkRows = () => {
@@ -739,8 +769,9 @@ export default function PokemonFormPage() {
         setError('')
         setBulkFormUploadNotice('')
         setBulkUploadMegaMode('keep')
+        setBulkUploadGigantamaxMode('keep')
         setBulkUploadSelectedFiles(files)
-        setBulkUploadQueueRows(buildBulkUploadQueueRows(files, 'keep'))
+        setBulkUploadQueueRows(buildBulkUploadQueueRows(files, 'keep', 'keep'))
         setBulkFormUploadProgress(0)
         setBulkFormUploadCount(files.length)
         setShowBulkUploadModal(true)
@@ -779,19 +810,27 @@ export default function PokemonFormPage() {
             }
 
             preparedRows.forEach((row) => {
-                const skipByMegaMode = bulkUploadMegaMode === 'keep'
-                    ? !row.hasMegaKeyword
-                    : row.hasMegaKeyword
-                if (skipByMegaMode) {
+                const skipReasons = []
+                if (bulkUploadMegaMode === 'keep' && !row.hasMegaKeyword) {
+                    skipReasons.push('Ảnh không có Mega, bỏ qua theo chế độ Giữ Mega')
+                }
+                if (bulkUploadMegaMode === 'remove' && row.hasMegaKeyword) {
+                    skipReasons.push('Ảnh có Mega, bỏ qua theo chế độ Bỏ Mega')
+                }
+                if (bulkUploadGigantamaxMode === 'keep' && !row.hasGigantamaxKeyword) {
+                    skipReasons.push('Ảnh không có Gigantamax, bỏ qua theo chế độ Giữ Gigantamax')
+                }
+                if (bulkUploadGigantamaxMode === 'remove' && row.hasGigantamaxKeyword) {
+                    skipReasons.push('Ảnh có Gigantamax, bỏ qua theo chế độ Bỏ Gigantamax')
+                }
+
+                if (skipReasons.length > 0) {
                     skippedBeforeUpload += 1
                     completedCount += 1
-                    const skipReason = bulkUploadMegaMode === 'keep'
-                        ? 'Ảnh không có Mega, bỏ qua theo chế độ Giữ Mega'
-                        : 'Ảnh có Mega, bỏ qua theo chế độ Bỏ Mega'
                     updateBulkUploadQueueRow(row.queueId, {
                         status: 'skipped',
                         progress: 0,
-                        message: skipReason,
+                        message: skipReasons.join(' | '),
                     })
                     updateOverallProgress()
                     return
@@ -1732,8 +1771,34 @@ export default function PokemonFormPage() {
                                     Bỏ Mega
                                 </button>
                             </div>
+                            <div className="mt-3 pt-3 border-t border-slate-200">
+                                <div className="text-xs font-bold text-slate-700 uppercase mb-2">Tùy chọn Gigantamax</div>
+                                <div className="flex flex-wrap gap-4">
+                                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={bulkUploadGigantamaxMode === 'keep'}
+                                            onChange={() => handleBulkGigantamaxModeChange('keep')}
+                                            disabled={bulkFormUploading || !hasPendingBulkQueueRows}
+                                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                                        />
+                                        Giữ Gigantamax
+                                    </label>
+                                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={bulkUploadGigantamaxMode === 'remove'}
+                                            onChange={() => handleBulkGigantamaxModeChange('remove')}
+                                            disabled={bulkFormUploading || !hasPendingBulkQueueRows}
+                                            className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 disabled:opacity-50"
+                                        />
+                                        Bỏ Gigantamax
+                                    </label>
+                                </div>
+                            </div>
                             <p className="text-[11px] text-slate-600">
-                                Có {bulkMegaFileCount} ảnh chứa từ khóa Mega. Chế độ Giữ Mega chỉ tải ảnh có Mega; chế độ Bỏ Mega chỉ tải ảnh không có Mega.
+                                Có {bulkMegaFileCount} ảnh chứa Mega và {bulkGigantamaxFileCount} ảnh chứa Gigantamax.
+                                Giữ/Bỏ Mega lọc theo từ khóa Mega; Giữ/Bỏ Gigantamax lọc theo từ khóa Gigantamax.
                             </p>
                             <p className="text-[11px] text-slate-600 mt-1">
                                 Nếu lỗi mạng tạm thời, mỗi ảnh sẽ tự thử lại tối đa {BULK_UPLOAD_RETRY_ATTEMPTS} lần trước khi báo lỗi.

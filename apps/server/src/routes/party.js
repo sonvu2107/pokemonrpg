@@ -3,6 +3,7 @@ import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 
@@ -52,10 +53,10 @@ router.use(authMiddleware)
 // Return list of 6 slots found in party
 router.get('/', async (req, res) => {
     try {
-        const party = await UserPokemon.find({
+        const party = await UserPokemon.find(withActiveUserPokemonFilter({
             userId: req.user.userId,
-            location: 'party'
-        })
+            location: 'party',
+        }))
             .populate('pokemonId')
             .sort({ partyIndex: 1 })
 
@@ -116,8 +117,8 @@ router.post('/swap', async (req, res) => {
         }
 
         // Find pokes at these indices
-        const p1 = await UserPokemon.findOne({ userId, location: 'party', partyIndex: fromIndex })
-        const p2 = await UserPokemon.findOne({ userId, location: 'party', partyIndex: toIndex })
+        const p1 = await UserPokemon.findOne(withActiveUserPokemonFilter({ userId, location: 'party', partyIndex: fromIndex }))
+        const p2 = await UserPokemon.findOne(withActiveUserPokemonFilter({ userId, location: 'party', partyIndex: toIndex }))
 
         if (!p1) {
             return res.status(400).json({ ok: false, message: 'Không có Pokemon ở ô nguồn' })
@@ -147,7 +148,7 @@ router.post('/add', async (req, res) => {
         const { pokemonId, slotIndex } = req.body
         const userId = req.user.userId
 
-        const pokemon = await UserPokemon.findOne({ _id: pokemonId, userId })
+        const pokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: pokemonId, userId }))
         if (!pokemon) return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
 
         if (pokemon.location === 'party') {
@@ -155,7 +156,7 @@ router.post('/add', async (req, res) => {
         }
 
         // Count current party size
-        const party = await UserPokemon.find({ userId, location: 'party' })
+        const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
         if (party.length >= 6) {
             return res.status(400).json({ ok: false, message: 'Đội hình đã đầy' })
         }
@@ -202,7 +203,7 @@ router.post('/remove', async (req, res) => {
         const { pokemonId } = req.body
         const userId = req.user.userId
 
-        const pokemon = await UserPokemon.findOne({ _id: pokemonId, userId, location: 'party' })
+        const pokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: pokemonId, userId, location: 'party' }))
         if (!pokemon) return res.status(404).json({ ok: false, message: 'Pokemon không có trong đội hình' })
 
         // Move to box

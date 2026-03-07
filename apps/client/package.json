@@ -7,9 +7,11 @@
         "dev": "vite",
         "build": "vite build",
         "preview": "vite preview",
-        "lint": "eslint src --ext js,jsx"
+        "lint": "eslint src --ext js,jsx",
+        "analyze:bundle": "node scripts/analyzeBundleFootprint.mjs"
     },
     "dependencies": {
+        "@tanstack/react-query": "^5.90.21",
         "phaser": "^3.80.1",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
@@ -17,9 +19,9 @@
         "socket.io-client": "^4.7.2"
     },
     "devDependencies": {
-        "@vitejs/plugin-legacy": "^5.4.3",
         "@types/react": "^18.2.43",
         "@types/react-dom": "^18.2.17",
+        "@vitejs/plugin-legacy": "^5.4.3",
         "@vitejs/plugin-react": "^4.2.1",
         "autoprefixer": "^10.4.16",
         "postcss": "^8.4.32",

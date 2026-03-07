@@ -22,6 +22,69 @@ const throwApiError = async (res, fallbackMessage) => {
     throw new Error(message)
 }
 
+const normalizeMapSpecialPokemonConfigs = (value) => {
+    if (!Array.isArray(value)) return []
+
+    const normalized = []
+    const seen = new Set()
+
+    for (const entry of value) {
+        const pokemonIdRaw = typeof entry === 'string'
+            ? entry
+            : (entry?.pokemonId?._id || entry?.pokemonId)
+        const pokemonId = String(pokemonIdRaw || '').trim()
+        if (!pokemonId) continue
+
+        const formIdRaw = typeof entry === 'object' && entry !== null ? entry.formId : 'normal'
+        const formId = String(formIdRaw || '').trim().toLowerCase() || 'normal'
+        const dedupeKey = `${pokemonId}:${formId}`
+        if (seen.has(dedupeKey)) continue
+
+        const weightRaw = typeof entry === 'object' && entry !== null ? entry.weight : 1
+        const weightParsed = Number(weightRaw)
+        const weight = Number.isFinite(weightParsed) && weightParsed > 0 ? weightParsed : 1
+
+        normalized.push({ pokemonId, formId, weight })
+        seen.add(dedupeKey)
+
+        if (normalized.length >= 5) break
+    }
+
+    return normalized
+}
+
+const buildMapPayload = (data = {}) => {
+    const iconIdRaw = data?.iconId
+    const parsedIconId = Number(iconIdRaw)
+    const iconId = iconIdRaw === '' || iconIdRaw === null || iconIdRaw === undefined || !Number.isFinite(parsedIconId)
+        ? ''
+        : parsedIconId
+
+    return {
+        name: String(data?.name || '').trim(),
+        description: String(data?.description || '').trim(),
+        mapImageUrl: String(data?.mapImageUrl || '').trim(),
+        levelMin: Number(data?.levelMin) || 1,
+        levelMax: Number(data?.levelMax) || 1,
+        isLegendary: Boolean(data?.isLegendary),
+        isEventMap: Boolean(data?.isEventMap),
+        iconId,
+        specialPokemonImages: Array.isArray(data?.specialPokemonImages)
+            ? data.specialPokemonImages
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+                .slice(0, 5)
+            : [],
+        specialPokemonConfigs: normalizeMapSpecialPokemonConfigs(data?.specialPokemonConfigs),
+        specialPokemonEncounterRate: Number(data?.specialPokemonEncounterRate ?? 0),
+        requiredSearches: Math.max(0, Number(data?.requiredSearches) || 0),
+        requiredPlayerLevel: Math.max(1, Number(data?.requiredPlayerLevel) || 1),
+        encounterRate: Number(data?.encounterRate ?? 1),
+        itemDropRate: Number(data?.itemDropRate ?? 0),
+        orderIndex: Math.max(0, Number(data?.orderIndex) || 0),
+    }
+}
+
 // Pokemon endpoints
 export const pokemonApi = {
     // GET /api/admin/pokemon?search=&type=&page=&limit=
@@ -181,13 +244,14 @@ export const mapApi = {
     },
 
     async create(data) {
+        const payload = buildMapPayload(data)
         const res = await fetch(`${API_URL}/admin/maps`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify(payload),
         })
         if (!res.ok) {
             const err = await res.json()
@@ -197,13 +261,14 @@ export const mapApi = {
     },
 
     async update(id, data) {
+        const payload = buildMapPayload(data)
         const res = await fetch(`${API_URL}/admin/maps/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify(payload),
         })
         if (!res.ok) {
             const err = await res.json()

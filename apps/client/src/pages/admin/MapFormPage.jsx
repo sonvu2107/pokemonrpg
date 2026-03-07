@@ -128,32 +128,35 @@ export default function MapFormPage() {
         try {
             setLoading(true)
             const data = await mapApi.getById(id)
+            const map = data?.map || {}
             setFormData({
-                ...data.map,
-                description: data.map.description || '',
-                mapImageUrl: data.map.mapImageUrl || '',
-                iconId: data.map.iconId || '',
-                specialPokemonConfigs: normalizeSpecialPokemonConfigs(data.map.specialPokemonConfigs, data.map.specialPokemonIds),
-                specialPokemonEncounterRate: data.map.specialPokemonEncounterRate ?? 0,
-                isLegendary: data.map.isLegendary || false,
-                isEventMap: Boolean(data.map.isEventMap),
-                requiredSearches: data.map.requiredSearches || 0,
-                requiredPlayerLevel: Math.max(1, Number(data.map.requiredPlayerLevel) || 1),
-                encounterRate: data.map.encounterRate ?? 1,
-                itemDropRate: data.map.itemDropRate ?? 0,
-                orderIndex: data.map.orderIndex || 0,
+                name: map.name || '',
+                description: map.description || '',
+                mapImageUrl: map.mapImageUrl || '',
+                levelMin: Number(map.levelMin) || 1,
+                levelMax: Number(map.levelMax) || 10,
+                isLegendary: Boolean(map.isLegendary),
+                isEventMap: Boolean(map.isEventMap),
+                iconId: map.iconId || '',
+                specialPokemonConfigs: normalizeSpecialPokemonConfigs(map.specialPokemonConfigs, map.specialPokemonIds),
+                specialPokemonEncounterRate: map.specialPokemonEncounterRate ?? 0,
+                requiredSearches: map.requiredSearches || 0,
+                requiredPlayerLevel: Math.max(1, Number(map.requiredPlayerLevel) || 1),
+                encounterRate: map.encounterRate ?? 1,
+                itemDropRate: map.itemDropRate ?? 0,
+                orderIndex: map.orderIndex || 0,
             })
 
             const mapPokemonRows = []
-            if (Array.isArray(data.map?.specialPokemonConfigs)) {
-                data.map.specialPokemonConfigs.forEach((entry) => {
+            if (Array.isArray(map?.specialPokemonConfigs)) {
+                map.specialPokemonConfigs.forEach((entry) => {
                     if (entry?.pokemonId && typeof entry.pokemonId === 'object' && entry.pokemonId._id) {
                         mapPokemonRows.push(entry.pokemonId)
                     }
                 })
             }
-            if (Array.isArray(data.map?.specialPokemonIds)) {
-                data.map.specialPokemonIds.forEach((entry) => {
+            if (Array.isArray(map?.specialPokemonIds)) {
+                map.specialPokemonIds.forEach((entry) => {
                     if (entry && typeof entry === 'object' && entry._id) {
                         mapPokemonRows.push(entry)
                     }

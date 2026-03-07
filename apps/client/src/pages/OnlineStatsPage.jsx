@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { friendsApi } from '../services/friendsApi'
@@ -6,8 +6,10 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import SmartImage from '../components/SmartImage'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { getPublicRoleLabel } from '../utils/vip'
+import { useProfileQuery } from '../hooks/queries/gameQueries'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const resolvePokemonCombatPower = (entry) => {
@@ -62,6 +64,7 @@ const PARTY_SLOT_TOTAL = 6
 export default function OnlineStatsPage() {
     const navigate = useNavigate()
     const { user: currentUser } = useAuth()
+    const { data: profilePayload } = useProfileQuery()
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [onlineCount, setOnlineCount] = useState(0)
     const [onlineTrainers, setOnlineTrainers] = useState([])
@@ -70,24 +73,21 @@ export default function OnlineStatsPage() {
     const [featureNotice, setFeatureNotice] = useState('')
     const [pagination, setPagination] = useState({ page: 1, totalPages: 1 })
     const [selectedTrainer, setSelectedTrainer] = useState(null)
+    const [selectedTrainerLoading, setSelectedTrainerLoading] = useState(false)
     const [sendingFriendRequest, setSendingFriendRequest] = useState(false)
+    const trainerDetailRequestRef = useRef(0)
 
     useEffect(() => {
-        loadWallet()
         loadOnline(1)
     }, [])
 
-    const loadWallet = async () => {
-        try {
-            const data = await gameApi.getProfile()
-            setWallet({
-                platinumCoins: Number(data?.playerState?.platinumCoins ?? 0),
-                moonPoints: Number(data?.playerState?.moonPoints || 0),
-            })
-        } catch (_err) {
-            setWallet({ platinumCoins: 0, moonPoints: 0 })
-        }
-    }
+    useEffect(() => {
+        if (!profilePayload) return
+        setWallet({
+            platinumCoins: Number(profilePayload?.playerState?.platinumCoins ?? 0),
+            moonPoints: Number(profilePayload?.playerState?.moonPoints || 0),
+        })
+    }, [profilePayload?.playerState?.platinumCoins, profilePayload?.playerState?.moonPoints])
 
     const loadOnline = async (page = 1) => {
         try {
@@ -108,7 +108,66 @@ export default function OnlineStatsPage() {
         }
     }
 
-    const selectedProfile = selectedTrainer?.profile || {}
+    const closeTrainerModal = () => {
+        trainerDetailRequestRef.current += 1
+        setSelectedTrainerLoading(false)
+        setSelectedTrainer(null)
+    }
+
+    const openTrainerModal = async (entry) => {
+        const userId = String(entry?.userId || '').trim()
+        if (!userId) return
+
+        const requestId = trainerDetailRequestRef.current + 1
+        trainerDetailRequestRef.current = requestId
+
+        setSelectedTrainer({
+            ...entry,
+            profile: entry?.profile || null,
+            party: entry?.party || [],
+        })
+        setSelectedTrainerLoading(true)
+
+        try {
+            const data = await gameApi.getOnlineChallengeTarget(userId)
+            if (trainerDetailRequestRef.current !== requestId) return
+
+            const detailTrainer = data?.trainer || null
+            if (!detailTrainer) {
+                throw new Error('Không thể tải hồ sơ huấn luyện viên này')
+            }
+
+            setSelectedTrainer((prev) => {
+                if (!prev || String(prev?.userId || '') !== userId) return prev
+                return {
+                    ...prev,
+                    ...detailTrainer,
+                    userId: String(detailTrainer?.userId || userId),
+                }
+            })
+        } catch (err) {
+            if (trainerDetailRequestRef.current === requestId) {
+                setFeatureNotice(err.message || 'Không thể tải dữ liệu huấn luyện viên online.')
+            }
+        } finally {
+            if (trainerDetailRequestRef.current === requestId) {
+                setSelectedTrainerLoading(false)
+            }
+        }
+    }
+
+    const selectedProfile = selectedTrainer?.profile || {
+        level: 1,
+        experience: 0,
+        moonPoints: 0,
+        wins: 0,
+        losses: 0,
+        platinumCoins: 0,
+        hp: 100,
+        maxHp: 100,
+        stamina: 100,
+        maxStamina: 100,
+    }
     const selectedLevel = Math.max(1, Number(selectedProfile.level || 1))
     const selectedExp = Number(selectedProfile.experience || 0)
     const selectedWins = Number(selectedProfile.wins || 0)
@@ -121,7 +180,7 @@ export default function OnlineStatsPage() {
     while (paddedSelectedParty.length < PARTY_SLOT_TOTAL) {
         paddedSelectedParty.push(null)
     }
-    const hasChallengeParty = paddedSelectedParty.some((slot) => Boolean(slot?._id))
+    const hasChallengeParty = !selectedTrainerLoading && paddedSelectedParty.some((slot) => Boolean(slot?._id))
     const challengeUserId = String(selectedTrainer?.userId || '').trim()
     const isSelfTrainer = Boolean(
         selectedTrainer?.userId && currentUser?.id && String(selectedTrainer.userId) === String(currentUser.id)
@@ -148,7 +207,7 @@ export default function OnlineStatsPage() {
             return
         }
 
-        setSelectedTrainer(null)
+        closeTrainerModal()
         navigate(`/battle?challengeUserId=${encodeURIComponent(challengeUserId)}&returnTo=${encodeURIComponent('stats/online')}`)
     }
 
@@ -223,7 +282,7 @@ export default function OnlineStatsPage() {
                                     <div className="mt-1 flex items-center gap-2 min-w-0 flex-nowrap">
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedTrainer(entry)}
+                                            onClick={() => openTrainerModal(entry)}
                                             className="text-left text-sm font-bold text-indigo-800 hover:text-indigo-600 hover:underline truncate"
                                         >
                                             {entry.username}
@@ -265,7 +324,7 @@ export default function OnlineStatsPage() {
                                             <div className="flex items-center justify-center gap-2 min-w-0 flex-nowrap">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setSelectedTrainer(entry)}
+                                                    onClick={() => openTrainerModal(entry)}
                                                     className="font-bold text-indigo-800 hover:text-indigo-600 hover:underline truncate"
                                                 >
                                                     {entry.username}
@@ -284,7 +343,7 @@ export default function OnlineStatsPage() {
 
             <Modal
                 isOpen={Boolean(selectedTrainer)}
-                onClose={() => setSelectedTrainer(null)}
+                onClose={closeTrainerModal}
                 title="Thông tin huấn luyện viên"
                 maxWidth="md"
             >
@@ -315,18 +374,18 @@ export default function OnlineStatsPage() {
                                     <button
                                         type="button"
                                         onClick={handleSendFriendRequest}
-                                        disabled={!challengeUserId || isSelfTrainer || sendingFriendRequest}
+                                        disabled={!challengeUserId || isSelfTrainer || sendingFriendRequest || selectedTrainerLoading}
                                         className="px-3 py-1 rounded border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        {sendingFriendRequest ? '[ Đang gửi... ]' : '[ Kết bạn ]'}
+                                        {sendingFriendRequest ? '[ Đang gửi... ]' : (selectedTrainerLoading ? '[ Đang tải... ]' : '[ Kết bạn ]')}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={handleChallengeFromOnline}
-                                        disabled={!challengeUserId || !hasChallengeParty || isSelfTrainer}
+                                        disabled={!challengeUserId || !hasChallengeParty || isSelfTrainer || selectedTrainerLoading}
                                         className="px-3 py-1 rounded border border-blue-300 bg-white text-blue-800 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        [ Khiêu Chiến ]
+                                        {selectedTrainerLoading ? '[ Đang tải... ]' : '[ Khiêu Chiến ]'}
                                     </button>
                                 </div>
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-2 shadow-sm">
@@ -341,6 +400,11 @@ export default function OnlineStatsPage() {
                                 <div className="text-xs text-slate-500">
                                     Hoạt động gần nhất: {formatProfileDate(selectedTrainer.lastActive, true)}
                                 </div>
+                                {selectedTrainerLoading && (
+                                    <div className="mt-2 text-xs font-bold text-blue-700 animate-pulse">
+                                        Đang tải hồ sơ chi tiết và đội hình...
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -412,13 +476,13 @@ export default function OnlineStatsPage() {
                                                 <span className="invisible text-xs">-</span>
                                             )}
                                             <div className="relative w-20 h-20 flex items-center justify-center my-1">
-                                                <img
+                                                <SmartImage
                                                     src={sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                    alt={displayName}
+                                                    width={80}
+                                                    height={80}
                                                     className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
-                                                    onError={(event) => {
-                                                        event.currentTarget.onerror = null
-                                                        event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                    }}
+                                                    fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                 />
                                                 {p.isShiny && (
                                                     <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">★</span>

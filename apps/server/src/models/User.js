@@ -224,8 +224,8 @@ const userSchema = new mongoose.Schema(
             },
             searchIntervalMs: {
                 type: Number,
-                default: 1200,
-                min: 900,
+                default: 600,
+                min: 400,
                 max: 10000,
             },
             actionByRarity: {
@@ -349,8 +349,8 @@ const userSchema = new mongoose.Schema(
             },
             attackIntervalMs: {
                 type: Number,
-                default: 700,
-                min: 450,
+                default: 200,
+                min: 100,
                 max: 10000,
             },
             startedAt: {

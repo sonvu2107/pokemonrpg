@@ -1,59 +1,68 @@
+import { Suspense, lazy } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import AppShell from './layouts/AppShell'
-import HomePage from './pages/HomePage'
-import StarterPage from './pages/StarterPage'
-import InventoryPage from './pages/InventoryPage'
-import { BattlePage, ExplorePage } from './pages/BattlePage'
-import LoginPage from './pages/LoginPage'
-import ProfilePage from './pages/ProfilePage'
-import MapPage from './pages/game/MapPage'
-import EditProfilePage from './pages/EditProfilePage'
-import PokemonBoxPage from './pages/PokemonBoxPage'
-import PokemonInfoPage from './pages/PokemonInfoPage'
-import ChangePartyPage from './pages/ChangePartyPage'
-import PokedexPage from './pages/PokedexPage'
-import RankingsPage from './pages/RankingsPage'
-import PokemonRankingsPage from './pages/PokemonRankingsPage'
-import PokemonRarityPage from './pages/PokemonRarityPage'
-import EvolvePage from './pages/EvolvePage'
-import TradesPage from './pages/TradesPage'
-import ShopSellPage from './pages/ShopSellPage'
-import ItemShopPage from './pages/ItemShopPage'
-import ItemInfoPage from './pages/ItemInfoPage'
-import SkillShopPage from './pages/SkillShopPage'
-import DailyStatsPage from './pages/DailyStatsPage'
-import OnlineStatsPage from './pages/OnlineStatsPage'
-import DailyCheckInPage from './pages/DailyCheckInPage'
-import PromoCodePage from './pages/PromoCodePage'
-import FriendsPage from './pages/FriendsPage'
-import NewsDetailPage from './pages/NewsDetailPage'
-import GlobalRateLimitModal from './components/GlobalRateLimitModal'
-
-// Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard'
-import PokemonListPage from './pages/admin/PokemonListPage'
-import PokemonFormPage from './pages/admin/PokemonFormPage'
-import MapListPage from './pages/admin/MapListPage'
-import MapFormPage from './pages/admin/MapFormPage'
-import DropRateManagerPage from './pages/admin/DropRateManagerPage'
-import ItemListPage from './pages/admin/ItemListPage'
-import ItemFormPage from './pages/admin/ItemFormPage'
-import MoveListPage from './pages/admin/MoveListPage'
-import MoveFormPage from './pages/admin/MoveFormPage'
-import ItemDropRateManagerPage from './pages/admin/ItemDropRateManagerPage'
-import AdminNewsPage from './pages/admin/AdminNewsPage'
-import UserManagementPage from './pages/admin/UserManagementPage'
-import VipPrivilegePage from './pages/admin/VipPrivilegePage'
-import BattleTrainerPage from './pages/admin/BattleTrainerPage'
-import DailyRewardManagerPage from './pages/admin/DailyRewardManagerPage'
-import PromoCodeManagerPage from './pages/admin/PromoCodeManagerPage'
-import WeeklyLeaderboardRewardPage from './pages/admin/WeeklyLeaderboardRewardPage'
 import AdminRouteGuard from './components/AdminRouteGuard'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
+const AppShell = lazy(() => import('./layouts/AppShell'))
+const HomePage = lazy(() => import('./pages/HomePage'))
+const StarterPage = lazy(() => import('./pages/StarterPage'))
+const InventoryPage = lazy(() => import('./pages/InventoryPage'))
+const BattlePage = lazy(() => import('./pages/BattlePage').then((module) => ({ default: module.BattlePage })))
+const ExplorePage = lazy(() => import('./pages/BattlePage').then((module) => ({ default: module.ExplorePage })))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const MapPage = lazy(() => import('./pages/game/MapPage'))
+const EditProfilePage = lazy(() => import('./pages/EditProfilePage'))
+const PokemonBoxPage = lazy(() => import('./pages/PokemonBoxPage'))
+const PokemonInfoPage = lazy(() => import('./pages/PokemonInfoPage'))
+const ChangePartyPage = lazy(() => import('./pages/ChangePartyPage'))
+const PokedexPage = lazy(() => import('./pages/PokedexPage'))
+const RankingsPage = lazy(() => import('./pages/RankingsPage'))
+const PokemonRankingsPage = lazy(() => import('./pages/PokemonRankingsPage'))
+const PokemonRarityPage = lazy(() => import('./pages/PokemonRarityPage'))
+const EvolvePage = lazy(() => import('./pages/EvolvePage'))
+const TradesPage = lazy(() => import('./pages/TradesPage'))
+const ShopSellPage = lazy(() => import('./pages/ShopSellPage'))
+const ItemShopPage = lazy(() => import('./pages/ItemShopPage'))
+const ItemInfoPage = lazy(() => import('./pages/ItemInfoPage'))
+const SkillShopPage = lazy(() => import('./pages/SkillShopPage'))
+const DailyStatsPage = lazy(() => import('./pages/DailyStatsPage'))
+const OnlineStatsPage = lazy(() => import('./pages/OnlineStatsPage'))
+const DailyCheckInPage = lazy(() => import('./pages/DailyCheckInPage'))
+const PromoCodePage = lazy(() => import('./pages/PromoCodePage'))
+const FriendsPage = lazy(() => import('./pages/FriendsPage'))
+const NewsDetailPage = lazy(() => import('./pages/NewsDetailPage'))
+const ValleyPage = lazy(() => import('./pages/ValleyPage'))
+const GlobalRateLimitModal = lazy(() => import('./components/GlobalRateLimitModal'))
+
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const PokemonListPage = lazy(() => import('./pages/admin/PokemonListPage'))
+const PokemonFormPage = lazy(() => import('./pages/admin/PokemonFormPage'))
+const MapListPage = lazy(() => import('./pages/admin/MapListPage'))
+const MapFormPage = lazy(() => import('./pages/admin/MapFormPage'))
+const DropRateManagerPage = lazy(() => import('./pages/admin/DropRateManagerPage'))
+const ItemListPage = lazy(() => import('./pages/admin/ItemListPage'))
+const ItemFormPage = lazy(() => import('./pages/admin/ItemFormPage'))
+const MoveListPage = lazy(() => import('./pages/admin/MoveListPage'))
+const MoveFormPage = lazy(() => import('./pages/admin/MoveFormPage'))
+const ItemDropRateManagerPage = lazy(() => import('./pages/admin/ItemDropRateManagerPage'))
+const AdminNewsPage = lazy(() => import('./pages/admin/AdminNewsPage'))
+const UserManagementPage = lazy(() => import('./pages/admin/UserManagementPage'))
+const VipPrivilegePage = lazy(() => import('./pages/admin/VipPrivilegePage'))
+const BattleTrainerPage = lazy(() => import('./pages/admin/BattleTrainerPage'))
+const DailyRewardManagerPage = lazy(() => import('./pages/admin/DailyRewardManagerPage'))
+const PromoCodeManagerPage = lazy(() => import('./pages/admin/PromoCodeManagerPage'))
+const WeeklyLeaderboardRewardPage = lazy(() => import('./pages/admin/WeeklyLeaderboardRewardPage'))
+
+const RouteLoadingFallback = () => (
+    <div className="mx-auto max-w-3xl py-10 text-center text-sm font-bold text-slate-500">
+        Đang tải trang...
+    </div>
+)
+
 export default function App() {
     return (
-        <>
+        <Suspense fallback={<RouteLoadingFallback />}>
             <GlobalRateLimitModal />
             <Routes>
                 {/* Login page - no AppShell */}
@@ -94,6 +103,7 @@ export default function App() {
                     <Route path="/trades" element={<TradesPage />} />
                     <Route path="/friends" element={<FriendsPage />} />
                     <Route path="/news/:id" element={<NewsDetailPage />} />
+                    <Route path="/valley" element={<ValleyPage />} />
 
                     {/* Admin Routes */}
                     <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
@@ -121,6 +131,6 @@ export default function App() {
                     <Route path="/admin/promo-codes" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.CODES}><PromoCodeManagerPage /></AdminRouteGuard>} />
                 </Route>
             </Routes>
-        </>
+        </Suspense>
     )
 }

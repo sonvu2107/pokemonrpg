@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { gameApi } from '../services/gameApi'
 import Modal from '../components/Modal'
+import SmartImage from '../components/SmartImage'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
 import { hasVipAutoBattleTrainerAccess } from '../utils/vip'
 import { getVipAutoLimitConfig } from '../utils/vipAutoLimits'
+import { battleTrainersQueryOptions, inventoryQueryOptions, mapsQueryOptions, profileQueryOptions } from '../hooks/queries/gameQueries'
 
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
@@ -941,6 +944,7 @@ const ActiveBattleView = ({
 }
 export function BattlePage() {
     const { user } = useAuth()
+    const queryClient = useQueryClient()
     const location = useLocation()
     const navigate = useNavigate()
     const challengeSearchParams = new URLSearchParams(location.search)
@@ -953,6 +957,7 @@ export function BattlePage() {
     const [maps, setMaps] = useState([])
     const [party, setParty] = useState([])
     const [loading, setLoading] = useState(true)
+    const [loadingTrainerLobby, setLoadingTrainerLobby] = useState(!isExternalChallengeRequested)
     const [view, setView] = useState(isExternalChallengeRequested ? 'battle' : 'lobby')
     const [encounter, setEncounter] = useState(null)
     const [playerState, setPlayerState] = useState(null)
@@ -977,6 +982,7 @@ export function BattlePage() {
     const [duelOpponentMoveCursor, setDuelOpponentMoveCursor] = useState(0)
     const [duelReturnPath, setDuelReturnPath] = useState(DEFAULT_RANKED_RETURN_PATH)
     const [duelResultModal, setDuelResultModal] = useState(null)
+    const [isTrainerImageLoaded, setIsTrainerImageLoaded] = useState(false)
     const [isStartingRankedDuel, setIsStartingRankedDuel] = useState(false)
     const [isStartingOnlineChallenge, setIsStartingOnlineChallenge] = useState(false)
     const [shouldResetTrainerSession, setShouldResetTrainerSession] = useState(false)
@@ -1004,6 +1010,7 @@ export function BattlePage() {
     const lastTrainerAttackChallengeAtRef = useRef(0)
     const lastTrainerAttackRepositionAtRef = useRef(0)
     const autoTrainerConfigDirtyRef = useRef(false)
+    const warmedTrainerImageSetRef = useRef(new Set())
     const lastAutoTrainerServerSnapshotRef = useRef('')
 
     const markAutoTrainerConfigDirty = () => {
@@ -1198,6 +1205,26 @@ export function BattlePage() {
         return nextOrder
     }
 
+    const prefetchTrainerImage = (value = '') => {
+        if (typeof window === 'undefined') return
+        const normalized = String(value || '').trim()
+        if (!normalized) return
+        if (warmedTrainerImageSetRef.current.has(normalized)) return
+
+        warmedTrainerImageSetRef.current.add(normalized)
+        const image = new Image()
+        image.decoding = 'async'
+        image.src = normalized
+    }
+
+    const prefetchTrainerImages = (trainers = [], limit = 10) => {
+        if (!Array.isArray(trainers) || trainers.length === 0) return
+        const size = Math.max(1, Math.floor(Number(limit) || 10))
+        trainers.slice(0, size).forEach((entry) => {
+            prefetchTrainerImage(entry?.imageUrl)
+        })
+    }
+
     useEffect(() => {
         if (didInitLoadRef.current) return
         didInitLoadRef.current = true
@@ -1306,8 +1333,22 @@ export function BattlePage() {
     }, [user?.id, isAutoTrainerConfigDirty, autoTrainerAttackEnabled, autoTrainerTargetId, autoTrainerAttackIntervalMs])
 
     useEffect(() => {
-        if (!user) return undefined
+        if (!user || typeof window === 'undefined') return undefined
         let cancelled = false
+        let timerId = null
+
+        const resolveNextDelayMs = (hadError = false) => {
+            if (document.hidden) return 15000
+            const baseDelay = autoTrainerAttackEnabled ? 5000 : 10000
+            return hadError ? Math.min(baseDelay * 2, 20000) : baseDelay
+        }
+
+        const scheduleNext = (hadError = false) => {
+            if (cancelled) return
+            timerId = window.setTimeout(() => {
+                void syncAutoTrainerStatus()
+            }, resolveNextDelayMs(hadError))
+        }
 
         const syncAutoTrainerStatus = async () => {
             try {
@@ -1315,21 +1356,41 @@ export function BattlePage() {
                 const status = statusRes?.autoTrainer || {}
                 if (cancelled) return
                 applyAutoTrainerStatus(status)
+                scheduleNext(false)
             } catch (error) {
                 if (!cancelled) {
                     setAutoTrainerServerStatus(formatFriendlyAutoTrainerMessage(String(error?.message || 'Không thể tải trạng thái auto trainer.')))
                 }
+                scheduleNext(true)
             }
         }
 
-        syncAutoTrainerStatus()
-        const timer = window.setInterval(syncAutoTrainerStatus, autoTrainerAttackEnabled ? 2000 : 5000)
+        const handleVisibilityChange = () => {
+            if (cancelled) return
+            if (timerId) {
+                window.clearTimeout(timerId)
+                timerId = null
+            }
+            scheduleNext(false)
+        }
+
+        void syncAutoTrainerStatus()
+        window.addEventListener('visibilitychange', handleVisibilityChange)
 
         return () => {
             cancelled = true
-            window.clearInterval(timer)
+            if (timerId) {
+                window.clearTimeout(timerId)
+                timerId = null
+            }
+            window.removeEventListener('visibilitychange', handleVisibilityChange)
         }
     }, [user?.id, view, autoTrainerAttackEnabled])
+
+    useEffect(() => {
+        setIsTrainerImageLoaded(false)
+        prefetchTrainerImage(opponent?.trainerImage)
+    }, [opponent?.trainerImage])
 
     useEffect(() => {
         if (!rankedChallengePokemonId) return
@@ -1390,21 +1451,33 @@ export function BattlePage() {
     }, [onlineChallengeUserId, rankedChallengeReturnTo, loading, isStartingOnlineChallenge, partyCandidates.length, activeBattleMode, view])
 
     const loadData = async () => {
+        setLoading(true)
+        setLoadingTrainerLobby(!isExternalChallengeRequested)
         try {
+            const cachedMaps = queryClient.getQueryData(mapsQueryOptions().queryKey)
+            const cachedProfile = queryClient.getQueryData(profileQueryOptions().queryKey)
+            const cachedInventory = queryClient.getQueryData(inventoryQueryOptions().queryKey)
+
+            if (Array.isArray(cachedMaps) && cachedMaps.length > 0) {
+                setMaps(cachedMaps)
+            }
+            if (cachedProfile?.playerState) {
+                setPlayerState(cachedProfile.playerState)
+            }
+            if (Array.isArray(cachedInventory?.inventory)) {
+                setInventory(cachedInventory.inventory)
+            }
+
             if (isExternalChallengeRequested) {
-                const [allMaps, partyData, encounterData, profileData, inventoryData] = await Promise.all([
-                    gameApi.getMaps(),
+                const [partyData, encounterData, profileData] = await Promise.all([
                     gameApi.getParty(),
                     gameApi.getActiveEncounter(),
-                    gameApi.getProfile(),
-                    gameApi.getInventory(),
+                    queryClient.fetchQuery(profileQueryOptions()),
                 ])
 
-                setMaps(allMaps)
                 setParty(hydratePartyWithBattleHp(partyData))
                 setEncounter(encounterData?.encounter || null)
                 setPlayerState(profileData?.playerState || null)
-                setInventory(inventoryData?.inventory || [])
                 setMasterPokemon([])
                 setCompletedEntries([])
                 setCompletedCarouselIndex(0)
@@ -1416,24 +1489,35 @@ export function BattlePage() {
                 setDuelOpponentMoves([])
                 setDuelOpponentMoveCursor(0)
                 setDuelResultModal(null)
+
+                setLoading(false)
+                setLoadingTrainerLobby(false)
+
+                void Promise.allSettled([
+                    queryClient.fetchQuery(mapsQueryOptions()),
+                    queryClient.fetchQuery(inventoryQueryOptions()),
+                ]).then((results) => {
+                    const mapsResult = results?.[0]
+                    const inventoryResult = results?.[1]
+                    if (mapsResult?.status === 'fulfilled') {
+                        setMaps(mapsResult.value || [])
+                    }
+                    if (inventoryResult?.status === 'fulfilled') {
+                        setInventory(inventoryResult.value?.inventory || [])
+                    }
+                })
                 return
             }
 
-            const [allMaps, partyData, encounterData, profileData, trainerData, inventoryData] = await Promise.all([
-                gameApi.getMaps(),
+            const [partyData, encounterData, profileData] = await Promise.all([
                 gameApi.getParty(),
                 gameApi.getActiveEncounter(),
-                gameApi.getProfile(),
-                gameApi.getBattleTrainers(),
-                gameApi.getInventory(),
+                queryClient.fetchQuery(profileQueryOptions()),
             ])
-            setMaps(allMaps)
+
             setParty(hydratePartyWithBattleHp(partyData))
             setEncounter(encounterData?.encounter || null)
             setPlayerState(profileData?.playerState || null)
-            const trainerList = trainerData?.trainers || []
-            setMasterPokemon(trainerList)
-            setInventory(inventoryData?.inventory || [])
 
             const completedTrainerIds = new Set(
                 (Array.isArray(profileData?.user?.completedBattleTrainers)
@@ -1443,17 +1527,26 @@ export function BattlePage() {
                     .map((id) => String(id || '').trim())
                     .filter(Boolean)
             )
-            const completedFromServer = buildCompletedEntries(trainerList)
-                .filter((entry) => completedTrainerIds.has(String(entry.id)))
-            setCompletedEntries(completedFromServer)
-            setCompletedCarouselIndex(0)
 
-            const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
-            setStoredTrainerOrder(syncedTrainerOrder)
-            const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
-            const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
-            setOpponent(builtOpponent)
-            setBattleOpponent(builtOpponent)
+            const cachedTrainerPayload = queryClient.getQueryData(battleTrainersQueryOptions().queryKey)
+            const cachedTrainerList = Array.isArray(cachedTrainerPayload?.trainers) ? cachedTrainerPayload.trainers : []
+            if (cachedTrainerList.length > 0) {
+                setMasterPokemon(cachedTrainerList)
+                prefetchTrainerImages(cachedTrainerList, 12)
+                const completedFromCache = buildCompletedEntries(cachedTrainerList)
+                    .filter((entry) => completedTrainerIds.has(String(entry.id)))
+                setCompletedEntries(completedFromCache)
+                setCompletedCarouselIndex(0)
+
+                const syncedTrainerOrder = getTrainerOrderFromProgress(cachedTrainerList, completedTrainerIds)
+                setStoredTrainerOrder(syncedTrainerOrder)
+                const { trainer, trainerOrder } = getTrainerByOrder(cachedTrainerList, syncedTrainerOrder)
+                const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
+                setOpponent(builtOpponent)
+                setBattleOpponent(builtOpponent)
+                setLoadingTrainerLobby(false)
+            }
+
             setBattlePlayerIndex(0)
             setBattlePartyHpState([])
             setActiveBattleMode('trainer')
@@ -1461,10 +1554,46 @@ export function BattlePage() {
             setDuelOpponentMoveCursor(0)
             setDuelResultModal(null)
 
+            setLoading(false)
+
+            void Promise.allSettled([
+                queryClient.fetchQuery(battleTrainersQueryOptions()),
+                queryClient.fetchQuery(mapsQueryOptions()),
+                queryClient.fetchQuery(inventoryQueryOptions()),
+            ]).then((results) => {
+                const trainerResult = results?.[0]
+                const mapsResult = results?.[1]
+                const inventoryResult = results?.[2]
+                if (trainerResult?.status === 'fulfilled') {
+                    const trainerList = Array.isArray(trainerResult.value?.trainers) ? trainerResult.value.trainers : []
+                    setMasterPokemon(trainerList)
+                    prefetchTrainerImages(trainerList, 12)
+
+                    const completedFromServer = buildCompletedEntries(trainerList)
+                        .filter((entry) => completedTrainerIds.has(String(entry.id)))
+                    setCompletedEntries(completedFromServer)
+                    setCompletedCarouselIndex(0)
+
+                    const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
+                    setStoredTrainerOrder(syncedTrainerOrder)
+                    const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
+                    const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
+                    setOpponent(builtOpponent)
+                    setBattleOpponent(builtOpponent)
+                }
+                setLoadingTrainerLobby(false)
+                if (mapsResult?.status === 'fulfilled') {
+                    setMaps(mapsResult.value || [])
+                }
+                if (inventoryResult?.status === 'fulfilled') {
+                    setInventory(inventoryResult.value?.inventory || [])
+                }
+            })
+
         } catch (error) {
             console.error('Tải dữ liệu thất bại', error)
-        } finally {
             setLoading(false)
+            setLoadingTrainerLobby(false)
         }
     }
 
@@ -2383,7 +2512,8 @@ export function BattlePage() {
                 })
             }
 
-            const inventoryData = await gameApi.getInventory()
+            await queryClient.invalidateQueries({ queryKey: inventoryQueryOptions().queryKey })
+            const inventoryData = await queryClient.fetchQuery(inventoryQueryOptions())
             setInventory(inventoryData?.inventory || [])
             const refreshedParty = await gameApi.getParty()
             const mergedBattleParty = (Array.isArray(refreshedParty) ? refreshedParty : []).map((slot, idx) => {
@@ -3343,17 +3473,25 @@ export function BattlePage() {
                 <div className="p-6 bg-white flex flex-col items-center text-center">
                     {opponent && (
                         <div className="mb-3 flex flex-col items-center">
-                            <img
-                                src={opponent.trainerImage}
-                                alt={opponent.trainerName}
-                                className={activeBattleMode === 'online'
-                                    ? 'w-24 h-24 rounded-full object-cover border border-blue-200'
-                                    : 'w-24 h-24 object-contain pixelated'}
-                                onError={(event) => {
-                                    event.currentTarget.onerror = null
-                                    event.currentTarget.src = '/assets/08_trainer_female.png'
-                                }}
-                            />
+                            <div className="relative w-24 h-24">
+                                <SmartImage
+                                    key={opponent.trainerImage || 'trainer-fallback'}
+                                    src={opponent.trainerImage}
+                                    fallback="/assets/08_trainer_female.png"
+                                    alt={opponent.trainerName}
+                                    width={96}
+                                    height={96}
+                                    loading="eager"
+                                    decoding="async"
+                                    className={`${activeBattleMode === 'online'
+                                        ? 'w-24 h-24 rounded-full object-cover border border-blue-200'
+                                        : 'w-24 h-24 object-contain pixelated'} transition-opacity duration-200 ${isTrainerImageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                                    onLoad={() => setIsTrainerImageLoaded(true)}
+                                />
+                                {!isTrainerImageLoaded && (
+                                    <div className="absolute inset-0 rounded bg-slate-100 border border-slate-200 animate-pulse" />
+                                )}
+                            </div>
                             <div className="mt-2">
                                 <span className="font-bold text-slate-800">Huấn luyện viên {opponent.trainerName}:</span>
                                 <span className="text-slate-600 italic ml-1">"{opponent.trainerQuote}"</span>
@@ -3361,7 +3499,11 @@ export function BattlePage() {
                         </div>
                     )}
 
-                    {opponent?.team?.length ? (
+                    {(loading || loadingTrainerLobby) ? (
+                        <div className="my-2 text-sm font-bold text-blue-700 animate-pulse">
+                            Đang tải khu vực chiến đấu...
+                        </div>
+                    ) : opponent?.team?.length ? (
                         <button
                             onClick={() => startBattleWithOpponent()}
                             className="text-3xl font-extrabold text-blue-800 hover:text-blue-600 hover:scale-105 transition-transform drop-shadow-sm my-2"
@@ -3398,7 +3540,9 @@ export function BattlePage() {
 
                     <div className="w-full py-2">
                         <div className="text-xs font-bold text-slate-500 uppercase">Phần Thưởng</div>
-                        {opponent?.team?.length ? (
+                        {(loading || loadingTrainerLobby) ? (
+                            <div className="text-sm font-bold text-blue-700 mt-1 animate-pulse">Đang tải phần thưởng...</div>
+                        ) : opponent?.team?.length ? (
                             <div className="mt-1 space-y-0.5 text-sm font-bold text-slate-700">
                                 <div>Pokémon: {opponent?.trainerPrize || 'Không có'}</div>
                                 <div>Item: {opponent?.trainerPrizeItem && opponent?.trainerPrizeItem !== 'Không có' ? `${opponent.trainerPrizeItem} x${opponent?.trainerPrizeItemQuantity || 1}` : 'Không có'}</div>

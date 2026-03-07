@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Modal from '../components/Modal'
+import SmartImage from '../components/SmartImage'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import { useAuth } from '../context/AuthContext'
@@ -970,13 +971,13 @@ export default function FriendsPage() {
                                                 <span className="invisible text-xs">-</span>
                                             )}
                                             <div className="relative w-20 h-20 flex items-center justify-center my-1">
-                                                <img
+                                                <SmartImage
                                                     src={sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                    alt={displayName}
+                                                    width={80}
+                                                    height={80}
                                                     className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
-                                                    onError={(event) => {
-                                                        event.currentTarget.onerror = null
-                                                        event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                    }}
+                                                    fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                 />
                                                 {p.isShiny && (
                                                     <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">*</span>

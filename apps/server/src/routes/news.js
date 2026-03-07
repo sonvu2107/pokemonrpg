@@ -36,6 +36,52 @@ const normalizeImageUrls = (value) => {
     return imageUrls
 }
 
+const toPlainText = (value = '') => {
+    return String(value || '')
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/`[^`]*`/g, ' ')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+        .replace(/\[[^\]]*\]\([^)]*\)/g, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+}
+
+const buildExcerpt = (content = '', maxLength = 220) => {
+    const plainText = toPlainText(content)
+    const limit = Math.max(80, Number.parseInt(maxLength, 10) || 220)
+    if (plainText.length <= limit) return plainText
+    return `${plainText.slice(0, Math.max(0, limit - 1)).trimEnd()}…`
+}
+
+const toNewsSummary = (postLike = {}) => {
+    return {
+        _id: postLike?._id,
+        title: String(postLike?.title || '').trim(),
+        type: String(postLike?.type || 'news').trim(),
+        imageUrl: String(postLike?.imageUrl || '').trim(),
+        imageUrls: normalizeImageUrls(postLike?.imageUrls),
+        tags: normalizeTags(postLike?.tags),
+        excerpt: buildExcerpt(postLike?.content || ''),
+        author: postLike?.author
+            ? {
+                _id: postLike.author._id,
+                username: String(postLike.author.username || '').trim(),
+            }
+            : null,
+        mapId: postLike?.mapId
+            ? {
+                _id: postLike.mapId._id,
+                name: String(postLike.mapId.name || '').trim(),
+                slug: String(postLike.mapId.slug || '').trim(),
+            }
+            : null,
+        createdAt: postLike?.createdAt || null,
+        updatedAt: postLike?.updatedAt || null,
+    }
+}
+
 // GET /api/news - Get latest published posts (public)
 router.get('/', async (req, res) => {
     try {
@@ -57,11 +103,15 @@ router.get('/', async (req, res) => {
         const posts = await Post.find(query)
             .populate('author', 'username')
             .populate('mapId', 'name slug')
+            .select('title content type imageUrl imageUrls tags author mapId createdAt updatedAt')
             .sort({ createdAt: -1 })
             .limit(limit)
             .lean()
 
-        res.json({ ok: true, posts })
+        res.json({
+            ok: true,
+            posts: posts.map((post) => toNewsSummary(post)),
+        })
     } catch (error) {
         console.error('GET /api/news error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })

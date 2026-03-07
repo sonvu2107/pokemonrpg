@@ -65,10 +65,19 @@ const UserPokemonSchema = new Schema(
         // Status
         friendship: { type: Number, default: 70, min: 0, max: 255 },
         originalTrainer: { type: String, default: '' },
+        obtainedMapName: { type: String, default: '', trim: true },
         obtainedAt: { type: Date, default: Date.now },
 
         // Item held
         heldItem: { type: String, default: null },
+
+        // Lifecycle status — 'released' means soft-deleted into ValleyPokemon
+        status: {
+            type: String,
+            enum: ['active', 'released'],
+            default: 'active',
+            index: true,
+        },
     },
     {
         timestamps: true,

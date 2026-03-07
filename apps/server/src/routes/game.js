@@ -40,7 +40,9 @@ import {
     resolveDailyState as resolveAutoSearchDailyState,
     resolveDailyState as resolveAutoTrainerDailyState,
     toSafeInt as toSafeAutoTrainerInt,
+    getMaxCatchAttempts,
 } from '../utils/autoTrainerUtils.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 
 
@@ -217,7 +219,7 @@ const applyPercentBonus = (baseValue = 0, bonusPercent = 0) => {
 }
 
 const resolveWildPlayerBattleSnapshot = async (userId) => {
-    const leadPartyPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+    const leadPartyPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ userId, location: 'party' }))
         .sort({ partyIndex: 1, _id: 1 })
         .populate('pokemonId', 'name types rarity baseStats forms defaultFormId sprites imageUrl')
         .lean()
@@ -2478,7 +2480,14 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
                 return res.status(400).json({ ok: false, message: 'Trainer đã chọn chưa được hoàn thành.' })
             }
 
-            const trainerExists = await BattleTrainer.exists({ _id: targetTrainerId, isActive: true })
+            const trainerExists = await BattleTrainer.exists({
+                _id: targetTrainerId,
+                $or: [
+                    { isActive: true },
+                    { isActive: { $exists: false } },
+                    { isActive: null },
+                ],
+            })
             if (!trainerExists) {
                 return res.status(404).json({ ok: false, message: 'Trainer đã chọn không còn khả dụng.' })
             }
@@ -3169,7 +3178,7 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
                 await trackDailyActivity(userId, { platinumCoins: reward.platinumCoins })
             }
 
-            const leadPartyPokemon = await UserPokemon.findOne({ userId, location: 'party' })
+            const leadPartyPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ userId, location: 'party' }))
                 .sort({ partyIndex: 1, _id: 1 })
                 .populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
 
@@ -3281,7 +3290,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
-            .select('pokemonId level hp maxHp isShiny formId')
+            .select('pokemonId mapId level hp maxHp isShiny formId catchAttempts')
             .lean()
 
         if (!encounter) {
@@ -3334,6 +3343,14 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 return res.status(409).json({ ok: false, message: 'Cuộc chạm trán đã được xử lý. Vui lòng tải lại.' })
             }
 
+            let obtainedMapName = ''
+            if (encounter?.mapId) {
+                const encounterMap = await MapModel.findById(encounter.mapId)
+                    .select('name')
+                    .lean()
+                obtainedMapName = String(encounterMap?.name || '').trim()
+            }
+
             await UserPokemon.create({
                 userId,
                 pokemonId: encounter.pokemonId,
@@ -3343,6 +3360,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 movePpState: [],
                 formId: encounter.formId || 'normal',
                 isShiny: encounter.isShiny,
+                obtainedMapName,
                 location: 'box',
             })
 
@@ -3394,15 +3412,51 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             })
         }
 
+        // Catch failed - increment catchAttempts and check if Pokemon should flee
+        const maxAttempts = getMaxCatchAttempts(currentUser)
+        const nextAttempts = Math.max(0, Number(encounter.catchAttempts || 0)) + 1
+
+        if (nextAttempts >= maxAttempts) {
+            // Pokemon flees after exceeding the attempt limit
+            await Encounter.findOneAndUpdate(
+                { _id: req.params.id, userId, isActive: true },
+                { $set: { isActive: false, endedAt: new Date(), catchAttempts: nextAttempts } }
+            )
+            return res.json({
+                ok: true,
+                caught: false,
+                fled: true,
+                encounterId: encounter._id,
+                hp: encounter.hp,
+                maxHp: encounter.maxHp,
+                catchChancePercent: Number((chance * 100).toFixed(2)),
+                lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
+                catchAttempts: nextAttempts,
+                maxCatchAttempts: maxAttempts,
+                message: `Pokemon đã thoát khỏi bóng và bỏ chạy! (Đã thử ${nextAttempts}/${maxAttempts} lần)`,
+            })
+        }
+
+        // Still within attempt limit - save incremented attempt count
+        await Encounter.findOneAndUpdate(
+            { _id: req.params.id, userId, isActive: true },
+            { $set: { catchAttempts: nextAttempts } }
+        )
+
+        const remainingAttempts = maxAttempts - nextAttempts
         res.json({
             ok: true,
             caught: false,
+            fled: false,
             encounterId: encounter._id,
             hp: encounter.hp,
             maxHp: encounter.maxHp,
             catchChancePercent: Number((chance * 100).toFixed(2)),
             lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
-            message: 'Pokemon đã thoát khỏi bóng!'
+            catchAttempts: nextAttempts,
+            maxCatchAttempts: maxAttempts,
+            remainingAttempts,
+            message: `Pokemon đã thoát khỏi bóng! Còn ${remainingAttempts} lần thử.`,
         })
     } catch (error) {
         next(error)
@@ -3451,7 +3505,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const normalizedTrainerId = String(trainerId || '').trim()
         const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
-        const party = await UserPokemon.find({ userId, location: 'party' })
+        const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
             .select('pokemonId level experience moves movePpState nickname formId partyIndex')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
@@ -5172,7 +5226,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 : defaultScaledReward)
         const happinessAwarded = 13
 
-        const party = await UserPokemon.find({ userId, location: 'party' })
+        const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
             .select('pokemonId level experience friendship nickname formId isShiny partyIndex')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')

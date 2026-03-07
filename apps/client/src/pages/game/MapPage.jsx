@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { mapApi } from '../../services/mapApi'
@@ -8,6 +9,7 @@ import Modal from '../../components/Modal'
 import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 import { hasVipAutoSearchAccess } from '../../utils/vip'
 import { getVipAutoLimitConfig } from '../../utils/vipAutoLimits'
+import { inventoryQueryOptions } from '../../hooks/queries/gameQueries'
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 const sanitizeObjectIdToken = (value) => {
@@ -229,6 +231,7 @@ const isEventMapLike = (mapLike = null) => {
 export default function MapPage() {
     const { slug } = useParams()
     const { user } = useAuth()
+    const queryClient = useQueryClient()
     const isSearchDebugMode = isSearchDebugModeEnabled()
     const [map, setMap] = useState(null)
     const [dropRates, setDropRates] = useState([])
@@ -240,6 +243,7 @@ export default function MapPage() {
     const [searching, setSearching] = useState(false)
     const [lastResult, setLastResult] = useState(null)
     const [encounter, setEncounter] = useState(null)
+    const [catchAttemptInfo, setCatchAttemptInfo] = useState({ attempts: 0, maxAttempts: 3 })
     const [actionLoading, setActionLoading] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
     const [inventory, setInventory] = useState([])
@@ -365,6 +369,7 @@ export default function MapPage() {
         loadMapData()
         setLastResult(null)
         setEncounter(null)
+        setCatchAttemptInfo({ attempts: 0, maxAttempts: 3 })
         setPlayerBattle(null)
         setActionMessage('')
         setFeatureNotice('')
@@ -447,9 +452,13 @@ export default function MapPage() {
                     hp: activeEncounter.hp,
                     maxHp: activeEncounter.maxHp,
                 })
+                setCatchAttemptInfo({
+                    attempts: Math.max(0, Number(activeEncounter.catchAttempts || 0)),
+                    maxAttempts: Math.max(1, Number(activeEncounter.maxCatchAttempts || 3)),
+                })
                 setPlayerBattle(activeEncounter.playerBattle || null)
                 setActionMessage('Đã khôi phục Pokemon hoang dã bạn đang gặp.')
-                await loadInventory()
+                await loadInventory({ force: true })
             }
         } catch (err) {
             setError(err.message)
@@ -458,9 +467,12 @@ export default function MapPage() {
         }
     }
 
-    const loadInventory = async () => {
+    const loadInventory = async ({ force = false } = {}) => {
         try {
-            const data = await gameApi.getInventory()
+            if (force) {
+                await queryClient.invalidateQueries({ queryKey: inventoryQueryOptions().queryKey })
+            }
+            const data = await queryClient.fetchQuery(inventoryQueryOptions())
             setInventory(data.inventory || [])
         } catch (err) {
             setActionMessage(err.message)
@@ -759,14 +771,28 @@ export default function MapPage() {
     ])
 
     useEffect(() => {
-        if (!user) return undefined
+        if (!user || typeof window === 'undefined') return undefined
         let cancelled = false
+        let timerId = null
+
+        const resolveNextDelayMs = (hadError = false) => {
+            if (document.hidden) return 15000
+            const baseDelay = autoSearchEnabled ? 5000 : 10000
+            return hadError ? Math.min(baseDelay * 2, 20000) : baseDelay
+        }
+
+        const scheduleNext = (hadError = false) => {
+            if (cancelled) return
+            timerId = window.setTimeout(() => {
+                void syncAutoSearchStatus()
+            }, resolveNextDelayMs(hadError))
+        }
 
         const syncAutoSearchStatus = async () => {
             try {
                 const [statusRes, inventoryRes] = await Promise.all([
                     gameApi.getAutoSearchStatus(),
-                    gameApi.getInventory().catch(() => null),
+                    queryClient.fetchQuery(inventoryQueryOptions()).catch(() => null),
                 ])
                 if (cancelled) return
                 applyAutoSearchStatus(statusRes?.autoSearch || {})
@@ -780,21 +806,36 @@ export default function MapPage() {
                         ...inventoryRes.playerState,
                     }))
                 }
+                scheduleNext(false)
             } catch (error) {
                 if (!cancelled) {
                     setAutoSearchServerStatus(formatFriendlyAutoSearchMessage(String(error?.message || 'Không thể tải trạng thái tự tìm kiếm.')))
                 }
+                scheduleNext(true)
             }
         }
 
-        syncAutoSearchStatus()
-        const timer = window.setInterval(syncAutoSearchStatus, autoSearchEnabled ? 2000 : 5000)
+        const handleVisibilityChange = () => {
+            if (cancelled) return
+            if (timerId) {
+                window.clearTimeout(timerId)
+                timerId = null
+            }
+            scheduleNext(false)
+        }
+
+        void syncAutoSearchStatus()
+        window.addEventListener('visibilitychange', handleVisibilityChange)
 
         return () => {
             cancelled = true
-            window.clearInterval(timer)
+            if (timerId) {
+                window.clearTimeout(timerId)
+                timerId = null
+            }
+            window.removeEventListener('visibilitychange', handleVisibilityChange)
         }
-    }, [user?.id, slug, autoSearchEnabled])
+    }, [user?.id, slug, autoSearchEnabled, queryClient])
 
     useEffect(() => {
         if (!user || !isAutoSearchConfigDirty) return undefined
@@ -861,10 +902,17 @@ export default function MapPage() {
         try {
             setActionLoading(true)
             const res = await gameApi.catchEncounter(encounter.id)
-            setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : 'Bắt thất bại!'))
-            if (res.caught) {
+            if (Number.isFinite(res.catchAttempts)) {
+                setCatchAttemptInfo({
+                    attempts: res.catchAttempts,
+                    maxAttempts: res.maxCatchAttempts || 3,
+                })
+            }
+            setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : res.fled ? 'Pokemon đã bỏ chạy!' : 'Bắt thất bại!'))
+            if (res.caught || res.fled) {
                 setEncounter(null)
                 setPlayerBattle(null)
+                setCatchAttemptInfo({ attempts: 0, maxAttempts: 3 })
             }
         } catch (err) {
             setActionMessage(err.message)
@@ -880,11 +928,18 @@ export default function MapPage() {
         try {
             setActionLoading(true)
             const res = await gameApi.useItem(resolvedBallId, 1, encounter.id)
-            setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : 'Bắt thất bại!'))
-            await loadInventory()
-            if (res.caught) {
+            if (Number.isFinite(res.catchAttempts)) {
+                setCatchAttemptInfo({
+                    attempts: res.catchAttempts,
+                    maxAttempts: res.maxCatchAttempts || 3,
+                })
+            }
+            setActionMessage(res.message || (res.caught ? 'Bắt thành công!' : res.fled ? 'Pokemon đã bỏ chạy!' : 'Bắt thất bại!'))
+            await loadInventory({ force: true })
+            if (res.caught || res.fled) {
                 setEncounter(null)
                 setPlayerBattle(null)
+                setCatchAttemptInfo({ attempts: 0, maxAttempts: 3 })
             }
         } catch (err) {
             setActionMessage(err.message)
@@ -1515,6 +1570,10 @@ export default function MapPage() {
                                     Cần có Pokemon trong đội hình để chiến đấu.
                                 </div>
                             )}
+                            <div className="mt-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded px-2 py-1 text-center inline-block">
+                                Lượt thử bắt: {catchAttemptInfo.attempts}/{catchAttemptInfo.maxAttempts}
+                                {' · '}còn {Math.max(0, catchAttemptInfo.maxAttempts - catchAttemptInfo.attempts)} lần
+                            </div>
                             <div className="mt-2 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs w-full">
                                 <select
                                     value={selectedBallId}

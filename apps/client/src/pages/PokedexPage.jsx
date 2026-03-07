@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
+import SmartImage from '../components/SmartImage'
+import { useProfileQuery } from '../hooks/queries/gameQueries'
 
 const COIN_ICON = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png'
 const MOON_ICON = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/moon-stone.png'
@@ -17,6 +19,7 @@ const toTitle = (value) => {
 }
 
 export default function PokedexPage() {
+    const { data: profilePayload } = useProfileQuery()
     const [searchInput, setSearchInput] = useState('')
     const [search, setSearch] = useState('')
     const [showIncomplete, setShowIncomplete] = useState(false)
@@ -28,24 +31,16 @@ export default function PokedexPage() {
     const [error, setError] = useState('')
 
     useEffect(() => {
-        loadProfile()
-    }, [])
+        if (!profilePayload) return
+        setCurrency({
+            platinumCoins: profilePayload?.playerState?.platinumCoins ?? 0,
+            moonPoints: profilePayload?.playerState?.moonPoints || 0,
+        })
+    }, [profilePayload?.playerState?.platinumCoins, profilePayload?.playerState?.moonPoints])
 
     useEffect(() => {
         loadPokedex()
     }, [pagination.page, search, showIncomplete])
-
-    const loadProfile = async () => {
-        try {
-            const data = await gameApi.getProfile()
-            setCurrency({
-                platinumCoins: data?.playerState?.platinumCoins ?? 0,
-                moonPoints: data?.playerState?.moonPoints || 0,
-            })
-        } catch (_err) {
-            setCurrency({ platinumCoins: 0, moonPoints: 0 })
-        }
-    }
 
     const loadPokedex = async () => {
         try {
@@ -217,14 +212,13 @@ export default function PokedexPage() {
                                             />
                                         </td>
                                         <td className="border-r border-slate-300 text-center py-1">
-                                            <img
+                                            <SmartImage
                                                 src={entry.displaySprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${entry.pokedexNumber}.png`}
                                                 alt={entry.displayName}
+                                                width={64}
+                                                height={64}
                                                 className="w-16 h-16 mx-auto pixelated"
-                                                onError={(event) => {
-                                                    event.target.onerror = null
-                                                    event.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                                }}
+                                                fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                             />
                                         </td>
                                         <td className="border-r border-slate-300 text-center py-1 text-blue-800 font-bold">

@@ -18,6 +18,7 @@ const encounterSchema = new mongoose.Schema(
         playerCurrentHp: { type: Number, default: 0, min: 0 },
         playerMaxHp: { type: Number, default: 0, min: 0 },
         isShiny: { type: Boolean, default: false },
+        catchAttempts: { type: Number, default: 0, min: 0 },
         isActive: { type: Boolean, default: true, index: true },
         endedAt: { type: Date, default: null },
     },

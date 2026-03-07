@@ -119,6 +119,7 @@ export default function BattleTrainerPage() {
     const [autoCoinsReward, setAutoCoinsReward] = useState('')
     const [autoExpReward, setAutoExpReward] = useState('')
     const [autoPrizePokemonSearchTerm, setAutoPrizePokemonSearchTerm] = useState('')
+    const [autoPrizePokemonFormFilter, setAutoPrizePokemonFormFilter] = useState('')
     const [autoPrizePokemonSelections, setAutoPrizePokemonSelections] = useState([])
     const [autoPrizePokemonLevels, setAutoPrizePokemonLevels] = useState({})
     const [autoPrizePokemonPage, setAutoPrizePokemonPage] = useState(1)
@@ -665,6 +666,7 @@ export default function BattleTrainerPage() {
 
     const handleOpenAutoPrizePokemonModal = () => {
         setAutoPrizePokemonSearchTerm('')
+        setAutoPrizePokemonFormFilter('')
         setAutoPrizePokemonPage(1)
         setShowAutoPrizePokemonModal(true)
     }
@@ -781,8 +783,42 @@ export default function BattleTrainerPage() {
         [autoPrizePokemonSelections]
     )
 
+    const autoPrizePokemonFormOptions = useMemo(() => {
+        const optionMap = new Map()
+
+        pokemon.forEach((entry) => {
+            const forms = getPokemonFormsForDisplay(entry)
+            forms.forEach((rowForm) => {
+                const formId = String(rowForm?.formId || '').trim().toLowerCase()
+                if (!formId) return
+
+                const existing = optionMap.get(formId)
+                if (existing) {
+                    optionMap.set(formId, {
+                        ...existing,
+                        count: existing.count + 1,
+                    })
+                    return
+                }
+
+                optionMap.set(formId, {
+                    formId,
+                    formName: String(rowForm?.formName || rowForm?.formId || formId).trim() || formId,
+                    count: 1,
+                })
+            })
+        })
+
+        return [...optionMap.values()].sort((a, b) => {
+            if (a.formId === 'normal') return -1
+            if (b.formId === 'normal') return 1
+            return a.formName.localeCompare(b.formName)
+        })
+    }, [pokemon])
+
     const autoPrizePokemonFilteredRows = useMemo(() => {
         const normalizedSearch = String(autoPrizePokemonSearchTerm || '').trim().toLowerCase()
+        const normalizedFormFilter = String(autoPrizePokemonFormFilter || '').trim().toLowerCase()
         const speciesRows = pokemon.filter((entry) => {
             const id = String(entry?._id || '').trim()
             if (!id) return false
@@ -808,8 +844,12 @@ export default function BattleTrainerPage() {
             }))
         })
 
-        return formRows
-    }, [pokemon, autoPrizePokemonSearchTerm])
+        if (!normalizedFormFilter) {
+            return formRows
+        }
+
+        return formRows.filter((row) => String(row?.form?.formId || '').trim().toLowerCase() === normalizedFormFilter)
+    }, [pokemon, autoPrizePokemonSearchTerm, autoPrizePokemonFormFilter])
 
     const autoPrizePokemonTotal = autoPrizePokemonFilteredRows.length
     const autoPrizePokemonTotalPages = Math.max(1, Math.ceil(autoPrizePokemonTotal / AUTO_PRIZE_POKEMON_PAGE_SIZE))
@@ -1778,18 +1818,38 @@ export default function BattleTrainerPage() {
                         </div>
 
                         <div className="space-y-3">
-                            <div>
-                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokémon</label>
-                                <input
-                                    type="text"
-                                    value={autoPrizePokemonSearchTerm}
-                                    onChange={(e) => {
-                                        setAutoPrizePokemonSearchTerm(e.target.value)
-                                        setAutoPrizePokemonPage(1)
-                                    }}
-                                    placeholder="Nhập tên, số Pokedex hoặc ID"
-                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
-                                />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokémon</label>
+                                    <input
+                                        type="text"
+                                        value={autoPrizePokemonSearchTerm}
+                                        onChange={(e) => {
+                                            setAutoPrizePokemonSearchTerm(e.target.value)
+                                            setAutoPrizePokemonPage(1)
+                                        }}
+                                        placeholder="Nhập tên, số Pokedex hoặc ID"
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-1.5">Lọc theo dạng</label>
+                                    <select
+                                        value={autoPrizePokemonFormFilter}
+                                        onChange={(e) => {
+                                            setAutoPrizePokemonFormFilter(e.target.value)
+                                            setAutoPrizePokemonPage(1)
+                                        }}
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
+                                    >
+                                        <option value="">Tất cả dạng</option>
+                                        {autoPrizePokemonFormOptions.map((entry) => (
+                                            <option key={`auto-prize-form-filter-${entry.formId}`} value={entry.formId}>
+                                                {entry.formName} ({entry.count})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">

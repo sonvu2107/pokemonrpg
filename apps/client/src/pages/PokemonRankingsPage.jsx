@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import SmartImage from '../components/SmartImage'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import TrainerProfileModal from '../components/TrainerProfileModal'
@@ -256,12 +257,15 @@ export default function PokemonRankingsPage() {
                                                 <td className="px-3 py-3 border-r border-slate-200">
                                                     <div className="flex items-center gap-2 min-w-0">
                                                         <Link to={`/pokemon/${detailId}`}>
-                                                            <img
+                                                            <SmartImage
                                                                 src={entry.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
                                                                 alt={displayName}
+                                                                width={56}
+                                                                height={56}
                                                                 loading="lazy"
                                                                 decoding="async"
                                                                 className="w-14 h-14 object-contain pixelated"
+                                                                fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                             />
                                                         </Link>
                                                         <div className="min-w-0 flex-1">

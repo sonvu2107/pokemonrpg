@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import BattleTrainer from '../models/BattleTrainer.js'
 import WorkerLock from '../models/WorkerLock.js'
+import { getPartyDirect } from '../services/workerService.js'
 import {
     getGameDayKey,
     hasVipAutoTrainerAccess,
@@ -16,11 +17,11 @@ import {
 const WORKER_LOCK_KEY_PREFIX = 'auto-trainer:tick-lock'
 const OWNER_ID = `auto-trainer-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
 
-const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_TRAINER_TICK_MS, 7000, 3000, 60000)
-const LOCK_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_LOCK_TTL_MS, 25000, 5000, 300000)
-const BATCH_SIZE = toSafeInt(process.env.AUTO_TRAINER_BATCH_SIZE, 100, 10, 500)
-const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 8, 1, 50)
-const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 18000, 1000, 120000)
+const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_TRAINER_TICK_MS, 5000, 3000, 60000)
+const LOCK_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_LOCK_TTL_MS, 35000, 5000, 300000)
+const BATCH_SIZE = toSafeInt(process.env.AUTO_TRAINER_BATCH_SIZE, 120, 10, 500)
+const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 12, 1, 50)
+const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 30000, 1000, 120000)
 const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 260, 60, 1000)
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
@@ -116,6 +117,25 @@ const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = 
     return data
 }
 
+const RETRYABLE_CODES = new Set(['REQUEST_TIMEOUT', 'BATTLE_SESSION_CONFLICT', 'ECONNRESET', 'ECONNREFUSED', 'UND_ERR_SOCKET'])
+
+const callApiWithRetry = async (opts, maxRetries = 2) => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await callApi(opts)
+        } catch (error) {
+            const code = String(error?.code || '').trim().toUpperCase()
+            const isRetryable = RETRYABLE_CODES.has(code)
+                || (code === '' && String(error?.message || '').includes('fetch failed'))
+            if (attempt < maxRetries && isRetryable) {
+                await sleep(250 * (attempt + 1))
+                continue
+            }
+            throw error
+        }
+    }
+}
+
 const resolveTrainerAverageLevel = (trainerLike = {}) => {
     const levels = (Array.isArray(trainerLike?.team) ? trainerLike.team : [])
         .map((entry) => Math.max(1, Number(entry?.level || 1)))
@@ -133,7 +153,14 @@ const getTrainerMetaCached = async (trainerId = '') => {
         return cached.data || null
     }
 
-    const trainer = await BattleTrainer.findOne({ _id: normalizedTrainerId, isActive: true })
+    const trainer = await BattleTrainer.findOne({
+        _id: normalizedTrainerId,
+        $or: [
+            { isActive: true },
+            { isActive: { $exists: false } },
+            { isActive: null },
+        ],
+    })
         .select('_id name team.level')
         .lean()
 
@@ -297,8 +324,8 @@ const updateAutoTrainerState = async ({ userId, setPatch = {}, lastAction = null
     await User.updateOne({ _id: userId }, updateDoc)
 }
 
-const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs, resetTrainerSession, deadlineAt }) => {
-    const partyResponse = await callApi({ token, path: '/api/party', deadlineAt, timeoutMs: 10000 })
+const runSingleBattle = async ({ userId, token, trainerId, trainerMeta, attackIntervalMs, resetTrainerSession, deadlineAt }) => {
+    const partyResponse = await getPartyDirect(userId)
     const partyData = Array.isArray(partyResponse?.party) ? partyResponse.party : []
 
     const partyState = partyData
@@ -473,20 +500,21 @@ const runSingleBattle = async ({ token, trainerId, trainerMeta, attackIntervalMs
                 return { ok: false, code: 'PLAYER_DEFEATED', reason: message || 'Pokemon của bạn đã bại trận.' }
             }
             if (normalized.includes('qua nhanh')) {
-                await sleep(Math.max(500, attackIntervalMs))
+                await sleep(Math.max(200, attackIntervalMs))
                 continue
             }
             return { ok: false, code: 'ATTACK_ERROR', reason: message || 'Battle thất bại.' }
         }
 
-        await sleep(Math.max(450, attackIntervalMs))
+        await sleep(Math.max(100, attackIntervalMs))
     }
 
     return { ok: false, code: 'MAX_TURNS', reason: 'Quá số lượt tối đa khi auto battle trainer.' }
 }
 
-const runAutoTrainerBattleFlow = async ({ token, trainerId, trainerMeta, attackIntervalMs, deadlineAt }) => {
+const runAutoTrainerBattleFlow = async ({ userId, token, trainerId, trainerMeta, attackIntervalMs, deadlineAt }) => {
     const resumed = await runSingleBattle({
+        userId,
         token,
         trainerId,
         trainerMeta,
@@ -505,6 +533,7 @@ const runAutoTrainerBattleFlow = async ({ token, trainerId, trainerMeta, attackI
 
     if (canRetryFreshSession) {
         outcome = await runSingleBattle({
+            userId,
             token,
             trainerId,
             trainerMeta,
@@ -519,7 +548,7 @@ const runAutoTrainerBattleFlow = async ({ token, trainerId, trainerMeta, attackI
     }
 
     try {
-        await callApi({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
+        await callApiWithRetry({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
     } catch (error) {
         const normalized = normalizeSearchText(error?.message || '')
         if (!normalized.includes('da duoc nhan') && !normalized.includes('phan thuong battle da duoc nhan')) {
@@ -740,8 +769,9 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         level: resolveTrainerAverageLevel(trainer),
     }
 
-    const attackIntervalMs = Math.max(450, toSafeInt(autoState.attackIntervalMs, 700))
+    const attackIntervalMs = Math.max(100, toSafeInt(autoState.attackIntervalMs, 200))
     const outcome = await runAutoTrainerBattleFlow({
+        userId,
         token,
         trainerId,
         trainerMeta,

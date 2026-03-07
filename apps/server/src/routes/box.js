@@ -2,9 +2,12 @@ import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level formId isShiny location obtainedAt createdAt'
+const BOX_POKEMON_SELECT = '_id name pokedexNumber rarity imageUrl sprites defaultFormId forms evolution'
 
 router.use(authMiddleware)
 router.get('/', async (req, res) => {
@@ -20,10 +23,10 @@ router.get('/', async (req, res) => {
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1)
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 28))
-        const query = { userId: req.user.userId }
+        const query = withActiveUserPokemonFilter({ userId: req.user.userId })
         if (search) {
             const searchRegex = new RegExp(escapeRegExp(search), 'i')
-            const species = await Pokemon.find({ name: searchRegex }).select('_id')
+            const species = await Pokemon.find({ name: searchRegex }).select('_id').lean()
             const speciesIds = species.map(s => s._id)
 
             query.$or = [
@@ -72,8 +75,25 @@ router.get('/', async (req, res) => {
                 {
                     $lookup: {
                         from: 'pokemons',
-                        localField: 'pokemonId',
-                        foreignField: '_id',
+                        let: { targetPokemonId: '$pokemonId' },
+                        pipeline: [
+                            { $match: { $expr: { $eq: ['$_id', '$$targetPokemonId'] } } },
+                            {
+                                $project: {
+                                    _id: 1,
+                                    name: 1,
+                                    nameLower: 1,
+                                    pokedexNumber: 1,
+                                    rarity: 1,
+                                    imageUrl: 1,
+                                    sprites: 1,
+                                    defaultFormId: 1,
+                                    forms: 1,
+                                    evolution: 1,
+                                    types: 1,
+                                },
+                            },
+                        ],
                         as: 'pokemonId',
                     },
                 },
@@ -108,6 +128,16 @@ router.get('/', async (req, res) => {
                 { $limit: limitNum },
                 {
                     $project: {
+                        _id: 1,
+                        userId: 1,
+                        pokemonId: 1,
+                        nickname: 1,
+                        level: 1,
+                        formId: 1,
+                        isShiny: 1,
+                        location: 1,
+                        obtainedAt: 1,
+                        createdAt: 1,
                         sortType: 0,
                         sortName: 0,
                     },
@@ -115,10 +145,12 @@ router.get('/', async (req, res) => {
             ])
         } else {
             userPokemon = await UserPokemon.find(query)
-                .populate('pokemonId')
+                .select(BOX_ENTRY_SELECT)
+                .populate('pokemonId', BOX_POKEMON_SELECT)
                 .sort(sortOptions)
                 .skip((pageNum - 1) * limitNum)
                 .limit(limitNum)
+                .lean()
         }
 
         res.json({

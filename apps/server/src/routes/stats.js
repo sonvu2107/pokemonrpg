@@ -461,76 +461,11 @@ router.get('/online', authMiddleware, async (req, res) => {
         ])
 
         const now = new Date()
-        const userIds = users.map((entry) => entry?._id).filter(Boolean)
-        const playerStates = userIds.length === 0
-            ? []
-            : await PlayerState.find({ userId: { $in: userIds } })
-                .select('userId level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
-                .lean()
-
-        const playerStateMap = new Map(
-            playerStates.map((entry) => [
-                String(entry?.userId || ''),
-                {
-                    level: Math.max(1, Number(entry?.level || 1)),
-                    experience: Number(entry?.experience || 0),
-                    moonPoints: Number(entry?.moonPoints || 0),
-                    wins: Number(entry?.wins || 0),
-                    losses: Number(entry?.losses || 0),
-                    platinumCoins: Number(entry?.gold || 0),
-                    hp: Number(entry?.hp || 100),
-                    maxHp: Number(entry?.maxHp || 100),
-                    stamina: Number(entry?.stamina || 100),
-                    maxStamina: Number(entry?.maxStamina || 100),
-                },
-            ])
-        )
-
-        const partyRows = userIds.length === 0
-            ? []
-            : await UserPokemon.find({
-                userId: { $in: userIds },
-                location: 'party',
-            })
-                .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs')
-                .populate({
-                    path: 'pokemonId',
-                    select: 'name types rarity baseStats imageUrl sprites defaultFormId forms',
-                })
-                .sort({ userId: 1, partyIndex: 1, _id: 1 })
-                .lean()
-
-        const partyMap = new Map(userIds.map((id) => [String(id), createEmptyPartySlots()]))
-
-        partyRows.forEach((entry) => {
-            const normalizedUserId = String(entry?.userId || '')
-            if (!normalizedUserId) return
-
-            if (!partyMap.has(normalizedUserId)) {
-                partyMap.set(normalizedUserId, createEmptyPartySlots())
-            }
-
-            const slots = partyMap.get(normalizedUserId)
-            const snapshot = serializePartyPokemon(entry)
-            if (!snapshot || !Array.isArray(slots)) return
-
-            const slotIndex = Number(entry?.partyIndex)
-            if (Number.isInteger(slotIndex) && slotIndex >= 0 && slotIndex < slots.length && !slots[slotIndex]) {
-                slots[slotIndex] = snapshot
-                return
-            }
-
-            const firstEmpty = slots.findIndex((slot) => slot === null)
-            if (firstEmpty !== -1) {
-                slots[firstEmpty] = snapshot
-            }
-        })
 
         const onlineTrainers = users.map((entry, index) => ({
-            party: partyMap.get(String(entry?._id || '')) || createEmptyPartySlots(),
             userId: String(entry?._id || ''),
             rank: skip + index + 1,
-            userIdLabel: `#${skip + index + 1}`,
+            userIdLabel: `#${String(entry?._id || '').slice(-7).toUpperCase()}`,
             username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
             playTime: formatPlayTime(entry?.createdAt, now),
             avatar: normalizeAvatarUrl(entry?.avatar),
@@ -552,18 +487,6 @@ router.get('/online', authMiddleware, async (req, res) => {
                 autoBattleTrainerUsesPerDay: Math.max(0, parseInt(entry?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
             },
             isOnline: Boolean(entry?.isOnline),
-            profile: playerStateMap.get(String(entry?._id || '')) || {
-                level: 1,
-                experience: 0,
-                moonPoints: 0,
-                wins: 0,
-                losses: 0,
-                platinumCoins: 0,
-                hp: 100,
-                maxHp: 100,
-                stamina: 100,
-                maxStamina: 100,
-            },
         }))
 
         res.json({
