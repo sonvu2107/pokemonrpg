@@ -498,6 +498,23 @@ export default function PokemonListPage() {
             .filter(Boolean)
     }
 
+    const stripTrailingArtifactTokens = (tokens = []) => {
+        const next = Array.isArray(tokens) ? [...tokens] : []
+        while (next.length > 0) {
+            const tail = String(next[next.length - 1] || '').toLowerCase()
+            if (!tail) {
+                next.pop()
+                continue
+            }
+
+            const isLargeNumeric = /^\d{4,}$/.test(tail)
+            const isNoiseToken = ['copy', 'final', 'edited', 'edit', 'new'].includes(tail)
+            if (!isLargeNumeric && !isNoiseToken) break
+            next.pop()
+        }
+        return next
+    }
+
     const toTitleCaseFromTokens = (tokens = []) => (
         (Array.isArray(tokens) ? tokens : [])
             .filter(Boolean)
@@ -515,23 +532,20 @@ export default function PokemonListPage() {
         return isTailMatched ? nameTokens.length : 0
     }
 
-    const inferFormFromFileName = (fileName = '', pokemonName = '', options = {}) => {
+    const inferFormFromFileName = (fileName = '', pokemonName = '') => {
         const stemRaw = String(fileName || '').replace(/\.[^.]+$/, '').trim()
         if (!stemRaw) return { formId: '', formName: '' }
 
-        const stemTokens = splitStemTokens(stemRaw)
+        const stemTokens = stripTrailingArtifactTokens(splitStemTokens(stemRaw))
         if (stemTokens.length === 0) return { formId: '', formName: '' }
 
         const suffixLength = findPokemonSuffixTokenLength(stemTokens, pokemonName)
         const normalizedTokens = suffixLength > 0
             ? stemTokens.slice(0, stemTokens.length - suffixLength)
             : stemTokens
-        const keepMega = options?.keepMega !== false
-        const effectiveTokens = keepMega
-            ? normalizedTokens
-            : normalizedTokens.filter((token) => token !== 'mega')
+        const effectiveTokens = normalizedTokens
 
-        if (effectiveTokens.length === 0) return { formId: '', formName: '' }
+        if (effectiveTokens.length === 0) return { formId: 'normal', formName: 'Normal' }
         return {
             formId: effectiveTokens.join('-'),
             formName: toTitleCaseFromTokens(effectiveTokens),
@@ -578,20 +592,21 @@ export default function PokemonListPage() {
 
         return list.map((file, index) => {
             const safeFileName = String(file?.name || '').trim()
-            const inferredKeep = inferFormFromFileName(safeFileName, pokemonName, { keepMega: true })
-            const inferredRemove = inferFormFromFileName(safeFileName, pokemonName, { keepMega: false })
-            const applied = keepMega ? inferredKeep : inferredRemove
-            const keepFormId = normalizeOptionalFormId(inferredKeep.formId)
-            const removeFormId = normalizeOptionalFormId(inferredRemove.formId)
-            const keepFormName = normalizeFormName(inferredKeep.formName) || keepFormId
-            const removeFormName = normalizeFormName(inferredRemove.formName) || removeFormId
-            const appliedFormId = normalizeOptionalFormId(applied.formId)
-            const appliedFormName = normalizeFormName(applied.formName) || appliedFormId
+            const inferredBase = inferFormFromFileName(safeFileName, pokemonName)
+            const baseFormId = normalizeOptionalFormId(inferredBase.formId)
+            const baseFormName = normalizeFormName(inferredBase.formName) || baseFormId
             const stemTokens = splitStemTokens(safeFileName.replace(/\.[^.]+$/, ''))
             const hasMegaKeyword = stemTokens.includes('mega')
-            const isMegaModeAffecting = hasMegaKeyword && (
-                keepFormId !== removeFormId || keepFormName !== removeFormName
-            )
+            const keepFormId = hasMegaKeyword ? baseFormId : ''
+            const keepFormName = hasMegaKeyword ? baseFormName : 'Bỏ qua (không có Mega)'
+            const removeFormId = hasMegaKeyword ? '' : baseFormId
+            const removeFormName = hasMegaKeyword ? 'Bỏ qua (có Mega)' : baseFormName
+            const appliedFormId = keepMega ? keepFormId : removeFormId
+            const appliedFormName = keepMega ? keepFormName : removeFormName
+            const megaSkipReason = keepMega
+                ? (hasMegaKeyword ? '' : 'Ảnh không có Mega, bỏ qua theo chế độ Giữ Mega')
+                : (hasMegaKeyword ? 'Ảnh có Mega, bỏ qua theo chế độ Bỏ Mega' : '')
+            const isMegaModeAffecting = keepFormId !== removeFormId || keepFormName !== removeFormName
 
             return {
                 queueId: `${Date.now()}-${index}-${safeFileName || 'unnamed-file'}`,
@@ -605,11 +620,10 @@ export default function PokemonListPage() {
                 appliedFormName,
                 hasMegaKeyword,
                 isMegaModeAffecting,
+                megaSkipReason,
                 status: 'pending',
                 progress: 0,
-                message: isMegaModeAffecting
-                    ? (keepMega ? 'Đang áp dụng chế độ Giữ Mega' : 'Đang áp dụng chế độ Bỏ Mega')
-                    : '',
+                message: megaSkipReason || (keepMega ? 'Ảnh có Mega: sẽ giữ lại để tải lên' : 'Ảnh không có Mega: sẽ giữ lại để tải lên'),
             }
         })
     }
@@ -715,6 +729,18 @@ export default function PokemonListPage() {
             }
 
             pendingRows.forEach((row) => {
+                if (row.megaSkipReason) {
+                    skippedCount += 1
+                    completedCount += 1
+                    updateQuickFormUploadRow(row.queueId, {
+                        status: 'skipped',
+                        progress: 0,
+                        message: row.megaSkipReason,
+                    })
+                    updateOverallProgress()
+                    return
+                }
+
                 if (!row.file) {
                     skippedCount += 1
                     completedCount += 1
@@ -1799,7 +1825,7 @@ export default function PokemonListPage() {
                                 </button>
                             </div>
                             <p className="text-[11px] text-slate-600">
-                                Có {quickMegaFileCount} ảnh chứa từ khóa Mega. Nếu trùng formId đã có thì hệ thống sẽ bỏ qua để tránh ghi đè.
+                                Có {quickMegaFileCount} ảnh chứa từ khóa Mega. Chế độ Giữ Mega chỉ tải ảnh có Mega; chế độ Bỏ Mega chỉ tải ảnh không có Mega.
                             </p>
                         </div>
 
