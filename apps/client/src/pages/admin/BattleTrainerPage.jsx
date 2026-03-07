@@ -888,6 +888,50 @@ export default function BattleTrainerPage() {
         [autoPrizePokemonSelectionSet, allPokemonLookup, autoPrizePokemonLevels]
     )
 
+    const autoPrizeRepeatPreview = useMemo(() => {
+        const normalizedStartLevel = Math.max(1, Number.parseInt(autoLevelStart, 10) || 1)
+        const parsedMaxLevel = Number.parseInt(autoLevelMax, 10)
+        const normalizedMaxLevel = Math.max(
+            normalizedStartLevel,
+            Number.isFinite(parsedMaxLevel) && parsedMaxLevel > 0 ? parsedMaxLevel : normalizedStartLevel
+        )
+        const parsedStep = Number.parseInt(autoLevelStep, 10)
+        const normalizedStep = Number.isFinite(parsedStep) && parsedStep > 0 ? parsedStep : 10
+        const normalizedEveryTrainer = Math.max(0, Number.parseInt(autoPrizePokemonEveryTrainer, 10) || 0)
+        const poolSize = autoPrizePokemonSelectionSet.size
+
+        const levelSet = new Set([normalizedStartLevel])
+        for (let level = normalizedStep; level <= normalizedMaxLevel; level += normalizedStep) {
+            if (level >= normalizedStartLevel) {
+                levelSet.add(level)
+            }
+        }
+
+        const levelList = [...levelSet].sort((a, b) => a - b)
+        const rewardTrainerCount = normalizedEveryTrainer > 0
+            ? levelList.reduce((count, _level, index) => (index % normalizedEveryTrainer === 0 ? count + 1 : count), 0)
+            : 0
+
+        const isRewardConfigEnabled = poolSize > 0 && normalizedEveryTrainer > 0
+        const willRepeat = isRewardConfigEnabled && rewardTrainerCount > poolSize
+
+        return {
+            poolSize,
+            levelCount: levelList.length,
+            rewardTrainerCount,
+            normalizedEveryTrainer,
+            willRepeat,
+            repeatCount: willRepeat ? rewardTrainerCount - poolSize : 0,
+            isRewardConfigEnabled,
+        }
+    }, [
+        autoLevelStart,
+        autoLevelMax,
+        autoLevelStep,
+        autoPrizePokemonEveryTrainer,
+        autoPrizePokemonSelectionSet,
+    ])
+
     const allPrizePokemonFormRows = prizePokemonOptions.flatMap((entry) => {
         const forms = getPokemonFormsForDisplay(entry)
         return forms.map((rowForm) => ({
@@ -1219,7 +1263,7 @@ export default function BattleTrainerPage() {
                                 onClick={handleOpenAutoPrizePokemonModal}
                                 className="px-3 py-2 border border-emerald-300 rounded bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
                             >
-                                Chọn Pokémon bằng modal
+                                Chọn Pokémo
                             </button>
                             <button
                                 type="button"
@@ -1869,6 +1913,33 @@ export default function BattleTrainerPage() {
                                     Bỏ chọn hết
                                 </button>
                                 <span className="text-xs text-slate-500">Đang chọn: {autoPrizePokemonSelectionSet.size}</span>
+                            </div>
+
+                            <div
+                                className={`rounded border px-3 py-2 text-[11px] leading-relaxed ${autoPrizeRepeatPreview.willRepeat
+                                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}
+                            >
+                                {autoPrizeRepeatPreview.isRewardConfigEnabled ? (
+                                    <>
+                                        <div className="font-semibold">
+                                            Trạng thái lặp thưởng: {autoPrizeRepeatPreview.willRepeat ? 'Có thể bị lặp' : 'Không bị lặp'} (theo cấu hình hiện tại)
+                                        </div>
+                                        <div>
+                                            Dự kiến có {autoPrizeRepeatPreview.rewardTrainerCount} trainer nhận Pokémon thưởng, pool hiện có {autoPrizeRepeatPreview.poolSize} lựa chọn.
+                                            {autoPrizeRepeatPreview.willRepeat
+                                                ? ` Vượt pool ${autoPrizeRepeatPreview.repeatCount} lượt nên sẽ bắt đầu lặp sau khi dùng hết 1 vòng.`
+                                                : ' Số lượt thưởng không vượt pool nên chưa lặp.'}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="font-semibold">Trạng thái lặp thưởng: Chưa đủ dữ liệu để tính</div>
+                                        <div>
+                                            Hãy chọn pool Pokémon thưởng và nhập "Cách nhau bao nhiêu trainer" lớn hơn 0 để hệ thống dự đoán có bị lặp hay không.
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">

@@ -98,6 +98,16 @@ const resolveTeamDamagePercentByLevel = (level, damageBonusRules = []) => {
     return clampNumber(100 + appliedBonusPercent, TEAM_DAMAGE_PERCENT_MIN, TEAM_DAMAGE_PERCENT_MAX)
 }
 
+const createSeededRandom = (seedValue = Date.now()) => {
+    let state = (Math.abs(Number(seedValue) || 0) + 1) >>> 0
+    return () => {
+        state = (state + 0x6D2B79F5) | 0
+        let t = Math.imul(state ^ (state >>> 15), 1 | state)
+        t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+}
+
 const normalizeTeam = (team) => {
     if (!Array.isArray(team)) return []
     return team
@@ -277,16 +287,6 @@ const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3, damagePercent = 1
     const normalizedTeamSize = clampNumber(teamSize, 1, 6)
     const normalizedDamagePercent = parseTeamDamagePercent(damagePercent, 100)
     const normalizedSeed = Number.isFinite(Number(seed)) ? Math.floor(Number(seed)) : 1
-    const createSeededRandom = (seedValue) => {
-        let state = (Math.abs(seedValue) + 1) >>> 0
-        return () => {
-            state = (state + 0x6D2B79F5) | 0
-            let t = Math.imul(state ^ (state >>> 15), 1 | state)
-            t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-        }
-    }
-
     const random = createSeededRandom(normalizedSeed + parsePositiveInt(level, 1) * 9973 + normalizedTeamSize * 389)
     const normalizeRarity = (value) => String(value || '').trim().toLowerCase()
     const allowedRaritiesByLevel = (() => {
@@ -643,6 +643,70 @@ router.post('/auto-generate', async (req, res) => {
             ? levels.reduce((count, _level, index) => (index % configuredPrizeEveryTrainer === 0 ? count + 1 : count), 0)
             : 0
 
+        const buildPrizePoolSelectionKey = (entry) => {
+            if (!entry?.prizePokemonId) return ''
+            return [
+                String(entry.prizePokemonId),
+                normalizeFormId(entry.prizePokemonFormId || 'normal'),
+                Math.max(0, Number(entry.prizePokemonLevel) || 0),
+            ].join(':')
+        }
+
+        const prizeRandom = createSeededRandom(generationSeedBase + (resolvedPrizePool.length * 37) + (levels.length * 503))
+        const shufflePrizePool = (poolRows = []) => {
+            const next = [...poolRows]
+            for (let index = next.length - 1; index > 0; index -= 1) {
+                const pickIndex = Math.floor(prizeRandom() * (index + 1))
+                const picked = next[pickIndex]
+                next[pickIndex] = next[index]
+                next[index] = picked
+            }
+            return next
+        }
+
+        let lastPrizeSelectionKey = ''
+        const createNextPrizePoolRotation = () => {
+            const nextRotation = shufflePrizePool(resolvedPrizePool)
+            if (nextRotation.length <= 1 || !lastPrizeSelectionKey) {
+                return nextRotation
+            }
+
+            const firstKey = buildPrizePoolSelectionKey(nextRotation[0])
+            if (firstKey !== lastPrizeSelectionKey) {
+                return nextRotation
+            }
+
+            const swapIndex = nextRotation.findIndex((entry, index) => (
+                index > 0 && buildPrizePoolSelectionKey(entry) !== lastPrizeSelectionKey
+            ))
+
+            if (swapIndex > 0) {
+                const firstEntry = nextRotation[0]
+                nextRotation[0] = nextRotation[swapIndex]
+                nextRotation[swapIndex] = firstEntry
+            }
+
+            return nextRotation
+        }
+
+        let currentPrizePoolRotation = shouldAssignRandomPrize ? createNextPrizePoolRotation() : []
+        let currentPrizePoolIndex = 0
+        const pickNextPrizeFromPool = () => {
+            if (!shouldAssignRandomPrize || resolvedPrizePool.length === 0) {
+                return null
+            }
+
+            if (currentPrizePoolIndex >= currentPrizePoolRotation.length) {
+                currentPrizePoolRotation = createNextPrizePoolRotation()
+                currentPrizePoolIndex = 0
+            }
+
+            const selectedEntry = currentPrizePoolRotation[currentPrizePoolIndex] || null
+            currentPrizePoolIndex += 1
+            lastPrizeSelectionKey = buildPrizePoolSelectionKey(selectedEntry)
+            return selectedEntry
+        }
+
         const upsertResults = await Promise.all(
             levels.map(async (level, index) => {
                 const rewardValue = Math.max(10, level * 10)
@@ -658,7 +722,7 @@ router.post('/auto-generate', async (req, res) => {
                 )
                 const shouldRewardTrainer = shouldAssignRandomPrize && (index % configuredPrizeEveryTrainer === 0)
                 const selectedPrize = shouldRewardTrainer
-                    ? resolvedPrizePool[Math.floor(Math.random() * resolvedPrizePool.length)]
+                    ? pickNextPrizeFromPool()
                     : null
                 const trainerPatch = {
                     name: `HLV Mốc Lv ${level}`,
