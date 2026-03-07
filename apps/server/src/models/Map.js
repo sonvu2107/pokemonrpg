@@ -22,6 +22,45 @@ const specialPokemonConfigSchema = new mongoose.Schema(
     { _id: false }
 )
 
+const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const rarityCatchBonusPercentSchema = new mongoose.Schema(
+    {
+        s: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
+        },
+        ss: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
+        },
+        sss: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
+        },
+    },
+    { _id: false }
+)
+
+const toSafeRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        const normalized = Number.isFinite(parsed)
+            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            : 0
+        acc[key] = normalized
+        return acc
+    }, {})
+}
+
 const mapSchema = new mongoose.Schema(
     {
         name: {
@@ -135,6 +174,10 @@ const mapSchema = new mongoose.Schema(
             min: 0,
             max: 1,
         },
+        rarityCatchBonusPercent: {
+            type: rarityCatchBonusPercentSchema,
+            default: () => ({ s: 0, ss: 0, sss: 0 }),
+        },
         orderIndex: {
             type: Number,
             default: 0,
@@ -183,6 +226,8 @@ mapSchema.pre('validate', function (next) {
         this.specialPokemonIds = normalizedIds
         this.specialPokemonConfigs = normalizedIds.map((pokemonId) => ({ pokemonId, formId: 'normal', weight: 1 }))
     }
+
+    this.rarityCatchBonusPercent = toSafeRarityCatchBonusPercent(this.rarityCatchBonusPercent)
 
     next()
 })

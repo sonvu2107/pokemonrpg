@@ -600,6 +600,8 @@ router.post('/auto-generate', async (req, res) => {
         const teamSize = clampNumber(req.body?.teamSize, 1, 6)
         const configuredCoinsReward = parseOptionalRewardNumber(req.body?.platinumCoinsReward)
         const configuredExpReward = parseOptionalRewardNumber(req.body?.expReward)
+        const configuredCoinsRewardMultiplier = parseOptionalRewardNumber(req.body?.platinumCoinsRewardMultiplier)
+        const configuredExpRewardMultiplier = parseOptionalRewardNumber(req.body?.expRewardMultiplier)
         const configuredDamageBonusRules = parseDamageBonusRules(req.body?.damageBonusRules)
         const generationSeedBase = Number.isFinite(Number(req.body?.seed))
             ? Math.floor(Number(req.body.seed))
@@ -707,11 +709,15 @@ router.post('/auto-generate', async (req, res) => {
             return selectedEntry
         }
 
+        const coinsRewardMultiplier = configuredCoinsRewardMultiplier !== null ? configuredCoinsRewardMultiplier : 10
+        const expRewardMultiplier = configuredExpRewardMultiplier !== null ? configuredExpRewardMultiplier : 10
+
         const upsertResults = await Promise.all(
             levels.map(async (level, index) => {
-                const rewardValue = Math.max(10, level * 10)
-                const platinumCoinsReward = configuredCoinsReward !== null ? configuredCoinsReward : rewardValue
-                const expReward = configuredExpReward !== null ? configuredExpReward : rewardValue
+                const computedCoinsReward = Math.max(0, level * coinsRewardMultiplier)
+                const computedExpReward = Math.max(0, level * expRewardMultiplier)
+                const platinumCoinsReward = configuredCoinsReward !== null ? configuredCoinsReward : computedCoinsReward
+                const expReward = configuredExpReward !== null ? configuredExpReward : computedExpReward
                 const teamDamagePercent = resolveTeamDamagePercentByLevel(level, configuredDamageBonusRules)
                 const team = buildAutoTeam(
                     pokemonPool,

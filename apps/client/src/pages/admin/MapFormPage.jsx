@@ -6,6 +6,69 @@ import ImageUpload from '../../components/ImageUpload'
 const MIN_SPECIAL_WEIGHT = 0.0001
 const SPECIAL_POKEMON_MODAL_PAGE_SIZE = 40
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const MAP_RARITY_CATCH_BONUS_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+const DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT = Object.freeze({ s: 0, ss: 0, sss: 0 })
+const PREVIEW_CATCH_RATE = 45
+const PREVIEW_MAX_HP = 100
+const PREVIEW_FULL_HP = PREVIEW_MAX_HP
+const PREVIEW_LOW_HP = 1
+const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    d: 31,
+    c: 29,
+    b: 27,
+    a: 25,
+    s: 21,
+    ss: 17,
+    sss: 14,
+})
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
+
+const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? clampValue(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            : 0
+        return acc
+    }, {})
+}
+
+const calcCatchBaseChance = ({ catchRate, hp, maxHp }) => {
+    const rate = clampValue(Number(catchRate) || 45, 1, 255)
+    const safeMaxHp = Math.max(1, Number(maxHp) || 1)
+    const safeHp = clampValue(Number(hp) || safeMaxHp, 0, safeMaxHp)
+    const hpFactor = (3 * safeMaxHp - 2 * safeHp) / (3 * safeMaxHp)
+    return clampValue((rate / 255) * hpFactor, 0.02, 0.95)
+}
+
+const resolveLowHpCatchBonusCapPercent = (rarity = '') => {
+    const normalized = String(rarity || '').trim().toLowerCase()
+    const cap = Number(LOW_HP_CATCH_BONUS_CAP_BY_RARITY[normalized])
+    return Number.isFinite(cap) && cap >= 0 ? cap : LOW_HP_CATCH_BONUS_CAP_FALLBACK
+}
+
+const calcLowHpCatchBonusPercent = ({ hp, maxHp, rarity }) => {
+    const safeMaxHp = Math.max(1, Number(maxHp) || 1)
+    const safeHp = clampValue(Number(hp) || safeMaxHp, 0, safeMaxHp)
+    const missingHpRatio = (safeMaxHp - safeHp) / safeMaxHp
+    return Math.max(0, missingHpRatio * resolveLowHpCatchBonusCapPercent(rarity))
+}
+
+const calcPreviewCatchChanceByRarity = ({ rarity = 's', mapRarityCatchBonusPercent = {}, hp = PREVIEW_FULL_HP }) => {
+    const baseChance = calcCatchBaseChance({
+        catchRate: PREVIEW_CATCH_RATE,
+        hp,
+        maxHp: PREVIEW_MAX_HP,
+    })
+    const mapBonusPercent = Number(mapRarityCatchBonusPercent?.[rarity]) || 0
+    const chanceAfterMapBonus = clampValue(baseChance * (1 + (mapBonusPercent / 100)), 0.02, 0.95)
+    const lowHpBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp: PREVIEW_MAX_HP, rarity })
+    return clampValue(chanceAfterMapBonus * (1 + (lowHpBonusPercent / 100)), 0.02, 0.99)
+}
 
 export default function MapFormPage() {
     const { id } = useParams()
@@ -30,6 +93,7 @@ export default function MapFormPage() {
         requiredPlayerLevel: 1,
         encounterRate: 1,
         itemDropRate: 0,
+        rarityCatchBonusPercent: { ...DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT },
         orderIndex: 0,
     })
 
@@ -144,6 +208,7 @@ export default function MapFormPage() {
                 requiredPlayerLevel: Math.max(1, Number(map.requiredPlayerLevel) || 1),
                 encounterRate: map.encounterRate ?? 1,
                 itemDropRate: map.itemDropRate ?? 0,
+                rarityCatchBonusPercent: normalizeMapRarityCatchBonusPercent(map.rarityCatchBonusPercent),
                 orderIndex: map.orderIndex || 0,
             })
 
@@ -191,13 +256,19 @@ export default function MapFormPage() {
             return
         }
 
+        const normalizedRarityCatchBonusPercent = normalizeMapRarityCatchBonusPercent(formData.rarityCatchBonusPercent)
+        const payload = {
+            ...formData,
+            rarityCatchBonusPercent: normalizedRarityCatchBonusPercent,
+        }
+
         try {
             setLoading(true)
 
             if (isEdit) {
-                await mapApi.update(id, formData)
+                await mapApi.update(id, payload)
             } else {
-                await mapApi.create(formData)
+                await mapApi.create(payload)
             }
 
             navigate('/admin/maps')
@@ -267,6 +338,22 @@ export default function MapFormPage() {
         }))
     }
 
+    const handleUpdateRarityCatchBonus = (rarityKey, nextValueRaw) => {
+        if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(rarityKey)) return
+        const parsed = Number.parseFloat(nextValueRaw)
+        const nextValue = Number.isFinite(parsed)
+            ? clampValue(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            : 0
+        setFormData((prev) => ({
+            ...prev,
+            rarityCatchBonusPercent: {
+                ...DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT,
+                ...normalizeMapRarityCatchBonusPercent(prev.rarityCatchBonusPercent),
+                [rarityKey]: nextValue,
+            },
+        }))
+    }
+
     const totalSpecialWeight = formData.specialPokemonConfigs
         .reduce((sum, entry) => sum + (Number(entry.weight) > 0 ? Number(entry.weight) : 0), 0)
 
@@ -278,6 +365,32 @@ export default function MapFormPage() {
     const specialEncounterPerSearchRate = hasSpecialPokemonPool
         ? encounterRatePreview * specialPokemonRatePreview
         : 0
+
+    const rarityCatchBonusPercent = {
+        ...DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT,
+        ...normalizeMapRarityCatchBonusPercent(formData.rarityCatchBonusPercent),
+    }
+
+    const rarityCatchPreviewRows = MAP_RARITY_CATCH_BONUS_KEYS.map((rarityKey) => {
+        const fullHpChance = calcPreviewCatchChanceByRarity({
+            rarity: rarityKey,
+            mapRarityCatchBonusPercent: rarityCatchBonusPercent,
+            hp: PREVIEW_FULL_HP,
+        })
+        const lowHpChance = calcPreviewCatchChanceByRarity({
+            rarity: rarityKey,
+            mapRarityCatchBonusPercent: rarityCatchBonusPercent,
+            hp: PREVIEW_LOW_HP,
+        })
+
+        return {
+            key: rarityKey,
+            label: rarityKey.toUpperCase(),
+            mapBonusPercent: Number(rarityCatchBonusPercent[rarityKey] || 0),
+            fullHpChance,
+            lowHpChance,
+        }
+    })
 
     const selectedSpecialPokemon = formData.specialPokemonConfigs
         .map((entry) => {
@@ -547,6 +660,65 @@ export default function MapFormPage() {
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Chỉ áp dụng khi map có cấu hình item drop</p>
                                 </div>
+                            </div>
+
+                            <div className="mt-4 bg-white rounded border border-blue-100 p-5 shadow-sm">
+                                <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-4">
+                                    <div>
+                                        <h3 className="text-sm font-bold text-blue-900 uppercase">Tỷ Lệ Bắt Theo Độ Hiếm</h3>
+                                        <p className="text-xs text-blue-700 mt-1">Điều chỉnh % thưởng tỉ lệ bắt cho Pokemon S/SS/SSS trong map này.</p>
+                                    </div>
+                                    <span className="text-[11px] text-slate-500 font-semibold">0 - {MAP_RARITY_CATCH_BONUS_MAX_PERCENT}%</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {rarityCatchPreviewRows.map((row) => (
+                                        <div key={row.key}>
+                                            <label className="block text-slate-700 text-sm font-bold mb-2">
+                                                Thưởng tỉ lệ bắt {row.label} (%)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max={MAP_RARITY_CATCH_BONUS_MAX_PERCENT}
+                                                step="0.1"
+                                                value={row.mapBonusPercent}
+                                                onChange={(e) => handleUpdateRarityCatchBonus(row.key, e.target.value)}
+                                                className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                            />
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                Ví dụ: {row.mapBonusPercent || 0}% = nhân {(1 + ((row.mapBonusPercent || 0) / 100)).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}x trước bonus máu thấp.
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-4 rounded border border-slate-200 overflow-hidden">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-slate-50 text-slate-700 uppercase tracking-wide">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-bold">Độ hiếm</th>
+                                                <th className="px-3 py-2 text-center font-bold">Bonus map</th>
+                                                <th className="px-3 py-2 text-center font-bold">Preview HP đầy</th>
+                                                <th className="px-3 py-2 text-center font-bold">Preview HP thấp</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {rarityCatchPreviewRows.map((row) => (
+                                                <tr key={`preview-${row.key}`}>
+                                                    <td className="px-3 py-2 font-bold text-slate-700">{row.label}</td>
+                                                    <td className="px-3 py-2 text-center text-blue-700 font-semibold">+{row.mapBonusPercent}%</td>
+                                                    <td className="px-3 py-2 text-center text-emerald-700 font-bold">{formatPercent(row.fullHpChance)}</td>
+                                                    <td className="px-3 py-2 text-center text-violet-700 font-bold">{formatPercent(row.lowHpChance)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <p className="text-[11px] text-slate-500 mt-2">
+                                    Preview giả lập với Pokeball thường, catchRate {PREVIEW_CATCH_RATE}; HP đầy = 100/100, HP thấp = {PREVIEW_LOW_HP}/{PREVIEW_MAX_HP}. Tỉ lệ thực tế còn phụ thuộc bóng dùng, HP hiện tại và bonus VIP.
+                                </p>
                             </div>
                         </div>
 

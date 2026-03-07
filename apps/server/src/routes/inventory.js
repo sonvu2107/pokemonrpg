@@ -32,6 +32,27 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     sss: 14,
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
+const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? clampChance(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            : 0
+        return acc
+    }, {})
+}
+
+const resolveMapRarityCatchBonusPercent = ({ mapLike, rarity }) => {
+    const normalizedRarity = String(rarity || '').trim().toLowerCase()
+    if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
+    const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
+    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+}
+
 const serializePlayerWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
     return {
@@ -107,11 +128,15 @@ const resolveEffectiveVipVisualBenefits = async (userLike) => {
     return mergeVipVisualBenefits(userLike?.vipBenefits, tierBenefits)
 }
 
-const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity }) => {
+const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity, rarityCatchBonusPercent = 0 }) => {
     const hasFixedCatchRate = item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))
     const chanceBeforeLowHpBonus = hasFixedCatchRate
         ? clampChance(Number(item.effectValue) / 100, 0, 1)
-        : clampChance(baseChance, 0.02, 0.99)
+        : clampChance(
+            clampChance(baseChance, 0.02, 0.95) * (1 + (Math.max(0, Number(rarityCatchBonusPercent) || 0) / 100)),
+            0.02,
+            0.95
+        )
     const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp, rarity })
     const minChance = hasFixedCatchRate ? 0 : 0.02
 
@@ -319,6 +344,16 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
             }
 
+            const encounterMap = encounter?.mapId
+                ? await MapModel.findById(encounter.mapId)
+                    .select('name rarityCatchBonusPercent')
+                    .lean()
+                : null
+            const mapRarityCatchBonusPercent = resolveMapRarityCatchBonusPercent({
+                mapLike: encounterMap,
+                rarity: pokemon?.rarity,
+            })
+
             const baseChance = calcCatchChance({
                 catchRate: pokemon.catchRate,
                 hp: encounter.hp,
@@ -330,6 +365,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
                 rarity: pokemon?.rarity,
+                rarityCatchBonusPercent: mapRarityCatchBonusPercent,
             })
             const caught = Math.random() < chance
 
@@ -349,13 +385,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     return res.status(409).json({ ok: false, message: 'Trận chiến đã kết thúc. Vui lòng tải lại.' })
                 }
 
-                let obtainedMapName = ''
-                if (encounter?.mapId) {
-                    const encounterMap = await MapModel.findById(encounter.mapId)
-                        .select('name')
-                        .lean()
-                    obtainedMapName = String(encounterMap?.name || '').trim()
-                }
+                const obtainedMapName = String(encounterMap?.name || '').trim()
 
                 await UserPokemon.create({
                     userId,

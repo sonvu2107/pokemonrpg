@@ -102,6 +102,26 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     sss: 14,
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
+const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? clamp(parsed, 0, MAP_RARITY_CATCH_BONUS_MAX_PERCENT)
+            : 0
+        return acc
+    }, {})
+}
+
+const resolveMapRarityCatchBonusPercent = ({ mapLike, rarity }) => {
+    const normalizedRarity = String(rarity || '').trim().toLowerCase()
+    if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
+    const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
+    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+}
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
     const normalizedLevel = Math.max(1, Number(level) || 1)
@@ -3305,12 +3325,23 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
-        const currentUser = await User.findById(userId)
-            .select('username role vipTierId vipTierLevel vipBenefits')
-            .lean()
+        const [currentUser, encounterMap] = await Promise.all([
+            User.findById(userId)
+                .select('username role vipTierId vipTierLevel vipBenefits')
+                .lean(),
+            encounter?.mapId
+                ? MapModel.findById(encounter.mapId)
+                    .select('name rarityCatchBonusPercent')
+                    .lean()
+                : Promise.resolve(null),
+        ])
         const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(currentUser)
         const effectiveVipVisualBenefits = await resolveEffectiveVipVisualBenefits(currentUser)
         const pokemonRarity = String(pokemon?.rarity || '').trim().toLowerCase()
+        const mapRarityCatchBonusPercent = resolveMapRarityCatchBonusPercent({
+            mapLike: encounterMap,
+            rarity: pokemonRarity,
+        })
 
         const baseChance = calcCatchChance({
             catchRate: pokemon.catchRate,
@@ -3320,9 +3351,8 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
         const ssCatchBonusPercent = pokemonRarity === 'ss'
             ? Math.max(0, Number(effectiveVipBonusBenefits?.ssCatchRateBonusPercent || 0))
             : 0
-        const chanceBeforeLowHpBonus = ssCatchBonusPercent > 0
-            ? Math.min(0.95, baseChance * (1 + (ssCatchBonusPercent / 100)))
-            : baseChance
+        const totalRarityCatchBonusPercent = Math.max(0, mapRarityCatchBonusPercent + ssCatchBonusPercent)
+        const chanceBeforeLowHpBonus = Math.min(0.95, baseChance * (1 + (totalRarityCatchBonusPercent / 100)))
         const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({
             hp: encounter.hp,
             maxHp: encounter.maxHp,
@@ -3343,13 +3373,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 return res.status(409).json({ ok: false, message: 'Cuộc chạm trán đã được xử lý. Vui lòng tải lại.' })
             }
 
-            let obtainedMapName = ''
-            if (encounter?.mapId) {
-                const encounterMap = await MapModel.findById(encounter.mapId)
-                    .select('name')
-                    .lean()
-                obtainedMapName = String(encounterMap?.name || '').trim()
-            }
+            const obtainedMapName = String(encounterMap?.name || '').trim()
 
             await UserPokemon.create({
                 userId,

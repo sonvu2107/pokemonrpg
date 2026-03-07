@@ -536,10 +536,10 @@ export default function BattleTrainerPage() {
             const normalizedExpReward = String(autoExpReward || '').trim()
 
             if (normalizedCoinsReward !== '') {
-                payload.platinumCoinsReward = Math.max(0, Number.parseInt(normalizedCoinsReward, 10) || 0)
+                payload.platinumCoinsRewardMultiplier = Math.max(0, Number.parseInt(normalizedCoinsReward, 10) || 0)
             }
             if (normalizedExpReward !== '') {
-                payload.expReward = Math.max(0, Number.parseInt(normalizedExpReward, 10) || 0)
+                payload.expRewardMultiplier = Math.max(0, Number.parseInt(normalizedExpReward, 10) || 0)
             }
 
             const normalizedPrizeEveryTrainer = Math.max(0, Number.parseInt(autoPrizePokemonEveryTrainer, 10) || 0)
@@ -1129,25 +1129,25 @@ export default function BattleTrainerPage() {
                     </div>
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🪙 Xu nhận được</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">🪙 Hệ số Xu (Lv x ?)</label>
                             <input
                                 type="number"
                                 min="0"
                                 value={autoCoinsReward}
                                 onChange={(e) => setAutoCoinsReward(e.target.value)}
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                placeholder="Để trống = Lv x 10"
+                                placeholder="Để trống = 10 (Lv x 10)"
                             />
                         </div>
                         <div>
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">⭐ EXP nhận được</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">⭐ Hệ số EXP (Lv x ?)</label>
                             <input
                                 type="number"
                                 min="0"
                                 value={autoExpReward}
                                 onChange={(e) => setAutoExpReward(e.target.value)}
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                placeholder="Để trống = Lv x 10"
+                                placeholder="Để trống = 10 (Lv x 10)"
                             />
                         </div>
                     </div>
@@ -1298,7 +1298,7 @@ export default function BattleTrainerPage() {
                         </div>
                     </div>
                     <p className="mt-2 text-[11px] text-emerald-800">
-                        Nếu để trống phần thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó. Pokémon thưởng chỉ áp dụng khi có pool Pokémon và "cách nhau bao nhiêu trainer" lớn hơn 0.
+                        Nếu để trống hệ số thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Ví dụ nhập 15 nghĩa là Lv x 15. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó. Pokémon thưởng chỉ áp dụng khi có pool Pokémon và "cách nhau bao nhiêu trainer" lớn hơn 0.
                     </p>
                 </div>
                 <div className="mb-4 border border-blue-200 rounded bg-blue-50/50 p-3">

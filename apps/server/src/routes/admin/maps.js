@@ -40,6 +40,36 @@ const normalizeSpecialPokemonIds = (value) => {
     )]
 }
 
+const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            : 0
+        return acc
+    }, {})
+}
+
+const validateMapRarityCatchBonusPercent = (value) => {
+    if (value === undefined || value === null) return null
+    if (typeof value !== 'object' || Array.isArray(value)) {
+        return 'rarityCatchBonusPercent phải là object gồm các key s/ss/sss'
+    }
+
+    for (const key of MAP_RARITY_CATCH_KEYS) {
+        const parsed = Number(value?.[key] ?? 0)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAP_RARITY_CATCH_BONUS_MAX_PERCENT) {
+            return `rarityCatchBonusPercent.${key} phải trong khoảng 0 đến ${MAP_RARITY_CATCH_BONUS_MAX_PERCENT}`
+        }
+    }
+
+    return null
+}
+
 const toSafeWeight = (value) => {
     const parsed = Number.parseFloat(value)
     if (!Number.isFinite(parsed) || parsed <= 0) return null
@@ -237,6 +267,7 @@ router.post('/', async (req, res) => {
             requiredPlayerLevel,
             encounterRate,
             itemDropRate,
+            rarityCatchBonusPercent,
             orderIndex,
         } = req.body
 
@@ -298,6 +329,13 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'orderIndex phải >= 0' })
         }
 
+        const rarityCatchBonusValidationError = validateMapRarityCatchBonusPercent(rarityCatchBonusPercent)
+        if (rarityCatchBonusValidationError) {
+            return res.status(400).json({ ok: false, message: rarityCatchBonusValidationError })
+        }
+
+        const normalizedRarityCatchBonusPercent = normalizeMapRarityCatchBonusPercent(rarityCatchBonusPercent)
+
         const map = new Map({
             name,
             description: description || '',
@@ -315,6 +353,7 @@ router.post('/', async (req, res) => {
             requiredPlayerLevel: requiredPlayerLevel !== undefined ? Math.max(1, Number(requiredPlayerLevel) || 1) : 1,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
+            rarityCatchBonusPercent: normalizedRarityCatchBonusPercent,
             orderIndex: orderIndex !== undefined ? orderIndex : 0,
         })
 
@@ -354,6 +393,7 @@ router.put('/:id', async (req, res) => {
             requiredPlayerLevel,
             encounterRate,
             itemDropRate,
+            rarityCatchBonusPercent,
             orderIndex,
         } = req.body
 
@@ -418,6 +458,11 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'orderIndex phải >= 0' })
         }
 
+        const rarityCatchBonusValidationError = validateMapRarityCatchBonusPercent(rarityCatchBonusPercent)
+        if (rarityCatchBonusValidationError) {
+            return res.status(400).json({ ok: false, message: rarityCatchBonusValidationError })
+        }
+
         map.name = name
         map.description = description || ''
         map.mapImageUrl = mapImageUrl !== undefined ? mapImageUrl : map.mapImageUrl
@@ -440,6 +485,9 @@ router.put('/:id', async (req, res) => {
             : map.requiredPlayerLevel
         map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
         map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate
+        map.rarityCatchBonusPercent = rarityCatchBonusPercent !== undefined
+            ? normalizeMapRarityCatchBonusPercent(rarityCatchBonusPercent)
+            : map.rarityCatchBonusPercent
         map.orderIndex = orderIndex !== undefined ? orderIndex : map.orderIndex
 
         await map.save()

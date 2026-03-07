@@ -53,6 +53,20 @@ const normalizeMapSpecialPokemonConfigs = (value) => {
     return normalized
 }
 
+const MAP_RARITY_CATCH_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            : 0
+        return acc
+    }, {})
+}
+
 const buildMapPayload = (data = {}) => {
     const iconIdRaw = data?.iconId
     const parsedIconId = Number(iconIdRaw)
@@ -81,6 +95,7 @@ const buildMapPayload = (data = {}) => {
         requiredPlayerLevel: Math.max(1, Number(data?.requiredPlayerLevel) || 1),
         encounterRate: Number(data?.encounterRate ?? 1),
         itemDropRate: Number(data?.itemDropRate ?? 0),
+        rarityCatchBonusPercent: normalizeMapRarityCatchBonusPercent(data?.rarityCatchBonusPercent),
         orderIndex: Math.max(0, Number(data?.orderIndex) || 0),
     }
 }

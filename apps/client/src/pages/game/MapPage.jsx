@@ -124,6 +124,26 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     sss: 14,
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
+const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+
+const normalizeMapRarityCatchBonusPercent = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    return MAP_RARITY_CATCH_BONUS_KEYS.reduce((acc, key) => {
+        const parsed = Number(source?.[key])
+        acc[key] = Number.isFinite(parsed)
+            ? Math.max(0, Math.min(MAP_RARITY_CATCH_BONUS_MAX_PERCENT, parsed))
+            : 0
+        return acc
+    }, {})
+}
+
+const resolveMapRarityCatchBonusPercent = (mapLike = null, rarity = '') => {
+    const normalizedRarity = String(rarity || '').trim().toLowerCase()
+    if (!MAP_RARITY_CATCH_BONUS_KEYS.includes(normalizedRarity)) return 0
+    const normalizedMapBonus = normalizeMapRarityCatchBonusPercent(mapLike?.rarityCatchBonusPercent)
+    return Math.max(0, Number(normalizedMapBonus?.[normalizedRarity] || 0))
+}
 
 const isSameAutoActionByRarity = (left = {}, right = {}) => {
     return AUTO_SEARCH_RARITY_KEYS.every((rarityKey) => {
@@ -964,12 +984,15 @@ export default function MapPage() {
         return Math.max(0, missingHpRatio * capPercent)
     }
 
-    const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity }) => {
+    const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity, rarityCatchBonusPercent = 0 }) => {
         const hasFixedCatchRate = item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))
         const safeBaseChance = Number.isFinite(Number(baseChance)) ? Number(baseChance) : 0.02
         const chanceBeforeLowHpBonus = hasFixedCatchRate
             ? Math.min(1, Math.max(0, Number(item.effectValue) / 100))
-            : Math.min(0.99, Math.max(0.02, safeBaseChance))
+            : Math.min(
+                0.95,
+                Math.max(0.02, safeBaseChance) * (1 + (Math.max(0, Number(rarityCatchBonusPercent) || 0) / 100))
+            )
         const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp, rarity })
         const minChance = hasFixedCatchRate ? 0 : 0.02
         return Math.min(0.99, Math.max(minChance, chanceBeforeLowHpBonus * (1 + (lowHpCatchBonusPercent / 100))))
@@ -979,7 +1002,7 @@ export default function MapPage() {
         const rate = Math.min(255, Math.max(1, catchRate || 45))
         const hpFactor = (3 * maxHp - 2 * hp) / (3 * maxHp)
         const raw = (rate / 255) * hpFactor
-        return Math.min(0.99, Math.max(0.02, raw))
+        return Math.min(0.95, Math.max(0.02, raw))
     }
 
     const handleRun = async () => {
@@ -1591,12 +1614,17 @@ export default function MapPage() {
                                                 hp: encounter?.hp,
                                                 maxHp: encounter?.maxHp,
                                             })
+                                            const mapRarityCatchBonusPercent = resolveMapRarityCatchBonusPercent(
+                                                map,
+                                                encounter?.pokemon?.rarity
+                                            )
                                             const finalChance = getBallCatchChance({
                                                 item: entry.item,
                                                 baseChance,
                                                 hp: encounter?.hp,
                                                 maxHp: encounter?.maxHp,
                                                 rarity: encounter?.pokemon?.rarity,
+                                                rarityCatchBonusPercent: mapRarityCatchBonusPercent,
                                             })
                                             const percent = Math.round(finalChance * 100)
                                             return (
