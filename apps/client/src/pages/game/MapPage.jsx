@@ -218,7 +218,7 @@ export default function MapPage() {
     const [autoActionByRarity, setAutoActionByRarity] = useState(DEFAULT_AUTO_ACTION_BY_RARITY)
     const [autoCatchFormMode, setAutoCatchFormMode] = useState('all')
     const [autoCatchBallId, setAutoCatchBallId] = useState('')
-    const [isAutoSearchConfigExpanded, setIsAutoSearchConfigExpanded] = useState(true)
+    const [isAutoSearchConfigExpanded, setIsAutoSearchConfigExpanded] = useState(false)
     const [autoSearchServerStatus, setAutoSearchServerStatus] = useState('')
     const [autoSearchServerLogs, setAutoSearchServerLogs] = useState([])
     const [autoSearchHistory, setAutoSearchHistory] = useState(DEFAULT_AUTO_SEARCH_HISTORY)
@@ -1172,10 +1172,7 @@ export default function MapPage() {
                     {canUseVipAutoSearch && (
                         <div className="w-full max-w-[420px] border border-slate-300 rounded bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
                             <div className="flex items-center justify-between gap-2">
-                                <div>
-                                    <div className="font-bold text-slate-800">Tự tìm kiếm</div>
-                                    <div className="text-[10px] text-slate-500">Tự tìm và tự xử lý theo độ hiếm.</div>
-                                </div>
+                                <div className="font-bold text-slate-800">Tự tìm kiếm</div>
                                 <div className="flex items-center gap-2">
                                     <button
                                         type="button"
@@ -1252,7 +1249,7 @@ export default function MapPage() {
                                         ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
                                         : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
                                     >
-                                        {autoSearchEnabled ? 'Đang chạy' : 'Bật tự động'}
+                                        {autoSearchEnabled ? 'Đang chạy' : 'Bật auto'}
                                     </button>
                                 </div>
                             </div>
@@ -1345,49 +1342,53 @@ export default function MapPage() {
                                 </>
                             )}
 
-                            <div className="text-[10px] text-slate-500">
-                                {canUseVipAutoSearch && (
-                                    <div>
-                                        Giới hạn tự tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
-                                        {' · '}
-                                        Lượt chạy hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                            {isAutoSearchConfigExpanded && (
+                                <>
+                                    <div className="text-[10px] text-slate-500">
+                                        {canUseVipAutoSearch && (
+                                            <div>
+                                                Giới hạn tự tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
+                                                {' · '}
+                                                Lượt chạy hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                                            </div>
+                                        )}
+                                        {isCurrentMapEvent
+                                            ? 'Bản đồ này là sự kiện nên tự tìm bị khóa.'
+                                            : (!canUseVipAutoSearch
+                                                ? 'Tự tìm kiếm là quyền lợi dành cho tài khoản VIP.'
+                                                : (autoSearchEnabled
+                                                    ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
+                                                    : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.'))}
                                     </div>
-                                )}
-                                {isCurrentMapEvent
-                                    ? 'Bản đồ này là sự kiện nên tự tìm bị khóa.'
-                                    : (!canUseVipAutoSearch
-                                        ? 'Tự tìm kiếm là quyền lợi dành cho tài khoản VIP.'
-                                        : (autoSearchEnabled
-                                            ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
-                                            : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.'))}
-                            </div>
 
-                            {autoSearchServerStatus && (
-                                <div className="text-[10px] font-semibold text-slate-600">
-                                    Trạng thái tự chạy: {autoSearchServerStatus}
-                                </div>
-                            )}
-                            <div className="rounded border border-slate-200 bg-white p-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                                <div className="text-slate-700">Tìm thấy: <span className="font-bold">{Number(autoSearchHistory.foundPokemonCount || 0).toLocaleString('vi-VN')}</span></div>
-                                <div className="text-slate-700">Bỏ qua: <span className="font-bold">{Number(autoSearchHistory.runCount || 0).toLocaleString('vi-VN')}</span></div>
-                                <div className="text-slate-700">Chiến đấu: <span className="font-bold">{Number(autoSearchHistory.battleCount || 0).toLocaleString('vi-VN')}</span></div>
-                                <div className="text-slate-700">Bắt được: <span className="font-bold">{Number(autoSearchHistory.catchSuccessCount || 0).toLocaleString('vi-VN')}</span></div>
-                                <div className="text-slate-700 col-span-2 sm:col-span-4">
-                                    Nhặt đồ: <span className="font-bold">{Number(autoSearchHistory.itemDropCount || 0).toLocaleString('vi-VN')}</span> lượt,
-                                    tổng <span className="font-bold">{Number(autoSearchHistory.itemDropQuantity || 0).toLocaleString('vi-VN')}</span> món
-                                </div>
-                            </div>
-
-                            {autoSearchServerLogs.length > 0 && (
-                                <div className="border border-slate-200 rounded bg-white p-2 space-y-1 max-h-24 overflow-y-auto">
-                                    {autoSearchServerLogs.slice(0, 4).map((entry) => (
-                                        <div key={entry._id || entry.id} className={`text-[10px] ${entry.type === 'success'
-                                            ? 'text-emerald-700'
-                                            : (entry.type === 'error' ? 'text-rose-700' : (entry.type === 'warn' ? 'text-amber-700' : 'text-slate-600'))}`}>
-                                            • {entry.message}
+                                    {autoSearchServerStatus && (
+                                        <div className="text-[10px] font-semibold text-slate-600">
+                                            Trạng thái tự chạy: {autoSearchServerStatus}
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                    <div className="rounded border border-slate-200 bg-white p-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                                        <div className="text-slate-700">Tìm thấy: <span className="font-bold">{Number(autoSearchHistory.foundPokemonCount || 0).toLocaleString('vi-VN')}</span></div>
+                                        <div className="text-slate-700">Bỏ qua: <span className="font-bold">{Number(autoSearchHistory.runCount || 0).toLocaleString('vi-VN')}</span></div>
+                                        <div className="text-slate-700">Chiến đấu: <span className="font-bold">{Number(autoSearchHistory.battleCount || 0).toLocaleString('vi-VN')}</span></div>
+                                        <div className="text-slate-700">Bắt được: <span className="font-bold">{Number(autoSearchHistory.catchSuccessCount || 0).toLocaleString('vi-VN')}</span></div>
+                                        <div className="text-slate-700 col-span-2 sm:col-span-4">
+                                            Nhặt đồ: <span className="font-bold">{Number(autoSearchHistory.itemDropCount || 0).toLocaleString('vi-VN')}</span> lượt,
+                                            tổng <span className="font-bold">{Number(autoSearchHistory.itemDropQuantity || 0).toLocaleString('vi-VN')}</span> món
+                                        </div>
+                                    </div>
+
+                                    {autoSearchServerLogs.length > 0 && (
+                                        <div className="border border-slate-200 rounded bg-white p-2 space-y-1 max-h-24 overflow-y-auto">
+                                            {autoSearchServerLogs.slice(0, 4).map((entry) => (
+                                                <div key={entry._id || entry.id} className={`text-[10px] ${entry.type === 'success'
+                                                    ? 'text-emerald-700'
+                                                    : (entry.type === 'error' ? 'text-rose-700' : (entry.type === 'warn' ? 'text-amber-700' : 'text-slate-600'))}`}>
+                                                    • {entry.message}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
