@@ -26,12 +26,16 @@ const BATCH_SIZE = toSafeInt(process.env.AUTO_SEARCH_BATCH_SIZE, 120, 10, 500)
 const CONCURRENCY = toSafeInt(process.env.AUTO_SEARCH_CONCURRENCY, 10, 1, 50)
 const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_SEARCH_TIME_BUDGET_MS, 14000, 1000, 120000)
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_SEARCH_POST_USER_COOLDOWN_MS, 80, 0, 5000)
+const MAP_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_MAP_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_SEARCH_LOGS_LIMIT = 12
 
 let intervalRef = null
 let localBusy = false
 let lastCursorId = ''
 let apiBaseUrl = ''
+const mapMetaCache = new Map()
+const userNextActionAtMs = new Map()
+const userLastBattleEncounterId = new Map()
 
 const sleep = (ms) => new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, Number(ms) || 0))
@@ -118,11 +122,39 @@ const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = 
     return data
 }
 
-const updateAutoSearchState = async ({ userId, setPatch = {}, lastAction = null, logMessage = '', logType = 'info' }) => {
+const getMapMetaCached = async (mapSlug = '') => {
+    const normalizedSlug = String(mapSlug || '').trim().toLowerCase()
+    if (!normalizedSlug) return null
+
+    const nowMs = Date.now()
+    const cached = mapMetaCache.get(normalizedSlug)
+    if (cached && (nowMs - Number(cached.cachedAtMs || 0)) < MAP_META_CACHE_TTL_MS) {
+        return cached.data || null
+    }
+
+    const map = await MapModel.findOne({ slug: normalizedSlug })
+        .select('_id slug name isEventMap')
+        .lean()
+
+    mapMetaCache.set(normalizedSlug, {
+        cachedAtMs: nowMs,
+        data: map || null,
+    })
+
+    return map || null
+}
+
+const updateAutoSearchState = async ({ userId, setPatch = {}, incPatch = {}, lastAction = null, logMessage = '', logType = 'info' }) => {
     const updateDoc = {
         $set: {
             ...setPatch,
         },
+    }
+
+    const normalizedIncPatch = incPatch && typeof incPatch === 'object' ? incPatch : {}
+    const hasIncPatch = Object.keys(normalizedIncPatch).length > 0
+    if (hasIncPatch) {
+        updateDoc.$inc = normalizedIncPatch
     }
 
     if (lastAction) {
@@ -192,6 +224,35 @@ const buildEncounterLogLabel = (encounterLike = null) => {
     return label
 }
 
+const resolveItemDropInfo = (itemDropLike = null) => {
+    if (!itemDropLike || typeof itemDropLike !== 'object') return null
+    const name = String(
+        itemDropLike?.name
+        || itemDropLike?.item?.name
+        || itemDropLike?.itemName
+        || ''
+    ).trim()
+    if (!name) return null
+
+    const quantity = Math.max(
+        1,
+        Number(itemDropLike?.quantity)
+        || Number(itemDropLike?.qty)
+        || Number(itemDropLike?.count)
+        || 1
+    )
+
+    return { name, quantity }
+}
+
+const formatItemDropLabel = (itemDropInfo = null) => {
+    if (!itemDropInfo) return ''
+    const quantity = Math.max(1, Number(itemDropInfo?.quantity || 1))
+    return quantity > 1
+        ? `${itemDropInfo.name} x${quantity}`
+        : itemDropInfo.name
+}
+
 const findAutoCatchBallItemId = async (token, preferredBallId = '', deadlineAt = null) => {
     const preferred = normalizeId(preferredBallId)
     const inventoryRes = await callApi({ token, path: '/api/inventory', deadlineAt })
@@ -214,6 +275,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     if (!userId) return
 
     const now = new Date()
+    const nowMs = Date.now()
     const autoState = normalizeAutoSearchState(userDoc?.autoSearch)
     const dailyLimit = toSafeInt(userDoc?.vipBenefits?.autoSearchUsesPerDay, 0)
     const durationLimitMinutes = toSafeInt(userDoc?.vipBenefits?.autoSearchDurationMinutes, 0)
@@ -221,15 +283,18 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     const baseSyncPatch = {
         'autoSearch.dayKey': dailyState.dayKey,
-        'autoSearch.dayCount': dailyState.count,
         'autoSearch.dayLimit': dailyState.limit,
+    }
+    const baseSyncPatchWithCount = {
+        ...baseSyncPatch,
+        'autoSearch.dayCount': dailyState.count,
     }
 
     if (!hasVipAutoSearchAccess(userDoc)) {
         await updateAutoSearchState({
             userId,
             setPatch: {
-                ...baseSyncPatch,
+                ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
             },
@@ -251,7 +316,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         await updateAutoSearchState({
             userId,
             setPatch: {
-                ...baseSyncPatch,
+                ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
             },
@@ -276,7 +341,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
-                    ...baseSyncPatch,
+                    ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
                 },
@@ -300,7 +365,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         await updateAutoSearchState({
             userId,
             setPatch: {
-                ...baseSyncPatch,
+                ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
             },
@@ -318,14 +383,12 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    const map = await MapModel.findOne({ slug: mapSlug })
-        .select('_id slug name isEventMap')
-        .lean()
+    const map = await getMapMetaCached(mapSlug)
     if (!map) {
         await updateAutoSearchState({
             userId,
             setPatch: {
-                ...baseSyncPatch,
+                ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
             },
@@ -347,7 +410,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         await updateAutoSearchState({
             userId,
             setPatch: {
-                ...baseSyncPatch,
+                ...baseSyncPatchWithCount,
                 'autoSearch.enabled': false,
                 'autoSearch.startedAt': null,
             },
@@ -365,9 +428,16 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
+    const inMemoryNextActionAt = Number(userNextActionAtMs.get(userId) || 0)
+    if (inMemoryNextActionAt > nowMs) {
+        stats.skipped += 1
+        stats.skippedReasons.WAIT_INTERVAL = (stats.skippedReasons.WAIT_INTERVAL || 0) + 1
+        return
+    }
+
     const lastActionAtMs = autoState.lastAction?.at ? new Date(autoState.lastAction.at).getTime() : 0
     const intervalMs = Math.max(900, toSafeInt(autoState.searchIntervalMs, 1200))
-    if (lastActionAtMs > 0 && (Date.now() - lastActionAtMs) < intervalMs) {
+    if (lastActionAtMs > 0 && (nowMs - lastActionAtMs) < intervalMs) {
         stats.skipped += 1
         stats.skippedReasons.WAIT_INTERVAL = (stats.skippedReasons.WAIT_INTERVAL || 0) + 1
         return
@@ -380,32 +450,6 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     const token = createInternalToken(userId)
-
-    try {
-        await callApi({ token, path: `/api/game/map/${encodeURIComponent(mapSlug)}/state`, deadlineAt })
-    } catch (error) {
-        if (Number(error?.status) === 403) {
-            await updateAutoSearchState({
-                userId,
-                setPatch: {
-                    ...baseSyncPatch,
-                    'autoSearch.enabled': false,
-                    'autoSearch.startedAt': null,
-                },
-                lastAction: {
-                    action: 'eligibility',
-                    result: 'skipped',
-                    reason: 'MAP_LOCKED',
-                    targetId: mapSlug,
-                    at: now,
-                },
-                logMessage: 'Đã dừng auto tìm kiếm: map đang bị khóa.',
-                logType: 'warn',
-            })
-            stats.skipped += 1
-            return
-        }
-    }
 
     let activeEncounter = null
     try {
@@ -427,6 +471,15 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 deadlineAt,
             })
 
+            const itemDropInfo = resolveItemDropInfo(searchRes?.itemDrop)
+            const itemDropLabel = formatItemDropLabel(itemDropInfo)
+            const itemDropIncPatch = itemDropInfo
+                ? {
+                    'autoSearch.history.itemDropCount': 1,
+                    'autoSearch.history.itemDropQuantity': Math.max(1, Number(itemDropInfo.quantity || 1)),
+                }
+                : {}
+
             if (Boolean(searchRes?.encountered)) {
                 activeEncounter = {
                     _id: searchRes?.encounterId,
@@ -441,6 +494,11 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     setPatch: {
                         ...baseSyncPatch,
                     },
+                    incPatch: {
+                        'autoSearch.dayCount': 1,
+                        'autoSearch.history.foundPokemonCount': 1,
+                        ...itemDropIncPatch,
+                    },
                     lastAction: {
                         action: 'search',
                         result: 'success',
@@ -448,23 +506,44 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                         targetId: mapSlug,
                         at: now,
                     },
-                    logMessage: `Tìm thấy ${buildEncounterLogLabel(activeEncounter)}.`,
+                    logMessage: itemDropLabel
+                        ? `Tìm thấy ${buildEncounterLogLabel(activeEncounter)}. Nhặt được ${itemDropLabel}.`
+                        : `Tìm thấy ${buildEncounterLogLabel(activeEncounter)}.`,
                     logType: 'info',
                 })
             } else {
-                await updateAutoSearchState({
-                    userId,
-                    setPatch: {
-                        ...baseSyncPatch,
-                    },
-                    lastAction: {
-                        action: 'search',
-                        result: 'success',
-                        reason: 'NO_ENCOUNTER',
-                        targetId: mapSlug,
-                        at: now,
-                    },
-                })
+                if (itemDropInfo) {
+                    await updateAutoSearchState({
+                        userId,
+                        setPatch: {
+                            ...baseSyncPatch,
+                        },
+                        incPatch: {
+                            'autoSearch.dayCount': 1,
+                            ...itemDropIncPatch,
+                        },
+                        lastAction: {
+                            action: 'search',
+                            result: 'success',
+                            reason: 'ITEM_DROPPED',
+                            targetId: mapSlug,
+                            at: now,
+                        },
+                        logMessage: `Không gặp Pokemon. Nhặt được ${itemDropLabel}.`,
+                        logType: 'info',
+                    })
+                } else {
+                    await updateAutoSearchState({
+                        userId,
+                        setPatch: {
+                            ...baseSyncPatch,
+                        },
+                        incPatch: {
+                            'autoSearch.dayCount': 1,
+                        },
+                    })
+                }
+                userNextActionAtMs.set(userId, Date.now() + intervalMs)
                 stats.success += 1
                 return
             }
@@ -474,6 +553,51 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 stats.skippedReasons.ACTION_COOLDOWN = (stats.skippedReasons.ACTION_COOLDOWN || 0) + 1
                 return
             }
+
+            if (Number(error?.status) === 403) {
+                await updateAutoSearchState({
+                    userId,
+                    setPatch: {
+                        ...baseSyncPatchWithCount,
+                        'autoSearch.enabled': false,
+                        'autoSearch.startedAt': null,
+                    },
+                    lastAction: {
+                        action: 'eligibility',
+                        result: 'skipped',
+                        reason: 'MAP_LOCKED',
+                        targetId: mapSlug,
+                        at: now,
+                    },
+                    logMessage: 'Đã dừng tự tìm kiếm: bản đồ đang bị khóa.',
+                    logType: 'warn',
+                })
+                stats.skipped += 1
+                return
+            }
+
+            if (Number(error?.status) === 404) {
+                await updateAutoSearchState({
+                    userId,
+                    setPatch: {
+                        ...baseSyncPatchWithCount,
+                        'autoSearch.enabled': false,
+                        'autoSearch.startedAt': null,
+                    },
+                    lastAction: {
+                        action: 'eligibility',
+                        result: 'skipped',
+                        reason: 'MAP_NOT_FOUND',
+                        targetId: mapSlug,
+                        at: now,
+                    },
+                    logMessage: 'Đã dừng tự tìm kiếm: không tìm thấy bản đồ đã chọn.',
+                    logType: 'warn',
+                })
+                stats.skipped += 1
+                return
+            }
+
             throw error
         }
     }
@@ -493,7 +617,10 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
-                    ...baseSyncPatch,
+                    ...baseSyncPatchWithCount,
+                },
+                incPatch: {
+                    'autoSearch.history.runCount': 1,
                 },
                 lastAction: {
                     action: 'run',
@@ -505,6 +632,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 logMessage: `Tìm thấy ${encounterLabel} và đã bỏ qua.`,
                 logType: 'info',
             })
+            userLastBattleEncounterId.delete(userId)
+            userNextActionAtMs.set(userId, Date.now() + intervalMs)
             stats.success += 1
             return
         } catch (error) {
@@ -523,7 +652,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
-                    ...baseSyncPatch,
+                    ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
                 },
@@ -558,8 +687,12 @@ const processUser = async (userDoc, deadlineAt, stats) => {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
-                    ...baseSyncPatch,
+                    ...baseSyncPatchWithCount,
                     'autoSearch.catchBallItemId': ballItemId,
+                },
+                incPatch: {
+                    'autoSearch.history.catchAttemptCount': 1,
+                    ...(isCaught ? { 'autoSearch.history.catchSuccessCount': 1 } : {}),
                 },
                 lastAction: {
                     action: 'catch',
@@ -573,6 +706,8 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                     : `Tìm thấy ${encounterLabel} nhưng bắt chưa thành công.`,
                 logType: isCaught ? 'success' : 'info',
             })
+            userLastBattleEncounterId.delete(userId)
+            userNextActionAtMs.set(userId, Date.now() + intervalMs)
             stats.success += 1
             return
         } catch (error) {
@@ -587,7 +722,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 await updateAutoSearchState({
                     userId,
                     setPatch: {
-                        ...baseSyncPatch,
+                        ...baseSyncPatchWithCount,
                         'autoSearch.enabled': false,
                         'autoSearch.startedAt': null,
                     },
@@ -613,13 +748,20 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         const attackRes = await callApi({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
         const playerDefeated = Boolean(attackRes?.playerDefeated)
         const defeated = Boolean(attackRes?.defeated)
+        const isFirstBattleForEncounter = userLastBattleEncounterId.get(userId) !== encounterId
+        if (isFirstBattleForEncounter) {
+            userLastBattleEncounterId.set(userId, encounterId)
+        }
         if (playerDefeated) {
             await updateAutoSearchState({
                 userId,
                 setPatch: {
-                    ...baseSyncPatch,
+                    ...baseSyncPatchWithCount,
                     'autoSearch.enabled': false,
                     'autoSearch.startedAt': null,
+                },
+                incPatch: {
+                    ...(isFirstBattleForEncounter ? { 'autoSearch.history.battleCount': 1 } : {}),
                 },
                 lastAction: {
                     action: 'battle',
@@ -631,28 +773,38 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 logMessage: `Tìm thấy ${encounterLabel} nhưng Pokemon của bạn đã kiệt sức, auto tìm kiếm tạm dừng.`,
                 logType: 'warn',
             })
+            userLastBattleEncounterId.delete(userId)
             stats.errors += 1
             stats.errorReasons.PLAYER_DEFEATED = (stats.errorReasons.PLAYER_DEFEATED || 0) + 1
             return
         }
 
-        await updateAutoSearchState({
-            userId,
-            setPatch: {
-                ...baseSyncPatch,
-            },
-            lastAction: {
-                action: 'battle',
-                result: defeated ? 'success' : 'attempted',
-                reason: defeated ? 'DEFEATED_WILD' : 'DAMAGE',
-                targetId: mapSlug,
-                at: now,
-            },
-            logMessage: defeated
-                ? `Đã đánh bại ${encounterLabel}.`
-                : '',
-            logType: defeated ? 'success' : 'info',
-        })
+        if (defeated || isFirstBattleForEncounter) {
+            await updateAutoSearchState({
+                userId,
+                setPatch: {
+                    ...baseSyncPatchWithCount,
+                },
+                incPatch: {
+                    ...(isFirstBattleForEncounter ? { 'autoSearch.history.battleCount': 1 } : {}),
+                },
+                lastAction: {
+                    action: 'battle',
+                    result: defeated ? 'success' : 'attempted',
+                    reason: defeated ? 'DEFEATED_WILD' : 'DAMAGE',
+                    targetId: mapSlug,
+                    at: now,
+                },
+                logMessage: defeated ? `Đã đánh bại ${encounterLabel}.` : '',
+                logType: defeated ? 'success' : 'info',
+            })
+        }
+
+        if (defeated) {
+            userLastBattleEncounterId.delete(userId)
+        }
+
+        userNextActionAtMs.set(userId, Date.now() + intervalMs)
         stats.success += 1
     } catch (error) {
         if (shouldTreatAsCooldown(error)) {
@@ -831,6 +983,33 @@ const runTick = async () => {
     } finally {
         localBusy = false
         const durationMs = Date.now() - startedAt
+
+        if (mapMetaCache.size > 5000) {
+            const gcThresholdMs = Date.now() - (MAP_META_CACHE_TTL_MS * 2)
+            for (const [mapSlug, payload] of mapMetaCache.entries()) {
+                if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
+                    mapMetaCache.delete(mapSlug)
+                }
+            }
+        }
+
+        if (userNextActionAtMs.size > 5000) {
+            const gcThresholdMs = Date.now() - 60000
+            for (const [userId, nextAtMs] of userNextActionAtMs.entries()) {
+                if (Number(nextAtMs) < gcThresholdMs) {
+                    userNextActionAtMs.delete(userId)
+                }
+            }
+        }
+
+        if (userLastBattleEncounterId.size > 5000) {
+            for (const [userId] of userLastBattleEncounterId.entries()) {
+                if (!userNextActionAtMs.has(userId)) {
+                    userLastBattleEncounterId.delete(userId)
+                }
+            }
+        }
+
         if (stats.fetched > 0 || stats.errors > 0) {
             const skippedReasonsText = Object.entries(stats.skippedReasons)
                 .map(([key, count]) => `${key}:${count}`)

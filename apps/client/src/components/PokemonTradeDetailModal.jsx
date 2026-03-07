@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import Modal from './Modal'
+import VipAvatar from './VipAvatar'
+import VipTitleBadge from './VipTitleBadge'
+import { getPublicRoleLabel } from '../utils/vip'
 
 const TYPE_BADGE_CLASS = {
     normal: 'bg-slate-200 text-slate-700 border-slate-300',
@@ -24,6 +27,7 @@ const TYPE_BADGE_CLASS = {
 }
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
 const formatTypeLabel = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
@@ -187,6 +191,9 @@ export default function PokemonTradeDetailModal({
     const species = pokemonDetail?.pokemonId || {}
     const displayName = String(pokemonDetail?.nickname || species?.name || pokemon?.pokemonName || pokemon?.speciesName || 'Pokemon').trim()
     const speciesName = String(species?.name || pokemon?.speciesName || '--').trim()
+    const ownerInfo = pokemonDetail?.userId && typeof pokemonDetail.userId === 'object' ? pokemonDetail.userId : null
+    const ownerName = String(ownerInfo?.username || pokemon?.seller?.username || '--').trim() || '--'
+    const ownerAvatar = String(ownerInfo?.avatar || '').trim() || DEFAULT_AVATAR
     const resolvedSprite = resolvePokemonDisplaySprite(pokemonDetail) || pokemon?.sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
     const level = Math.max(1, Number(pokemonDetail?.level || pokemon?.level || 1))
     const combatPower = Math.max(1, Number(pokemonDetail?.combatPower ?? pokemonDetail?.power ?? (level * 10)) || 1)
@@ -316,6 +323,29 @@ export default function PokemonTradeDetailModal({
                                     Thông Tin Giao Dịch
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 text-xs">
+                                    <div className="rounded border border-slate-200 bg-slate-50 px-2 py-2 sm:col-span-2">
+                                        <div className="font-bold text-slate-600 uppercase mb-2">Chủ sở hữu hiện tại:</div>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <VipAvatar
+                                                userLike={ownerInfo}
+                                                avatar={ownerAvatar}
+                                                fallback={DEFAULT_AVATAR}
+                                                alt={ownerName}
+                                                wrapperClassName="h-12 w-12"
+                                                imageClassName="h-12 w-12 rounded-full object-cover pixelated"
+                                                frameClassName="h-12 w-12 rounded-full object-cover"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                                    <span className="font-bold text-sm text-slate-800 truncate">{ownerName}</span>
+                                                    <VipTitleBadge userLike={ownerInfo} />
+                                                </div>
+                                                <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                                                    Nhóm: {getPublicRoleLabel(ownerInfo)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                                         <span className="font-bold text-slate-600 uppercase">Giá:</span>{' '}
                                         <span className="font-bold text-slate-800">{Number(pokemon?.price || 0).toLocaleString('vi-VN')} xu</span>

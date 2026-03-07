@@ -1,7 +1,7 @@
 import { formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
 import VipAvatar from '../VipAvatar'
-import { getVipTitle, getVipTitleImageUrl } from '../../utils/vip'
+import VipTitleBadge from '../VipTitleBadge'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png' // Pikachu
 
@@ -48,8 +48,6 @@ export default function MessageBubble({ message, onOpenProfile }) {
   }
 
   // Other users' messages (left aligned, white background)
-  const vipTitle = getVipTitle(message?.sender)
-  const vipTitleImageUrl = getVipTitleImageUrl(message?.sender)
   const senderUserId = String(message?.sender?._id || '').trim()
   const canOpenProfile = Boolean(senderUserId && typeof onOpenProfile === 'function')
   
@@ -99,20 +97,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
             {message.sender.username}
           </button>
           
-          {vipTitleImageUrl ? (
-            <img
-              src={vipTitleImageUrl}
-              alt={vipTitle || 'Danh hiệu VIP'}
-              className="h-6 max-w-[150px] object-contain"
-              onError={(event) => {
-                event.currentTarget.style.display = 'none'
-              }}
-            />
-          ) : (vipTitle ? (
-            <span className="px-1.5 py-0.5 bg-amber-100 rounded text-[10px] text-amber-700 font-bold">
-              {vipTitle}
-            </span>
-          ) : null)}
+          <VipTitleBadge userLike={message?.sender} />
           
           {/* Level badge - only show if level exists and is > 0 */}
           {message.sender.level && message.sender.level > 0 && (

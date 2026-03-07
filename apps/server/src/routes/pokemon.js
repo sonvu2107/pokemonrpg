@@ -3,6 +3,7 @@ import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import Move from '../models/Move.js'
 import UserMoveInventory from '../models/UserMoveInventory.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 import {
     buildMovesForLevel,
@@ -22,6 +23,60 @@ const toBoolean = (value) => {
 }
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const normalizeVipBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        autoSearchEnabled: source?.autoSearchEnabled !== false,
+        autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
+        autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
+        autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
+        autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
+        autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
+    }
+}
+
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipBenefits(currentBenefitsLike)
+    const tier = normalizeVipBenefits(tierBenefitsLike)
+    return {
+        ...current,
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+        avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+    }
+}
+
+const resolveVipTierBenefitsForUser = async (userLike) => {
+    if (!userLike) return {}
+
+    const vipTierId = String(userLike?.vipTierId || '').trim()
+    if (vipTierId) {
+        const tier = await VipPrivilegeTier.findById(vipTierId)
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    const vipTierLevel = Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
+    if (vipTierLevel > 0) {
+        const tier = await VipPrivilegeTier.findOne({ level: vipTierLevel })
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    return {}
+}
+
+const resolveEffectiveVipBenefits = async (userLike) => {
+    if (!userLike) return normalizeVipBenefits({})
+    const tierBenefits = await resolveVipTierBenefitsForUser(userLike)
+    return mergeVipVisualBenefits(userLike?.vipBenefits, tierBenefits)
+}
 
 const normalizeStringSet = (values) => new Set(
     (Array.isArray(values) ? values : [])
@@ -528,7 +583,7 @@ router.get('/:id', async (req, res) => {
 
         const userPokemon = await UserPokemon.findById(id)
             .populate('pokemonId')
-            .populate('userId', 'username _id avatar') // Populating owner info
+            .populate('userId', 'username _id avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
             .lean()
 
         if (!userPokemon) {
@@ -651,6 +706,22 @@ router.get('/:id', async (req, res) => {
         }
 
         const serverStats = await getPokemonServerStats(basePokemon._id)
+
+        const ownerInfo = userPokemon?.userId && typeof userPokemon.userId === 'object'
+            ? userPokemon.userId
+            : null
+        const effectiveOwnerVipBenefits = await resolveEffectiveVipBenefits(ownerInfo)
+        const normalizedOwner = ownerInfo
+            ? {
+                ...ownerInfo,
+                role: String(ownerInfo?.role || 'user').trim() || 'user',
+                vipTierLevel: Math.max(0, Number.parseInt(ownerInfo?.vipTierLevel, 10) || 0),
+                vipTierCode: String(ownerInfo?.vipTierCode || '').trim().toUpperCase(),
+                vipBenefits: normalizeVipBenefits(effectiveOwnerVipBenefits),
+            }
+            : null
+
+        responseData.userId = normalizedOwner
 
         responseData.evolution = {
             canEvolve: Boolean(targetPokemon) && level >= minLevel,

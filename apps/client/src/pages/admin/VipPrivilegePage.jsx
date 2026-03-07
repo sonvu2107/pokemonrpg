@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { vipTierApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
+const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
+
 const createDefaultTierForm = () => ({
     code: '',
     name: '',
@@ -246,7 +248,35 @@ export default function VipPrivilegePage() {
         try {
             setError('')
             setUploadingAsset((prev) => ({ ...prev, [key]: true }))
-            const imageUrl = await uploadToCloudinary(file, undefined, { folder: 'pokemon/vip-assets' })
+            const uploadOptions = type === 'title'
+                ? {
+                    folder: 'pokemon/vip-assets',
+                    transformation: VIP_TITLE_UPLOAD_TRANSFORMATION,
+                }
+                : { folder: 'pokemon/vip-assets' }
+
+            let imageUrl = ''
+            try {
+                imageUrl = await uploadToCloudinary(file, undefined, uploadOptions)
+            } catch (uploadError) {
+                const errorMessage = String(uploadError?.message || '').toLowerCase()
+                const isTransformationBlocked = type === 'title'
+                    && errorMessage.includes('transformation')
+                    && (
+                        errorMessage.includes('invalid')
+                        ||
+                        errorMessage.includes('not allowed')
+                        || errorMessage.includes('not authorized')
+                        || errorMessage.includes('unsigned')
+                    )
+
+                if (!isTransformationBlocked) {
+                    throw uploadError
+                }
+
+                imageUrl = await uploadToCloudinary(file, undefined, { folder: 'pokemon/vip-assets' })
+            }
+
             if (!imageUrl) {
                 throw new Error('Không nhận được URL ảnh sau khi tải lên')
             }

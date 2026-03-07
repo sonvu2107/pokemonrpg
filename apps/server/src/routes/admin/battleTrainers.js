@@ -6,6 +6,10 @@ import Item from '../../models/Item.js'
 const router = express.Router()
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const TEAM_DAMAGE_PERCENT_MIN = 0
+const TEAM_DAMAGE_PERCENT_MAX = 1000
+const TEAM_DAMAGE_BONUS_MIN = -100
+const TEAM_DAMAGE_BONUS_MAX = 900
 
 const clampNumber = (value, min, max) => {
     const parsed = Number.parseInt(value, 10)
@@ -44,6 +48,56 @@ const parsePoolPrizeLevel = (value) => {
     return clampNumber(value, 0, 1000)
 }
 
+const parseTeamDamagePercent = (value, fallback = 100) => {
+    if (value === undefined || value === null || value === '') return fallback
+    return clampNumber(value, TEAM_DAMAGE_PERCENT_MIN, TEAM_DAMAGE_PERCENT_MAX)
+}
+
+const parseTeamDamageBonusPercent = (value, fallback = 0) => {
+    if (value === undefined || value === null || value === '') return fallback
+    return clampNumber(value, TEAM_DAMAGE_BONUS_MIN, TEAM_DAMAGE_BONUS_MAX)
+}
+
+const parseDamageBonusRules = (rulesLike = []) => {
+    if (!Array.isArray(rulesLike)) return []
+
+    return rulesLike
+        .map((rule) => {
+            if (!rule || typeof rule !== 'object') return null
+
+            const fromInput = parsePositiveInt(rule?.fromLevel ?? rule?.startLevel ?? rule?.minLevel, 1)
+            const toInput = parsePositiveInt(rule?.toLevel ?? rule?.endLevel ?? rule?.maxLevel, fromInput)
+            const normalizedFrom = Math.max(1, Math.min(fromInput, toInput))
+            const normalizedTo = Math.max(normalizedFrom, Math.max(fromInput, toInput))
+            const bonusPercent = parseTeamDamageBonusPercent(rule?.bonusPercent ?? rule?.damageBonusPercent, 0)
+
+            return {
+                fromLevel: normalizedFrom,
+                toLevel: normalizedTo,
+                bonusPercent,
+            }
+        })
+        .filter(Boolean)
+}
+
+const resolveTeamDamagePercentByLevel = (level, damageBonusRules = []) => {
+    const normalizedLevel = parsePositiveInt(level, 1)
+    if (!Array.isArray(damageBonusRules) || damageBonusRules.length === 0) {
+        return 100
+    }
+
+    let appliedBonusPercent = 0
+    damageBonusRules.forEach((rule) => {
+        const fromLevel = parsePositiveInt(rule?.fromLevel, 1)
+        const toLevel = Math.max(fromLevel, parsePositiveInt(rule?.toLevel, fromLevel))
+        if (normalizedLevel >= fromLevel && normalizedLevel <= toLevel) {
+            appliedBonusPercent = parseTeamDamageBonusPercent(rule?.bonusPercent, 0)
+        }
+    })
+
+    return clampNumber(100 + appliedBonusPercent, TEAM_DAMAGE_PERCENT_MIN, TEAM_DAMAGE_PERCENT_MAX)
+}
+
 const normalizeTeam = (team) => {
     if (!Array.isArray(team)) return []
     return team
@@ -51,6 +105,7 @@ const normalizeTeam = (team) => {
             pokemonId: entry?.pokemonId || entry?.pokemon || entry?._id || '',
             level: Number(entry?.level) || 5,
             formId: String(entry?.formId || 'normal').trim(),
+            damagePercent: parseTeamDamagePercent(entry?.damagePercent, 100),
         }))
         .filter((entry) => entry.pokemonId)
 }
@@ -217,9 +272,10 @@ const resolvePrizeItemSelection = async (itemId, quantity) => {
     }
 }
 
-const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3) => {
+const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3, damagePercent = 100) => {
     if (!Array.isArray(pokemonPool) || pokemonPool.length === 0) return []
     const normalizedTeamSize = clampNumber(teamSize, 1, 6)
+    const normalizedDamagePercent = parseTeamDamagePercent(damagePercent, 100)
     const baseIndex = Math.abs(seed) % pokemonPool.length
     const team = []
     for (let slot = 0; slot < normalizedTeamSize; slot += 1) {
@@ -231,6 +287,7 @@ const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3) => {
             pokemonId: selectedPokemon._id,
             level: adjustedLevel,
             formId,
+            damagePercent: normalizedDamagePercent,
         })
     }
     return team
@@ -474,6 +531,7 @@ router.post('/auto-generate', async (req, res) => {
         const teamSize = clampNumber(req.body?.teamSize, 1, 6)
         const configuredCoinsReward = parseOptionalRewardNumber(req.body?.platinumCoinsReward)
         const configuredExpReward = parseOptionalRewardNumber(req.body?.expReward)
+        const configuredDamageBonusRules = parseDamageBonusRules(req.body?.damageBonusRules)
         const configuredPrizeEveryTrainer = clampNumber(req.body?.prizePokemonEveryTrainer, 0, 100000)
         const resolvedPrizePoolResult = await resolvePrizePokemonPoolSelections(req.body?.prizePokemonPool)
         if (resolvedPrizePoolResult.error) {
@@ -518,7 +576,8 @@ router.post('/auto-generate', async (req, res) => {
                 const rewardValue = Math.max(10, level * 10)
                 const platinumCoinsReward = configuredCoinsReward !== null ? configuredCoinsReward : rewardValue
                 const expReward = configuredExpReward !== null ? configuredExpReward : rewardValue
-                const team = buildAutoTeam(pokemonPool, level, index * 17 + level, teamSize)
+                const teamDamagePercent = resolveTeamDamagePercentByLevel(level, configuredDamageBonusRules)
+                const team = buildAutoTeam(pokemonPool, level, index * 17 + level, teamSize, teamDamagePercent)
                 const shouldRewardTrainer = shouldAssignRandomPrize && (index % configuredPrizeEveryTrainer === 0)
                 const selectedPrize = shouldRewardTrainer
                     ? resolvedPrizePool[Math.floor(Math.random() * resolvedPrizePool.length)]
@@ -571,6 +630,10 @@ router.post('/auto-generate', async (req, res) => {
             randomPrizeConfig: {
                 rewardEveryTrainer: configuredPrizeEveryTrainer,
                 poolSize: resolvedPrizePool.length,
+            },
+            damageBonusConfig: {
+                ruleCount: configuredDamageBonusRules.length,
+                rules: configuredDamageBonusRules,
             },
             trainers: upsertResults,
         })

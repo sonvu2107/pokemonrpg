@@ -5,8 +5,9 @@ import { friendsApi } from '../services/friendsApi'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
 import VipAvatar from '../components/VipAvatar'
+import VipTitleBadge from '../components/VipTitleBadge'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
-import { getPublicRoleLabel, getVipTitle, getVipTitleImageUrl } from '../utils/vip'
+import { getPublicRoleLabel } from '../utils/vip'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const resolvePokemonCombatPower = (entry) => {
@@ -113,8 +114,6 @@ export default function OnlineStatsPage() {
     const selectedWins = Number(selectedProfile.wins || 0)
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
-    const selectedVipTitle = getVipTitle(selectedTrainer)
-    const selectedVipTitleImageUrl = getVipTitleImageUrl(selectedTrainer)
     const selectedParty = Array.isArray(selectedTrainer?.party)
         ? selectedTrainer.party.slice(0, PARTY_SLOT_TOTAL)
         : []
@@ -229,20 +228,7 @@ export default function OnlineStatsPage() {
                                         >
                                             {entry.username}
                                         </button>
-                                        {getVipTitleImageUrl(entry) ? (
-                                            <img
-                                                src={getVipTitleImageUrl(entry)}
-                                                alt={getVipTitle(entry) || 'Danh hiệu VIP'}
-                                                className="h-5 max-w-[120px] object-contain shrink-0"
-                                                onError={(event) => {
-                                                    event.currentTarget.style.display = 'none'
-                                                }}
-                                            />
-                                        ) : (getVipTitle(entry) ? (
-                                            <div className="text-[10px] font-bold text-amber-600 truncate max-w-[120px] shrink-0">
-                                                {getVipTitle(entry)}
-                                            </div>
-                                        ) : null)}
+                                        <VipTitleBadge userLike={entry} />
                                     </div>
                                 </div>
                             ))}
@@ -284,20 +270,7 @@ export default function OnlineStatsPage() {
                                                 >
                                                     {entry.username}
                                                 </button>
-                                                {getVipTitleImageUrl(entry) ? (
-                                                    <img
-                                                        src={getVipTitleImageUrl(entry)}
-                                                        alt={getVipTitle(entry) || 'Danh hiệu VIP'}
-                                                        className="h-5 max-w-[120px] object-contain shrink-0"
-                                                        onError={(event) => {
-                                                            event.currentTarget.style.display = 'none'
-                                                        }}
-                                                    />
-                                                ) : (getVipTitle(entry) ? (
-                                                    <div className="text-[10px] font-bold text-amber-600 truncate max-w-[120px] shrink-0">
-                                                        {getVipTitle(entry)}
-                                                    </div>
-                                                ) : null)}
+                                                <VipTitleBadge userLike={entry} />
                                             </div>
                                         </td>
                                         <td className="px-3 py-3 text-center text-slate-700">{entry.playTime}</td>
@@ -377,16 +350,7 @@ export default function OnlineStatsPage() {
                                 <ProfileInfoRow label="ID Người Chơi" value={trainerProfileId} isOdd={false} />
                                 <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
                                 <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
-                                <ProfileInfoRow label="Danh hiệu VIP" value={selectedVipTitleImageUrl ? (
-                                    <img
-                                        src={selectedVipTitleImageUrl}
-                                        alt={selectedVipTitle || 'Danh hiệu VIP'}
-                                        className="h-7 max-w-[220px] object-contain"
-                                        onError={(event) => {
-                                            event.currentTarget.style.display = 'none'
-                                        }}
-                                    />
-                                ) : (selectedVipTitle || '--')} isOdd={true} />
+                                <ProfileInfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={selectedTrainer} fallback="dash" />} isOdd={true} />
                                 <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />
                                 <ProfileInfoRow
                                     label="Kinh Nghiệm"

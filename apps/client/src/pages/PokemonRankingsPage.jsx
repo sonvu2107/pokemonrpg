@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import VipAvatar from '../components/VipAvatar'
+import VipTitleBadge from '../components/VipTitleBadge'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
-import { getVipTitle, getVipTitleImageUrl } from '../utils/vip'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
@@ -108,34 +108,6 @@ export default function PokemonRankingsPage() {
         }
         const level = Math.max(1, Number(entry?.level || 1))
         return level * 10
-    }
-
-    const renderVipTitle = (userLike) => {
-        const vipTitle = getVipTitle(userLike)
-        const vipTitleImageUrl = getVipTitleImageUrl(userLike)
-
-        if (vipTitleImageUrl) {
-            return (
-                <img
-                    src={vipTitleImageUrl}
-                    alt={vipTitle || 'Danh hiệu VIP'}
-                    className="h-6 max-w-[130px] object-contain shrink-0"
-                    onError={(event) => {
-                        event.currentTarget.style.display = 'none'
-                    }}
-                />
-            )
-        }
-
-        if (vipTitle) {
-            return (
-                <span className="text-xs font-bold text-amber-600 truncate max-w-[130px] shrink-0">
-                    {vipTitle}
-                </span>
-            )
-        }
-
-        return null
     }
 
     if (loading && rankings.length === 0) {
@@ -273,7 +245,7 @@ export default function PokemonRankingsPage() {
                                                                 >
                                                                     {entry.owner?.username || 'Không rõ'}
                                                                 </button>
-                                                                {renderVipTitle(entry.owner)}
+                                                                <VipTitleBadge userLike={entry.owner} />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -339,7 +311,7 @@ export default function PokemonRankingsPage() {
                                                                 >
                                                                     {entry.username || 'Không rõ'}
                                                                 </button>
-                                                                {renderVipTitle(entry)}
+                                                                <VipTitleBadge userLike={entry} />
                                                             </div>
                                                         </div>
                                                     </div>

@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import VipAvatar from '../components/VipAvatar'
+import VipTitleBadge from '../components/VipTitleBadge'
 import { useAuth } from '../context/AuthContext'
+import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
@@ -439,7 +442,10 @@ export default function PokemonInfoPage() {
     const sprite = pokemon.isShiny ? formShinySprite : formNormalSprite
     const previousPokemon = pokemon.evolution?.previousPokemon || null
     const previousSprite = previousPokemon?.sprites?.normal || ''
-    const ownerAvatar = String(pokemon.userId?.avatar || '').trim() || DEFAULT_AVATAR
+    const ownerInfo = pokemon?.userId && typeof pokemon.userId === 'object' ? pokemon.userId : null
+    const ownerUsername = String(ownerInfo?.username || 'Không rõ').trim() || 'Không rõ'
+    const ownerIdLabel = String(ownerInfo?._id || '').trim()
+    const ownerAvatar = String(ownerInfo?.avatar || '').trim() || DEFAULT_AVATAR
     const parseTrainerOrigin = (value = '') => {
         const raw = String(value || '').trim()
         if (!raw) return { token: '', payload: '' }
@@ -618,18 +624,22 @@ export default function PokemonInfoPage() {
                         <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
                             Chủ Sở Hữu
                         </div>
-                        <div className="p-2 text-center text-sm font-bold text-slate-700 flex flex-col items-center">
-                            <img
-                                src={ownerAvatar}
-                                alt={pokemon.userId?.username || 'Không rõ'}
-                                className="w-10 h-10 rounded-full border border-blue-200 object-cover bg-slate-100 mb-1"
-                                onError={(e) => {
-                                    e.currentTarget.onerror = null
-                                    e.currentTarget.src = DEFAULT_AVATAR
-                                }}
+                        <div className="p-2 text-center text-sm font-bold text-slate-700 flex flex-col items-center gap-1">
+                            <VipAvatar
+                                userLike={ownerInfo}
+                                avatar={ownerAvatar}
+                                fallback={DEFAULT_AVATAR}
+                                alt={ownerUsername}
+                                wrapperClassName="w-12 h-12"
+                                imageClassName="w-12 h-12 rounded-full border border-blue-200 object-cover bg-slate-100 pixelated"
+                                frameClassName="w-12 h-12 rounded-full object-cover"
                             />
-                            <span className="text-blue-600">{pokemon.userId?.username || 'Không rõ'}</span>
-                            <span className="text-[10px] text-slate-400">ID: {pokemon.userId?._id?.slice(-8).toUpperCase()}</span>
+                            <div className="flex items-center justify-center gap-2 flex-wrap">
+                                <span className="text-blue-600">{ownerUsername}</span>
+                                <VipTitleBadge userLike={ownerInfo} />
+                            </div>
+                            <span className="text-[10px] text-slate-500">Nhóm: {getPublicRoleLabel(ownerInfo)}</span>
+                            <span className="text-[10px] text-slate-400">ID: {ownerIdLabel ? ownerIdLabel.slice(-8).toUpperCase() : '--------'}</span>
                         </div>
                     </div>
 

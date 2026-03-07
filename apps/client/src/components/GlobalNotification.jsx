@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '../context/ChatContext'
+import VipTitleBadge from './VipTitleBadge'
 
 const MARQUEE_DURATION_MS = 12000
 const DEFAULT_ICON = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png'
@@ -38,6 +39,12 @@ const normalizeNotificationPayload = (payload = {}) => {
         message,
         rarity,
         imageUrl: String(payload?.imageUrl || '').trim(),
+        username: String(payload?.username || '').trim(),
+        pokemonName: String(payload?.pokemonName || '').trim(),
+        rarityLabel: String(payload?.rarityLabel || '').trim(),
+        isVip: Boolean(payload?.isVip),
+        vipTitle: String(payload?.vipTitle || '').trim(),
+        vipTitleImageUrl: String(payload?.vipTitleImageUrl || '').trim(),
     }
 }
 
@@ -116,6 +123,19 @@ export default function GlobalNotification() {
         return rarityThemeByKey[rarity] || rarityThemeByKey.default
     }, [activeNotification])
 
+    const notificationUserLike = useMemo(() => {
+        if (!activeNotification) return null
+        const hasVipVisual = Boolean(activeNotification?.vipTitle || activeNotification?.vipTitleImageUrl)
+        const isVip = Boolean(activeNotification?.isVip || hasVipVisual)
+        return {
+            role: isVip ? 'vip' : 'user',
+            vipBenefits: {
+                title: String(activeNotification?.vipTitle || '').trim(),
+                titleImageUrl: String(activeNotification?.vipTitleImageUrl || '').trim(),
+            },
+        }
+    }, [activeNotification])
+
     if (!activeNotification) {
         return null
     }
@@ -145,9 +165,24 @@ export default function GlobalNotification() {
                         <span className={`font-black uppercase tracking-wider ${rarityTheme.rarityClass}`}>
                             [{rarityTheme.label}]
                         </span>
-                        <span className="whitespace-nowrap font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                            {activeNotification.message}
-                        </span>
+                        {activeNotification.username && activeNotification.pokemonName ? (
+                            <span className="whitespace-nowrap font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] inline-flex items-center gap-2">
+                                <span>Người chơi</span>
+                                <span className="text-cyan-100">{activeNotification.username}</span>
+                                <VipTitleBadge
+                                    userLike={notificationUserLike}
+                                    imageClassName="h-7 max-w-[180px] object-contain shrink-0"
+                                    textClassName="text-xs font-bold text-amber-100 truncate max-w-[180px] shrink-0"
+                                />
+                                <span>
+                                    vừa bắt được Pokemon {activeNotification.rarityLabel || rarityTheme.label} - {activeNotification.pokemonName}!
+                                </span>
+                            </span>
+                        ) : (
+                            <span className="whitespace-nowrap font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                {activeNotification.message}
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>

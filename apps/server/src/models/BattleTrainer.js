@@ -44,6 +44,12 @@ const battleTrainerSchema = new mongoose.Schema(
                         default: 'normal',
                         trim: true,
                     },
+                    damagePercent: {
+                        type: Number,
+                        default: 100,
+                        min: 0,
+                        max: 1000,
+                    },
                 },
             ],
             default: [],

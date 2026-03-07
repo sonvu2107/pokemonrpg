@@ -5,6 +5,7 @@ import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
 import BattleSession from '../models/BattleSession.js'
 import User from '../models/User.js'
+import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
@@ -13,11 +14,21 @@ import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUti
 const router = express.Router()
 const useItemActionGuard = createActionGuard({
     actionKey: 'inventory:use',
-    cooldownMs: 350,
+    cooldownMs: 200,
     message: 'Dùng vật phẩm quá nhanh. Vui lòng đợi một chút.',
 })
 
 const clampChance = (value, min, max) => Math.min(max, Math.max(min, value))
+const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    d: 24,
+    c: 22,
+    b: 20,
+    a: 18,
+    s: 14,
+    ss: 10,
+    sss: 7,
+})
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 16
 const serializePlayerWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
     return {
@@ -33,11 +44,82 @@ const calcCatchChance = ({ catchRate, hp, maxHp }) => {
     return clampChance(raw, 0.02, 0.95)
 }
 
-const getBallCatchChance = ({ item, baseChance }) => {
-    if (item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))) {
-        return clampChance(Number(item.effectValue) / 100, 0, 1)
+const resolveLowHpCatchBonusCapPercent = (rarity = '') => {
+    const normalizedRarity = String(rarity || '').trim().toLowerCase()
+    const capFromRarity = Number(LOW_HP_CATCH_BONUS_CAP_BY_RARITY[normalizedRarity])
+    if (Number.isFinite(capFromRarity) && capFromRarity >= 0) return capFromRarity
+    return LOW_HP_CATCH_BONUS_CAP_FALLBACK
+}
+
+const calcLowHpCatchBonusPercent = ({ hp, maxHp, rarity }) => {
+    const normalizedMaxHp = Math.max(1, Number(maxHp) || 1)
+    const resolvedHp = Number.isFinite(Number(hp)) ? Number(hp) : normalizedMaxHp
+    const normalizedHp = clampChance(resolvedHp, 0, normalizedMaxHp)
+    const missingHpRatio = (normalizedMaxHp - normalizedHp) / normalizedMaxHp
+    const capPercent = resolveLowHpCatchBonusCapPercent(rarity)
+    return Math.max(0, missingHpRatio * capPercent)
+}
+
+const normalizeVipVisualBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
     }
-    return clampChance(baseChance, 0.02, 0.99)
+}
+
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipVisualBenefits(currentBenefitsLike)
+    const tier = normalizeVipVisualBenefits(tierBenefitsLike)
+    return {
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+    }
+}
+
+const resolveVipTierBenefitsForUser = async (userLike) => {
+    if (!userLike) return {}
+
+    if (userLike?.vipTierId) {
+        const tier = await VipPrivilegeTier.findById(userLike.vipTierId)
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    const vipTierLevel = Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
+    if (vipTierLevel > 0) {
+        const tier = await VipPrivilegeTier.findOne({ level: vipTierLevel })
+            .select('benefits')
+            .lean()
+        return tier?.benefits || {}
+    }
+
+    return {}
+}
+
+const resolveEffectiveVipVisualBenefits = async (userLike) => {
+    if (!userLike) return normalizeVipVisualBenefits({})
+    const tierBenefits = await resolveVipTierBenefitsForUser(userLike)
+    return mergeVipVisualBenefits(userLike?.vipBenefits, tierBenefits)
+}
+
+const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity }) => {
+    const hasFixedCatchRate = item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))
+    const chanceBeforeLowHpBonus = hasFixedCatchRate
+        ? clampChance(Number(item.effectValue) / 100, 0, 1)
+        : clampChance(baseChance, 0.02, 0.99)
+    const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp, rarity })
+    const minChance = hasFixedCatchRate ? 0 : 0.02
+
+    return {
+        chance: clampChance(
+            chanceBeforeLowHpBonus * (1 + (lowHpCatchBonusPercent / 100)),
+            minChance,
+            0.99
+        ),
+        lowHpCatchBonusPercent,
+    }
 }
 
 const getHealAmounts = (item) => {
@@ -209,7 +291,13 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
             })
-            const chance = getBallCatchChance({ item, baseChance })
+            const { chance, lowHpCatchBonusPercent } = getBallCatchChance({
+                item,
+                baseChance,
+                hp: encounter.hp,
+                maxHp: encounter.maxHp,
+                rarity: pokemon?.rarity,
+            })
             const caught = Math.random() < chance
 
             if (caught) {
@@ -246,10 +334,12 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 if (shouldEmitGlobalNotification) {
                     try {
                         const currentUser = await User.findById(userId)
-                            .select('username')
+                            .select('username role vipTierId vipTierLevel vipBenefits')
                             .lean()
                         const username = String(currentUser?.username || '').trim() || 'Người chơi'
                         const rarityLabel = rarity ? rarity.toUpperCase() : 'UNKNOWN'
+                        const effectiveVipVisualBenefits = await resolveEffectiveVipVisualBenefits(currentUser)
+                        const isVip = String(currentUser?.role || '').trim().toLowerCase() === 'vip'
                         const notificationImage = resolvePokemonImageForEncounter(
                             pokemon,
                             encounter.formId || pokemon.defaultFormId || 'normal',
@@ -260,7 +350,11 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                             username,
                             pokemonName: pokemon.name,
                             rarity,
+                            rarityLabel,
                             imageUrl: notificationImage,
+                            isVip,
+                            vipTitle: effectiveVipVisualBenefits.title,
+                            vipTitleImageUrl: effectiveVipVisualBenefits.titleImageUrl,
                             message: `Người chơi ${username} vừa bắt được Pokemon ${rarityLabel} - ${pokemon.name}!`,
                         }
 
@@ -279,6 +373,8 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     encounterId: resolvedEncounter._id,
                     hp: resolvedEncounter.hp,
                     maxHp: resolvedEncounter.maxHp,
+                    catchChancePercent: Number((chance * 100).toFixed(2)),
+                    lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
                     message: `Đã bắt được ${pokemon.name}!`,
                     globalNotification: globalNotificationPayload,
                 })
@@ -300,6 +396,8 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 encounterId: normalizedEncounterId,
                 hp: encounter.hp,
                 maxHp: encounter.maxHp,
+                catchChancePercent: Number((chance * 100).toFixed(2)),
+                lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
                 message: 'Pokemon đã thoát khỏi bóng!',
             })
         }

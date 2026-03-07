@@ -23,12 +23,14 @@ const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 8, 1, 50)
 const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 18000, 1000, 120000)
 const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 260, 60, 1000)
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
+const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_TRAINER_LOGS_LIMIT = 12
 
 let intervalRef = null
 let localBusy = false
 let lastCursorId = ''
 let apiBaseUrl = ''
+const trainerMetaCache = new Map()
 
 const sleep = (ms) => new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, Number(ms) || 0))
@@ -119,6 +121,28 @@ const resolveTrainerAverageLevel = (trainerLike = {}) => {
         .map((entry) => Math.max(1, Number(entry?.level || 1)))
     if (levels.length === 0) return 1
     return Math.max(1, Math.round(levels.reduce((sum, level) => sum + level, 0) / levels.length))
+}
+
+const getTrainerMetaCached = async (trainerId = '') => {
+    const normalizedTrainerId = normalizeId(trainerId)
+    if (!normalizedTrainerId) return null
+
+    const nowMs = Date.now()
+    const cached = trainerMetaCache.get(normalizedTrainerId)
+    if (cached && (nowMs - Number(cached.cachedAtMs || 0)) < TRAINER_META_CACHE_TTL_MS) {
+        return cached.data || null
+    }
+
+    const trainer = await BattleTrainer.findOne({ _id: normalizedTrainerId, isActive: true })
+        .select('_id name team.level')
+        .lean()
+
+    trainerMetaCache.set(normalizedTrainerId, {
+        cachedAtMs: nowMs,
+        data: trainer || null,
+    })
+
+    return trainer || null
 }
 
 const normalizePartyMoves = (moves = []) => {
@@ -625,9 +649,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    const trainer = await BattleTrainer.findOne({ _id: trainerId, isActive: true })
-        .select('_id name team.level')
-        .lean()
+    const trainer = await getTrainerMetaCached(trainerId)
     if (!trainer) {
         await updateAutoTrainerState({
             userId,
@@ -936,6 +958,16 @@ const runTick = async () => {
     } finally {
         localBusy = false
         const durationMs = Date.now() - startedAt
+
+        if (trainerMetaCache.size > 5000) {
+            const gcThresholdMs = Date.now() - (TRAINER_META_CACHE_TTL_MS * 2)
+            for (const [trainerId, payload] of trainerMetaCache.entries()) {
+                if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
+                    trainerMetaCache.delete(trainerId)
+                }
+            }
+        }
+
         if (stats.fetched > 0 || stats.errors > 0) {
             const skippedReasonsText = Object.entries(stats.skippedReasons)
                 .map(([key, count]) => `${key}:${count}`)

@@ -8,6 +8,7 @@ const battleSessionOpponentSchema = new mongoose.Schema(
         level: { type: Number, required: true, min: 1 },
         types: { type: [String], default: [] },
         formId: { type: String, default: 'normal', trim: true },
+        damagePercent: { type: Number, default: 100, min: 0, max: 1000 },
         baseStats: {
             hp: { type: Number, default: 1 },
             atk: { type: Number, default: 1 },

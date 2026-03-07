@@ -12,9 +12,10 @@ import { getVipAutoLimitConfig } from '../utils/vipAutoLimits'
 const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
-const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 10
+const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
-const TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD = 4
+const TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
+const TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD = 8
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
     { value: 700, label: 'Vừa (0.7s)' },
@@ -978,6 +979,8 @@ export function BattlePage() {
     const didInitLoadRef = useRef(false)
     const trainerAttackSpamCountRef = useRef(0)
     const trainerAttackRepositionTimerRef = useRef(null)
+    const lastTrainerAttackChallengeAtRef = useRef(0)
+    const lastTrainerAttackRepositionAtRef = useRef(0)
 
     useEffect(() => {
         setAutoTrainerUsesPerDayLimit(autoTrainerLimitConfig.usesPerDay)
@@ -1195,10 +1198,9 @@ export function BattlePage() {
                 const logs = Array.isArray(status?.logs) ? status.logs : []
                 setAutoTrainerServerLogs(logs)
                 setAutoTrainerServerStatus(
-                    String(logs[0]?.message || '').trim()
-                    || (Boolean(status?.enabled)
-                        ? 'Auto battle trainer đang chạy ngầm ở server.'
-                        : 'Auto battle trainer đang tắt.')
+                    (Boolean(status?.enabled)
+                        ? `Đang chạy ngầm. ${String(logs[0]?.message || '').trim() || 'Đang tự chiến theo cấu hình.'}`
+                        : (String(logs[0]?.message || '').trim() || 'Tự chiến huấn luyện viên đang tắt.'))
                 )
             } catch (error) {
                 if (!cancelled) {
@@ -1208,13 +1210,13 @@ export function BattlePage() {
         }
 
         syncAutoTrainerStatus()
-        const timer = window.setInterval(syncAutoTrainerStatus, 5000)
+        const timer = window.setInterval(syncAutoTrainerStatus, autoTrainerAttackEnabled ? 2000 : 5000)
 
         return () => {
             cancelled = true
             window.clearInterval(timer)
         }
-    }, [user?.id, view])
+    }, [user?.id, view, autoTrainerAttackEnabled])
 
     useEffect(() => {
         if (!rankedChallengePokemonId) return
@@ -1398,6 +1400,7 @@ export function BattlePage() {
     }
 
     const openTrainerAttackChallenge = () => {
+        lastTrainerAttackChallengeAtRef.current = Date.now()
         setTrainerAttackChallenge(createTrainerAttackChallenge())
         setTrainerAttackChallengeError('')
     }
@@ -1444,34 +1447,39 @@ export function BattlePage() {
         if (typeof window === 'undefined') return
         clearTrainerAttackRepositionTimer()
         trainerAttackRepositionTimerRef.current = window.setTimeout(() => {
-            setTrainerAttackButtonOffset(resolveTrainerAttackButtonOffset())
-            scheduleTrainerAttackButtonReposition()
+            trainerAttackRepositionTimerRef.current = null
+            setTrainerAttackButtonOffset({ x: 0, y: 0 })
         }, TRAINER_ATTACK_REPOSITION_INTERVAL_MS)
     }
 
     const nudgeTrainerAttackButton = () => {
         if (typeof window === 'undefined') return
 
+        lastTrainerAttackRepositionAtRef.current = Date.now()
         setTrainerAttackButtonOffset(resolveTrainerAttackButtonOffset())
         scheduleTrainerAttackButtonReposition()
     }
 
     const registerTrainerAttackSpamAttempt = () => {
+        const nowMs = Date.now()
         const nextSpamCount = trainerAttackSpamCountRef.current + 1
         trainerAttackSpamCountRef.current = nextSpamCount
 
         if (shouldUseTrainerAttackChallenge()) {
-            if (!trainerAttackChallenge && nextSpamCount % TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD === 0) {
+            const shouldTriggerChallenge = nextSpamCount % TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD === 0
+            const canTriggerChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS
+            if (!trainerAttackChallenge && shouldTriggerChallenge && canTriggerChallenge) {
                 openTrainerAttackChallenge()
             }
 
-            if (trainerAttackChallenge || nextSpamCount % TRAINER_ATTACK_MOBILE_CHALLENGE_THRESHOLD === 0) {
+            if (trainerAttackChallenge || (shouldTriggerChallenge && canTriggerChallenge)) {
                 setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
             }
             return
         }
 
-        if (!isTrainerAttackButtonShifted() && (nextSpamCount % TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD === 0)) {
+        const canRepositionButton = (nowMs - Number(lastTrainerAttackRepositionAtRef.current || 0)) >= TRAINER_ATTACK_ANTI_SPAM_UI_COOLDOWN_MS
+        if (!isTrainerAttackButtonShifted() && canRepositionButton && (nextSpamCount % TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD === 0)) {
             nudgeTrainerAttackButton()
         }
 

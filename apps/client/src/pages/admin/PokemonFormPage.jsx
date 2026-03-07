@@ -62,23 +62,108 @@ const getVariantDisplayName = (formId = '', fallbackName = '') => {
     return normalizedFallbackName || FORM_VARIANT_NAME_BY_ID[normalizedId] || normalizedId
 }
 
-const inferFormVariantFromFileName = (fileName = '') => {
-    const stem = String(fileName || '')
-        .replace(/\.[^.]+$/, '')
-        .trim()
-        .toLowerCase()
-    if (!stem) return { formId: '', formName: '' }
+const splitStemTokens = (value = '') => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return []
 
-    const tokens = stem.split(/[^a-z0-9]+/).filter(Boolean)
-    const matchedVariant = FORM_VARIANTS.find((variant) => {
-        const id = String(variant.id || '').toLowerCase()
-        return id && (tokens.includes(id) || stem === id)
+    return normalized
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .split(/[^a-zA-Z0-9]+/)
+        .map((token) => token.trim().toLowerCase())
+        .filter(Boolean)
+}
+
+const toTitleCaseFromTokens = (tokens = []) => (
+    (Array.isArray(tokens) ? tokens : [])
+        .filter(Boolean)
+        .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+        .join(' ')
+)
+
+const findPokemonSuffixTokenLength = (stemTokens = [], pokemonNames = []) => {
+    if (!Array.isArray(stemTokens) || stemTokens.length === 0) return 0
+    if (!Array.isArray(pokemonNames) || pokemonNames.length === 0) return 0
+
+    let matchedLength = 0
+
+    pokemonNames.forEach((name) => {
+        const nameTokens = splitStemTokens(name)
+        if (nameTokens.length === 0 || nameTokens.length > stemTokens.length) return
+
+        const sourceTail = stemTokens.slice(stemTokens.length - nameTokens.length)
+        const isTailMatched = nameTokens.every((token, index) => token === sourceTail[index])
+        if (isTailMatched && nameTokens.length > matchedLength) {
+            matchedLength = nameTokens.length
+        }
     })
 
+    return matchedLength
+}
+
+const resolveVariantMatchScore = (variant = {}, stemTokens = []) => {
+    const variantId = normalizeFormId(variant?.id).toLowerCase()
+    if (!variantId) return -1
+
+    const variantIdTokens = splitStemTokens(variantId)
+    const variantNameTokens = splitStemTokens(variant?.name)
+    const compactStem = stemTokens.join('')
+    const compactVariantId = variantIdTokens.join('')
+    const compactVariantName = variantNameTokens.join('')
+    const allVariantTokens = [...new Set([...variantIdTokens, ...variantNameTokens])]
+    const matchedTokenCount = allVariantTokens.filter((token) => stemTokens.includes(token)).length
+    const hasAllVariantTokens = allVariantTokens.length > 0 && matchedTokenCount === allVariantTokens.length
+    const hasDirectIdToken = stemTokens.includes(variantId) || stemTokens.includes(compactVariantId)
+    const hasExactStemId = (compactStem && compactVariantId && compactStem === compactVariantId)
+        || (compactStem && compactVariantName && compactStem === compactVariantName)
+
+    if (!hasExactStemId && !hasDirectIdToken && !hasAllVariantTokens) return -1
+
+    if (hasExactStemId) return 10000 + allVariantTokens.length
+    if (hasAllVariantTokens) return 1000 + (allVariantTokens.length * 10) + (hasDirectIdToken ? 5 : 0)
+    if (hasDirectIdToken) return 500 + allVariantTokens.length
+    return -1
+}
+
+const inferFormVariantFromFileName = (fileName = '', variants = FORM_VARIANTS, pokemonNames = []) => {
+    const stemRaw = String(fileName || '')
+        .replace(/\.[^.]+$/, '')
+        .trim()
+    if (!stemRaw) return { formId: '', formName: '' }
+
+    const stemTokens = splitStemTokens(stemRaw)
+    if (stemTokens.length === 0) return { formId: '', formName: '' }
+
+    const pokemonSuffixTokenLength = findPokemonSuffixTokenLength(stemTokens, pokemonNames)
+    const normalizedStemTokens = pokemonSuffixTokenLength > 0
+        ? stemTokens.slice(0, stemTokens.length - pokemonSuffixTokenLength)
+        : stemTokens
+    if (normalizedStemTokens.length === 0) return { formId: '', formName: '' }
+
+    const variantPool = Array.isArray(variants) && variants.length > 0 ? variants : FORM_VARIANTS
+
+    const rankedCandidates = variantPool
+        .map((variant) => ({
+            variant,
+            score: resolveVariantMatchScore(variant, normalizedStemTokens),
+            tokenCount: splitStemTokens(`${variant?.id || ''} ${variant?.name || ''}`).length,
+        }))
+        .filter((entry) => entry.score >= 0)
+        .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score
+            return b.tokenCount - a.tokenCount
+        })
+
+    const topScore = rankedCandidates[0]?.score
+    const topTokenCount = rankedCandidates[0]?.tokenCount
+    const topCandidates = rankedCandidates.filter((entry) => entry.score === topScore && entry.tokenCount === topTokenCount)
+    const matchedVariant = topCandidates.length === 1 ? topCandidates[0].variant : null
+
     if (!matchedVariant) {
+        const fallbackTokens = normalizedStemTokens
         return {
-            formId: '',
-            formName: stem.replace(/[_-]+/g, ' '),
+            formId: fallbackTokens.join('-'),
+            formName: toTitleCaseFromTokens(fallbackTokens),
         }
     }
 
@@ -451,7 +536,11 @@ export default function PokemonFormPage() {
             items.forEach(({ fileName, url }) => {
                 if (!url) return
 
-                const inferred = inferFormVariantFromFileName(fileName)
+                const inferred = inferFormVariantFromFileName(
+                    fileName,
+                    formVariantOptions,
+                    allPokemon.map((entry) => String(entry?.name || '').trim()).filter(Boolean)
+                )
                 const normalizedFormId = normalizeFormId(inferred.formId).toLowerCase()
                 const fallbackFormName = normalizeFormName(inferred.formName)
 
@@ -705,6 +794,9 @@ export default function PokemonFormPage() {
                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Upload nhanh nhiều ảnh form</label>
                             <p className="text-[11px] text-cyan-800 mb-2">
                                 Chọn nhiều ảnh một lần, hệ thống sẽ tự tạo/cập nhật từng bảng form để bạn chọn đúng dạng.
+                            </p>
+                            <p className="text-[11px] text-cyan-800 mb-2">
+                                Hỗ trợ tên liền chữ kiểu CamelCase. Ví dụ AstralHyperGalaxyPikachu.png sẽ tự tách về dạng Astral Hyper Galaxy.
                             </p>
                             <input
                                 id="bulk-form-image-upload"

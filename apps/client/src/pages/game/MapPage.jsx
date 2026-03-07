@@ -41,10 +41,14 @@ const extractObjectIdLike = (value) => {
     return ''
 }
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
-const SEARCH_SPAM_REPOSITION_THRESHOLD = 10
+const SEARCH_SPAM_REPOSITION_THRESHOLD = 24
 const SEARCH_BUTTON_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
-const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 650
-const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 4
+const SEARCH_ANTI_SPAM_UI_COOLDOWN_MS = 10 * 60 * 1000
+const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 300
+const SEARCH_MOBILE_CHALLENGE_THRESHOLD = 8
+const SEARCH_VERY_FAST_SPAM_INTERVAL_MS = 180
+const SEARCH_VERY_FAST_SPAM_STREAK_THRESHOLD = 3
+const SEARCH_VERY_FAST_SPAM_REPOSITION_THRESHOLD = 4
 const shuffleList = (list = []) => {
     const copied = Array.isArray(list) ? [...list] : []
     for (let index = copied.length - 1; index > 0; index -= 1) {
@@ -114,6 +118,16 @@ const DEFAULT_AUTO_ACTION_BY_RARITY = {
     c: 'battle',
     d: 'battle',
 }
+const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    d: 24,
+    c: 22,
+    b: 20,
+    a: 18,
+    s: 14,
+    ss: 10,
+    sss: 7,
+})
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 16
 
 const isSameAutoActionByRarity = (left = {}, right = {}) => {
     return AUTO_SEARCH_RARITY_KEYS.every((rarityKey) => {
@@ -121,6 +135,16 @@ const isSameAutoActionByRarity = (left = {}, right = {}) => {
         const rightValue = String(right?.[rarityKey] || '').trim().toLowerCase()
         return leftValue === rightValue
     })
+}
+
+const DEFAULT_AUTO_SEARCH_HISTORY = {
+    foundPokemonCount: 0,
+    itemDropCount: 0,
+    itemDropQuantity: 0,
+    runCount: 0,
+    battleCount: 0,
+    catchAttemptCount: 0,
+    catchSuccessCount: 0,
 }
 
 const isSearchDebugModeEnabled = () => {
@@ -197,6 +221,7 @@ export default function MapPage() {
     const [isAutoSearchConfigExpanded, setIsAutoSearchConfigExpanded] = useState(true)
     const [autoSearchServerStatus, setAutoSearchServerStatus] = useState('')
     const [autoSearchServerLogs, setAutoSearchServerLogs] = useState([])
+    const [autoSearchHistory, setAutoSearchHistory] = useState(DEFAULT_AUTO_SEARCH_HISTORY)
     const [autoSearchUsageToday, setAutoSearchUsageToday] = useState(0)
     const [autoSearchUsesPerDayLimit, setAutoSearchUsesPerDayLimit] = useState(0)
     const [searchButtonOffset, setSearchButtonOffset] = useState({ x: 0, y: 0 })
@@ -208,6 +233,10 @@ export default function MapPage() {
     const searchSpamCountRef = useRef(0)
     const lastSearchRequestAtRef = useRef(0)
     const searchButtonRepositionTimerRef = useRef(null)
+    const lastSearchChallengeAtRef = useRef(0)
+    const lastSearchButtonRepositionAtRef = useRef(0)
+    const lastSearchSpamAttemptAtRef = useRef(0)
+    const searchVeryFastSpamStreakRef = useRef(0)
     const formattedGold = Number(playerState.platinumCoins || 0).toLocaleString('vi-VN')
     const formattedMoonPoints = Number(playerState.moonPoints || 0).toLocaleString('vi-VN')
     const mapProgressPercent = Math.max(5, Math.round((mapStats.exp / Math.max(1, mapStats.expToNext)) * 100))
@@ -280,8 +309,9 @@ export default function MapPage() {
         setPlayerBattle(null)
         setActionMessage('')
         setFeatureNotice('')
-        setAutoSearchEnabled(false)
         searchSpamCountRef.current = 0
+        searchVeryFastSpamStreakRef.current = 0
+        lastSearchSpamAttemptAtRef.current = 0
         setSearchButtonOffset({ x: 0, y: 0 })
         setSearchChallenge(null)
         setSearchChallengeError('')
@@ -399,6 +429,7 @@ export default function MapPage() {
     }
 
     const openSearchChallenge = () => {
+        lastSearchChallengeAtRef.current = Date.now()
         setSearchChallenge(createSearchChallenge())
         setSearchChallengeError('')
     }
@@ -413,6 +444,8 @@ export default function MapPage() {
             setSearchChallenge(null)
             setSearchChallengeError('')
             searchSpamCountRef.current = 0
+            searchVeryFastSpamStreakRef.current = 0
+            lastSearchSpamAttemptAtRef.current = 0
             resetSearchButtonOffset()
             setLastResult({ encountered: false, message: 'Chú ý: Xác minh thành công, bạn có thể tiếp tục tìm kiếm.' })
             return
@@ -430,18 +463,23 @@ export default function MapPage() {
         }
 
         searchButtonRepositionTimerRef.current = window.setTimeout(() => {
-            nudgeSearchButton()
+            searchButtonRepositionTimerRef.current = null
+            setSearchButtonOffset({ x: 0, y: 0 })
         }, SEARCH_BUTTON_REPOSITION_INTERVAL_MS)
     }
 
-    const nudgeSearchButton = () => {
+    const nudgeSearchButton = ({ veryFastSpam = false } = {}) => {
         if (typeof window === 'undefined') return
 
+        lastSearchButtonRepositionAtRef.current = Date.now()
+
         const viewportWidth = Number(window.innerWidth || 1024)
-        const minX = viewportWidth < 640 ? 26 : 90
-        const maxX = viewportWidth < 640 ? 50 : 150
-        const minY = viewportWidth < 640 ? 12 : 28
-        const maxY = viewportWidth < 640 ? 30 : 70
+        const isMobileViewport = viewportWidth < 640
+        const useExtraFarOffset = veryFastSpam && isMobileViewport
+        const minX = useExtraFarOffset ? 90 : (isMobileViewport ? 26 : 90)
+        const maxX = useExtraFarOffset ? 170 : (isMobileViewport ? 50 : 150)
+        const minY = useExtraFarOffset ? 34 : (isMobileViewport ? 12 : 28)
+        const maxY = useExtraFarOffset ? 95 : (isMobileViewport ? 30 : 70)
         const randomFarOffset = (min, max) => {
             const distance = min + Math.floor(Math.random() * Math.max(1, (max - min + 1)))
             return (Math.random() < 0.5 ? -1 : 1) * distance
@@ -455,29 +493,45 @@ export default function MapPage() {
     }
 
     const registerSearchSpamAttempt = (retryAfterMs = 0) => {
+        const nowMs = Date.now()
+        const elapsedSinceLastSpamAttempt = nowMs - Number(lastSearchSpamAttemptAtRef.current || 0)
+        const isVeryFastAttempt = lastSearchSpamAttemptAtRef.current > 0 && elapsedSinceLastSpamAttempt <= SEARCH_VERY_FAST_SPAM_INTERVAL_MS
+        searchVeryFastSpamStreakRef.current = isVeryFastAttempt
+            ? (searchVeryFastSpamStreakRef.current + 1)
+            : 1
+        lastSearchSpamAttemptAtRef.current = nowMs
+        const isVeryFastSpamBurst = searchVeryFastSpamStreakRef.current >= SEARCH_VERY_FAST_SPAM_STREAK_THRESHOLD
         const nextSpamCount = searchSpamCountRef.current + 1
         searchSpamCountRef.current = nextSpamCount
 
         if (shouldUseSearchChallenge()) {
             const shouldTriggerChallenge = nextSpamCount % SEARCH_MOBILE_CHALLENGE_THRESHOLD === 0
-            if (!searchChallenge && shouldTriggerChallenge) {
+            const canTriggerChallenge = (nowMs - Number(lastSearchChallengeAtRef.current || 0)) >= SEARCH_ANTI_SPAM_UI_COOLDOWN_MS
+            if (!searchChallenge && shouldTriggerChallenge && canTriggerChallenge) {
                 openSearchChallenge()
             }
 
-            if (searchChallenge || shouldTriggerChallenge) {
+            if (searchChallenge || (shouldTriggerChallenge && canTriggerChallenge)) {
                 setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })
                 return
             }
         }
 
         const isButtonCurrentlyShifted = searchButtonOffset.x !== 0 || searchButtonOffset.y !== 0
-        if (!isButtonCurrentlyShifted && (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
+        const canRepositionButton = (nowMs - Number(lastSearchButtonRepositionAtRef.current || 0)) >= SEARCH_ANTI_SPAM_UI_COOLDOWN_MS
+        const shouldForceReposition = isVeryFastSpamBurst && (nextSpamCount % SEARCH_VERY_FAST_SPAM_REPOSITION_THRESHOLD === 0)
+        if (shouldForceReposition) {
+            nudgeSearchButton({ veryFastSpam: true })
+        } else if (!isButtonCurrentlyShifted && canRepositionButton && (nextSpamCount % SEARCH_SPAM_REPOSITION_THRESHOLD === 0)) {
             nudgeSearchButton()
         }
 
         if (retryAfterMs > 0) {
-            const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000))
-            setLastResult({ encountered: false, message: `Chú ý: Tìm kiếm quá nhanh. Vui lòng đợi ${retryAfterSec}s.` })
+            const safeRetryAfterMs = Math.max(50, Math.floor(retryAfterMs))
+            const retryAfterLabel = safeRetryAfterMs >= 1000
+                ? `${Math.ceil(safeRetryAfterMs / 100) / 10}s`
+                : `${Math.ceil(safeRetryAfterMs / 50) * 50}ms`
+            setLastResult({ encountered: false, message: `Chú ý: Tìm kiếm quá nhanh. Vui lòng đợi ${retryAfterLabel}.` })
             return
         }
 
@@ -526,6 +580,8 @@ export default function MapPage() {
                 setIsLocked(true)
                 setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Hãy hoàn thành yêu cầu để mở.' })
                 searchSpamCountRef.current = 0
+                searchVeryFastSpamStreakRef.current = 0
+                lastSearchSpamAttemptAtRef.current = 0
                 resetSearchButtonOffset()
                 setSearchChallenge(null)
                 setSearchChallengeError('')
@@ -534,6 +590,8 @@ export default function MapPage() {
 
             setIsLocked(false)
             searchSpamCountRef.current = 0
+            searchVeryFastSpamStreakRef.current = 0
+            lastSearchSpamAttemptAtRef.current = 0
             resetSearchButtonOffset()
 
             setLastResult(res)
@@ -587,6 +645,8 @@ export default function MapPage() {
                 registerSearchSpamAttempt(retryAfterMs)
             } else {
                 searchSpamCountRef.current = 0
+                searchVeryFastSpamStreakRef.current = 0
+                lastSearchSpamAttemptAtRef.current = 0
                 setLastResult({ encountered: false, message: 'Chú ý: ' + err.message })
             }
         } finally {
@@ -606,14 +666,18 @@ export default function MapPage() {
         setAutoCatchBallId(String(status?.catchBallItemId || '').trim())
         setAutoSearchUsageToday(Math.max(0, Number(status?.daily?.count) || 0))
         setAutoSearchUsesPerDayLimit(Math.max(0, Number(status?.daily?.limit) || autoSearchLimitConfig.usesPerDay || 0))
+        setAutoSearchHistory({
+            ...DEFAULT_AUTO_SEARCH_HISTORY,
+            ...(status?.history || {}),
+        })
 
         const logs = Array.isArray(status?.logs) ? status.logs : []
         setAutoSearchServerLogs(logs)
+        const mapName = String(status?.map?.name || '').trim()
         setAutoSearchServerStatus(
-            String(logs[0]?.message || '').trim()
-            || (Boolean(status?.enabled)
-                ? 'Tự tìm kiếm đang chạy ngầm trên máy chủ.'
-                : 'Tự tìm kiếm đang tắt.')
+            (Boolean(status?.enabled)
+                ? `Đang chạy ngầm${mapName ? ` tại ${mapName}` : ''}. ${String(logs[0]?.message || '').trim() || 'Đang tự tìm theo cấu hình.'}`
+                : (String(logs[0]?.message || '').trim() || 'Tự tìm kiếm đang tắt.'))
         )
     }
 
@@ -623,9 +687,22 @@ export default function MapPage() {
 
         const syncAutoSearchStatus = async () => {
             try {
-                const statusRes = await gameApi.getAutoSearchStatus()
+                const [statusRes, inventoryRes] = await Promise.all([
+                    gameApi.getAutoSearchStatus(),
+                    gameApi.getInventory().catch(() => null),
+                ])
                 if (cancelled) return
                 applyAutoSearchStatus(statusRes?.autoSearch || {})
+
+                if (inventoryRes?.inventory) {
+                    setInventory(Array.isArray(inventoryRes.inventory) ? inventoryRes.inventory : [])
+                }
+                if (inventoryRes?.playerState) {
+                    setPlayerState((prev) => ({
+                        ...prev,
+                        ...inventoryRes.playerState,
+                    }))
+                }
             } catch (error) {
                 if (!cancelled) {
                     setAutoSearchServerStatus(String(error?.message || 'Không thể tải trạng thái tự tìm kiếm.'))
@@ -634,13 +711,13 @@ export default function MapPage() {
         }
 
         syncAutoSearchStatus()
-        const timer = window.setInterval(syncAutoSearchStatus, 5000)
+        const timer = window.setInterval(syncAutoSearchStatus, autoSearchEnabled ? 2000 : 5000)
 
         return () => {
             cancelled = true
             window.clearInterval(timer)
         }
-    }, [user?.id, slug])
+    }, [user?.id, slug, autoSearchEnabled])
 
     useEffect(() => {
         if (!user || !autoSearchEnabled) return undefined
@@ -738,12 +815,31 @@ export default function MapPage() {
         }
     }
 
-    const getBallCatchChance = (item, baseChance) => {
-        if (item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))) {
-            return Math.min(1, Math.max(0, Number(item.effectValue) / 100))
-        }
+    const resolveLowHpCatchBonusCapPercent = (rarity = '') => {
+        const normalizedRarity = String(rarity || '').trim().toLowerCase()
+        const capFromRarity = Number(LOW_HP_CATCH_BONUS_CAP_BY_RARITY[normalizedRarity])
+        if (Number.isFinite(capFromRarity) && capFromRarity >= 0) return capFromRarity
+        return LOW_HP_CATCH_BONUS_CAP_FALLBACK
+    }
+
+    const calcLowHpCatchBonusPercent = ({ hp, maxHp, rarity }) => {
+        const normalizedMaxHp = Math.max(1, Number(maxHp) || 1)
+        const resolvedHp = Number.isFinite(Number(hp)) ? Number(hp) : normalizedMaxHp
+        const normalizedHp = Math.min(normalizedMaxHp, Math.max(0, resolvedHp))
+        const missingHpRatio = (normalizedMaxHp - normalizedHp) / normalizedMaxHp
+        const capPercent = resolveLowHpCatchBonusCapPercent(rarity)
+        return Math.max(0, missingHpRatio * capPercent)
+    }
+
+    const getBallCatchChance = ({ item, baseChance, hp, maxHp, rarity }) => {
+        const hasFixedCatchRate = item?.effectType === 'catchMultiplier' && Number.isFinite(Number(item.effectValue))
         const safeBaseChance = Number.isFinite(Number(baseChance)) ? Number(baseChance) : 0.02
-        return Math.min(0.99, Math.max(0.02, safeBaseChance))
+        const chanceBeforeLowHpBonus = hasFixedCatchRate
+            ? Math.min(1, Math.max(0, Number(item.effectValue) / 100))
+            : Math.min(0.99, Math.max(0.02, safeBaseChance))
+        const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({ hp, maxHp, rarity })
+        const minChance = hasFixedCatchRate ? 0 : 0.02
+        return Math.min(0.99, Math.max(minChance, chanceBeforeLowHpBonus * (1 + (lowHpCatchBonusPercent / 100))))
     }
 
     const calcCatchChance = ({ catchRate, hp, maxHp }) => {
@@ -1006,11 +1102,7 @@ export default function MapPage() {
                         </tbody>
                     </table>
                 </div>
-
-                {/* Map Visualization & Search Button */}
                 <div className="p-4 flex flex-col items-center gap-4 bg-white">
-                    {/* Map Image container with shadow */}
-                    {/* Map Image container with shadow */}
                     <div className="relative shadow-xl rounded overflow-hidden border-2 border-slate-600 w-full max-w-[300px]">
                         <img
                             src={map.mapImageUrl || 'https://i.pinimg.com/originals/2d/e9/87/2de98740c0670868a83416b9b392bead.png'}
@@ -1070,7 +1162,7 @@ export default function MapPage() {
                     {/* Search Button */}
                     <button
                         onClick={handleSearch}
-                        disabled={Boolean(encounter) || isLocked} // Keep clickable while searching to detect UI spam attempts
+                        disabled={Boolean(encounter) || isLocked} 
                         className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded touch-manipulation"
                         style={{ transform: `translate(${searchButtonOffset.x}px, ${searchButtonOffset.y}px)` }}
                     >
@@ -1258,7 +1350,7 @@ export default function MapPage() {
                                     <div>
                                         Giới hạn tự tìm: {autoSearchDurationLimitMinutes > 0 ? `${autoSearchDurationLimitMinutes} phút/lượt` : 'không giới hạn'}
                                         {' · '}
-                                        Lượt hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
+                                        Lượt chạy hôm nay: {autoSearchUsageToday}/{autoSearchUsesPerDayLimit > 0 ? autoSearchUsesPerDayLimit : '∞'}
                                     </div>
                                 )}
                                 {isCurrentMapEvent
@@ -1266,15 +1358,25 @@ export default function MapPage() {
                                     : (!canUseVipAutoSearch
                                         ? 'Tự tìm kiếm là quyền lợi dành cho tài khoản VIP.'
                                         : (autoSearchEnabled
-                                            ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng nếu gặp luật tự bắt.`
+                                            ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
                                             : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.'))}
                             </div>
 
                             {autoSearchServerStatus && (
                                 <div className="text-[10px] font-semibold text-slate-600">
-                                    Trạng thái tự chạy ngầm: {autoSearchServerStatus}
+                                    Trạng thái tự chạy: {autoSearchServerStatus}
                                 </div>
                             )}
+                            <div className="rounded border border-slate-200 bg-white p-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                                <div className="text-slate-700">Tìm thấy: <span className="font-bold">{Number(autoSearchHistory.foundPokemonCount || 0).toLocaleString('vi-VN')}</span></div>
+                                <div className="text-slate-700">Bỏ qua: <span className="font-bold">{Number(autoSearchHistory.runCount || 0).toLocaleString('vi-VN')}</span></div>
+                                <div className="text-slate-700">Chiến đấu: <span className="font-bold">{Number(autoSearchHistory.battleCount || 0).toLocaleString('vi-VN')}</span></div>
+                                <div className="text-slate-700">Bắt được: <span className="font-bold">{Number(autoSearchHistory.catchSuccessCount || 0).toLocaleString('vi-VN')}</span></div>
+                                <div className="text-slate-700 col-span-2 sm:col-span-4">
+                                    Nhặt đồ: <span className="font-bold">{Number(autoSearchHistory.itemDropCount || 0).toLocaleString('vi-VN')}</span> lượt,
+                                    tổng <span className="font-bold">{Number(autoSearchHistory.itemDropQuantity || 0).toLocaleString('vi-VN')}</span> món
+                                </div>
+                            </div>
 
                             {autoSearchServerLogs.length > 0 && (
                                 <div className="border border-slate-200 rounded bg-white p-2 space-y-1 max-h-24 overflow-y-auto">
@@ -1341,7 +1443,13 @@ export default function MapPage() {
                                                 hp: encounter?.hp,
                                                 maxHp: encounter?.maxHp,
                                             })
-                                            const finalChance = getBallCatchChance(entry.item, baseChance)
+                                            const finalChance = getBallCatchChance({
+                                                item: entry.item,
+                                                baseChance,
+                                                hp: encounter?.hp,
+                                                maxHp: encounter?.maxHp,
+                                                rarity: encounter?.pokemon?.rarity,
+                                            })
                                             const percent = Math.round(finalChance * 100)
                                             return (
                                                 <option key={optionBallId} value={optionBallId}>

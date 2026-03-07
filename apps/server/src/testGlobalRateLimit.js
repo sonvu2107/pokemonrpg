@@ -5,7 +5,7 @@ dotenv.config({ path: '.env' })
 const API_BASE = String(process.env.API_BASE || 'http://localhost:3000/api').replace(/\/$/, '')
 const TARGET_PATH_RAW = String(process.env.RATE_LIMIT_TEST_PATH || '/news?limit=1').trim()
 const TARGET_PATH = TARGET_PATH_RAW.startsWith('/') ? TARGET_PATH_RAW : `/${TARGET_PATH_RAW}`
-const REQUEST_TOTAL = Math.max(1, Number.parseInt(process.env.RATE_LIMIT_TEST_TOTAL || '520', 10) || 520)
+const REQUEST_TOTAL = Math.max(1, Number.parseInt(process.env.RATE_LIMIT_TEST_TOTAL || '1020', 10) || 1020)
 const CONCURRENCY = Math.max(1, Number.parseInt(process.env.RATE_LIMIT_TEST_CONCURRENCY || '25', 10) || 25)
 const TIMEOUT_MS = Math.max(1000, Number.parseInt(process.env.RATE_LIMIT_TEST_TIMEOUT_MS || '15000', 10) || 15000)
 const AUTH_TOKEN = String(process.env.RATE_LIMIT_TEST_TOKEN || '').trim()

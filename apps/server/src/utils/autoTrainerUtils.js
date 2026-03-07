@@ -154,6 +154,7 @@ export const normalizeAutoTrainerState = (stateLike = {}) => {
 
 export const normalizeAutoSearchState = (stateLike = {}) => {
     const logs = Array.isArray(stateLike?.logs) ? stateLike.logs : []
+    const history = stateLike?.history && typeof stateLike.history === 'object' ? stateLike.history : {}
     return {
         enabled: Boolean(stateLike?.enabled),
         mapSlug: String(stateLike?.mapSlug || '').trim().toLowerCase(),
@@ -165,6 +166,15 @@ export const normalizeAutoSearchState = (stateLike = {}) => {
         dayKey: String(stateLike?.dayKey || '').trim(),
         dayCount: toSafeInt(stateLike?.dayCount, 0),
         dayLimit: toSafeInt(stateLike?.dayLimit, 0),
+        history: {
+            foundPokemonCount: toSafeInt(history?.foundPokemonCount, 0),
+            itemDropCount: toSafeInt(history?.itemDropCount, 0),
+            itemDropQuantity: toSafeInt(history?.itemDropQuantity, 0),
+            runCount: toSafeInt(history?.runCount, 0),
+            battleCount: toSafeInt(history?.battleCount, 0),
+            catchAttemptCount: toSafeInt(history?.catchAttemptCount, 0),
+            catchSuccessCount: toSafeInt(history?.catchSuccessCount, 0),
+        },
         lastAction: stateLike?.lastAction && typeof stateLike.lastAction === 'object'
             ? {
                 action: String(stateLike.lastAction.action || '').trim(),

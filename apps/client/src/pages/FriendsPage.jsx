@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Modal from '../components/Modal'
 import VipAvatar from '../components/VipAvatar'
+import VipTitleBadge from '../components/VipTitleBadge'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { friendsApi } from '../services/friendsApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
-import { getPublicRoleLabel, getVipTitle, getVipTitleImageUrl } from '../utils/vip'
+import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const PARTY_SLOT_TOTAL = 6
@@ -92,6 +93,7 @@ const toSeedTrainer = (userLike = {}) => ({
     role: String(userLike?.role || 'user').trim() || 'user',
     vipBenefits: {
         title: String(userLike?.vipBenefits?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(userLike?.vipBenefits?.titleImageUrl || '').trim(),
         avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
     },
     isOnline: Boolean(userLike?.isOnline),
@@ -416,7 +418,6 @@ export default function FriendsPage() {
     const selectedWins = Number(selectedProfile.wins || 0)
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
-    const selectedVipTitle = getVipTitle(selectedTrainer)
     const selectedUserId = normalizeUserId(selectedTrainer?.userId)
     const selectedParty = Array.isArray(selectedTrainer?.party)
         ? selectedTrainer.party.slice(0, PARTY_SLOT_TOTAL)
@@ -473,8 +474,6 @@ export default function FriendsPage() {
 
     const renderTrainerIdentity = (userLike = {}, className = '') => {
         const userId = normalizeUserId(userLike?.userId)
-        const vipTitle = getVipTitle(userLike)
-        const vipTitleImageUrl = getVipTitleImageUrl(userLike)
 
         return (
             <div className={`flex items-center gap-3 min-w-0 ${className}`}>
@@ -504,20 +503,7 @@ export default function FriendsPage() {
                         <div className="text-xl font-bold text-slate-800 truncate hover:text-blue-700 hover:underline leading-none">
                             {userLike?.username || 'Huấn Luyện Viên'}
                         </div>
-                        {vipTitleImageUrl ? (
-                            <img
-                                src={vipTitleImageUrl}
-                                alt={vipTitle || 'Danh hiệu VIP'}
-                                className="h-7 max-w-[190px] object-contain"
-                                onError={(event) => {
-                                    event.currentTarget.style.display = 'none'
-                                }}
-                            />
-                        ) : (vipTitle ? (
-                            <div className="text-xs font-bold text-amber-600 truncate max-w-[190px]">
-                                {vipTitle}
-                            </div>
-                        ) : null)}
+                        <VipTitleBadge userLike={userLike} />
                     </div>
                     <div className="mt-0.5">
                         <PresenceBadge isOnline={Boolean(userLike?.isOnline)} />
@@ -922,7 +908,7 @@ export default function FriendsPage() {
                                 <ProfileInfoRow label="ID Người Chơi" value={selectedTrainer.userIdLabel || '???'} isOdd={false} />
                                 <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
                                 <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
-                                <ProfileInfoRow label="Danh hiệu VIP" value={selectedVipTitle || '--'} isOdd={true} />
+                                <ProfileInfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={selectedTrainer} fallback="dash" />} isOdd={true} />
                                 <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />
                                 <ProfileInfoRow
                                     label="Kinh Nghiệm"

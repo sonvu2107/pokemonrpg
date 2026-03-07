@@ -109,7 +109,7 @@ app.use('/api/', async (req, res, next) => {
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 500, // limit each IP to 500 requests per windowMs
+    max: 1000, // limit each IP to 1000 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
     // Return JSON instead of plain text

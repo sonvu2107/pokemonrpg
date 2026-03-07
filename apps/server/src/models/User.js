@@ -269,6 +269,15 @@ const userSchema = new mongoose.Schema(
                 min: 0,
                 max: 1000000,
             },
+            history: {
+                foundPokemonCount: { type: Number, default: 0, min: 0, max: 100000000 },
+                itemDropCount: { type: Number, default: 0, min: 0, max: 100000000 },
+                itemDropQuantity: { type: Number, default: 0, min: 0, max: 100000000 },
+                runCount: { type: Number, default: 0, min: 0, max: 100000000 },
+                battleCount: { type: Number, default: 0, min: 0, max: 100000000 },
+                catchAttemptCount: { type: Number, default: 0, min: 0, max: 100000000 },
+                catchSuccessCount: { type: Number, default: 0, min: 0, max: 100000000 },
+            },
             lastAction: {
                 action: {
                     type: String,

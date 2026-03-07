@@ -50,7 +50,7 @@ const formatCatchPercent = (value) => {
 const resolveEffectSummary = (item) => {
     const effectType = String(item?.effectType || 'none')
     if (effectType === 'catchMultiplier') {
-        return `Tỉ lệ bắt cố định ${formatCatchPercent(item?.effectValue)}`
+        return `Tỉ lệ bắt cơ bản ${formatCatchPercent(item?.effectValue)} (được cộng thêm khi HP Pokemon hoang dã giảm)`
     }
     if (effectType === 'heal' || effectType === 'healAmount') {
         const hp = Number(item?.effectValue || 0)

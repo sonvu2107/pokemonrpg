@@ -5,7 +5,7 @@ const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
  * Upload image directly to Cloudinary using unsigned upload preset
  * @param {File} file - Image file to upload
  * @param {Function} onProgress - Optional progress callback (percentage)
- * @param {{ folder?: string }} options - Optional upload options
+ * @param {{ folder?: string, transformation?: string }} options - Optional upload options
  * @returns {Promise<string>} - Cloudinary image URL
  */
 export const uploadToCloudinary = async (file, onProgress, options = {}) => {
@@ -14,11 +14,15 @@ export const uploadToCloudinary = async (file, onProgress, options = {}) => {
     }
 
     const folder = String(options?.folder || 'pokemon').trim() || 'pokemon'
+    const transformation = String(options?.transformation || '').trim()
 
     const formData = new FormData()
     formData.append('file', file)
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
     formData.append('folder', folder) // Optional: organize images in folder
+    if (transformation) {
+        formData.append('transformation', transformation)
+    }
 
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()

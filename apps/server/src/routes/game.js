@@ -59,6 +59,8 @@ const WILD_REWARD_HALF_RATE_AFTER = 100
 const WILD_REWARD_REDUCED_RATE_AFTER = 200
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
 const USER_POKEMON_MAX_LEVEL = 1000
+const TRAINER_POKEMON_DAMAGE_PERCENT_MIN = 0
+const TRAINER_POKEMON_DAMAGE_PERCENT_MAX = 1000
 const WILD_COUNTER_MOVE = {
     name: 'Tackle',
     type: 'normal',
@@ -70,24 +72,34 @@ const WILD_COUNTER_MOVE = {
 
 const searchActionGuard = createActionGuard({
     actionKey: 'game:search',
-    cooldownMs: 650,
+    cooldownMs: 300,
     message: 'Tìm kiếm quá nhanh. Vui lòng đợi một chút.',
 })
 
 const encounterAttackActionGuard = createActionGuard({
     actionKey: 'game:encounter-attack',
-    cooldownMs: 550,
+    cooldownMs: 250,
     message: 'Tấn công quá nhanh. Vui lòng đợi một chút.',
 })
 
 const battleAttackActionGuard = createActionGuard({
     actionKey: 'game:battle-attack',
-    cooldownMs: 350,
+    cooldownMs: 200,
     message: 'Ra đòn quá nhanh. Vui lòng đợi một chút.',
 })
 
 const AUTO_TRAINER_LOGS_LIMIT = 12
 const AUTO_SEARCH_LOGS_LIMIT = 12
+const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    d: 24,
+    c: 22,
+    b: 20,
+    a: 18,
+    s: 14,
+    ss: 10,
+    sss: 7,
+})
+const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 16
 
 const calcWildRewardBasePlatinumCoins = (level = 1) => {
     const normalizedLevel = Math.max(1, Number(level) || 1)
@@ -147,6 +159,23 @@ const mergeVipBonusBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) 
     }
 }
 
+const normalizeVipVisualBenefits = (vipBenefitsLike = {}) => {
+    const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
+    return {
+        title: String(source?.title || '').trim().slice(0, 80),
+        titleImageUrl: String(source?.titleImageUrl || '').trim(),
+    }
+}
+
+const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
+    const current = normalizeVipVisualBenefits(currentBenefitsLike)
+    const tier = normalizeVipVisualBenefits(tierBenefitsLike)
+    return {
+        title: current.title || tier.title,
+        titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+    }
+}
+
 const resolveVipTierBenefitsForUser = async (userLike) => {
     if (!userLike) return {}
 
@@ -172,6 +201,12 @@ const resolveEffectiveVipBonusBenefits = async (userLike) => {
     if (!userLike) return normalizeVipBonusBenefits({})
     const tierBenefits = await resolveVipTierBenefitsForUser(userLike)
     return mergeVipBonusBenefits(userLike?.vipBenefits, tierBenefits)
+}
+
+const resolveEffectiveVipVisualBenefits = async (userLike) => {
+    if (!userLike) return normalizeVipVisualBenefits({})
+    const tierBenefits = await resolveVipTierBenefitsForUser(userLike)
+    return mergeVipVisualBenefits(userLike?.vipBenefits, tierBenefits)
 }
 
 const applyPercentBonus = (baseValue = 0, bonusPercent = 0) => {
@@ -1000,6 +1035,22 @@ const calcCatchChance = ({ catchRate, hp, maxHp }) => {
     return Math.min(0.95, Math.max(0.02, raw))
 }
 
+const resolveLowHpCatchBonusCapPercent = (rarity = '') => {
+    const normalizedRarity = String(rarity || '').trim().toLowerCase()
+    const capFromRarity = Number(LOW_HP_CATCH_BONUS_CAP_BY_RARITY[normalizedRarity])
+    if (Number.isFinite(capFromRarity) && capFromRarity >= 0) return capFromRarity
+    return LOW_HP_CATCH_BONUS_CAP_FALLBACK
+}
+
+const calcLowHpCatchBonusPercent = ({ hp, maxHp, rarity }) => {
+    const normalizedMaxHp = Math.max(1, Number(maxHp) || 1)
+    const resolvedHp = Number.isFinite(Number(hp)) ? Number(hp) : normalizedMaxHp
+    const normalizedHp = clamp(resolvedHp, 0, normalizedMaxHp)
+    const missingHpRatio = (normalizedMaxHp - normalizedHp) / normalizedMaxHp
+    const capPercent = resolveLowHpCatchBonusCapPercent(rarity)
+    return Math.max(0, missingHpRatio * capPercent)
+}
+
 const buildMovesForLevel = (pokemon, level) => {
     const pool = Array.isArray(pokemon.levelUpMoves) ? pokemon.levelUpMoves : []
     const learned = pool
@@ -1511,6 +1562,12 @@ const getSpecialAttackStat = (stats = {}) => (
     Number(stats?.spatk) || 0
 )
 
+const normalizeTrainerPokemonDamagePercent = (value, fallback = 100) => {
+    const parsed = Number.parseInt(value, 10)
+    if (!Number.isFinite(parsed)) return clamp(fallback, TRAINER_POKEMON_DAMAGE_PERCENT_MIN, TRAINER_POKEMON_DAMAGE_PERCENT_MAX)
+    return clamp(parsed, TRAINER_POKEMON_DAMAGE_PERCENT_MIN, TRAINER_POKEMON_DAMAGE_PERCENT_MAX)
+}
+
 const resolveTrainerBattleForm = (pokemon, formId) => {
     return resolvePokemonForm(pokemon, formId)
 }
@@ -1533,6 +1590,7 @@ const buildTrainerBattleTeam = (trainer) => {
                 name: pokemon.name || 'Pokemon',
                 level,
                 formId,
+                damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
                 types,
                 baseStats: scaledStats,
                 currentHp: maxHp,
@@ -2153,6 +2211,15 @@ const buildAutoSearchStatusPayload = async (userLike = {}) => {
             limit: dailyState.limit,
             remaining: Number.isFinite(dailyState.remaining) ? dailyState.remaining : null,
         },
+        history: normalizedState.history || {
+            foundPokemonCount: 0,
+            itemDropCount: 0,
+            itemDropQuantity: 0,
+            runCount: 0,
+            battleCount: 0,
+            catchAttemptCount: 0,
+            catchSuccessCount: 0,
+        },
         lastAction: normalizedState.lastAction || null,
         logs: (Array.isArray(normalizedState.logs) ? normalizedState.logs : []).slice(0, AUTO_SEARCH_LOGS_LIMIT),
     }
@@ -2255,12 +2322,12 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
         if (nextEnabled && !canUseVipAutoSearch) {
             return res.status(403).json({
                 ok: false,
-                message: 'Tài khoản hiện không có quyền lợi VIP để bật auto tìm kiếm.',
+                message: 'Tài khoản hiện không có quyền lợi VIP để bật tự tìm kiếm.',
             })
         }
 
         if (nextEnabled && !nextMapSlug) {
-            return res.status(400).json({ ok: false, message: 'mapSlug là bắt buộc khi bật auto tìm kiếm.' })
+            return res.status(400).json({ ok: false, message: 'Cần chọn bản đồ khi bật tự tìm kiếm.' })
         }
 
         let resolvedMap = null
@@ -2269,33 +2336,33 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
                 .select('_id slug name isEventMap')
                 .lean()
             if (!resolvedMap && nextEnabled) {
-                return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ đã chọn cho auto tìm kiếm.' })
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ đã chọn cho tự tìm kiếm.' })
             }
         }
 
         if (nextEnabled && resolvedMap && isEventMapLike(resolvedMap)) {
-            return res.status(400).json({ ok: false, message: 'Map event không hỗ trợ auto tìm kiếm.' })
+            return res.status(400).json({ ok: false, message: 'Bản đồ sự kiện không hỗ trợ tự tìm kiếm.' })
         }
 
         const isCatchConfigured = AUTO_SEARCH_RARITY_KEYS.some(
             (rarityKey) => String(nextActionByRarity?.[rarityKey] || '').trim().toLowerCase() === 'catch'
         )
         if (nextEnabled && isCatchConfigured && !nextCatchBallItemId) {
-            return res.status(400).json({ ok: false, message: 'Có cấu hình auto bắt nhưng chưa chọn bóng.' })
+            return res.status(400).json({ ok: false, message: 'Có thiết lập tự bắt nhưng chưa chọn bóng.' })
         }
 
-        const shouldConsumeUse = nextEnabled && !Boolean(normalizedState.enabled)
-        if (shouldConsumeUse && dailyLimit > 0 && dailyState.count >= dailyLimit) {
+        if (nextEnabled && dailyLimit > 0 && dailyState.count >= dailyLimit) {
             return res.status(400).json({
                 ok: false,
-                message: `Đã hết lượt auto tìm kiếm trong hôm nay (${dailyState.count}/${dailyLimit}).`,
+                message: `Đã hết lượt tự tìm kiếm trong hôm nay (${dailyState.count}/${dailyLimit}).`,
             })
         }
 
         const now = new Date()
-        const nextDayCount = shouldConsumeUse ? (dailyState.count + 1) : dailyState.count
+        const resolvedMapName = String(resolvedMap?.name || nextMapSlug || '').trim() || nextMapSlug
+        const nextDayCount = dailyState.count
         const nextStartedAt = nextEnabled
-            ? (shouldConsumeUse ? now : (normalizedState.startedAt || now))
+            ? (normalizedState.startedAt || now)
             : null
 
         const updateDoc = {
@@ -2314,7 +2381,7 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
                     action: 'toggle',
                     result: nextEnabled ? 'enabled' : 'disabled',
                     reason: '',
-                    targetId: nextMapSlug,
+                    targetId: resolvedMapName,
                     at: now,
                 },
             },
@@ -2322,8 +2389,8 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
                 'autoSearch.logs': {
                     $each: [{
                         message: nextEnabled
-                            ? `Đã bật auto tìm kiếm tại map ${nextMapSlug || 'đã chọn'}.`
-                            : 'Đã tắt auto tìm kiếm.',
+                            ? `Đã bật tự tìm kiếm tại ${resolvedMapName}.`
+                            : 'Đã tắt tự tìm kiếm.',
                         type: nextEnabled ? 'success' : 'info',
                         at: now,
                     }],
@@ -3198,9 +3265,10 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
         }
 
         const currentUser = await User.findById(userId)
-            .select('vipTierId vipTierLevel vipBenefits')
+            .select('username role vipTierId vipTierLevel vipBenefits')
             .lean()
         const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(currentUser)
+        const effectiveVipVisualBenefits = await resolveEffectiveVipVisualBenefits(currentUser)
         const pokemonRarity = String(pokemon?.rarity || '').trim().toLowerCase()
 
         const baseChance = calcCatchChance({
@@ -3211,9 +3279,15 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
         const ssCatchBonusPercent = pokemonRarity === 'ss'
             ? Math.max(0, Number(effectiveVipBonusBenefits?.ssCatchRateBonusPercent || 0))
             : 0
-        const chance = ssCatchBonusPercent > 0
+        const chanceBeforeLowHpBonus = ssCatchBonusPercent > 0
             ? Math.min(0.95, baseChance * (1 + (ssCatchBonusPercent / 100)))
             : baseChance
+        const lowHpCatchBonusPercent = calcLowHpCatchBonusPercent({
+            hp: encounter.hp,
+            maxHp: encounter.maxHp,
+            rarity: pokemonRarity,
+        })
+        const chance = Math.min(0.99, chanceBeforeLowHpBonus * (1 + (lowHpCatchBonusPercent / 100)))
 
         const caught = Math.random() < chance
 
@@ -3245,9 +3319,6 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             let globalNotificationPayload = null
             if (shouldEmitGlobalNotification) {
                 try {
-                    const currentUser = await User.findById(userId)
-                        .select('username')
-                        .lean()
                     const username = String(currentUser?.username || '').trim() || 'Người chơi'
                     const rarityLabel = rarity ? rarity.toUpperCase() : 'UNKNOWN'
                     const notificationImage = resolvePokemonImageForForm(
@@ -3255,12 +3326,17 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                         encounter.formId || pokemon.defaultFormId || 'normal',
                         encounter.isShiny
                     )
+                    const isVip = String(currentUser?.role || '').trim().toLowerCase() === 'vip'
                     globalNotificationPayload = {
                         notificationId: `${resolvedEncounter._id}-${Date.now()}`,
                         username,
                         pokemonName: pokemon.name,
                         rarity,
+                        rarityLabel,
                         imageUrl: notificationImage,
+                        isVip,
+                        vipTitle: effectiveVipVisualBenefits.title,
+                        vipTitleImageUrl: effectiveVipVisualBenefits.titleImageUrl,
                         message: `Người chơi ${username} vừa bắt được Pokemon ${rarityLabel} - ${pokemon.name}!`,
                     }
                     const io = getIO()
@@ -3279,6 +3355,8 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 encounterId: resolvedEncounter._id,
                 hp: resolvedEncounter.hp,
                 maxHp: resolvedEncounter.maxHp,
+                catchChancePercent: Number((chance * 100).toFixed(2)),
+                lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
                 message: `Đã bắt được ${pokemon.name}!`,
                 globalNotification: globalNotificationPayload,
             })
@@ -3290,6 +3368,8 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             encounterId: encounter._id,
             hp: encounter.hp,
             maxHp: encounter.maxHp,
+            catchChancePercent: Number((chance * 100).toFixed(2)),
+            lowHpCatchBonusPercent: Number(lowHpCatchBonusPercent.toFixed(2)),
             message: 'Pokemon đã thoát khỏi bóng!'
         })
     } catch (error) {
@@ -3535,6 +3615,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let trainerSession = null
         let activeOpponentIndex = -1
         let activeTrainerOpponent = null
+        let trainerPokemonDamagePercent = 100
         let trainerSessionDirty = false
         let playerStatus = ''
         let playerStatusTurns = 0
@@ -3714,6 +3795,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             const trainerTeamEntry = Array.isArray(trainer?.team)
                 ? trainer.team[trainerSlot]
                 : null
+            trainerPokemonDamagePercent = normalizeTrainerPokemonDamagePercent(
+                activeTrainerOpponent?.damagePercent ?? trainerTeamEntry?.damagePercent,
+                100
+            )
+            activeTrainerOpponent.damagePercent = trainerPokemonDamagePercent
             const trainerSpecies = trainerTeamEntry?.pokemonId || null
             const trainerSpeciesTypes = normalizePokemonTypes(trainerSpecies?.types)
             if (targetTypes.length === 0 && trainerSpeciesTypes.length > 0) {
@@ -4557,8 +4643,14 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     defenseStat: opponentDefenseStat,
                     modifier: opponentStabMultiplier * opponentTypeEffectiveness.multiplier * opponentCriticalMultiplier,
                 })
-            const counterDamage = applyDamageGuardsToDamage(rawCounterDamage, opponentMoveCategory, playerDamageGuards)
-            if (counterDamage < rawCounterDamage) {
+            const scaledCounterDamage = rawCounterDamage > 0
+                ? Math.max(0, Math.floor(rawCounterDamage * (trainerPokemonDamagePercent / 100)))
+                : 0
+            const normalizedCounterDamage = rawCounterDamage > 0 && trainerPokemonDamagePercent > 0
+                ? Math.max(1, scaledCounterDamage)
+                : scaledCounterDamage
+            const counterDamage = applyDamageGuardsToDamage(normalizedCounterDamage, opponentMoveCategory, playerDamageGuards)
+            if (counterDamage < normalizedCounterDamage) {
                 battleExtraLogs.push('Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.')
             }
             const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
@@ -4605,6 +4697,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     ppCost: counterMovePpCost,
                     canAct: canOpponentAct,
                 },
+                damagePercent: trainerPokemonDamagePercent,
                 log: !canOpponentAct
                     ? `${targetName} không thể hành động.`
                     : (didOpponentMoveHit
@@ -4832,6 +4925,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     pokemonId: entry.pokemonId,
                     name: entry.name,
                     level: entry.level,
+                    damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
                     types: normalizePokemonTypes(entry.types),
                     currentHp: entry.currentHp,
                     maxHp: entry.maxHp,
