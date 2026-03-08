@@ -91,7 +91,6 @@ export default function PokemonInfoPage() {
     const [pokemon, setPokemon] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [featureNotice, setFeatureNotice] = useState('')
     const [skillModalOpen, setSkillModalOpen] = useState(false)
     const [skillInventory, setSkillInventory] = useState([])
     const [skillLoading, setSkillLoading] = useState(false)
@@ -109,7 +108,6 @@ export default function PokemonInfoPage() {
         try {
             setLoading(true)
             setError(null)
-            setFeatureNotice('')
             const data = await gameApi.getPokemonDetail(id)
             setPokemon(data)
         } catch (err) {
@@ -151,11 +149,11 @@ export default function PokemonInfoPage() {
     const handleTeachSkill = async () => {
         const selectedSkill = skillInventory.find((entry) => String(entry.moveId) === String(selectedSkillId))
         if (!selectedSkill) {
-            setFeatureNotice('Vui lòng chọn một kỹ năng để học.')
+            window.alert('Vui lòng chọn một kỹ năng để học.')
             return
         }
         if (!selectedSkill.canLearn) {
-            setFeatureNotice(selectedSkill.reason || 'Pokemon này đã biết kỹ năng đã chọn.')
+            window.alert(selectedSkill.reason || 'Pokemon này đã biết kỹ năng đã chọn.')
             return
         }
 
@@ -169,7 +167,7 @@ export default function PokemonInfoPage() {
 
         if (currentMoves.length >= 4) {
             if (replaceMoveIndex < 0 || replaceMoveIndex >= currentMoves.length) {
-                setFeatureNotice('Pokemon đã đủ 4 kỹ năng. Hãy chọn kỹ năng cần thay thế.')
+                window.alert('Pokemon đã đủ 4 kỹ năng. Hãy chọn kỹ năng cần thay thế.')
                 return
             }
             payload.replaceMoveIndex = replaceMoveIndex
@@ -245,11 +243,11 @@ export default function PokemonInfoPage() {
                     moveDetails: nextMoveDetails,
                 }
             })
-            setFeatureNotice(data?.message || 'Pokemon đã học kỹ năng mới.')
+            window.alert(data?.message || 'Pokemon đã học kỹ năng mới.')
             setReplaceMoveIndex(-1)
             await loadSkillInventory()
         } catch (err) {
-            setFeatureNotice(err.message || 'Dạy kỹ năng thất bại.')
+            window.alert(err.message || 'Dạy kỹ năng thất bại.')
         } finally {
             setTeachingSkill(false)
         }
@@ -319,9 +317,9 @@ export default function PokemonInfoPage() {
                     moveDetails: nextMoveDetails,
                 }
             })
-            setFeatureNotice(data?.message || `Đã gỡ kỹ năng ${safeMoveName}.`)
+            window.alert(data?.message || `Đã gỡ kỹ năng ${safeMoveName}.`)
         } catch (err) {
-            setFeatureNotice(err.message || 'Gỡ kỹ năng thất bại.')
+            window.alert(err.message || 'Gỡ kỹ năng thất bại.')
         } finally {
             setRemovingSkillName('')
         }
@@ -500,6 +498,8 @@ export default function PokemonInfoPage() {
     const speciesTotal = Number(serverStats.speciesTotal) || 0
     const speciesRank = Number(serverStats.speciesRank)
     const totalPokemonInServer = Number(serverStats.totalPokemon) || 0
+    const historyEvents = Array.isArray(pokemon?.history?.events) ? pokemon.history.events : []
+    const viewerSpeciesOwnedCount = Number(serverStats.viewerSpeciesOwnedCount || 0)
     const pokemonTypes = Array.isArray(base?.types)
         ? base.types.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)
         : []
@@ -810,30 +810,60 @@ export default function PokemonInfoPage() {
                 </div>
             </div>
 
-            <div className="mt-4 text-center text-xs font-bold text-blue-800 space-x-4">
-                <Link to="/rankings/pokemon" className="hover:underline hover:text-red-500">Bảng Xếp Hạng Pokémon</Link>
-                <button
-                    type="button"
-                    onClick={() => setFeatureNotice('Tính năng Xếp Hạng Theo Loài chưa được cập nhật.')}
-                    className="hover:underline hover:text-red-500"
-                >
+            <div className="mt-4 border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white text-center">
+                <div className="bg-blue-100/50 p-1 font-bold text-blue-800 text-xs border-b border-blue-200 uppercase">
                     Xếp Hạng Theo Loài
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setFeatureNotice('Tính năng Lịch Sử Pokémon chưa được cập nhật.')}
-                    className="hover:underline hover:text-red-500"
-                >
-                    Lịch Sử Pokémon
-                </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-white">
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-3">
+                        <div className="text-[11px] font-bold uppercase text-slate-500">Bạn có</div>
+                        <div className="mt-1 text-2xl font-extrabold text-emerald-700">{viewerSpeciesOwnedCount.toLocaleString('vi-VN')}</div>
+                        <div className="text-[11px] text-slate-500">Pokemon cùng loài này</div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-3">
+                        <div className="text-[11px] font-bold uppercase text-slate-500">Server có</div>
+                        <div className="mt-1 text-2xl font-extrabold text-blue-800">{speciesTotal.toLocaleString('vi-VN')}</div>
+                        <div className="text-[11px] text-slate-500">Bản thể cùng loài trên server</div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-3">
+                        <div className="text-[11px] font-bold uppercase text-slate-500">Hạng loài</div>
+                        <div className="mt-1 text-2xl font-extrabold text-rose-700">{Number.isFinite(speciesRank) && speciesRank > 0 ? `#${speciesRank}` : '--'}</div>
+                        <div className="text-[11px] text-slate-500">Theo độ hiếm sở hữu toàn server</div>
+                    </div>
+                </div>
             </div>
 
-            {featureNotice && (
-                <FeatureUnavailableNotice
-                    className="mt-2"
-                    message={featureNotice}
-                />
-            )}
+            <div className="mt-4 text-center text-xs font-bold text-blue-800 space-x-4">
+                <Link to="/rankings/pokemon" className="hover:underline hover:text-red-500">Bảng Xếp Hạng Pokémon</Link>
+                <a href="#pokemon-history" className="hover:underline hover:text-red-500">
+                    Lịch Sử Pokémon
+                </a>
+            </div>
+
+            <div id="pokemon-history" className="mt-4 border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                <div className="bg-blue-100/50 p-1 font-bold text-blue-800 text-xs border-b border-blue-200 uppercase text-center">
+                    Lịch Sử Pokémon
+                </div>
+                <div className="p-3 space-y-2">
+                    {historyEvents.length > 0 ? historyEvents.map((entry) => (
+                        <div key={entry.id} className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-bold text-slate-800">{entry.title}</div>
+                                    <div className="mt-1 text-xs text-slate-600">{entry.description}</div>
+                                </div>
+                                <div className="shrink-0 text-[11px] font-semibold text-slate-500 text-right">
+                                    {new Date(entry.occurredAt).toLocaleString('vi-VN')}
+                                </div>
+                            </div>
+                        </div>
+                    )) : (
+                        <div className="rounded border border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm italic text-slate-500">
+                            Chưa có lịch sử hiển thị cho Pokémon này.
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {skillModalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/70 p-4 flex items-center justify-center">

@@ -1,7 +1,9 @@
 import express from 'express'
+import jwt from 'jsonwebtoken'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import Move from '../models/Move.js'
+import MarketListing from '../models/MarketListing.js'
 import UserMoveInventory from '../models/UserMoveInventory.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
@@ -25,6 +27,157 @@ const toBoolean = (value) => {
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
+
+const parseTrainerOrigin = (value = '') => {
+    const raw = String(value || '').trim()
+    if (!raw) return { token: '', payload: '' }
+    const [prefix, ...rest] = raw.split(':')
+    return {
+        token: String(prefix || '').trim().toLowerCase(),
+        payload: String(rest.join(':') || '').trim(),
+    }
+}
+
+const buildPokemonObtainedEvent = (userPokemon) => {
+    const occurredAt = userPokemon?.obtainedAt || userPokemon?.createdAt || userPokemon?.updatedAt || null
+    const { token, payload } = parseTrainerOrigin(userPokemon?.originalTrainer)
+    const obtainedMapName = String(userPokemon?.obtainedMapName || '').trim()
+
+    if (token === 'trade') {
+        return {
+            id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+            type: 'obtained',
+            title: 'Nhận qua trao đổi',
+            description: payload
+                ? `Pokemon được chuyển cho bạn từ ${payload}.`
+                : 'Pokemon được nhận thông qua giao dịch với người chơi khác.',
+            occurredAt,
+        }
+    }
+
+    if (token === 'daily_checkin') {
+        return {
+            id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+            type: 'obtained',
+            title: 'Nhận từ điểm danh',
+            description: payload
+                ? `Pokemon là quà điểm danh ngày ${payload}.`
+                : 'Pokemon được nhận từ phần thưởng điểm danh hằng ngày.',
+            occurredAt,
+        }
+    }
+
+    if (token === 'promo_code') {
+        return {
+            id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+            type: 'obtained',
+            title: 'Nhận từ mã quà tặng',
+            description: payload
+                ? `Pokemon được nhận từ mã quà tặng ${payload}.`
+                : 'Pokemon được nhận từ mã quà tặng.',
+            occurredAt,
+        }
+    }
+
+    if (token === 'battle_trainer_reward') {
+        return {
+            id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+            type: 'obtained',
+            title: 'Nhận từ thưởng huấn luyện viên',
+            description: 'Pokemon được nhận như phần thưởng sau trận đấu.',
+            occurredAt,
+        }
+    }
+
+    if (token === 'admin_grant' || token === 'system_grant') {
+        return {
+            id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+            type: 'obtained',
+            title: 'Nhận từ hệ thống',
+            description: 'Pokemon được cấp bởi hệ thống hoặc quản trị viên.',
+            occurredAt,
+        }
+    }
+
+    return {
+        id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
+        type: 'obtained',
+        title: obtainedMapName ? 'Bắt hoang dã' : 'Nhận Pokemon',
+        description: obtainedMapName
+            ? `Pokemon được bắt tại ${obtainedMapName}.`
+            : 'Pokemon đã được thêm vào bộ sưu tập của người chơi.',
+        occurredAt,
+    }
+}
+
+const buildPokemonHistory = (userPokemon, listings = []) => {
+    const events = []
+    const obtainedEvent = buildPokemonObtainedEvent(userPokemon)
+    if (obtainedEvent) {
+        events.push(obtainedEvent)
+    }
+
+    for (const listing of Array.isArray(listings) ? listings : []) {
+        const listingId = String(listing?._id || '').trim() || `${events.length + 1}`
+        const listedAt = listing?.listedAt || listing?.createdAt || listing?.updatedAt || null
+        const updatedAt = listing?.updatedAt || listedAt || null
+        const soldAt = listing?.soldAt || null
+        const priceText = `${formatNumber(listing?.price || 0)} xu`
+        const sellerName = String(listing?.sellerId?.username || listing?.otName || 'Người bán').trim() || 'Người bán'
+        const buyerName = String(listing?.buyerId?.username || 'Người mua').trim() || 'Người mua'
+        const status = String(listing?.status || '').trim().toLowerCase()
+
+        events.push({
+            id: `listed-${listingId}`,
+            type: 'listed_for_sale',
+            title: 'Đăng bán trên chợ',
+            description: `Đăng bán với giá ${priceText}.`,
+            occurredAt: listedAt,
+        })
+
+        if (status === 'sold' && soldAt) {
+            events.push({
+                id: `sold-${listingId}`,
+                type: 'sold',
+                title: 'Đã được mua',
+                description: `${sellerName} đã bán Pokemon cho ${buyerName} với giá ${priceText}.`,
+                occurredAt: soldAt,
+            })
+            continue
+        }
+
+        if (status === 'cancelled') {
+            events.push({
+                id: `cancelled-${listingId}`,
+                type: 'sale_cancelled',
+                title: 'Hủy đăng bán',
+                description: `Tin đăng giá ${priceText} đã được hủy.`,
+                occurredAt: updatedAt,
+            })
+            continue
+        }
+
+        if (status === 'active') {
+            events.push({
+                id: `active-${listingId}`,
+                type: 'active_listing',
+                title: 'Tin đăng đang hoạt động',
+                description: `Pokemon hiện vẫn đang được rao bán với giá ${priceText}.`,
+                occurredAt: updatedAt,
+            })
+        }
+    }
+
+    return events
+        .filter((entry) => entry && entry.occurredAt)
+        .sort((left, right) => {
+            const leftTime = new Date(left.occurredAt).getTime()
+            const rightTime = new Date(right.occurredAt).getTime()
+            if (leftTime !== rightTime) return rightTime - leftTime
+            return String(right.id || '').localeCompare(String(left.id || ''))
+        })
+}
 
 const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
@@ -747,11 +900,21 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
 })
 
 // GET /api/pokemon/:id
-// Publicly accessible or protected? Let's make it open so people can share links.
-// But we might want to populate owner info which is safe.
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params
+        const authHeader = String(req.headers.authorization || '').trim()
+        let viewerUserId = ''
+
+        if (authHeader.startsWith('Bearer ')) {
+            try {
+                const token = authHeader.slice(7).trim()
+                const decoded = jwt.verify(token, process.env.JWT_SECRET)
+                viewerUserId = String(decoded?.userId || '').trim()
+            } catch {
+                viewerUserId = ''
+            }
+        }
 
         const userPokemon = await UserPokemon.findById(id)
             .populate('pokemonId')
@@ -877,7 +1040,18 @@ router.get('/:id', async (req, res) => {
             }
         }
 
-        const serverStats = await getPokemonServerStats(basePokemon._id)
+        const [serverStats, marketListings, viewerSpeciesOwnedCount] = await Promise.all([
+            getPokemonServerStats(basePokemon._id),
+            MarketListing.find({ userPokemonId: userPokemon._id })
+                .select('sellerId buyerId price otName status listedAt soldAt updatedAt createdAt')
+                .populate('sellerId', 'username')
+                .populate('buyerId', 'username')
+                .sort({ listedAt: -1, _id: -1 })
+                .lean(),
+            viewerUserId
+                ? UserPokemon.countDocuments(withActiveUserPokemonFilter({ userId: viewerUserId, pokemonId: basePokemon._id }))
+                : 0,
+        ])
 
         const ownerInfo = userPokemon?.userId && typeof userPokemon.userId === 'object'
             ? userPokemon.userId
@@ -907,7 +1081,14 @@ router.get('/:id', async (req, res) => {
             speciesRank: serverStats.speciesRank,
             totalPokemon: serverStats.totalPokemon,
             trackedSpecies: serverStats.trackedSpecies,
+            viewerSpeciesOwnedCount: Math.max(0, Number(viewerSpeciesOwnedCount || 0)),
         }
+
+        responseData.history = {
+            totalEvents: 0,
+            events: buildPokemonHistory(userPokemon, marketListings),
+        }
+        responseData.history.totalEvents = responseData.history.events.length
 
         res.json({
             ok: true,

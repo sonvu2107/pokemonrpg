@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import Modal from './Modal'
 import VipAvatar from './VipAvatar'
@@ -207,6 +208,10 @@ export default function PokemonTradeDetailModal({
     const stats = pokemonDetail?.stats || {}
     const moves = resolveMoveDetails(pokemonDetail)
     const moveDisplaySlots = Array.from({ length: 4 }, (_, index) => moves[index] || null)
+    const speciesRank = Number(pokemonDetail?.serverStats?.speciesRank)
+    const speciesTotal = Number(pokemonDetail?.serverStats?.speciesTotal || 0)
+    const viewerSpeciesOwnedCount = Number(pokemonDetail?.serverStats?.viewerSpeciesOwnedCount || 0)
+    const historyEvents = Array.isArray(pokemonDetail?.history?.events) ? pokemonDetail.history.events.slice(0, 4) : []
 
     return (
         <Modal
@@ -375,6 +380,65 @@ export default function PokemonTradeDetailModal({
                                             <span className="font-bold text-slate-600 uppercase">Đã bán:</span>{' '}
                                             <span className="font-bold text-slate-800">{formatDateTime(pokemon?.soldAt)}</span>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <div className="border border-blue-300 rounded overflow-hidden">
+                                    <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
+                                        Xếp Theo Loài
+                                    </div>
+                                    <div className="p-3 text-xs text-slate-700 space-y-2">
+                                        <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                            <span className="font-bold text-slate-600 uppercase">Loài:</span>{' '}
+                                            <span className="font-bold text-slate-800">{speciesName}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="rounded border border-slate-200 bg-slate-50 px-2 py-2 text-center">
+                                                <div className="text-[10px] font-bold uppercase text-slate-500">Bạn có</div>
+                                                <div className="mt-1 text-lg font-extrabold text-emerald-700">{viewerSpeciesOwnedCount.toLocaleString('vi-VN')}</div>
+                                            </div>
+                                            <div className="rounded border border-slate-200 bg-slate-50 px-2 py-2 text-center">
+                                                <div className="text-[10px] font-bold uppercase text-slate-500">Server có</div>
+                                                <div className="mt-1 text-lg font-extrabold text-blue-800">{speciesTotal.toLocaleString('vi-VN')}</div>
+                                            </div>
+                                        </div>
+                                        <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                            <span className="font-bold text-slate-600 uppercase">Hạng theo loài:</span>{' '}
+                                            <span className="font-bold text-slate-800">{Number.isFinite(speciesRank) && speciesRank > 0 ? `#${speciesRank}` : 'Chưa có'}</span>
+                                        </div>
+                                        <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-center text-[11px] font-semibold text-blue-800">
+                                            Thống kê theo loài đang hiển thị.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-blue-300 rounded overflow-hidden">
+                                    <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
+                                        Lịch Sử Pokémon
+                                    </div>
+                                    <div className="p-3 space-y-2">
+                                        {historyEvents.length > 0 ? historyEvents.map((entry) => (
+                                            <div key={entry.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-slate-700">
+                                                <div className="font-bold text-slate-800">{entry.title}</div>
+                                                <div className="mt-0.5">{entry.description}</div>
+                                                <div className="mt-1 text-[11px] font-semibold text-slate-500">{formatDateTime(entry.occurredAt)}</div>
+                                            </div>
+                                        )) : (
+                                            <div className="rounded border border-slate-200 bg-slate-50 px-2 py-3 text-center text-xs italic text-slate-500">
+                                                Chưa có lịch sử hiển thị cho Pokémon này.
+                                            </div>
+                                        )}
+                                        {tradePokemonId && (
+                                            <Link
+                                                to={`/pokemon/${tradePokemonId}`}
+                                                className="block rounded border border-blue-300 bg-white px-3 py-2 text-center text-xs font-bold text-blue-800 transition-colors hover:bg-blue-50"
+                                                onClick={onClose}
+                                            >
+                                                Xem lịch sử đầy đủ
+                                            </Link>
+                                        )}
                                     </div>
                                 </div>
                             </div>

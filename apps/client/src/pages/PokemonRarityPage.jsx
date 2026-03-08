@@ -59,6 +59,15 @@ export default function PokemonRarityPage() {
     const [error, setError] = useState('')
 
     useEffect(() => {
+        if (typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        const pokemonIdFromUrl = String(params.get('pokemonId') || '').trim()
+        if (pokemonIdFromUrl) {
+            setSelectedPokemonId(pokemonIdFromUrl)
+        }
+    }, [])
+
+    useEffect(() => {
         const timer = setTimeout(() => {
             setOptionSearch(optionSearchInput.trim())
         }, 250)
