@@ -117,6 +117,22 @@ const resolveTeamDamagePercentByLevel = (level, damageBonusRules = []) => {
     return clampNumber(100 + appliedBonusPercent, TEAM_DAMAGE_PERCENT_MIN, TEAM_DAMAGE_PERCENT_MAX)
 }
 
+const resolveMilestoneRarityPatternByLevel = (level, teamSize = 3) => {
+    const normalizedLevel = parsePositiveInt(level, 1)
+    const normalizedTeamSize = Math.max(1, parsePositiveInt(teamSize, 3))
+
+    if (normalizedLevel % 500 === 0) {
+        return Array.from({ length: normalizedTeamSize }, () => 'sss')
+    }
+
+    if (normalizedLevel % 100 === 0) {
+        const pattern = ['ss', 'sss', 'ss']
+        return Array.from({ length: normalizedTeamSize }, (_, index) => pattern[index % pattern.length])
+    }
+
+    return []
+}
+
 const createSeededRandom = (seedValue = Date.now()) => {
     let state = (Math.abs(Number(seedValue) || 0) + 1) >>> 0
     return () => {
@@ -340,11 +356,34 @@ const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3, damagePercent = 1
         return selected
     }
 
+    const pickUniqueByRarity = (rarity, pickedIds = new Set()) => {
+        const normalizedRarity = normalizeRarity(rarity)
+        const pool = pokemonPool.filter((entry) => normalizeRarity(entry?.rarity) === normalizedRarity)
+        const available = pool.filter((entry) => !pickedIds.has(String(entry?._id || '')))
+        if (available.length === 0) return null
+        const pickIndex = Math.floor(random() * available.length)
+        const picked = available[pickIndex]
+        if (!picked?._id) return null
+        pickedIds.add(String(picked._id))
+        return picked
+    }
+
     const pickedIds = new Set()
     const primaryCandidates = rarityPool.length > 0 ? rarityPool : pokemonPool
-    const selectedPokemons = [
-        ...pickUniquePokemon(primaryCandidates, normalizedTeamSize, pickedIds),
-    ]
+    const milestoneRarityPattern = resolveMilestoneRarityPatternByLevel(level, normalizedTeamSize)
+    const selectedPokemons = []
+
+    if (milestoneRarityPattern.length > 0) {
+        milestoneRarityPattern.forEach((rarity) => {
+            const picked = pickUniqueByRarity(rarity, pickedIds)
+            if (picked) selectedPokemons.push(picked)
+        })
+    }
+
+    if (selectedPokemons.length < normalizedTeamSize) {
+        const remaining = normalizedTeamSize - selectedPokemons.length
+        selectedPokemons.push(...pickUniquePokemon(primaryCandidates, remaining, pickedIds))
+    }
 
     if (selectedPokemons.length < normalizedTeamSize) {
         const remaining = normalizedTeamSize - selectedPokemons.length
