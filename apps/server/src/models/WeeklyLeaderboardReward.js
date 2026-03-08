@@ -43,7 +43,7 @@ const weeklyLeaderboardRewardSchema = new mongoose.Schema(
         rewardType: {
             type: String,
             default: 'platinumCoins',
-            enum: ['platinumCoins', 'moonPoints', 'item', 'pokemon'],
+            enum: ['platinumCoins', 'moonPoints', 'item', 'pokemon', 'titleImage', 'avatarFrame'],
         },
         rewardAmount: {
             type: Number,
@@ -87,6 +87,18 @@ const weeklyLeaderboardRewardSchema = new mongoose.Schema(
         rewardPokemonIsShiny: {
             type: Boolean,
             default: false,
+        },
+        rewardTitleImageUrl: {
+            type: String,
+            default: '',
+            trim: true,
+            maxlength: 500,
+        },
+        rewardAvatarFrameUrl: {
+            type: String,
+            default: '',
+            trim: true,
+            maxlength: 500,
         },
         note: {
             type: String,

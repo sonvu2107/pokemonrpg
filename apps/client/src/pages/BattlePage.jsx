@@ -18,7 +18,7 @@ const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_BUTTON_REPOSITION_COOLDOWN_MS = 10 * 60 * 1000
-const TRAINER_ATTACK_CHALLENGE_INTERVAL_MS = 10 * 60 * 1000
+const TRAINER_ATTACK_CHALLENGE_INTERVAL_MS = 2 * 60 * 1000
 const AUTO_TRAINER_TARGET_STORAGE_KEY = 'battle_auto_trainer_target_id_v1'
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
@@ -2417,7 +2417,7 @@ export function BattlePage() {
         appendBattleLog([resolvedNote])
     }
 
-    const handleSwitchParty = (targetIndex) => {
+    const handleSwitchParty = async (targetIndex) => {
         if (isAttacking) return
         if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= party.length) return
         if (targetIndex === battlePlayerIndex) return
@@ -2444,6 +2444,83 @@ export function BattlePage() {
         const activeSlot = party[battlePlayerIndex] || null
         const fromName = activeSlot ? getBattlePokemonDisplayName(activeSlot) : 'Pokemon hiện tại'
         const toName = getBattlePokemonDisplayName(targetSlot)
+        if (activeBattleMode === 'trainer') {
+            try {
+                const fallbackTrainerByOrder = Number.isInteger(Number(battleOpponent?.trainerOrder))
+                    ? masterPokemon[Math.max(0, Math.floor(Number(battleOpponent?.trainerOrder)))]
+                    : null
+                const resolvedTrainerId = normalizeEntityId(
+                    battleOpponent?.trainerId
+                    || opponent?.trainerId
+                    || fallbackTrainerByOrder?._id
+                    || fallbackTrainerByOrder?.id
+                )
+                if (!resolvedTrainerId) {
+                    throw new Error('Không xác định được battle trainer hiện tại để đổi Pokemon.')
+                }
+
+                const res = await gameApi.switchTrainerBattlePokemon({
+                    trainerId: resolvedTrainerId,
+                    activePokemonId: targetSlot._id,
+                    playerCurrentHp: targetCurrentHp,
+                    playerMaxHp: targetMaxHp,
+                })
+
+                setBattlePlayerIndex(targetIndex)
+                setSelectedMoveIndex(0)
+                setActiveTab('fight')
+                if (res?.opponent) {
+                    setBattleOpponent((prev) => ({
+                        ...(prev || {}),
+                        ...res.opponent,
+                    }))
+                }
+                if (res?.player) {
+                    setBattlePartyHpState((prev) => {
+                        const next = Array.isArray(prev) ? [...prev] : []
+                        next[targetIndex] = {
+                            currentHp: Math.max(0, Number(res.player.currentHp || 0)),
+                            maxHp: Math.max(1, Number(res.player.maxHp || targetMaxHp || 1)),
+                        }
+                        return next
+                    })
+                    setParty((prevParty) => {
+                        const nextParty = Array.isArray(prevParty) ? [...prevParty] : []
+                        if (!nextParty[targetIndex]) return prevParty
+                        nextParty[targetIndex] = {
+                            ...nextParty[targetIndex],
+                            battleCurrentHp: Math.max(0, Number(res.player.currentHp || 0)),
+                            battleMaxHp: Math.max(1, Number(res.player.maxHp || targetMaxHp || 1)),
+                            status: String(res?.counterAttack?.player?.status || nextParty[targetIndex]?.status || '').trim().toLowerCase(),
+                            statusTurns: Number.isFinite(Number(res?.counterAttack?.player?.statusTurns))
+                                ? Math.max(0, Math.floor(Number(res.counterAttack.player.statusTurns)))
+                                : Math.max(0, Math.floor(Number(nextParty[targetIndex]?.statusTurns) || 0)),
+                        }
+                        return nextParty
+                    })
+                }
+                const counterDamage = Number(res?.counterAttack?.damage || 0)
+                const counterMoveName = res?.counterAttack?.move?.name || 'Phản công'
+                const message = `Đổi đội hình: ${fromName} rút lui, ${toName} vào sân.`
+                const logLines = [message]
+                if (res?.counterAttack) {
+                    logLines.push(res.counterAttack.log || `${battleOpponent?.team?.[battleOpponent?.currentIndex || 0]?.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
+                    const effectLogs = Array.isArray(res?.counterAttack?.effects?.logs)
+                        ? res.counterAttack.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                        : []
+                    if (effectLogs.length > 0) {
+                        logLines.push(...effectLogs)
+                    }
+                }
+                setActionMessage(res?.message || message)
+                appendBattleLog(logLines)
+            } catch (err) {
+                setActionMessage(err.message)
+                appendBattleLog([err.message])
+            }
+            return
+        }
+
         setBattlePlayerIndex(targetIndex)
         setSelectedMoveIndex(0)
         setActiveTab('fight')
@@ -2528,18 +2605,51 @@ export function BattlePage() {
             )
             setActionMessage(res.message || 'Đã dùng vật phẩm.')
             appendBattleLog([res.message || 'Đã dùng vật phẩm.'])
+            let nextBattlePartyState = Array.isArray(battlePartyHpState) ? [...battlePartyHpState] : []
 
             if (res?.effect?.type === 'healing' && Number(res?.effect?.healedHp) > 0 && res?.effect?.hpContext === 'battle') {
-                setBattlePartyHpState((prev) => {
-                    const next = Array.isArray(prev) ? [...prev] : []
-                    const resolvedIndex = Number.isInteger(battlePlayerIndex) ? battlePlayerIndex : 0
-                    const entryState = next[resolvedIndex] || { currentHp: 0, maxHp: 1 }
-                    next[resolvedIndex] = {
-                        currentHp: Math.max(0, Number(res.effect.hp || entryState.currentHp || 0)),
-                        maxHp: Math.max(1, Number(res.effect.maxHp || entryState.maxHp || 1)),
+                const resolvedIndex = Number.isInteger(battlePlayerIndex) ? battlePlayerIndex : 0
+                const entryState = nextBattlePartyState[resolvedIndex] || { currentHp: 0, maxHp: 1 }
+                nextBattlePartyState[resolvedIndex] = {
+                    currentHp: Math.max(0, Number(res.effect.hp || entryState.currentHp || 0)),
+                    maxHp: Math.max(1, Number(res.effect.maxHp || entryState.maxHp || 1)),
+                }
+            }
+            if (res?.trainerCounterAttack) {
+                const resolvedIndex = Number.isInteger(battlePlayerIndex) ? battlePlayerIndex : 0
+                const currentEntry = nextBattlePartyState[resolvedIndex] || { currentHp: 0, maxHp: 1 }
+                nextBattlePartyState[resolvedIndex] = {
+                    currentHp: Math.max(0, Number(res.trainerCounterAttack.currentHp ?? currentEntry.currentHp ?? 0)),
+                    maxHp: Math.max(1, Number(res.trainerCounterAttack.maxHp ?? currentEntry.maxHp ?? 1)),
+                }
+                appendBattleLog([
+                    res.trainerCounterAttack.log || `${battleOpponent?.team?.[battleOpponent?.currentIndex || 0]?.name || 'Đối thủ'} dùng ${res?.trainerCounterAttack?.move?.name || 'Phản công'}! Gây ${Number(res?.trainerCounterAttack?.damage || 0)} sát thương.`,
+                    ...((Array.isArray(res?.trainerCounterAttack?.effects?.logs)
+                        ? res.trainerCounterAttack.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                        : [])),
+                ])
+                setParty((prevParty) => {
+                    const nextParty = Array.isArray(prevParty) ? [...prevParty] : []
+                    const targetSlot = nextParty[resolvedIndex]
+                    if (!targetSlot) return prevParty
+                    nextParty[resolvedIndex] = {
+                        ...targetSlot,
+                        battleCurrentHp: Math.max(0, Number(res.trainerCounterAttack.currentHp ?? targetSlot?.battleCurrentHp ?? 0)),
+                        battleMaxHp: Math.max(1, Number(res.trainerCounterAttack.maxHp ?? targetSlot?.battleMaxHp ?? 1)),
+                        status: String(res?.trainerCounterAttack?.player?.status || targetSlot?.status || '').trim().toLowerCase(),
+                        statusTurns: Number.isFinite(Number(res?.trainerCounterAttack?.player?.statusTurns))
+                            ? Math.max(0, Math.floor(Number(res.trainerCounterAttack.player.statusTurns)))
+                            : Math.max(0, Math.floor(Number(targetSlot?.statusTurns) || 0)),
                     }
-                    return next
+                    return nextParty
                 })
+            }
+            setBattlePartyHpState(nextBattlePartyState)
+            const trainerCounterStatus = {
+                status: String(res?.trainerCounterAttack?.player?.status || '').trim().toLowerCase(),
+                statusTurns: Number.isFinite(Number(res?.trainerCounterAttack?.player?.statusTurns))
+                    ? Math.max(0, Math.floor(Number(res.trainerCounterAttack.player.statusTurns)))
+                    : null,
             }
 
             await queryClient.invalidateQueries({ queryKey: inventoryQueryOptions().queryKey })
@@ -2548,8 +2658,9 @@ export function BattlePage() {
             const refreshedParty = await gameApi.getParty()
             const mergedBattleParty = (Array.isArray(refreshedParty) ? refreshedParty : []).map((slot, idx) => {
                 if (!slot) return slot
+                const previousSlot = Array.isArray(party) ? party[idx] : null
                 const fallbackMaxHp = Math.max(1, Number(slot?.stats?.hp) || 1)
-                const hpState = Array.isArray(battlePartyHpState) ? battlePartyHpState[idx] : null
+                const hpState = Array.isArray(nextBattlePartyState) ? nextBattlePartyState[idx] : null
                 const mergedMaxHp = Math.max(1, Number(hpState?.maxHp) || Number(slot?.battleMaxHp) || fallbackMaxHp)
                 const mergedCurrentHpRaw = Number(hpState?.currentHp)
                 const mergedCurrentHp = Number.isFinite(mergedCurrentHpRaw)
@@ -2559,6 +2670,12 @@ export function BattlePage() {
                     ...slot,
                     battleCurrentHp: mergedCurrentHp,
                     battleMaxHp: mergedMaxHp,
+                    status: idx === battlePlayerIndex && trainerCounterStatus.status
+                        ? trainerCounterStatus.status
+                        : String(previousSlot?.status || slot?.status || '').trim().toLowerCase(),
+                    statusTurns: idx === battlePlayerIndex && Number.isFinite(trainerCounterStatus.statusTurns)
+                        ? trainerCounterStatus.statusTurns
+                        : Math.max(0, Math.floor(Number(previousSlot?.statusTurns ?? slot?.statusTurns) || 0)),
                 }
             })
             setParty(mergedBattleParty)

@@ -22,12 +22,29 @@ const ORDER_BY_MAP = {
     price: 'price',
 }
 
+const SHOP_TYPE_ITEM = 'item'
+const SHOP_TYPE_MOON = 'moon'
+
+
 const toSafePage = (value) => Math.max(1, parseInt(value, 10) || 1)
 const toSafeLimit = (value) => Math.min(50, Math.max(1, parseInt(value, 10) || 20))
 const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const resolveVipLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
+
+const computeEffectivePurchaseLimit = (item = null, vipLevel = 0) => {
+    const baseLimit = Math.max(0, Number(item?.purchaseLimit) || 0)
+    if (baseLimit <= 0) {
+        return 0
+    }
+
+    const bonusPerLevel = Math.max(0, Number(item?.vipPurchaseLimitBonusPerLevel) || 0)
+    const effectiveLimit = baseLimit + (Math.max(0, vipLevel) * bonusPerLevel)
+    return Math.max(0, Math.floor(effectiveLimit))
+}
 
 const serializeWallet = (playerState) => {
     const platinumCoins = Number(playerState?.gold || 0)
@@ -83,10 +100,11 @@ router.get('/items', async (req, res) => {
             query.type = type
         }
 
-        const [playerState, items, total] = await Promise.all([
+        const [playerState, user, items, total] = await Promise.all([
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            User.findById(userId).select('vipTierLevel').lean(),
             Item.find(query)
-                .select('name type rarity imageUrl description shopPrice effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description shopPrice purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .sort({ shopPrice: 1, nameLower: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -94,10 +112,49 @@ router.get('/items', async (req, res) => {
             Item.countDocuments(query),
         ])
 
+        const vipLevel = resolveVipLevel(user)
+        const itemIds = items.map((entry) => entry?._id).filter(Boolean)
+        const purchaseSummary = itemIds.length > 0
+            ? await ItemPurchaseLog.aggregate([
+                {
+                    $match: {
+                        buyerId: new mongoose.Types.ObjectId(userId),
+                        shopType: SHOP_TYPE_ITEM,
+                        itemId: { $in: itemIds },
+                    },
+                },
+                {
+                    $group: {
+                        _id: '$itemId',
+                        totalQuantity: { $sum: '$quantity' },
+                    },
+                },
+            ])
+            : []
+
+        const purchasedByItemId = new Map(
+            purchaseSummary.map((entry) => [String(entry?._id || ''), Math.max(0, Number(entry?.totalQuantity) || 0)])
+        )
+
+        const mappedItems = items.map((entry) => {
+            const purchasedQuantity = purchasedByItemId.get(String(entry?._id || '')) || 0
+            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel)
+            const remainingPurchaseLimit = effectivePurchaseLimit > 0
+                ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
+                : 0
+            return {
+                ...entry,
+                shopType: SHOP_TYPE_ITEM,
+                effectivePurchaseLimit,
+                purchasedQuantity,
+                remainingPurchaseLimit,
+            }
+        })
+
         res.json({
             ok: true,
             wallet: serializeWallet(playerState),
-            items,
+            items: mappedItems,
             pagination: {
                 page,
                 limit,
@@ -121,21 +178,47 @@ router.get('/items/:itemId', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
         }
 
-        const [item, playerState, inventoryEntry] = await Promise.all([
+        const [item, playerState, inventoryEntry, user] = await Promise.all([
             Item.findById(itemId)
-                .select('name type rarity imageUrl description shopPrice isShopEnabled effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description shopPrice isShopEnabled purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .lean(),
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
+            User.findById(userId).select('vipTierLevel').lean(),
         ])
 
         if (!item) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
         }
 
+        const purchasedQuantityAgg = await ItemPurchaseLog.aggregate([
+            {
+                $match: {
+                    buyerId: new mongoose.Types.ObjectId(userId),
+                    itemId: new mongoose.Types.ObjectId(itemId),
+                    shopType: SHOP_TYPE_ITEM,
+                },
+            },
+            {
+                $group: {
+                    _id: '$itemId',
+                    totalQuantity: { $sum: '$quantity' },
+                },
+            },
+        ])
+        const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const remainingPurchaseLimit = effectivePurchaseLimit > 0 ? Math.max(0, effectivePurchaseLimit - purchasedQuantity) : 0
+
         res.json({
             ok: true,
-            item,
+            item: {
+                ...item,
+                shopType: SHOP_TYPE_ITEM,
+                effectivePurchaseLimit,
+                purchasedQuantity,
+                remainingPurchaseLimit,
+            },
             wallet: serializeWallet(playerState),
             inventory: {
                 quantity: Number(inventoryEntry?.quantity || 0),
@@ -163,16 +246,45 @@ router.post('/items/:itemId/buy', async (req, res) => {
             isShopEnabled: true,
             shopPrice: { $gt: 0 },
         })
-            .select('name shopPrice')
+            .select('name shopPrice purchaseLimit vipPurchaseLimitBonusPerLevel')
             .lean()
 
         if (!item) {
             return res.status(404).json({ ok: false, message: 'Vật phẩm không tồn tại hoặc không bán trong cửa hàng' })
         }
 
+        const [user, purchasedQuantityAgg] = await Promise.all([
+            User.findById(userId).select('vipTierLevel').lean(),
+            ItemPurchaseLog.aggregate([
+                {
+                    $match: {
+                        buyerId: new mongoose.Types.ObjectId(userId),
+                        itemId: new mongoose.Types.ObjectId(itemId),
+                        shopType: SHOP_TYPE_ITEM,
+                    },
+                },
+                {
+                    $group: {
+                        _id: '$itemId',
+                        totalQuantity: { $sum: '$quantity' },
+                    },
+                },
+            ]),
+        ])
+
         const totalCost = Number(item.shopPrice || 0) * quantity
         if (!Number.isFinite(totalCost) || totalCost <= 0) {
             return res.status(400).json({ ok: false, message: 'Giá mua không hợp lệ' })
+        }
+
+        const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        if (effectivePurchaseLimit > 0 && (purchasedQuantity + quantity) > effectivePurchaseLimit) {
+            const remainingPurchaseLimit = Math.max(0, effectivePurchaseLimit - purchasedQuantity)
+            return res.status(400).json({
+                ok: false,
+                message: `Vật phẩm này chỉ còn mua được ${remainingPurchaseLimit} lần theo giới hạn hiện tại`,
+            })
         }
 
         const playerState = await PlayerState.findOneAndUpdate(
@@ -206,6 +318,8 @@ router.post('/items/:itemId/buy', async (req, res) => {
             buyerId: userId,
             itemId,
             itemName: item.name || '',
+            shopType: SHOP_TYPE_ITEM,
+            walletCurrency: 'gold',
             quantity,
             unitPrice: Number(item.shopPrice || 0),
             totalCost,
@@ -221,11 +335,20 @@ router.post('/items/:itemId/buy', async (req, res) => {
                 quantity,
                 unitPrice: item.shopPrice,
                 totalCost,
+                shopType: SHOP_TYPE_ITEM,
             },
             wallet: serializeWallet(playerState),
             inventory: {
                 itemId,
                 quantity: Number(inventoryEntry?.quantity || 0),
+            },
+            limit: {
+                purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
+                effectivePurchaseLimit,
+                purchasedQuantity: purchasedQuantity + quantity,
+                remainingPurchaseLimit: effectivePurchaseLimit > 0
+                    ? Math.max(0, effectivePurchaseLimit - purchasedQuantity - quantity)
+                    : 0,
             },
         })
     } catch (error) {
@@ -233,6 +356,286 @@ router.post('/items/:itemId/buy', async (req, res) => {
             return res.status(409).json({ ok: false, message: 'Xung đột dữ liệu kho đồ, vui lòng thử lại' })
         }
         console.error('POST /api/shop/items/:itemId/buy error:', error)
+        res.status(500).json({ ok: false, message: 'Mua vật phẩm thất bại' })
+    }
+})
+
+router.get('/moon-items', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const page = toSafePage(req.query.page)
+        const limit = toSafeLimit(req.query.limit)
+        const skip = (page - 1) * limit
+        const type = String(req.query.type || '').trim().toLowerCase()
+
+        const query = {
+            isMoonShopEnabled: true,
+            moonShopPrice: { $gt: 0 },
+        }
+        if (type) {
+            query.type = type
+        }
+
+        const [playerState, user, items, total] = await Promise.all([
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            User.findById(userId).select('vipTierLevel').lean(),
+            Item.find(query)
+                .select('name type rarity imageUrl description moonShopPrice purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .sort({ moonShopPrice: 1, nameLower: 1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Item.countDocuments(query),
+        ])
+
+        const vipLevel = resolveVipLevel(user)
+        const itemIds = items.map((entry) => entry?._id).filter(Boolean)
+        const purchaseSummary = itemIds.length > 0
+            ? await ItemPurchaseLog.aggregate([
+                {
+                    $match: {
+                        buyerId: new mongoose.Types.ObjectId(userId),
+                        shopType: SHOP_TYPE_MOON,
+                        itemId: { $in: itemIds },
+                    },
+                },
+                {
+                    $group: {
+                        _id: '$itemId',
+                        totalQuantity: { $sum: '$quantity' },
+                    },
+                },
+            ])
+            : []
+
+        const purchasedByItemId = new Map(
+            purchaseSummary.map((entry) => [String(entry?._id || ''), Math.max(0, Number(entry?.totalQuantity) || 0)])
+        )
+
+        const mappedItems = items.map((entry) => {
+            const purchasedQuantity = purchasedByItemId.get(String(entry?._id || '')) || 0
+            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel)
+            const remainingPurchaseLimit = effectivePurchaseLimit > 0
+                ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
+                : 0
+            return {
+                ...entry,
+                shopPrice: Number(entry?.moonShopPrice || 0),
+                shopType: SHOP_TYPE_MOON,
+                effectivePurchaseLimit,
+                purchasedQuantity,
+                remainingPurchaseLimit,
+            }
+        })
+
+        res.json({
+            ok: true,
+            wallet: serializeWallet(playerState),
+            items: mappedItems,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / limit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/moon-items error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu Cửa hàng Nguyệt Các' })
+    }
+})
+
+// GET /api/shop/moon-items/:itemId
+router.get('/moon-items/:itemId', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const itemId = String(req.params.itemId || '').trim()
+
+        if (!mongoose.Types.ObjectId.isValid(itemId)) {
+            return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
+        }
+
+        const [item, playerState, inventoryEntry, user] = await Promise.all([
+            Item.findById(itemId)
+                .select('name type rarity imageUrl description moonShopPrice isMoonShopEnabled purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .lean(),
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
+            User.findById(userId).select('vipTierLevel').lean(),
+        ])
+
+        if (!item) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
+        }
+
+        const purchasedQuantityAgg = await ItemPurchaseLog.aggregate([
+            {
+                $match: {
+                    buyerId: new mongoose.Types.ObjectId(userId),
+                    itemId: new mongoose.Types.ObjectId(itemId),
+                    shopType: SHOP_TYPE_MOON,
+                },
+            },
+            {
+                $group: {
+                    _id: '$itemId',
+                    totalQuantity: { $sum: '$quantity' },
+                },
+            },
+        ])
+
+        const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const remainingPurchaseLimit = effectivePurchaseLimit > 0
+            ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
+            : 0
+
+        res.json({
+            ok: true,
+            item: {
+                ...item,
+                shopPrice: Number(item?.moonShopPrice || 0),
+                shopType: SHOP_TYPE_MOON,
+                effectivePurchaseLimit,
+                purchasedQuantity,
+                remainingPurchaseLimit,
+            },
+            wallet: serializeWallet(playerState),
+            inventory: {
+                quantity: Number(inventoryEntry?.quantity || 0),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/moon-items/:itemId error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải chi tiết vật phẩm Nguyệt Các' })
+    }
+})
+
+router.post('/moon-items/:itemId/buy', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const itemId = String(req.params.itemId || '').trim()
+        const quantity = toSafeQuantity(req.body?.quantity)
+
+        if (!mongoose.Types.ObjectId.isValid(itemId)) {
+            return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
+        }
+
+        const item = await Item.findOne({
+            _id: itemId,
+            isMoonShopEnabled: true,
+            moonShopPrice: { $gt: 0 },
+        })
+            .select('name moonShopPrice purchaseLimit vipPurchaseLimitBonusPerLevel')
+            .lean()
+
+        if (!item) {
+            return res.status(404).json({ ok: false, message: 'Vật phẩm không tồn tại hoặc không bán trong Cửa hàng Nguyệt Các' })
+        }
+
+        const [user, purchasedQuantityAgg] = await Promise.all([
+            User.findById(userId).select('vipTierLevel').lean(),
+            ItemPurchaseLog.aggregate([
+                {
+                    $match: {
+                        buyerId: new mongoose.Types.ObjectId(userId),
+                        itemId: new mongoose.Types.ObjectId(itemId),
+                        shopType: SHOP_TYPE_MOON,
+                    },
+                },
+                {
+                    $group: {
+                        _id: '$itemId',
+                        totalQuantity: { $sum: '$quantity' },
+                    },
+                },
+            ]),
+        ])
+
+        const totalCost = Number(item.moonShopPrice || 0) * quantity
+        if (!Number.isFinite(totalCost) || totalCost <= 0) {
+            return res.status(400).json({ ok: false, message: 'Giá mua không hợp lệ' })
+        }
+
+        const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        if (effectivePurchaseLimit > 0 && (purchasedQuantity + quantity) > effectivePurchaseLimit) {
+            const remainingPurchaseLimit = Math.max(0, effectivePurchaseLimit - purchasedQuantity)
+            return res.status(400).json({
+                ok: false,
+                message: `Vật phẩm này chỉ còn mua được ${remainingPurchaseLimit} lần theo giới hạn hiện tại`,
+            })
+        }
+
+        const playerState = await PlayerState.findOneAndUpdate(
+            {
+                userId,
+                moonPoints: { $gte: totalCost },
+            },
+            {
+                $inc: { moonPoints: -totalCost },
+            },
+            { new: true }
+        )
+
+        if (!playerState) {
+            return res.status(400).json({ ok: false, message: 'Không đủ Điểm Nguyệt Các để mua vật phẩm này' })
+        }
+
+        const inventoryEntry = await UserInventory.findOneAndUpdate(
+            {
+                userId,
+                itemId,
+            },
+            {
+                $setOnInsert: { userId, itemId },
+                $inc: { quantity },
+            },
+            { new: true, upsert: true }
+        )
+
+        await ItemPurchaseLog.create({
+            buyerId: userId,
+            itemId,
+            itemName: item.name || '',
+            shopType: SHOP_TYPE_MOON,
+            walletCurrency: 'moonPoints',
+            quantity,
+            unitPrice: Number(item.moonShopPrice || 0),
+            totalCost,
+            walletGoldBefore: Number(playerState.moonPoints || 0) + totalCost,
+            walletGoldAfter: Number(playerState.moonPoints || 0),
+        })
+
+        res.json({
+            ok: true,
+            message: `Mua thành công ${quantity} ${item.name}`,
+            purchase: {
+                itemId,
+                quantity,
+                unitPrice: item.moonShopPrice,
+                totalCost,
+                shopType: SHOP_TYPE_MOON,
+            },
+            wallet: serializeWallet(playerState),
+            inventory: {
+                itemId,
+                quantity: Number(inventoryEntry?.quantity || 0),
+            },
+            limit: {
+                purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
+                effectivePurchaseLimit,
+                purchasedQuantity: purchasedQuantity + quantity,
+                remainingPurchaseLimit: effectivePurchaseLimit > 0
+                    ? Math.max(0, effectivePurchaseLimit - purchasedQuantity - quantity)
+                    : 0,
+            },
+        })
+    } catch (error) {
+        if (Number(error?.code) === 11000) {
+            return res.status(409).json({ ok: false, message: 'Xung đột dữ liệu kho đồ, vui lòng thử lại' })
+        }
+        console.error('POST /api/shop/moon-items/:itemId/buy error:', error)
         res.status(500).json({ ok: false, message: 'Mua vật phẩm thất bại' })
     }
 })

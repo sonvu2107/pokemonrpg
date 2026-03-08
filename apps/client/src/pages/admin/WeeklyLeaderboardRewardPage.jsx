@@ -14,6 +14,8 @@ const REWARD_TYPE_OPTIONS = [
     { value: 'moonPoints', label: 'Điểm Nguyệt Các' },
     { value: 'item', label: 'Vật phẩm' },
     { value: 'pokemon', label: 'Pokemon' },
+    { value: 'titleImage', label: 'Danh hiệu ảnh' },
+    { value: 'avatarFrame', label: 'Khung avatar' },
 ]
 
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
@@ -35,7 +37,7 @@ const formatDateTime = (value) => {
 }
 
 const getDefaultRewardAmount = (rank, rewardType = 'platinumCoins') => {
-    if (rewardType === 'item' || rewardType === 'pokemon') return 1
+    if (rewardType === 'item' || rewardType === 'pokemon' || rewardType === 'titleImage' || rewardType === 'avatarFrame') return 1
     const safeRank = Math.max(1, Number.parseInt(rank, 10) || 1)
     if (safeRank === 1) return 10000
     if (safeRank === 2) return 7000
@@ -76,6 +78,12 @@ const formatRewardSummary = (entry = {}) => {
         const shinyText = entry?.rewardPokemonIsShiny ? ' (Shiny)' : ''
         return `${numberFormat(amount)} ${pokemonName} Lv.${numberFormat(level)}${shinyText}`
     }
+    if (rewardType === 'titleImage') {
+        return amount > 1 ? `${numberFormat(amount)} ảnh danh hiệu` : 'Ảnh danh hiệu'
+    }
+    if (rewardType === 'avatarFrame') {
+        return amount > 1 ? `${numberFormat(amount)} ảnh khung avatar` : 'Ảnh khung avatar'
+    }
     return `${numberFormat(amount)} Xu BK`
 }
 
@@ -83,6 +91,8 @@ const getRewardAmountLabel = (rewardType) => {
     if (rewardType === 'moonPoints') return 'Điểm Nguyệt'
     if (rewardType === 'item') return 'SL vật phẩm'
     if (rewardType === 'pokemon') return 'SL Pokémon'
+    if (rewardType === 'titleImage') return 'Ảnh danh hiệu'
+    if (rewardType === 'avatarFrame') return 'Ảnh khung avatar'
     return 'Xu BK'
 }
 
@@ -90,7 +100,20 @@ const getRewardTypeLabel = (rewardType) => {
     if (rewardType === 'moonPoints') return 'Điểm Nguyệt'
     if (rewardType === 'item') return 'Vật phẩm'
     if (rewardType === 'pokemon') return 'Pokemon'
+    if (rewardType === 'titleImage') return 'Danh hiệu ảnh'
+    if (rewardType === 'avatarFrame') return 'Khung avatar'
     return 'Xu BK'
+}
+
+const isCosmeticRewardType = (rewardType) => rewardType === 'titleImage' || rewardType === 'avatarFrame'
+
+const validateImageFile = (file) => {
+    if (!file) return 'Chưa chọn tệp ảnh'
+    const maxBytes = 10 * 1024 * 1024
+    if (Number(file.size || 0) <= 0) return 'Tệp ảnh không hợp lệ'
+    if (Number(file.size || 0) > maxBytes) return 'Ảnh vượt quá 10MB'
+    if (!String(file.type || '').startsWith('image/')) return 'Vui lòng chọn tệp ảnh'
+    return ''
 }
 
 const buildRewardStatusByUserId = (rewardRows = []) => {
@@ -138,6 +161,8 @@ export default function WeeklyLeaderboardRewardPage() {
         moonPoints: false,
         item: false,
         pokemon: false,
+        titleImage: false,
+        avatarFrame: false,
     })
     const [itemSearch, setItemSearch] = useState('')
     const [pokemonSearch, setPokemonSearch] = useState('')
@@ -156,6 +181,12 @@ export default function WeeklyLeaderboardRewardPage() {
     const [rewardPokemonFormId, setRewardPokemonFormId] = useState('normal')
     const [rewardPokemonLevel, setRewardPokemonLevel] = useState('5')
     const [rewardPokemonIsShiny, setRewardPokemonIsShiny] = useState(false)
+    const [rewardTitleImageUrl, setRewardTitleImageUrl] = useState('')
+    const [rewardAvatarFrameUrl, setRewardAvatarFrameUrl] = useState('')
+    const [uploadingRewardAsset, setUploadingRewardAsset] = useState({
+        title: false,
+        frame: false,
+    })
 
     const primaryLabel = useMemo(() => getPrimaryLabelByMode(mode), [mode])
     const selectedRewardTypeValues = useMemo(() => {
@@ -384,6 +415,34 @@ export default function WeeklyLeaderboardRewardPage() {
         setPokemonPickerOpen(false)
     }
 
+    const handleUploadRewardAsset = async (type, file) => {
+        const validationError = validateImageFile(file)
+        if (validationError) {
+            setError(validationError)
+            return
+        }
+
+        const key = type === 'title' ? 'title' : 'frame'
+        try {
+            setError('')
+            setUploadingRewardAsset((prev) => ({ ...prev, [key]: true }))
+            const uploadRes = await leaderboardRewardApi.uploadImage(file)
+            const imageUrl = String(uploadRes?.imageUrl || '').trim()
+            if (!imageUrl) {
+                throw new Error('Không nhận được URL ảnh sau khi tải lên')
+            }
+            if (type === 'title') {
+                setRewardTitleImageUrl(imageUrl)
+            } else {
+                setRewardAvatarFrameUrl(imageUrl)
+            }
+        } catch (err) {
+            setError(err.message || 'Không thể tải ảnh thưởng')
+        } finally {
+            setUploadingRewardAsset((prev) => ({ ...prev, [key]: false }))
+        }
+    }
+
     const handleAward = async (player) => {
         const userId = String(player?.userId || '').trim()
         if (!userId) return
@@ -405,7 +464,7 @@ export default function WeeklyLeaderboardRewardPage() {
                 continue
             }
 
-            const amountRaw = getRewardAmountInputValue(userId, type, player?.rank)
+            const amountRaw = isCosmeticRewardType(type) ? '1' : getRewardAmountInputValue(userId, type, player?.rank)
             const amount = Math.max(0, Number.parseInt(amountRaw, 10) || 0)
             if (amount <= 0) {
                 alert(`Số lượng của ${getRewardTypeLabel(type)} phải lớn hơn 0`)
@@ -420,6 +479,14 @@ export default function WeeklyLeaderboardRewardPage() {
                 alert('Vui lòng chọn Pokemon để trao thưởng')
                 return
             }
+            if (type === 'titleImage' && !String(rewardTitleImageUrl || '').trim()) {
+                alert('Vui lòng tải/chọn ảnh danh hiệu trước khi trao thưởng')
+                return
+            }
+            if (type === 'avatarFrame' && !String(rewardAvatarFrameUrl || '').trim()) {
+                alert('Vui lòng tải/chọn ảnh khung avatar trước khi trao thưởng')
+                return
+            }
 
             rewardEntries.push({
                 rewardType: type,
@@ -429,6 +496,8 @@ export default function WeeklyLeaderboardRewardPage() {
                 pokemonFormId: type === 'pokemon' ? rewardPokemonFormId : 'normal',
                 pokemonLevel: type === 'pokemon' ? Math.max(1, Number.parseInt(rewardPokemonLevel, 10) || 5) : 5,
                 pokemonIsShiny: type === 'pokemon' ? Boolean(rewardPokemonIsShiny) : false,
+                titleImageUrl: type === 'titleImage' ? String(rewardTitleImageUrl || '').trim() : '',
+                avatarFrameUrl: type === 'avatarFrame' ? String(rewardAvatarFrameUrl || '').trim() : '',
             })
         }
 
@@ -446,6 +515,8 @@ export default function WeeklyLeaderboardRewardPage() {
                 const shinyText = entry.pokemonIsShiny ? ' (Shiny)' : ''
                 return `${numberFormat(entry.rewardAmount)} ${selectedPoke?.name || 'Pokemon'} Lv.${numberFormat(entry.pokemonLevel)}${shinyText}`
             }
+            if (entry.rewardType === 'titleImage') return 'ảnh danh hiệu'
+            if (entry.rewardType === 'avatarFrame') return 'ảnh khung avatar'
             return `${numberFormat(entry.rewardAmount)} Xu Bạch Kim`
         }).join(' + ')
 
@@ -548,6 +619,87 @@ export default function WeeklyLeaderboardRewardPage() {
                     {selectedRewardTypeValues.length === 0 && (
                         <div className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                             Chọn ít nhất 1 loại thưởng để có thể trao.
+                        </div>
+                    )}
+
+                    {(selectedRewardTypes.titleImage || selectedRewardTypes.avatarFrame) && (
+                        <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-3">
+                            <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ảnh thưởng danh hiệu/khung</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {selectedRewardTypes.titleImage && (
+                                    <div className="space-y-2">
+                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh danh hiệu top tuần</div>
+                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                                            {rewardTitleImageUrl ? (
+                                                <img src={rewardTitleImageUrl} alt="Danh hiệu top" className="max-h-full max-w-full object-contain" />
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400">Chưa chọn ảnh danh hiệu</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            id="leaderboard-reward-title-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0]
+                                                e.target.value = ''
+                                                handleUploadRewardAsset('title', file)
+                                            }}
+                                        />
+                                        <label
+                                            htmlFor="leaderboard-reward-title-upload"
+                                            className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                        >
+                                            {uploadingRewardAsset.title ? 'Đang tải ảnh...' : 'Tải ảnh danh hiệu'}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={rewardTitleImageUrl}
+                                            onChange={(e) => setRewardTitleImageUrl(e.target.value)}
+                                            placeholder="URL ảnh danh hiệu"
+                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                                        />
+                                    </div>
+                                )}
+
+                                {selectedRewardTypes.avatarFrame && (
+                                    <div className="space-y-2">
+                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh khung avatar top tuần</div>
+                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                                            {rewardAvatarFrameUrl ? (
+                                                <img src={rewardAvatarFrameUrl} alt="Khung top" className="max-h-full max-w-full object-contain" />
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400">Chưa chọn ảnh khung</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            id="leaderboard-reward-frame-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0]
+                                                e.target.value = ''
+                                                handleUploadRewardAsset('frame', file)
+                                            }}
+                                        />
+                                        <label
+                                            htmlFor="leaderboard-reward-frame-upload"
+                                            className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                        >
+                                            {uploadingRewardAsset.frame ? 'Đang tải ảnh...' : 'Tải ảnh khung'}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={rewardAvatarFrameUrl}
+                                            onChange={(e) => setRewardAvatarFrameUrl(e.target.value)}
+                                            placeholder="URL ảnh khung avatar"
+                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -840,20 +992,32 @@ export default function WeeklyLeaderboardRewardPage() {
                                             <div className="space-y-2">
                                                 {selectedRewardTypeValues.map((type) => {
                                                     const typeAwarded = Boolean(rewardStatus.byType?.[type])
+                                                    const cosmeticType = isCosmeticRewardType(type)
+                                                    const cosmeticMissing = type === 'titleImage'
+                                                        ? !String(rewardTitleImageUrl || '').trim()
+                                                        : (type === 'avatarFrame' ? !String(rewardAvatarFrameUrl || '').trim() : false)
                                                     return (
                                                         <div key={`${userId}-${type}`} className="flex items-center gap-2">
                                                             <span className={`w-24 text-[11px] font-bold ${typeAwarded ? 'text-emerald-700' : 'text-slate-600'}`}>
                                                                 {getRewardTypeLabel(type)}
                                                             </span>
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                value={getRewardAmountInputValue(userId, type, entry?.rank)}
-                                                                onChange={(e) => handleRewardAmountChange(userId, type, e.target.value)}
-                                                                disabled={typeAwarded || isRewarding}
-                                                                className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
-                                                                title={getRewardAmountLabel(type)}
-                                                            />
+                                                            {cosmeticType ? (
+                                                                <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                                    ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                                                    : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                                                    {cosmeticMissing ? 'Chưa chọn ảnh' : 'Sẵn sàng trao ảnh'}
+                                                                </span>
+                                                            ) : (
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    value={getRewardAmountInputValue(userId, type, entry?.rank)}
+                                                                    onChange={(e) => handleRewardAmountChange(userId, type, e.target.value)}
+                                                                    disabled={typeAwarded || isRewarding}
+                                                                    className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+                                                                    title={getRewardAmountLabel(type)}
+                                                                />
+                                                            )}
                                                             {typeAwarded && (
                                                                 <span className="text-[11px] font-bold text-emerald-700">Đã trao</span>
                                                             )}
@@ -921,19 +1085,31 @@ export default function WeeklyLeaderboardRewardPage() {
                                 <div className="space-y-2">
                                     {selectedRewardTypeValues.map((type) => {
                                         const typeAwarded = Boolean(rewardStatus.byType?.[type])
+                                        const cosmeticType = isCosmeticRewardType(type)
+                                        const cosmeticMissing = type === 'titleImage'
+                                            ? !String(rewardTitleImageUrl || '').trim()
+                                            : (type === 'avatarFrame' ? !String(rewardAvatarFrameUrl || '').trim() : false)
                                         return (
                                             <div key={`${userId}-${type}-mobile`} className="flex items-center gap-2">
                                                 <span className={`w-24 text-[11px] font-bold ${typeAwarded ? 'text-emerald-700' : 'text-slate-600'}`}>
                                                     {getRewardTypeLabel(type)}
                                                 </span>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={getRewardAmountInputValue(userId, type, entry?.rank)}
-                                                    onChange={(e) => handleRewardAmountChange(userId, type, e.target.value)}
-                                                    disabled={typeAwarded || isRewarding}
-                                                    className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
-                                                />
+                                                {cosmeticType ? (
+                                                    <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                        ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                                        : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                                        {cosmeticMissing ? 'Chưa chọn ảnh' : 'Sẵn sàng'}
+                                                    </span>
+                                                ) : (
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={getRewardAmountInputValue(userId, type, entry?.rank)}
+                                                        onChange={(e) => handleRewardAmountChange(userId, type, e.target.value)}
+                                                        disabled={typeAwarded || isRewarding}
+                                                        className="w-24 px-2 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
+                                                    />
+                                                )}
                                                 {typeAwarded && (
                                                     <span className="text-[11px] font-bold text-emerald-700">Đã trao</span>
                                                 )}

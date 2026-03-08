@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
+import WeeklyLeaderboardReward from '../models/WeeklyLeaderboardReward.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 import { extractClientIp } from '../utils/ipUtils.js'
@@ -12,6 +13,7 @@ import { extractClientIp } from '../utils/ipUtils.js'
 const router = express.Router()
 const RECOVERY_PIN_REGEX = /^\d{6}$/
 const REGISTRATION_IP_WINDOW_MS = 24 * 60 * 60 * 1000
+const COSMETIC_REWARD_TYPES = Object.freeze(['titleImage', 'avatarFrame'])
 
 const createRateLimitHandler = (code, fallbackMessage, fallbackWindowMs) => (req, res) => {
     const resetTimeMs = req.rateLimit?.resetTime
@@ -106,6 +108,71 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         title: current.title || tier.title,
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+    }
+}
+
+const buildOwnedProfileCosmetics = (rewardRows = [], currentBenefitsLike = {}) => {
+    const currentBenefits = normalizeVipBenefits(currentBenefitsLike)
+    const titleMap = new Map()
+    const frameMap = new Map()
+
+    const addCosmetic = ({ type, imageUrl, rewardId, weekStart, mode, rank, rewardedAt }) => {
+        const normalizedType = String(type || '').trim()
+        const normalizedImageUrl = String(imageUrl || '').trim()
+        if (!normalizedImageUrl) return
+        const targetMap = normalizedType === 'titleImage' ? titleMap : frameMap
+        if (!targetMap.has(normalizedImageUrl)) {
+            targetMap.set(normalizedImageUrl, {
+                imageUrl: normalizedImageUrl,
+                rewardId: String(rewardId || '').trim(),
+                weekStart: String(weekStart || '').trim(),
+                mode: String(mode || '').trim(),
+                rank: Math.max(0, Number(rank || 0)),
+                rewardedAt: rewardedAt || null,
+            })
+        }
+    }
+
+    for (const row of (Array.isArray(rewardRows) ? rewardRows : [])) {
+        const rewardType = String(row?.rewardType || '').trim()
+        if (rewardType === 'titleImage') {
+            addCosmetic({
+                type: rewardType,
+                imageUrl: row?.rewardTitleImageUrl,
+                rewardId: row?._id,
+                weekStart: row?.weekStart,
+                mode: row?.mode,
+                rank: row?.rank,
+                rewardedAt: row?.rewardedAt || row?.createdAt,
+            })
+            continue
+        }
+        if (rewardType === 'avatarFrame') {
+            addCosmetic({
+                type: rewardType,
+                imageUrl: row?.rewardAvatarFrameUrl,
+                rewardId: row?._id,
+                weekStart: row?.weekStart,
+                mode: row?.mode,
+                rank: row?.rank,
+                rewardedAt: row?.rewardedAt || row?.createdAt,
+            })
+        }
+    }
+
+    addCosmetic({ type: 'titleImage', imageUrl: currentBenefits.titleImageUrl })
+    addCosmetic({ type: 'avatarFrame', imageUrl: currentBenefits.avatarFrameUrl })
+
+    const sortByRecent = (a, b) => {
+        const aTime = new Date(a?.rewardedAt || 0).getTime()
+        const bTime = new Date(b?.rewardedAt || 0).getTime()
+        if (aTime !== bTime) return bTime - aTime
+        return String(b?.rewardId || '').localeCompare(String(a?.rewardId || ''))
+    }
+
+    return {
+        titleImages: [...titleMap.values()].sort(sortByRecent),
+        avatarFrames: [...frameMap.values()].sort(sortByRecent),
     }
 }
 
@@ -536,6 +603,114 @@ router.get('/me', authMiddleware, async (req, res, next) => {
             ok: true,
             user: serializeAuthUser(user, effectiveVipBenefits),
             playerState: serializePlayerState(playerState),
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// GET /api/auth/profile-cosmetics (protected)
+router.get('/profile-cosmetics', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+            .select('vipBenefits')
+            .lean()
+
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Không tìm thấy người dùng',
+            })
+        }
+
+        const rewardRows = await WeeklyLeaderboardReward.find({
+            userId: req.user.userId,
+            rewardType: { $in: COSMETIC_REWARD_TYPES },
+        })
+            .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
+            .sort({ rewardedAt: -1, _id: -1 })
+            .lean()
+
+        const owned = buildOwnedProfileCosmetics(rewardRows, user?.vipBenefits)
+        const currentVipBenefits = normalizeVipBenefits(user?.vipBenefits)
+
+        res.json({
+            ok: true,
+            equipped: {
+                titleImageUrl: currentVipBenefits.titleImageUrl,
+                avatarFrameUrl: currentVipBenefits.avatarFrameUrl,
+            },
+            owned,
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// PUT /api/auth/profile-cosmetics (protected)
+router.put('/profile-cosmetics', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.userId)
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Không tìm thấy người dùng',
+            })
+        }
+
+        const incoming = req.body && typeof req.body === 'object' ? req.body : {}
+        const canSetTitle = Object.prototype.hasOwnProperty.call(incoming, 'titleImageUrl')
+        const canSetFrame = Object.prototype.hasOwnProperty.call(incoming, 'avatarFrameUrl')
+        if (!canSetTitle && !canSetFrame) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Không có thay đổi danh hiệu hoặc khung avatar',
+            })
+        }
+
+        const rewardRows = await WeeklyLeaderboardReward.find({
+            userId: req.user.userId,
+            rewardType: { $in: COSMETIC_REWARD_TYPES },
+        })
+            .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
+            .sort({ rewardedAt: -1, _id: -1 })
+            .lean()
+
+        const owned = buildOwnedProfileCosmetics(rewardRows, user?.vipBenefits)
+        const ownedTitleSet = new Set(owned.titleImages.map((entry) => String(entry?.imageUrl || '').trim()).filter(Boolean))
+        const ownedFrameSet = new Set(owned.avatarFrames.map((entry) => String(entry?.imageUrl || '').trim()).filter(Boolean))
+
+        const currentBenefits = normalizeVipBenefits(user.vipBenefits)
+        const nextBenefits = {
+            ...currentBenefits,
+        }
+
+        if (canSetTitle) {
+            const nextTitle = String(incoming.titleImageUrl || '').trim()
+            if (nextTitle && !ownedTitleSet.has(nextTitle)) {
+                return res.status(400).json({ ok: false, message: 'Bạn chưa sở hữu ảnh danh hiệu này' })
+            }
+            nextBenefits.titleImageUrl = nextTitle
+        }
+
+        if (canSetFrame) {
+            const nextFrame = String(incoming.avatarFrameUrl || '').trim()
+            if (nextFrame && !ownedFrameSet.has(nextFrame)) {
+                return res.status(400).json({ ok: false, message: 'Bạn chưa sở hữu ảnh khung avatar này' })
+            }
+            nextBenefits.avatarFrameUrl = nextFrame
+        }
+
+        user.vipBenefits = {
+            ...user.vipBenefits,
+            ...nextBenefits,
+        }
+        await user.save()
+
+        res.json({
+            ok: true,
+            message: 'Đã cập nhật danh hiệu/khung avatar hồ sơ',
+            user: serializeAuthUser(user),
         })
     } catch (error) {
         next(error)

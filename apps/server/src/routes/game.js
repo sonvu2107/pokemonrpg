@@ -49,6 +49,7 @@ import {
     getOrCreateTrainerBattleSession,
     getTrainerBattleSessionExpiryDate as getBattleSessionExpiryDate,
 } from '../services/trainerBattleSessionService.js'
+import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
 
 
 
@@ -1548,6 +1549,33 @@ const getAliveOpponentIndex = (team, startIndex = 0) => {
         if ((team[index]?.currentHp || 0) > 0) return index
     }
     return -1
+}
+
+const serializeTrainerBattleState = (trainerSession = null) => {
+    if (!trainerSession || !Array.isArray(trainerSession.team)) return null
+    const currentIndex = Math.max(0, Number(trainerSession.currentIndex) || 0)
+    return {
+        currentIndex,
+        defeatedAll: currentIndex >= trainerSession.team.length,
+        team: trainerSession.team.map((entry) => ({
+            slot: Math.max(0, Number(entry?.slot) || 0),
+            pokemonId: entry?.pokemonId || null,
+            name: String(entry?.name || 'Pokemon').trim() || 'Pokemon',
+            level: Math.max(1, Number(entry?.level) || 1),
+            formId: String(entry?.formId || 'normal').trim().toLowerCase() || 'normal',
+            currentHp: Math.max(0, Number(entry?.currentHp || 0)),
+            maxHp: Math.max(1, Number(entry?.maxHp || 1)),
+            status: normalizeBattleStatus(entry?.status),
+            statusTurns: normalizeStatusTurns(entry?.statusTurns),
+            statStages: normalizeStatStages(entry?.statStages),
+            damageGuards: normalizeDamageGuards(entry?.damageGuards),
+            wasDamagedLastTurn: Boolean(entry?.wasDamagedLastTurn),
+            volatileState: normalizeVolatileState(entry?.volatileState),
+            baseStats: entry?.baseStats && typeof entry.baseStats === 'object' ? entry.baseStats : {},
+            types: normalizePokemonTypes(entry?.types),
+            damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
+        })),
+    }
 }
 
 const distributeExpByDefeats = (totalExp, participants = []) => {
@@ -5123,6 +5151,97 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                         ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but it failed because there is no active terrain.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
                         : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
             },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// POST /api/game/battle/trainer/switch (protected)
+router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const { trainerId = null, activePokemonId = null, playerCurrentHp = null, playerMaxHp = null } = req.body || {}
+        const normalizedTrainerId = String(trainerId || '').trim()
+        const normalizedActivePokemonId = String(activePokemonId || '').trim()
+
+        if (!normalizedTrainerId || !normalizedActivePokemonId) {
+            return res.status(400).json({ ok: false, message: 'Thiếu trainerId hoặc activePokemonId.' })
+        }
+
+        const trainerSession = await BattleSession.findOne({
+            userId,
+            trainerId: normalizedTrainerId,
+            expiresAt: { $gt: new Date() },
+        })
+        if (!trainerSession) {
+            return res.status(409).json({ ok: false, message: 'Không tìm thấy phiên battle trainer. Vui lòng vào lại trận.' })
+        }
+
+        const team = Array.isArray(trainerSession.team) ? trainerSession.team : []
+        const currentIndex = Math.max(0, Number(trainerSession.currentIndex) || 0)
+        if (team.length === 0 || currentIndex >= team.length) {
+            return res.status(409).json({ ok: false, message: 'Phiên battle trainer đã kết thúc. Vui lòng vào trận mới.' })
+        }
+
+        const trainerDoc = await BattleTrainer.findById(normalizedTrainerId)
+            .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+            .lean()
+        if (!trainerDoc) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle.' })
+        }
+
+        const targetPokemon = await UserPokemon.findOne({
+            _id: normalizedActivePokemonId,
+            userId,
+            location: 'party',
+        }).populate('pokemonId', 'name baseStats rarity forms defaultFormId types')
+        if (!targetPokemon) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon để đổi ra sân.' })
+        }
+
+        const calculatedMaxHp = calcMaxHp(
+            Number(targetPokemon?.pokemonId?.baseStats?.hp || 1),
+            Math.max(1, Number(targetPokemon.level || 1)),
+            targetPokemon?.pokemonId?.rarity || 'd'
+        )
+        const resolvedMaxHp = clamp(
+            Math.floor(Number.isFinite(Number(playerMaxHp)) ? Number(playerMaxHp) : calculatedMaxHp),
+            1,
+            calculatedMaxHp
+        )
+        const resolvedCurrentHp = clamp(
+            Math.floor(Number.isFinite(Number(playerCurrentHp)) ? Number(playerCurrentHp) : resolvedMaxHp),
+            0,
+            resolvedMaxHp
+        )
+
+        trainerSession.playerPokemonId = targetPokemon._id
+        trainerSession.playerMaxHp = resolvedMaxHp
+        trainerSession.playerCurrentHp = resolvedCurrentHp
+
+        const activeTrainerOpponent = team[currentIndex] || null
+        const trainerTeamEntry = Array.isArray(trainerDoc?.team) ? trainerDoc.team[currentIndex] : null
+        const counterAttack = await applyTrainerPenaltyTurn({
+            activeBattleSession: trainerSession,
+            activeTrainerOpponent,
+            targetPokemon,
+            trainerSpecies: trainerTeamEntry?.pokemonId || null,
+            playerCurrentHp: resolvedCurrentHp,
+            playerMaxHp: resolvedMaxHp,
+            reason: 'switch',
+        })
+
+        return res.json({
+            ok: true,
+            message: `${targetPokemon.nickname || targetPokemon?.pokemonId?.name || 'Pokemon'} vào sân và bị đối thủ phản công!`,
+            player: {
+                pokemonId: targetPokemon._id,
+                currentHp: Math.max(0, Number(trainerSession.playerCurrentHp || 0)),
+                maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
+            },
+            counterAttack,
+            opponent: serializeTrainerBattleState(trainerSession),
         })
     } catch (error) {
         next(error)

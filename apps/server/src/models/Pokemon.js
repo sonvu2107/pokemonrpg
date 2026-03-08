@@ -27,10 +27,10 @@ const FormStatsSchema = new Schema(
 const EvolutionSchema = new Schema(
     {
         evolvesTo: { type: Schema.Types.ObjectId, ref: 'Pokemon', default: null },
+        targetFormId: { type: String, default: null, trim: true, lowercase: true },
         minLevel: { type: Number, default: null, min: 1 },
-        // Future extensibility (optional)
-        // method: { type: String, enum: ['level', 'item', 'trade', 'friendship'], default: 'level' },
-        // itemId: { type: Schema.Types.ObjectId, ref: 'Item', default: null },
+        requiredItemId: { type: Schema.Types.ObjectId, ref: 'Item', default: null },
+        requiredItemQuantity: { type: Number, default: null, min: 1 },
     },
     { _id: false }
 )
@@ -268,6 +268,29 @@ pokemonSchema.pre('save', function (next) {
     // Validate evolution consistency
     if (this.evolution?.minLevel != null && this.evolution?.evolvesTo == null) {
         return next(new Error('evolution.minLevel is set but evolution.evolvesTo is null'))
+    }
+    if (this.evolution?.targetFormId != null && this.evolution?.evolvesTo == null) {
+        return next(new Error('evolution.targetFormId is set but evolution.evolvesTo is null'))
+    }
+    if (this.evolution?.requiredItemId != null && this.evolution?.evolvesTo == null) {
+        return next(new Error('evolution.requiredItemId is set but evolution.evolvesTo is null'))
+    }
+    if (this.evolution?.requiredItemQuantity != null && this.evolution?.requiredItemId == null) {
+        return next(new Error('evolution.requiredItemQuantity is set but evolution.requiredItemId is null'))
+    }
+
+    if (Array.isArray(this.forms) && this.forms.length > 0) {
+        for (const form of this.forms) {
+            if (form?.evolution?.requiredItemId != null && form?.evolution?.evolvesTo == null) {
+                return next(new Error(`forms[${form.formId}].evolution.requiredItemId is set but evolvesTo is null`))
+            }
+            if (form?.evolution?.targetFormId != null && form?.evolution?.evolvesTo == null) {
+                return next(new Error(`forms[${form.formId}].evolution.targetFormId is set but evolvesTo is null`))
+            }
+            if (form?.evolution?.requiredItemQuantity != null && form?.evolution?.requiredItemId == null) {
+                return next(new Error(`forms[${form.formId}].evolution.requiredItemQuantity is set but requiredItemId is null`))
+            }
+        }
     }
 
     next()

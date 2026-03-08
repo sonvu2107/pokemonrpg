@@ -16,10 +16,10 @@ export const RARITY_STAT_MULTIPLIER = {
     d: 1.0,
     c: 1.0,
     b: 1.0,
-    a: 1.05,
-    s: 1.10,
-    ss: 1.12,
-    sss: 1.15,
+    a: 1.02,
+    s: 1.04,
+    ss: 1.06,
+    sss: 1.08,
 }
 
 export const RARITY_EXP_MULTIPLIER = {
@@ -53,17 +53,22 @@ export const getRarityStatMultiplier = (rarity) => RARITY_STAT_MULTIPLIER[normal
 export const getRarityExpMultiplier = (rarity) => RARITY_EXP_MULTIPLIER[normalizeRarity(rarity)] ?? 1.0
 
 export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
-    const gain = getRarityStatGain(rarity)
-    const multiplier = getRarityStatMultiplier(rarity)
-    const step = Math.max(0, level - 1) * gain
+    const safeLevel = Math.max(1, Number(level) || 1)
     const specialDefense = baseStats.spdef ?? baseStats.spldef ?? 0
+    const scaleStat = (baseValue) => {
+        const safeBase = Math.max(1, Number(baseValue) || 0)
+        if (safeLevel <= 1) return safeBase
+        const levelGain = Math.floor((2 * safeBase * safeLevel) / 100)
+        return Math.max(1, safeBase + levelGain)
+    }
+
     return {
-        hp: Math.max(1, Math.floor(((baseStats.hp || 0) + step) * multiplier)),
-        atk: Math.max(1, Math.floor(((baseStats.atk || 0) + step) * multiplier)),
-        def: Math.max(1, Math.floor(((baseStats.def || 0) + step) * multiplier)),
-        spatk: Math.max(1, Math.floor(((baseStats.spatk || 0) + step) * multiplier)),
-        spdef: Math.max(1, Math.floor((specialDefense + step) * multiplier)),
-        spd: Math.max(1, Math.floor(((baseStats.spd || 0) + step) * multiplier)),
+        hp: scaleStat(baseStats.hp || 0),
+        atk: scaleStat(baseStats.atk || 0),
+        def: scaleStat(baseStats.def || 0),
+        spatk: scaleStat(baseStats.spatk || 0),
+        spdef: scaleStat(specialDefense),
+        spd: scaleStat(baseStats.spd || 0),
     }
 }
 

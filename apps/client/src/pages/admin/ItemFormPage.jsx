@@ -39,6 +39,17 @@ const ITEM_RARITY_META = {
     legendary: { label: 'Huyền thoại', badge: 'bg-orange-100 text-orange-700 border-orange-200' },
 }
 
+const POKEMON_RARITY_TIERS = [
+    { value: 'd', label: 'D' },
+    { value: 'c', label: 'C' },
+    { value: 'b', label: 'B' },
+    { value: 'a', label: 'A' },
+    { value: 's', label: 'S' },
+    { value: 'ss', label: 'SS' },
+    { value: 'sss', label: 'SSS' },
+]
+const POKEMON_RARITY_ORDER = POKEMON_RARITY_TIERS.map((entry) => entry.value)
+
 const EFFECT_TYPE_OPTIONS = [
     { value: 'none', label: 'Không có' },
     { value: 'catchMultiplier', label: 'Đặt tỉ lệ bắt (%)' },
@@ -97,7 +108,14 @@ export default function ItemFormPage() {
         type: 'misc',
         rarity: 'common',
         shopPrice: 0,
+        moonShopPrice: 0,
         isShopEnabled: false,
+        isMoonShopEnabled: false,
+        purchaseLimit: 0,
+        vipPurchaseLimitBonusPerLevel: 0,
+        isEvolutionMaterial: false,
+        evolutionRarityFrom: 'd',
+        evolutionRarityTo: 'sss',
         imageUrl: '',
         description: '',
         effectType: 'none',
@@ -120,7 +138,14 @@ export default function ItemFormPage() {
                 type: data.item.type || 'misc',
                 rarity: data.item.rarity || 'common',
                 shopPrice: data.item.shopPrice ?? 0,
+                moonShopPrice: data.item.moonShopPrice ?? 0,
                 isShopEnabled: Boolean(data.item.isShopEnabled),
+                isMoonShopEnabled: Boolean(data.item.isMoonShopEnabled),
+                purchaseLimit: Math.max(0, Number(data.item.purchaseLimit) || 0),
+                vipPurchaseLimitBonusPerLevel: Math.max(0, Number(data.item.vipPurchaseLimitBonusPerLevel) || 0),
+                isEvolutionMaterial: Boolean(data.item.isEvolutionMaterial),
+                evolutionRarityFrom: data.item.evolutionRarityFrom || 'd',
+                evolutionRarityTo: data.item.evolutionRarityTo || 'sss',
                 imageUrl: data.item.imageUrl || '',
                 description: data.item.description || '',
                 effectType: data.item.effectType || 'none',
@@ -143,6 +168,15 @@ export default function ItemFormPage() {
             return
         }
 
+        if (formData.isEvolutionMaterial) {
+            const fromIndex = POKEMON_RARITY_ORDER.indexOf(formData.evolutionRarityFrom)
+            const toIndex = POKEMON_RARITY_ORDER.indexOf(formData.evolutionRarityTo)
+            if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) {
+                setError('Khoảng rank tiến hóa không hợp lệ (From phải <= To)')
+                return
+            }
+        }
+
         try {
             setLoading(true)
 
@@ -151,6 +185,9 @@ export default function ItemFormPage() {
                 name: formData.name.trim(),
                 description: String(formData.description || '').trim(),
                 shopPrice: Math.max(0, Number(formData.shopPrice) || 0),
+                moonShopPrice: Math.max(0, Number(formData.moonShopPrice) || 0),
+                purchaseLimit: Math.max(0, Number(formData.purchaseLimit) || 0),
+                vipPurchaseLimitBonusPerLevel: Math.max(0, Number(formData.vipPurchaseLimitBonusPerLevel) || 0),
                 effectValue: Math.max(0, Number(formData.effectValue) || 0),
                 effectValueMp: Math.max(0, Number(formData.effectValueMp) || 0),
             }
@@ -191,6 +228,11 @@ export default function ItemFormPage() {
         () => buildEffectSummary(formData.effectType, formData.effectValue, formData.effectValueMp),
         [formData.effectType, formData.effectValue, formData.effectValueMp]
     )
+    const evolutionRangeLabel = useMemo(() => {
+        const fromLabel = POKEMON_RARITY_TIERS.find((entry) => entry.value === formData.evolutionRarityFrom)?.label || 'D'
+        const toLabel = POKEMON_RARITY_TIERS.find((entry) => entry.value === formData.evolutionRarityTo)?.label || 'SSS'
+        return `${fromLabel} - ${toLabel}`
+    }, [formData.evolutionRarityFrom, formData.evolutionRarityTo])
 
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm max-w-5xl mx-auto mb-10">
@@ -273,6 +315,17 @@ export default function ItemFormPage() {
                                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                         />
                                     </div>
+                                    <div>
+                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá Bán Nguyệt Các (Điểm)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={formData.moonShopPrice}
+                                            onChange={(e) => setFormData({ ...formData, moonShopPrice: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                        />
+                                    </div>
                                     <div className="flex items-end">
                                         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
                                             <input
@@ -284,6 +337,78 @@ export default function ItemFormPage() {
                                             Hiển thị trong Cửa hàng vật phẩm
                                         </label>
                                     </div>
+                                    <div className="flex items-end">
+                                        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(formData.isMoonShopEnabled)}
+                                                onChange={(e) => setFormData({ ...formData, isMoonShopEnabled: e.target.checked })}
+                                                className="accent-blue-600"
+                                            />
+                                            Hiển thị trong Cửa hàng Nguyệt Các
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giới Hạn Mua (0 = Không giới hạn)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={formData.purchaseLimit}
+                                            onChange={(e) => setFormData({ ...formData, purchaseLimit: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Bonus giới hạn theo VIP / cấp</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={formData.vipPurchaseLimitBonusPerLevel}
+                                            onChange={(e) => setFormData({ ...formData, vipPurchaseLimitBonusPerLevel: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(formData.isEvolutionMaterial)}
+                                                onChange={(e) => setFormData({ ...formData, isEvolutionMaterial: e.target.checked })}
+                                                className="accent-blue-600"
+                                            />
+                                            Có thể dùng làm vật phẩm tiến hóa
+                                        </label>
+                                    </div>
+                                    {formData.isEvolutionMaterial && (
+                                        <>
+                                            <div>
+                                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Từ Rank</label>
+                                                <select
+                                                    value={formData.evolutionRarityFrom}
+                                                    onChange={(e) => setFormData({ ...formData, evolutionRarityFrom: e.target.value })}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                                >
+                                                    {POKEMON_RARITY_TIERS.map((entry) => (
+                                                        <option key={`from-${entry.value}`} value={entry.value}>{entry.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Đến Rank</label>
+                                                <select
+                                                    value={formData.evolutionRarityTo}
+                                                    onChange={(e) => setFormData({ ...formData, evolutionRarityTo: e.target.value })}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                                >
+                                                    {POKEMON_RARITY_TIERS.map((entry) => (
+                                                        <option key={`to-${entry.value}`} value={entry.value}>{entry.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
@@ -399,7 +524,15 @@ export default function ItemFormPage() {
                                         <InfoRow label="Loại" value={selectedTypeMeta.label} />
                                         <InfoRow label="Độ hiếm" value={selectedRarityMeta.label} />
                                         <InfoRow label="Giá shop" value={`${formatCurrency(formData.shopPrice)} xu`} />
-                                        <InfoRow label="Trạng thái shop" value={formData.isShopEnabled ? 'Đang bán' : 'Ẩn shop'} />
+                                        <InfoRow label="Giá Nguyệt Các" value={`${formatCurrency(formData.moonShopPrice)} điểm`} />
+                                        <InfoRow label="Shop vật phẩm" value={formData.isShopEnabled ? 'Đang bán' : 'Ẩn'} />
+                                        <InfoRow label="Shop Nguyệt Các" value={formData.isMoonShopEnabled ? 'Đang bán' : 'Ẩn'} />
+                                        <InfoRow label="Giới hạn mua" value={Number(formData.purchaseLimit || 0) > 0 ? `${formatCurrency(formData.purchaseLimit)} lần` : 'Không giới hạn'} />
+                                        <InfoRow label="Bonus VIP" value={`${formatCurrency(formData.vipPurchaseLimitBonusPerLevel)} / cấp`} />
+                                        <InfoRow label="Vật phẩm tiến hóa" value={formData.isEvolutionMaterial ? 'Có' : 'Không'} />
+                                        {formData.isEvolutionMaterial && (
+                                            <InfoRow label="Khoảng rank" value={evolutionRangeLabel} />
+                                        )}
                                         <InfoRow label="Hiệu ứng" value={effectSummary} />
                                     </div>
 

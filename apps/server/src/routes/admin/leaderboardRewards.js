@@ -7,11 +7,14 @@ import Pokemon from '../../models/Pokemon.js'
 import UserInventory from '../../models/UserInventory.js'
 import UserPokemon from '../../models/UserPokemon.js'
 import WeeklyLeaderboardReward from '../../models/WeeklyLeaderboardReward.js'
+import upload from '../../middleware/upload.js'
+import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 
 const router = express.Router()
 
 const VALID_MODES = new Set(['wealth', 'trainerBattle', 'lc'])
-const VALID_REWARD_TYPES = new Set(['platinumCoins', 'moonPoints', 'item', 'pokemon'])
+const VALID_REWARD_TYPES = new Set(['platinumCoins', 'moonPoints', 'item', 'pokemon', 'titleImage', 'avatarFrame'])
+const COSMETIC_REWARD_TYPE_SET = new Set(['titleImage', 'avatarFrame'])
 let rewardIndexesSyncPromise = null
 
 const ensureRewardIndexesSynced = async () => {
@@ -83,6 +86,8 @@ const normalizeRewardType = (value = '') => {
     if (normalized === 'coin' || normalized === 'coins' || normalized === 'gold' || normalized === 'xu' || normalized === 'taiphu') return 'platinumCoins'
     if (normalized === 'pokemon' || normalized === 'pkm') return 'pokemon'
     if (normalized === 'item' || normalized === 'vatpham') return 'item'
+    if (normalized === 'title' || normalized === 'titleimage' || normalized === 'title_image' || normalized === 'danhhieu') return 'titleImage'
+    if (normalized === 'avatarframe' || normalized === 'avatar_frame' || normalized === 'frame' || normalized === 'khung') return 'avatarFrame'
     return 'platinumCoins'
 }
 
@@ -131,6 +136,8 @@ const getRewardTypeLabel = (rewardType = 'platinumCoins') => {
     if (rewardType === 'moonPoints') return 'Điểm Nguyệt Các'
     if (rewardType === 'item') return 'Vật phẩm'
     if (rewardType === 'pokemon') return 'Pokemon'
+    if (rewardType === 'titleImage') return 'Danh hiệu ảnh'
+    if (rewardType === 'avatarFrame') return 'Khung avatar'
     return 'Xu Bạch Kim'
 }
 
@@ -150,6 +157,8 @@ const normalizeRewardEntriesFromBody = (body = {}) => {
         pokemonFormId: body?.pokemonFormId || body?.formId,
         pokemonLevel: body?.pokemonLevel,
         pokemonIsShiny: body?.pokemonIsShiny || body?.isShiny,
+        titleImageUrl: body?.titleImageUrl,
+        avatarFrameUrl: body?.avatarFrameUrl,
     }]
 }
 
@@ -171,12 +180,39 @@ const serializeRewardEntry = (entry = {}) => ({
     rewardPokemonFormId: String(entry?.rewardPokemonFormId || '').trim(),
     rewardPokemonLevel: Math.max(1, Number(entry?.rewardPokemonLevel || 1)),
     rewardPokemonIsShiny: Boolean(entry?.rewardPokemonIsShiny),
+    rewardTitleImageUrl: String(entry?.rewardTitleImageUrl || '').trim(),
+    rewardAvatarFrameUrl: String(entry?.rewardAvatarFrameUrl || '').trim(),
     note: String(entry?.note || '').trim(),
     rewardedAt: entry?.rewardedAt || entry?.createdAt || null,
     rewardedBy: {
         userId: String(entry?.rewardedBy?._id || entry?.rewardedBy || '').trim(),
         username: String(entry?.rewardedBy?.username || '').trim(),
     },
+})
+
+// POST /api/admin/leaderboard-rewards/upload-image
+router.post('/upload-image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ ok: false, message: 'Chưa có tệp ảnh được tải lên' })
+        }
+
+        const { imageUrl, publicId } = await uploadVipAssetImageToCloudinary({
+            buffer: req.file.buffer,
+            mimetype: req.file.mimetype,
+            originalname: req.file.originalname,
+        })
+
+        return res.json({
+            ok: true,
+            imageUrl,
+            publicId,
+            message: 'Tải ảnh thưởng top tuần thành công',
+        })
+    } catch (error) {
+        console.error('POST /api/admin/leaderboard-rewards/upload-image error:', error)
+        return res.status(500).json({ ok: false, message: error.message || 'Tải ảnh thất bại' })
+    }
 })
 
 // GET /api/admin/leaderboard-rewards/meta/items?search=&limit=
@@ -340,14 +376,25 @@ router.post('/award', async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Số lượng Pokemon thưởng tối đa cho mỗi lần trao là 100' })
             }
 
+            const titleImageUrl = String(rawEntry?.titleImageUrl || '').trim()
+            const avatarFrameUrl = String(rawEntry?.avatarFrameUrl || '').trim()
+            if (rewardType === 'titleImage' && !titleImageUrl) {
+                return res.status(400).json({ ok: false, message: 'Vui lòng chọn ảnh danh hiệu trước khi trao thưởng' })
+            }
+            if (rewardType === 'avatarFrame' && !avatarFrameUrl) {
+                return res.status(400).json({ ok: false, message: 'Vui lòng chọn ảnh khung avatar trước khi trao thưởng' })
+            }
+
             normalizedRewardEntries.push({
                 rewardType,
-                rewardAmount,
+                rewardAmount: COSMETIC_REWARD_TYPE_SET.has(rewardType) ? 1 : rewardAmount,
                 itemId: String(rawEntry?.itemId || '').trim(),
                 pokemonId: String(rawEntry?.pokemonId || '').trim(),
                 pokemonFormId: normalizeFormId(rawEntry?.pokemonFormId || rawEntry?.formId || 'normal'),
                 pokemonLevel: clamp(toSafeInt(rawEntry?.pokemonLevel, 5), 1, 1000),
                 pokemonIsShiny: Boolean(rawEntry?.pokemonIsShiny || rawEntry?.isShiny),
+                titleImageUrl,
+                avatarFrameUrl,
             })
 
             rewardTypesInRequest.add(rewardType)
@@ -430,6 +477,12 @@ router.post('/award', async (req, res) => {
                 const shinyText = entry.rewardPokemonIsShiny ? ' (Shiny)' : ''
                 return `${entry.rewardAmount.toLocaleString('vi-VN')} ${entry.rewardPokemonNameSnapshot || 'Pokemon'} Lv.${entry.rewardPokemonLevel}${shinyText}`
             }
+            if (entry.rewardType === 'titleImage') {
+                return 'ảnh danh hiệu'
+            }
+            if (entry.rewardType === 'avatarFrame') {
+                return 'ảnh khung avatar'
+            }
             return `${entry.rewardAmount.toLocaleString('vi-VN')} Xu Bạch Kim`
         }
 
@@ -447,6 +500,8 @@ router.post('/award', async (req, res) => {
             let rewardPokemonFormId = 'normal'
             let rewardPokemonLevel = rewardEntry.pokemonLevel
             let rewardPokemonIsShiny = rewardEntry.pokemonIsShiny
+            let rewardTitleImageUrl = ''
+            let rewardAvatarFrameUrl = ''
 
             if (rewardType === 'platinumCoins' || rewardType === 'moonPoints') {
                 await PlayerState.findOneAndUpdate(
@@ -518,6 +573,20 @@ router.post('/award', async (req, res) => {
                 rewardPokemonNameSnapshot = String(pokemonDoc?.name || '').trim()
             }
 
+            if (rewardType === 'titleImage') {
+                rewardTitleImageUrl = String(rewardEntry?.titleImageUrl || '').trim()
+                if (!rewardTitleImageUrl) {
+                    return res.status(400).json({ ok: false, message: 'Ảnh danh hiệu không hợp lệ' })
+                }
+            }
+
+            if (rewardType === 'avatarFrame') {
+                rewardAvatarFrameUrl = String(rewardEntry?.avatarFrameUrl || '').trim()
+                if (!rewardAvatarFrameUrl) {
+                    return res.status(400).json({ ok: false, message: 'Ảnh khung avatar không hợp lệ' })
+                }
+            }
+
             createDocs.push({
                 weekStart,
                 weekEnd,
@@ -535,6 +604,8 @@ router.post('/award', async (req, res) => {
                 rewardPokemonFormId,
                 rewardPokemonLevel,
                 rewardPokemonIsShiny,
+                rewardTitleImageUrl,
+                rewardAvatarFrameUrl,
                 note,
                 rewardedBy: req.user.userId,
                 rewardedAt: now,

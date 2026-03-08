@@ -42,6 +42,7 @@ export default function ItemListPage() {
     const [historyError, setHistoryError] = useState('')
     const [historySearch, setHistorySearch] = useState('')
     const [historyItemId, setHistoryItemId] = useState('')
+    const [historyShopType, setHistoryShopType] = useState('')
     const [historyPage, setHistoryPage] = useState(1)
     const [historyPagination, setHistoryPagination] = useState({ total: 0, pages: 0 })
     const [historyShopItems, setHistoryShopItems] = useState([])
@@ -52,7 +53,7 @@ export default function ItemListPage() {
 
     useEffect(() => {
         loadPurchaseHistory()
-    }, [historySearch, historyItemId, historyPage])
+    }, [historySearch, historyItemId, historyShopType, historyPage])
 
     const loadItems = async () => {
         try {
@@ -74,6 +75,7 @@ export default function ItemListPage() {
             const data = await itemApi.getPurchaseHistory({
                 search: historySearch,
                 itemId: historyItemId,
+                shopType: historyShopType,
                 page: historyPage,
                 limit: 20,
             })
@@ -164,7 +166,12 @@ export default function ItemListPage() {
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Loại</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Độ Hiếm</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Shop</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[130px]">Shop Nguyệt</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[140px]">Tiến hóa</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">Giới hạn mua</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">+VIP / cấp</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Shop</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Nguyệt</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px] sm:min-w-[160px] whitespace-nowrap">Hành Động</th>
                                         </tr>
                                     </thead>
@@ -202,8 +209,44 @@ export default function ItemListPage() {
                                                         </span>
                                                     )}
                                                 </td>
+                                                <td className="px-4 py-3">
+                                                    {item.isMoonShopEnabled ? (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-indigo-50 text-indigo-700 border-indigo-200">
+                                                            Đang bán
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                                                            Ẩn shop
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {item.isEvolutionMaterial ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-indigo-50 text-indigo-700 border-indigo-200">
+                                                                Dùng tiến hóa
+                                                            </span>
+                                                            <span className="text-[10px] font-semibold text-slate-600">
+                                                                Rank {String(item.evolutionRarityFrom || 'd').toUpperCase()} - {String(item.evolutionRarityTo || 'sss').toUpperCase()}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                                                            Không
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-700 font-bold">
+                                                    {Number(item.purchaseLimit || 0) > 0 ? Number(item.purchaseLimit || 0).toLocaleString('vi-VN') : '∞'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-700 font-bold">
+                                                    {Number(item.vipPurchaseLimitBonusPerLevel || 0).toLocaleString('vi-VN')}
+                                                </td>
                                                 <td className="px-4 py-3 text-right text-slate-700 font-bold">
                                                     {Number(item.shopPrice || 0).toLocaleString('vi-VN')}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-700 font-bold">
+                                                    {Number(item.moonShopPrice || 0).toLocaleString('vi-VN')}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <Link
@@ -223,7 +266,7 @@ export default function ItemListPage() {
                                         ))}
                                         {items.length === 0 && (
                                             <tr>
-                                                <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">
+                                                <td colSpan="12" className="px-4 py-8 text-center text-slate-500 italic">
                                                     Chưa có vật phẩm nào.
                                                 </td>
                                             </tr>
@@ -294,6 +337,15 @@ export default function ItemListPage() {
                                 <option key={entry._id} value={entry._id}>{entry.name}</option>
                             ))}
                         </select>
+                        <select
+                            value={historyShopType}
+                            onChange={(e) => { setHistoryShopType(e.target.value); setHistoryPage(1) }}
+                            className="px-3 py-1.5 bg-white border border-slate-300 rounded text-sm text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                        >
+                            <option value="">Tất cả shop</option>
+                            <option value="item">Shop vật phẩm</option>
+                            <option value="moon">Shop Nguyệt Các</option>
+                        </select>
                     </div>
 
                     {historyError && (
@@ -307,6 +359,7 @@ export default function ItemListPage() {
                                     <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Thời gian</th>
                                     <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Người mua</th>
                                     <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Vật phẩm</th>
+                                    <th className="px-3 py-2 text-left text-blue-900 font-bold uppercase text-xs">Shop</th>
                                     <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">SL</th>
                                     <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">Đơn giá</th>
                                     <th className="px-3 py-2 text-right text-blue-900 font-bold uppercase text-xs">Tổng</th>
@@ -316,21 +369,22 @@ export default function ItemListPage() {
                             <tbody className="divide-y divide-slate-100">
                                 {historyLoading ? (
                                     <tr>
-                                        <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">Đang tải lịch sử...</td>
+                                        <td colSpan="8" className="px-4 py-8 text-center text-slate-500 italic">Đang tải lịch sử...</td>
                                     </tr>
                                 ) : historyLogs.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="px-4 py-8 text-center text-slate-500 italic">Chưa có dữ liệu mua vật phẩm.</td>
+                                        <td colSpan="8" className="px-4 py-8 text-center text-slate-500 italic">Chưa có dữ liệu mua vật phẩm.</td>
                                     </tr>
                                 ) : historyLogs.map((log) => (
                                     <tr key={log._id} className="hover:bg-blue-50 transition-colors">
                                         <td className="px-3 py-2 text-slate-700">{formatDateTime(log.createdAt)}</td>
                                         <td className="px-3 py-2 text-slate-800 font-semibold">{log?.buyer?.username || 'Không rõ'}</td>
                                         <td className="px-3 py-2 text-slate-700">{log?.item?.name || 'Vật phẩm đã xóa'}</td>
+                                        <td className="px-3 py-2 text-slate-700 font-semibold">{log?.shopType === 'moon' ? 'Nguyệt Các' : 'Vật phẩm'}</td>
                                         <td className="px-3 py-2 text-right font-bold text-slate-700">{Number(log.quantity || 0).toLocaleString('vi-VN')}</td>
                                         <td className="px-3 py-2 text-right text-slate-700">{Number(log.unitPrice || 0).toLocaleString('vi-VN')}</td>
                                         <td className="px-3 py-2 text-right font-bold text-slate-800">{Number(log.totalCost || 0).toLocaleString('vi-VN')}</td>
-                                        <td className="px-3 py-2 text-right text-slate-600">{Number(log.walletGoldBefore || 0).toLocaleString('vi-VN')} → {Number(log.walletGoldAfter || 0).toLocaleString('vi-VN')}</td>
+                                        <td className="px-3 py-2 text-right text-slate-600">{Number(log.walletGoldBefore || 0).toLocaleString('vi-VN')} → {Number(log.walletGoldAfter || 0).toLocaleString('vi-VN')} {log?.walletCurrency === 'moonPoints' ? 'điểm' : 'xu'}</td>
                                     </tr>
                                 ))}
                             </tbody>

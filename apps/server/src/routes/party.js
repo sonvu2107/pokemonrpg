@@ -4,6 +4,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
+import { enforcePartyUniqueSpeciesForUser } from '../utils/partyDuplicateUtils.js'
 
 const router = express.Router()
 
@@ -53,6 +54,8 @@ router.use(authMiddleware)
 // Return list of 6 slots found in party
 router.get('/', async (req, res) => {
     try {
+        await enforcePartyUniqueSpeciesForUser(req.user.userId)
+
         const party = await UserPokemon.find(withActiveUserPokemonFilter({
             userId: req.user.userId,
             location: 'party',
@@ -103,6 +106,8 @@ router.post('/swap', async (req, res) => {
         const { fromIndex, toIndex } = req.body
         const userId = req.user.userId
 
+        await enforcePartyUniqueSpeciesForUser(userId)
+
         if (fromIndex === undefined || toIndex === undefined) {
             return res.status(400).json({ ok: false, message: 'Cần cung cấp vị trí đổi' })
         }
@@ -148,6 +153,8 @@ router.post('/add', async (req, res) => {
         const { pokemonId, slotIndex } = req.body
         const userId = req.user.userId
 
+        await enforcePartyUniqueSpeciesForUser(userId)
+
         const pokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: pokemonId, userId }))
         if (!pokemon) return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
 
@@ -159,6 +166,12 @@ router.post('/add', async (req, res) => {
         const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
         if (party.length >= 6) {
             return res.status(400).json({ ok: false, message: 'Đội hình đã đầy' })
+        }
+
+        const targetSpeciesId = String(pokemon?.pokemonId || '').trim()
+        const duplicateSpeciesInParty = party.some((entry) => String(entry?.pokemonId || '').trim() === targetSpeciesId)
+        if (duplicateSpeciesInParty) {
+            return res.status(400).json({ ok: false, message: 'Không thể thêm 2 Pokemon trùng loài trong cùng đội hình' })
         }
 
         // Determine index

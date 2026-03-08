@@ -45,6 +45,15 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [refreshing, setRefreshing] = useState(false)
+    const [showCosmeticModal, setShowCosmeticModal] = useState(false)
+    const [cosmeticModalMode, setCosmeticModalMode] = useState('general')
+    const [cosmeticLoading, setCosmeticLoading] = useState(false)
+    const [cosmeticSaving, setCosmeticSaving] = useState(false)
+    const [cosmeticError, setCosmeticError] = useState('')
+    const [ownedTitleImages, setOwnedTitleImages] = useState([])
+    const [ownedAvatarFrames, setOwnedAvatarFrames] = useState([])
+    const [selectedTitleImageUrl, setSelectedTitleImageUrl] = useState('')
+    const [selectedAvatarFrameUrl, setSelectedAvatarFrameUrl] = useState('')
 
     useEffect(() => {
         loadData()
@@ -76,6 +85,54 @@ export default function ProfilePage() {
         setRefreshing(true)
         await loadData()
         setRefreshing(false)
+    }
+
+    const handleOpenCosmeticModal = async (mode = 'general') => {
+        try {
+            setCosmeticError('')
+            setCosmeticLoading(true)
+            setCosmeticModalMode(mode === 'title' ? 'title' : 'general')
+            setShowCosmeticModal(true)
+
+            const cosmetics = await api.getProfileCosmetics()
+            const equipped = cosmetics?.equipped || {}
+            setOwnedTitleImages(Array.isArray(cosmetics?.owned?.titleImages) ? cosmetics.owned.titleImages : [])
+            setOwnedAvatarFrames(Array.isArray(cosmetics?.owned?.avatarFrames) ? cosmetics.owned.avatarFrames : [])
+            setSelectedTitleImageUrl(String(equipped?.titleImageUrl || '').trim())
+            setSelectedAvatarFrameUrl(String(equipped?.avatarFrameUrl || '').trim())
+        } catch (err) {
+            setCosmeticError(err.message || 'Không thể tải danh sách danh hiệu/khung avatar')
+        } finally {
+            setCosmeticLoading(false)
+        }
+    }
+
+    const handleSaveCosmetics = async () => {
+        try {
+            setCosmeticSaving(true)
+            setCosmeticError('')
+            const payload = cosmeticModalMode === 'title'
+                ? {
+                    titleImageUrl: String(selectedTitleImageUrl || '').trim(),
+                }
+                : {
+                    titleImageUrl: String(selectedTitleImageUrl || '').trim(),
+                    avatarFrameUrl: String(selectedAvatarFrameUrl || '').trim(),
+                }
+
+            const response = await api.updateProfileCosmetics(payload)
+            if (response?.user) {
+                const token = localStorage.getItem('token')
+                login(response.user, token)
+            }
+
+            await loadData()
+            setShowCosmeticModal(false)
+        } catch (err) {
+            setCosmeticError(err.message || 'Không thể cập nhật danh hiệu/khung avatar')
+        } finally {
+            setCosmeticSaving(false)
+        }
     }
 
     if (loading) {
@@ -200,6 +257,20 @@ export default function ProfilePage() {
                                             [ {action.label} ]
                                         </Link>
                                     ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenCosmeticModal('general')}
+                                        className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap text-blue-800"
+                                    >
+                                        [ Chỉnh sửa chung ]
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenCosmeticModal('title')}
+                                        className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap text-blue-800"
+                                    >
+                                        [ Chỉnh sửa danh hiệu ]
+                                    </button>
                                     <button onClick={handleRefresh} className="hover:text-amber-600 hover:underline px-1 whitespace-nowrap text-blue-800">
                                         [ Làm Mới Hồ Sơ ]
                                         {refreshing && <span className="ml-1 animate-spin inline-block">↻</span>}
@@ -328,6 +399,141 @@ export default function ProfilePage() {
                             </div>
                         </div>
                     </div>
+
+                    {showCosmeticModal && (
+                        <div
+                            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+                            onClick={() => {
+                                if (!cosmeticSaving) setShowCosmeticModal(false)
+                            }}
+                        >
+                            <div
+                                className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white p-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <h3 className="text-base font-bold text-slate-800">
+                                        {cosmeticModalMode === 'title' ? 'Chỉnh sửa danh hiệu' : 'Chỉnh sửa danh hiệu & khung avatar'}
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCosmeticModal(false)}
+                                        disabled={cosmeticSaving}
+                                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:opacity-50"
+                                    >
+                                        Đóng
+                                    </button>
+                                </div>
+
+                                {cosmeticError && (
+                                    <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                                        {cosmeticError}
+                                    </div>
+                                )}
+
+                                {cosmeticLoading ? (
+                                    <div className="py-6 text-center text-sm font-semibold text-slate-500">Đang tải danh sách ảnh...</div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="rounded border border-blue-200 bg-blue-50/40 p-3">
+                                            <div className="mb-2 text-xs font-bold uppercase text-blue-900">Danh hiệu</div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedTitleImageUrl('')}
+                                                    className={`rounded border px-2 py-2 text-left text-xs font-bold ${!selectedTitleImageUrl
+                                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+                                                >
+                                                    Dùng mặc định hệ thống/VIP
+                                                </button>
+                                                {ownedTitleImages.map((entry) => {
+                                                    const imageUrl = String(entry?.imageUrl || '').trim()
+                                                    if (!imageUrl) return null
+                                                    const isSelected = imageUrl === selectedTitleImageUrl
+                                                    return (
+                                                        <button
+                                                            key={`title-${imageUrl}`}
+                                                            type="button"
+                                                            onClick={() => setSelectedTitleImageUrl(imageUrl)}
+                                                            className={`rounded border p-2 text-left ${isSelected
+                                                                ? 'border-emerald-300 bg-emerald-50'
+                                                                : 'border-slate-300 bg-white hover:bg-slate-50'}`}
+                                                        >
+                                                            <div className="h-12 w-full flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
+                                                                <img src={imageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
+                                                            </div>
+                                                            <div className="mt-1 text-[10px] text-slate-500">
+                                                                {entry?.weekStart ? `Tuần ${entry.weekStart}` : 'Từ thưởng top tuần'}
+                                                            </div>
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {cosmeticModalMode !== 'title' && (
+                                            <div className="rounded border border-cyan-200 bg-cyan-50/30 p-3">
+                                                <div className="mb-2 text-xs font-bold uppercase text-cyan-900">Khung avatar</div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedAvatarFrameUrl('')}
+                                                        className={`rounded border px-2 py-2 text-left text-xs font-bold ${!selectedAvatarFrameUrl
+                                                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}
+                                                    >
+                                                        Dùng mặc định hệ thống/VIP
+                                                    </button>
+                                                    {ownedAvatarFrames.map((entry) => {
+                                                        const imageUrl = String(entry?.imageUrl || '').trim()
+                                                        if (!imageUrl) return null
+                                                        const isSelected = imageUrl === selectedAvatarFrameUrl
+                                                        return (
+                                                            <button
+                                                                key={`frame-${imageUrl}`}
+                                                                type="button"
+                                                                onClick={() => setSelectedAvatarFrameUrl(imageUrl)}
+                                                                className={`rounded border p-2 text-left ${isSelected
+                                                                    ? 'border-emerald-300 bg-emerald-50'
+                                                                    : 'border-slate-300 bg-white hover:bg-slate-50'}`}
+                                                            >
+                                                                <div className="h-12 w-full flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
+                                                                    <img src={imageUrl} alt="Khung avatar" className="max-h-full max-w-full object-contain" />
+                                                                </div>
+                                                                <div className="mt-1 text-[10px] text-slate-500">
+                                                                    {entry?.weekStart ? `Tuần ${entry.weekStart}` : 'Từ thưởng top tuần'}
+                                                                </div>
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowCosmeticModal(false)}
+                                                disabled={cosmeticSaving}
+                                                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-50"
+                                            >
+                                                Hủy
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveCosmetics}
+                                                disabled={cosmeticSaving}
+                                                className="rounded bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                                            >
+                                                {cosmeticSaving ? 'Đang lưu...' : 'Lưu lựa chọn'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                 </div>
             </div>

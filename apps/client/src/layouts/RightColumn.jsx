@@ -169,7 +169,7 @@ export default function RightColumn() {
                 <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>
                 <SidebarLink to="/shop/items">Cửa hàng Vật Phẩm</SidebarLink>
                 <SidebarLink to="/shop/skills">Cửa hàng Kỹ Năng</SidebarLink>
-                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Nguyệt Các')}>Cửa hàng Nguyệt Các</SidebarLink>
+                <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Hầm Mỏ')}>Cửa hàng Hầm Mỏ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Vẹt')} isSpecial>Cửa hàng Vẹt</SidebarLink>
             </SidebarSection>

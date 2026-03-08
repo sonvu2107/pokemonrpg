@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams, useLocation, Link } from 'react-router-dom'
-import { pokemonApi } from '../../services/adminApi'
+import { pokemonApi, itemApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 import { uploadOneToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
@@ -37,6 +37,7 @@ const FORM_VARIANTS = [
 const FORM_VARIANT_NAME_BY_ID = Object.fromEntries(FORM_VARIANTS.map(v => [v.id, v.name]))
 const BUILT_IN_FORM_VARIANT_IDS = new Set(FORM_VARIANTS.map(v => String(v.id || '').trim().toLowerCase()).filter(Boolean))
 const FORM_VARIANT_MODAL_PAGE_SIZE = 12
+const EVOLUTION_TARGET_MODAL_PAGE_SIZE = 12
 const BULK_UPLOAD_STATUS_META = {
     pending: {
         label: 'Chờ xử lý',
@@ -62,6 +63,7 @@ const BULK_UPLOAD_STATUS_META = {
 const BULK_UPLOAD_RETRY_ATTEMPTS = 3
 const BULK_UPLOAD_RETRY_BASE_DELAY_MS = 800
 const BULK_UPLOAD_MAX_CONCURRENCY = 3
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
 
 const waitForMs = (ms = 0) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
 
@@ -97,6 +99,33 @@ const normalizeRarity = (rarity) => {
     if (!rarity) return 'd'
     const normalized = String(rarity).trim().toLowerCase()
     return RARITY_ALIASES[normalized] || normalized
+}
+
+const isEvolutionItemAllowedForRarity = (item, rarity) => {
+    const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(rarity))
+    if (rarityIndex < 0) return true
+
+    const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(item?.evolutionRarityFrom || 'd'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(item?.evolutionRarityTo || 'sss'))
+    if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
+    return rarityIndex >= fromIndex && rarityIndex <= toIndex
+}
+
+const normalizeEvolutionState = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const evolvesTo = String(source?.evolvesTo?._id || source?.evolvesTo || '').trim()
+    const targetFormId = String(source?.targetFormId || '').trim().toLowerCase()
+    const minLevel = source?.minLevel ?? ''
+    const requiredItemId = String(source?.requiredItemId?._id || source?.requiredItemId || '').trim()
+    const requiredItemQuantity = source?.requiredItemQuantity ?? 1
+
+    return {
+        evolvesTo,
+        targetFormId,
+        minLevel: minLevel === null ? '' : minLevel,
+        requiredItemId,
+        requiredItemQuantity: requiredItemId ? requiredItemQuantity : 1,
+    }
 }
 
 const normalizeFormId = (formId) => String(formId || '').trim()
@@ -290,6 +319,25 @@ const extractCustomVariantsFromForms = (formRows = []) => {
     return variants
 }
 
+const collectDuplicateFormIdEntries = (formRows = []) => {
+    const rowNumbersByFormId = new Map()
+
+    ;(Array.isArray(formRows) ? formRows : []).forEach((entry, index) => {
+        const formId = normalizeFormId(entry?.formId).toLowerCase()
+        if (!formId) return
+
+        if (!rowNumbersByFormId.has(formId)) {
+            rowNumbersByFormId.set(formId, [])
+        }
+
+        rowNumbersByFormId.get(formId).push(index + 1)
+    })
+
+    return Array.from(rowNumbersByFormId.entries())
+        .filter(([, rowNumbers]) => rowNumbers.length > 1)
+        .map(([formId, rowNumbers]) => ({ formId, rowNumbers }))
+}
+
 const GROWTH_RATES = ['fast', 'medium_fast', 'medium_slow', 'slow', 'erratic', 'fluctuating']
 
 export default function PokemonFormPage() {
@@ -300,6 +348,7 @@ export default function PokemonFormPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [allPokemon, setAllPokemon] = useState([])
+    const [evolutionItems, setEvolutionItems] = useState([])
     const [moveCatalog, setMoveCatalog] = useState([])
     const [bulkFormUploading, setBulkFormUploading] = useState(false)
     const [bulkFormUploadProgress, setBulkFormUploadProgress] = useState(0)
@@ -319,9 +368,20 @@ export default function PokemonFormPage() {
     const [newFormVariantName, setNewFormVariantName] = useState('')
     const [formVariantModalError, setFormVariantModalError] = useState('')
     const [formVariantSubmitting, setFormVariantSubmitting] = useState(false)
+    const [showEvolutionTargetModal, setShowEvolutionTargetModal] = useState(false)
+    const [evolutionTargetSearchTerm, setEvolutionTargetSearchTerm] = useState('')
+    const [evolutionTargetPage, setEvolutionTargetPage] = useState(1)
+    const [evolutionTargetModalScope, setEvolutionTargetModalScope] = useState({ type: 'base', formIndex: null })
     const [defaultFormId, setDefaultFormId] = useState('normal')
     const [forms, setForms] = useState([
-        { formId: 'normal', formName: 'Normal', imageUrl: '', sprites: {}, stats: {} },
+        {
+            formId: 'normal',
+            formName: 'Normal',
+            imageUrl: '',
+            sprites: {},
+            stats: {},
+            evolution: normalizeEvolutionState(),
+        },
     ])
 
     const [formData, setFormData] = useState({
@@ -337,7 +397,7 @@ export default function PokemonFormPage() {
 
         // New Fields
         levelUpMoves: [{ level: 1, moveName: '' }],
-        evolution: { evolvesTo: '', minLevel: '' },
+        evolution: { evolvesTo: '', targetFormId: '', minLevel: '', requiredItemId: '', requiredItemQuantity: 1 },
         catchRate: 45,
         baseExperience: 50,
         growthRate: 'medium_fast',
@@ -381,6 +441,57 @@ export default function PokemonFormPage() {
     const hasFailedBulkQueueRows = bulkUploadQueueRows.some((row) => row.status === 'error')
     const bulkMegaFileCount = bulkUploadQueueRows.filter((row) => row.hasMegaKeyword).length
     const bulkGigantamaxFileCount = bulkUploadQueueRows.filter((row) => row.hasGigantamaxKeyword).length
+    const duplicateFormIdEntries = collectDuplicateFormIdEntries(forms)
+    const hasDuplicateFormIds = duplicateFormIdEntries.length > 0
+    const modalScopeIsForm = evolutionTargetModalScope?.type === 'form' && Number.isInteger(evolutionTargetModalScope?.formIndex)
+    const modalScopeFormIndex = modalScopeIsForm ? evolutionTargetModalScope.formIndex : null
+    const modalScopeForm = modalScopeIsForm ? forms[modalScopeFormIndex] : null
+    const scopedEvolution = modalScopeForm
+        ? normalizeEvolutionState(modalScopeForm?.evolution)
+        : normalizeEvolutionState(formData?.evolution)
+    const normalizedEvolutionTargetSearchTerm = String(evolutionTargetSearchTerm || '').trim().toLowerCase()
+    const filteredEvolutionTargets = allPokemon
+        .filter((entry) => String(entry?._id || '') !== String(id || ''))
+        .filter((entry) => {
+            if (!normalizedEvolutionTargetSearchTerm) return true
+            const targetName = String(entry?.name || '').toLowerCase()
+            const targetNumber = String(entry?.pokedexNumber || '')
+            const formTokens = (Array.isArray(entry?.forms) ? entry.forms : [])
+                .flatMap((form) => [form?.formId, form?.formName])
+                .map((value) => String(value || '').toLowerCase())
+                .filter(Boolean)
+            return targetName.includes(normalizedEvolutionTargetSearchTerm)
+                || targetNumber.includes(normalizedEvolutionTargetSearchTerm)
+                || formTokens.some((token) => token.includes(normalizedEvolutionTargetSearchTerm))
+        })
+    const evolutionTargetTotal = filteredEvolutionTargets.length
+    const evolutionTargetTotalPages = Math.max(1, Math.ceil(evolutionTargetTotal / EVOLUTION_TARGET_MODAL_PAGE_SIZE))
+    const resolvedEvolutionTargetPage = Math.min(evolutionTargetPage, evolutionTargetTotalPages)
+    const evolutionTargetPageStartIndex = (resolvedEvolutionTargetPage - 1) * EVOLUTION_TARGET_MODAL_PAGE_SIZE
+    const evolutionTargetPageRows = filteredEvolutionTargets.slice(
+        evolutionTargetPageStartIndex,
+        evolutionTargetPageStartIndex + EVOLUTION_TARGET_MODAL_PAGE_SIZE
+    )
+    const selectedEvolutionTarget = allPokemon.find(
+        (entry) => String(entry?._id || '') === String(formData?.evolution?.evolvesTo || '')
+    ) || null
+    const selectedEvolutionTargetForms = (() => {
+        if (!selectedEvolutionTarget) return []
+        const forms = Array.isArray(selectedEvolutionTarget.forms) ? selectedEvolutionTarget.forms : []
+        if (forms.length > 0) return forms
+        const fallbackFormId = normalizeFormId(selectedEvolutionTarget.defaultFormId || 'normal').toLowerCase() || 'normal'
+        return [{ formId: fallbackFormId, formName: fallbackFormId }]
+    })()
+    const scopedSelectedEvolutionTarget = allPokemon.find(
+        (entry) => String(entry?._id || '') === String(scopedEvolution?.evolvesTo || '')
+    ) || null
+    const scopedSelectedEvolutionTargetForms = (() => {
+        if (!scopedSelectedEvolutionTarget) return []
+        const forms = Array.isArray(scopedSelectedEvolutionTarget.forms) ? scopedSelectedEvolutionTarget.forms : []
+        if (forms.length > 0) return forms
+        const fallbackFormId = normalizeFormId(scopedSelectedEvolutionTarget.defaultFormId || 'normal').toLowerCase() || 'normal'
+        return [{ formId: fallbackFormId, formName: fallbackFormId }]
+    })()
 
     useEffect(() => {
         loadData()
@@ -397,6 +508,43 @@ export default function PokemonFormPage() {
         setShowBulkUploadModal(true)
     }, [location.state])
 
+    useEffect(() => {
+        if (!formData?.evolution?.evolvesTo) {
+            if (formData?.evolution?.targetFormId) {
+                setFormData((prev) => ({
+                    ...prev,
+                    evolution: {
+                        ...prev.evolution,
+                        targetFormId: '',
+                    },
+                }))
+            }
+            return
+        }
+
+        if (!selectedEvolutionTarget) return
+        const allowedFormIds = new Set(
+            selectedEvolutionTargetForms
+                .map((form) => String(form?.formId || '').trim().toLowerCase())
+                .filter(Boolean)
+        )
+        const currentTargetFormId = String(formData?.evolution?.targetFormId || '').trim().toLowerCase()
+        if (!currentTargetFormId || allowedFormIds.has(currentTargetFormId)) return
+
+        setFormData((prev) => ({
+            ...prev,
+            evolution: {
+                ...prev.evolution,
+                targetFormId: '',
+            },
+        }))
+    }, [
+        formData?.evolution?.evolvesTo,
+        formData?.evolution?.targetFormId,
+        selectedEvolutionTarget,
+        selectedEvolutionTargetForms,
+    ])
+
     const canonicalizeMoveName = (value) => {
         const normalized = String(value || '').trim()
         if (!normalized) return ''
@@ -408,15 +556,66 @@ export default function PokemonFormPage() {
     const loadData = async () => {
         try {
             setLoading(true)
-            // Fetch all pokemon for evolution dropdown + move catalog + shared form variants
-            const [pokemonList, moveLookup, formVariantLookup] = await Promise.all([
-                pokemonApi.list({ limit: 1000 }),
+            // Fetch full Pokemon catalog for evolution modal + move catalog + shared form variants
+            const loadAllPokemonForEvolution = async () => {
+                const limit = 100
+                let pageCursor = 1
+                let totalPages = 1
+                const collected = []
+
+                do {
+                    const data = await pokemonApi.list({ page: pageCursor, limit }).catch(() => ({ pokemon: [], pagination: { pages: 1 } }))
+                    if (Array.isArray(data?.pokemon) && data.pokemon.length > 0) {
+                        collected.push(...data.pokemon)
+                    }
+                    const parsedPages = Number.parseInt(data?.pagination?.pages, 10)
+                    totalPages = Number.isFinite(parsedPages) && parsedPages > 0 ? parsedPages : 1
+                    pageCursor += 1
+                } while (pageCursor <= totalPages)
+
+                const uniqueById = new Map()
+                collected.forEach((entry) => {
+                    const pokemonId = String(entry?._id || '').trim()
+                    if (!pokemonId || uniqueById.has(pokemonId)) return
+                    uniqueById.set(pokemonId, entry)
+                })
+
+                return [...uniqueById.values()]
+            }
+
+            const [pokemonRows, moveLookup, formVariantLookup] = await Promise.all([
+                loadAllPokemonForEvolution(),
                 pokemonApi.lookupMoves({ limit: 1000 }).catch(() => ({ moves: [] })),
                 pokemonApi.listFormVariants({ limit: 1000 }).catch(() => ({ formVariants: [] })),
             ])
-            setAllPokemon(pokemonList.pokemon || [])
+            const loadAllEvolutionItems = async () => {
+                const limit = 100
+                let pageCursor = 1
+                let totalPages = 1
+                const collected = []
+
+                do {
+                    const data = await itemApi.list({
+                        page: pageCursor,
+                        limit,
+                        isEvolutionMaterial: true,
+                    }).catch(() => ({ items: [], pagination: { pages: 1 } }))
+                    if (Array.isArray(data?.items) && data.items.length > 0) {
+                        collected.push(...data.items)
+                    }
+                    const parsedPages = Number.parseInt(data?.pagination?.pages, 10)
+                    totalPages = Number.isFinite(parsedPages) && parsedPages > 0 ? parsedPages : 1
+                    pageCursor += 1
+                } while (pageCursor <= totalPages)
+
+                return collected
+            }
+
+            const evolutionItemList = await loadAllEvolutionItems()
+            setAllPokemon(pokemonRows)
             setMoveCatalog(moveLookup.moves || [])
             setCustomFormVariants(sanitizeCustomVariants(formVariantLookup.formVariants || []))
+            setEvolutionItems(evolutionItemList)
 
             if (isEdit) {
                 const data = await pokemonApi.getById(id)
@@ -438,6 +637,7 @@ export default function PokemonFormPage() {
                 const normalizedForms = resolvedForms.map((f) => ({
                     ...f,
                     formId: normalizeFormId(f.formId).toLowerCase(),
+                    evolution: normalizeEvolutionState(f?.evolution),
                 }))
                 setForms(normalizedForms)
                 setCustomFormVariants((prev) => mergeFormVariants(prev, extractCustomVariantsFromForms(normalizedForms)))
@@ -451,8 +651,13 @@ export default function PokemonFormPage() {
                         ? pokemon.levelUpMoves
                         : (pokemon.initialMoves?.map(m => ({ level: 1, moveName: m })) || [{ level: 1, moveName: '' }]),
                     evolution: {
-                        evolvesTo: pokemon.evolution?.evolvesTo || '',
-                        minLevel: pokemon.evolution?.minLevel || ''
+                        evolvesTo: String(pokemon.evolution?.evolvesTo?._id || pokemon.evolution?.evolvesTo || '').trim(),
+                        targetFormId: String(pokemon.evolution?.targetFormId || '').trim().toLowerCase(),
+                        minLevel: pokemon.evolution?.minLevel || '',
+                        requiredItemId: String(
+                            pokemon.evolution?.requiredItemId?._id || pokemon.evolution?.requiredItemId || ''
+                        ).trim(),
+                        requiredItemQuantity: pokemon.evolution?.requiredItemQuantity || 1,
                     },
                     catchRate: pokemon.catchRate || 45,
                     baseExperience: pokemon.baseExperience || 50,
@@ -481,6 +686,12 @@ export default function PokemonFormPage() {
             return
         }
 
+        if (hasDuplicateFormIds) {
+            const firstDuplicate = duplicateFormIdEntries[0]
+            setError(`Dạng "${firstDuplicate.formId}" đang bị trùng ở dòng ${firstDuplicate.rowNumbers.join(', ')}. Vui lòng chỉnh lại ID dạng trước khi lưu.`)
+            return
+        }
+
         const normalizedDefaultFormId = normalizeFormId(defaultFormId).toLowerCase() || 'normal'
         const cleanedForms = forms
             .map(f => ({
@@ -490,6 +701,19 @@ export default function PokemonFormPage() {
                 imageUrl: String(f?.imageUrl || '').trim(),
                 sprites: f?.sprites || {},
                 stats: f?.stats || {},
+                evolution: (() => {
+                    const normalizedEvolution = normalizeEvolutionState(f?.evolution)
+                    const evolvesTo = normalizedEvolution.evolvesTo || null
+                    return {
+                        evolvesTo,
+                        targetFormId: evolvesTo ? (String(normalizedEvolution.targetFormId || '').trim().toLowerCase() || null) : null,
+                        minLevel: evolvesTo ? (parseInt(normalizedEvolution.minLevel, 10) || null) : null,
+                        requiredItemId: evolvesTo ? (String(normalizedEvolution.requiredItemId || '').trim() || null) : null,
+                        requiredItemQuantity: evolvesTo && String(normalizedEvolution.requiredItemId || '').trim()
+                            ? (Math.max(1, Number.parseInt(normalizedEvolution.requiredItemQuantity, 10) || 1))
+                            : null,
+                    }
+                })(),
             }))
             .filter(f => f.formId)
 
@@ -498,7 +722,7 @@ export default function PokemonFormPage() {
         if (cleanedForms.length > 0) {
             const ids = cleanedForms.map(f => f.formId)
             if (new Set(ids).size !== ids.length) {
-                setError('formId must be unique within one Pokemon')
+                setError('Có dạng bị trùng nhau, vui lòng kiểm tra lại ID dạng')
                 return
             }
             if (!ids.includes(effectiveDefaultFormId)) {
@@ -522,7 +746,16 @@ export default function PokemonFormPage() {
                     })),
                 evolution: {
                     evolvesTo: formData.evolution.evolvesTo || null,
-                    minLevel: formData.evolution.evolvesTo ? (parseInt(formData.evolution.minLevel) || null) : null
+                    targetFormId: formData.evolution.evolvesTo
+                        ? (String(formData.evolution.targetFormId || '').trim().toLowerCase() || null)
+                        : null,
+                    minLevel: formData.evolution.evolvesTo ? (parseInt(formData.evolution.minLevel) || null) : null,
+                    requiredItemId: formData.evolution.evolvesTo
+                        ? (String(formData.evolution.requiredItemId || '').trim() || null)
+                        : null,
+                    requiredItemQuantity: formData.evolution.evolvesTo && String(formData.evolution.requiredItemId || '').trim()
+                        ? (Math.max(1, Number.parseInt(formData.evolution.requiredItemQuantity, 10) || 1))
+                        : null,
                 }
             }
 
@@ -587,7 +820,14 @@ export default function PokemonFormPage() {
     }
 
     const addForm = () => {
-        setForms(prev => [...prev, { formId: '', formName: '', imageUrl: '', sprites: {}, stats: {} }])
+        setForms(prev => [...prev, {
+            formId: '',
+            formName: '',
+            imageUrl: '',
+            sprites: {},
+            stats: {},
+            evolution: normalizeEvolutionState(),
+        }])
     }
 
     const buildBulkUploadQueueRows = (files = [], megaMode = 'keep', gigantamaxMode = 'keep') => {
@@ -742,6 +982,7 @@ export default function PokemonFormPage() {
                     imageUrl: url,
                     sprites: {},
                     stats: {},
+                    evolution: normalizeEvolutionState(),
                 })
             })
 
@@ -1105,6 +1346,158 @@ export default function PokemonFormPage() {
         })
     }
 
+    const openEvolutionTargetModal = (scope = { type: 'base', formIndex: null }) => {
+        setEvolutionTargetSearchTerm('')
+        setEvolutionTargetPage(1)
+        setEvolutionTargetModalScope(scope)
+        setShowEvolutionTargetModal(true)
+    }
+
+    const closeEvolutionTargetModal = () => {
+        setShowEvolutionTargetModal(false)
+        setEvolutionTargetModalScope({ type: 'base', formIndex: null })
+    }
+
+    const handlePickEvolutionTarget = (targetId, preferredTargetFormId = '') => {
+        const target = allPokemon.find((entry) => String(entry?._id || '') === String(targetId || '')) || null
+        const targetForms = Array.isArray(target?.forms) ? target.forms : []
+        const normalizedPreferredFormId = String(preferredTargetFormId || '').trim().toLowerCase()
+        const targetDefaultFormId = targetForms.length > 0
+            ? String(target?.defaultFormId || targetForms[0]?.formId || '').trim().toLowerCase()
+            : String(target?.defaultFormId || 'normal').trim().toLowerCase()
+        const nextTargetFormId = normalizedPreferredFormId || targetDefaultFormId
+
+        if (modalScopeIsForm && Number.isInteger(modalScopeFormIndex)) {
+            updateForm(modalScopeFormIndex, {
+                evolution: {
+                    ...normalizeEvolutionState(forms[modalScopeFormIndex]?.evolution),
+                    evolvesTo: String(targetId || '').trim(),
+                    targetFormId: nextTargetFormId || '',
+                },
+            })
+        } else {
+            setFormData((prev) => ({
+                ...prev,
+                evolution: {
+                    ...prev.evolution,
+                    evolvesTo: String(targetId || '').trim(),
+                    targetFormId: nextTargetFormId || '',
+                },
+            }))
+        }
+        closeEvolutionTargetModal()
+    }
+
+    const getFormEvolutionState = (form) => normalizeEvolutionState(form?.evolution)
+
+    const updateFormEvolution = (formIndex, patch = {}) => {
+        const currentEvolution = getFormEvolutionState(forms[formIndex])
+        const nextEvolution = {
+            ...currentEvolution,
+            ...patch,
+        }
+
+        if (!nextEvolution.evolvesTo) {
+            nextEvolution.targetFormId = ''
+            nextEvolution.minLevel = ''
+            nextEvolution.requiredItemId = ''
+            nextEvolution.requiredItemQuantity = 1
+        }
+
+        updateForm(formIndex, { evolution: nextEvolution })
+    }
+
+    const renderFormEvolutionControls = (form, formIndex) => {
+        const formEvolution = getFormEvolutionState(form)
+        const targetPokemon = allPokemon.find(
+            (entry) => String(entry?._id || '') === String(formEvolution?.evolvesTo || '')
+        ) || null
+        const targetForms = (() => {
+            if (!targetPokemon) return []
+            const rows = Array.isArray(targetPokemon.forms) ? targetPokemon.forms : []
+            if (rows.length > 0) return rows
+            const fallbackFormId = normalizeFormId(targetPokemon.defaultFormId || 'normal').toLowerCase() || 'normal'
+            return [{ formId: fallbackFormId, formName: fallbackFormId }]
+        })()
+
+        return (
+            <div className="mt-3 rounded border border-orange-200 bg-orange-50/70 p-3">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-orange-800 mb-2">Tiến hóa cho dạng này</div>
+                <div className="flex flex-wrap gap-2 items-start">
+                    <button
+                        type="button"
+                        onClick={() => openEvolutionTargetModal({ type: 'form', formIndex })}
+                        className="px-2.5 py-1.5 bg-white border border-orange-200 rounded text-xs font-semibold hover:bg-orange-100"
+                    >
+                        {targetPokemon
+                            ? `#${String(targetPokemon.pokedexNumber || 0).padStart(3, '0')} ${targetPokemon.name}${formEvolution.targetFormId ? ` (${formEvolution.targetFormId})` : ''}`
+                            : 'Chọn Pokemon tiến hóa'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => updateFormEvolution(formIndex, { evolvesTo: '' })}
+                        className="px-2.5 py-1.5 bg-white border border-slate-300 rounded text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                        Không tiến hóa
+                    </button>
+                    <select
+                        value={formEvolution.targetFormId || ''}
+                        onChange={(event) => updateFormEvolution(formIndex, { targetFormId: event.target.value })}
+                        className="px-2 py-1.5 bg-white border border-orange-200 rounded text-xs"
+                        disabled={!formEvolution.evolvesTo}
+                    >
+                        <option value="">Dạng đích mặc định</option>
+                        {targetForms.map((entry) => (
+                            <option key={`form-evo-target-${formIndex}-${entry.formId}`} value={String(entry.formId || '').trim().toLowerCase()}>
+                                {entry.formName || entry.formId}
+                            </option>
+                        ))}
+                    </select>
+                    <input
+                        type="number"
+                        min="1"
+                        placeholder="Lv"
+                        value={formEvolution.minLevel}
+                        onChange={(event) => updateFormEvolution(formIndex, { minLevel: event.target.value })}
+                        className="w-20 px-2 py-1.5 bg-white border border-orange-200 rounded text-xs"
+                        disabled={!formEvolution.evolvesTo}
+                    />
+                    <select
+                        value={formEvolution.requiredItemId || ''}
+                        onChange={(event) => updateFormEvolution(formIndex, {
+                            requiredItemId: event.target.value,
+                            requiredItemQuantity: event.target.value
+                                ? (Math.max(1, Number.parseInt(formEvolution.requiredItemQuantity, 10) || 1))
+                                : 1,
+                        })}
+                        className="min-w-[190px] px-2 py-1.5 bg-white border border-orange-200 rounded text-xs"
+                        disabled={!formEvolution.evolvesTo}
+                    >
+                        <option value="">Không cần item</option>
+                        {availableEvolutionItems.map((item) => (
+                            <option key={`form-evo-item-${formIndex}-${item._id}`} value={item._id}>
+                                {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                            </option>
+                        ))}
+                    </select>
+                    <input
+                        type="number"
+                        min="1"
+                        placeholder="SL"
+                        value={formEvolution.requiredItemId ? (formEvolution.requiredItemQuantity || 1) : ''}
+                        onChange={(event) => updateFormEvolution(formIndex, {
+                            requiredItemQuantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                        })}
+                        className="w-16 px-2 py-1.5 bg-white border border-orange-200 rounded text-xs text-center"
+                        disabled={!formEvolution.evolvesTo || !formEvolution.requiredItemId}
+                    />
+                </div>
+            </div>
+        )
+    }
+
+    const availableEvolutionItems = evolutionItems.filter((item) => isEvolutionItemAllowedForRarity(item, formData.rarity))
+
     if (loading && isEdit && !formData.name) return <div className="text-blue-800 text-center py-8">Đang tải...</div>
 
     return (
@@ -1163,18 +1556,9 @@ export default function PokemonFormPage() {
                     <div>
                         <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">2. Các Dạng</h3>
                         <div id="bulk-form-quick-upload" className="mb-4 rounded border border-cyan-200 bg-cyan-50/60 p-3 scroll-mt-24">
-                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Upload nhanh nhiều ảnh form</label>
+                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Upload nhanh nhiều ảnh dạng khác</label>
                             <p className="text-[11px] text-cyan-800 mb-2">
-                                Chọn nhiều ảnh một lần, hệ thống sẽ tự tạo form mới theo tên file cho Pokemon hiện tại.
-                            </p>
-                            <p className="text-[11px] text-cyan-800 mb-2">
-                                Hỗ trợ tên liền chữ kiểu CamelCase. Ví dụ AstralHyperGalaxyPikachu.png sẽ tự tách về dạng Astral Hyper Galaxy.
-                            </p>
-                            <p className="text-[11px] text-cyan-800 mb-2">
-                                Nếu trùng formId đã có trong dữ liệu, hệ thống sẽ bỏ qua, không ghi đè.
-                            </p>
-                            <p className="text-[11px] text-cyan-800 mb-2">
-                                Sau khi chọn ảnh, modal sẽ hiện trước để chọn Giữ Mega hoặc Bỏ Mega rồi mới bắt đầu upload.
+                                Chọn nhiều ảnh một lần, hệ thống sẽ tự tạo dạng mới theo tên file cho Pokemon hiện tại.
                             </p>
                             <input
                                 id="bulk-form-image-upload"
@@ -1191,7 +1575,7 @@ export default function PokemonFormPage() {
                                     ? 'bg-cyan-100 border-cyan-200 text-cyan-700 cursor-wait'
                                     : 'bg-white border-cyan-300 text-cyan-700 hover:bg-cyan-100 cursor-pointer'}`}
                             >
-                                {bulkFormUploading ? `Đang up ${bulkFormUploadCount} ảnh...` : 'Chọn nhiều ảnh form'}
+                                {bulkFormUploading ? `Đang up ${bulkFormUploadCount} ảnh...` : 'Chọn nhiều ảnh'}
                             </label>
                             {bulkFormUploading && (
                                 <div className="mt-2">
@@ -1224,6 +1608,23 @@ export default function PokemonFormPage() {
                                     </option>
                                 ))}
                             </select>
+                        </div>
+
+                        <div className={`mb-4 rounded border px-3 py-2 text-xs ${hasDuplicateFormIds
+                            ? 'border-red-200 bg-red-50 text-red-700'
+                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                            {hasDuplicateFormIds
+                                ? (
+                                    <div className="space-y-1">
+                                        <p className="font-bold uppercase">Phát hiện dạng bị trùng</p>
+                                        {duplicateFormIdEntries.map((entry) => (
+                                            <p key={entry.formId}>
+                                                Dạng <span className="font-bold">{entry.formId}</span> đang trùng ở dòng {entry.rowNumbers.join(', ')}
+                                            </p>
+                                        ))}
+                                    </div>
+                                )
+                                : <p>Kiểm tra dạng: không có ID dạng nào bị trùng.</p>}
                         </div>
 
                         <div className="space-y-4">
@@ -1286,6 +1687,8 @@ export default function PokemonFormPage() {
                                         }}
                                         label="Hình ảnh dạng"
                                     />
+
+                                    {renderFormEvolutionControls(form, index)}
                                 </div>
                             ))}
                         </div>
@@ -1397,15 +1800,77 @@ export default function PokemonFormPage() {
                         <div className="flex gap-4 items-start">
                             <div className="flex-1">
                                 <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Tiến hóa thành</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => openEvolutionTargetModal({ type: 'base', formIndex: null })}
+                                        className="px-3 py-2 bg-white border border-orange-200 rounded text-sm font-semibold hover:bg-orange-50"
+                                    >
+                                        {selectedEvolutionTarget
+                                            ? `#${String(selectedEvolutionTarget.pokedexNumber || 0).padStart(3, '0')} ${selectedEvolutionTarget.name}${formData.evolution.targetFormId ? ` (${formData.evolution.targetFormId})` : ''}`
+                                            : '-- Chọn Pokémon --'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({
+                                            ...formData,
+                                            evolution: {
+                                                ...formData.evolution,
+                                                evolvesTo: '',
+                                                targetFormId: '',
+                                                minLevel: '',
+                                                requiredItemId: '',
+                                                requiredItemQuantity: 1,
+                                            },
+                                        })}
+                                        className="px-3 py-2 bg-white border border-slate-300 rounded text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                    >
+                                        Không tiến hóa
+                                    </button>
+                                </div>
+                                {selectedEvolutionTarget && (
+                                    <div className="mt-2 rounded border border-orange-200 bg-white px-3 py-2">
+                                        <div className="text-xs font-semibold text-slate-700">
+                                            Đã chọn: #{String(selectedEvolutionTarget.pokedexNumber || 0).padStart(3, '0')} {selectedEvolutionTarget.name}
+                                        </div>
+                                        {formData.evolution.targetFormId && (
+                                            <div className="text-[11px] text-orange-700 font-semibold mt-1">
+                                                Dạng đích: {formData.evolution.targetFormId}
+                                            </div>
+                                        )}
+                                        <div className="mt-1 flex flex-wrap gap-1">
+                                            {(Array.isArray(selectedEvolutionTarget.forms) ? selectedEvolutionTarget.forms : [])
+                                                .slice(0, 8)
+                                                .map((form) => (
+                                                    <span
+                                                        key={`${selectedEvolutionTarget._id}-${form.formId}`}
+                                                        className="px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[10px] font-semibold text-orange-700"
+                                                    >
+                                                        {form.formName || form.formId}
+                                                    </span>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="w-32">
+                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Dạng đích</label>
                                 <select
-                                    value={formData.evolution.evolvesTo}
-                                    onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, evolvesTo: e.target.value } })}
+                                    value={formData.evolution.targetFormId || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        evolution: {
+                                            ...formData.evolution,
+                                            targetFormId: e.target.value,
+                                        },
+                                    })}
                                     className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
+                                    disabled={!formData.evolution.evolvesTo}
                                 >
-                                    <option value="">-- Không tiến hóa --</option>
-                                    {allPokemon.map(p => (
-                                        <option key={p._id} value={p._id} disabled={p._id === id}>
-                                            #{p.pokedexNumber} {p.name}
+                                    <option value="">Mặc định</option>
+                                    {selectedEvolutionTargetForms.map((form) => (
+                                        <option key={`target-form-${form.formId}`} value={String(form.formId || '').trim().toLowerCase()}>
+                                            {form.formName || form.formId}
                                         </option>
                                     ))}
                                 </select>
@@ -1420,6 +1885,51 @@ export default function PokemonFormPage() {
                                     onChange={(e) => setFormData({ ...formData, evolution: { ...formData.evolution, minLevel: e.target.value } })}
                                     className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
                                     disabled={!formData.evolution.evolvesTo}
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_120px] gap-4">
+                            <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Vật phẩm tiến hóa</label>
+                                <select
+                                    value={formData.evolution.requiredItemId || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        evolution: {
+                                            ...formData.evolution,
+                                            requiredItemId: e.target.value,
+                                            requiredItemQuantity: e.target.value
+                                                ? (Math.max(1, Number.parseInt(formData.evolution.requiredItemQuantity, 10) || 1))
+                                                : 1,
+                                        },
+                                    })}
+                                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
+                                    disabled={!formData.evolution.evolvesTo}
+                                >
+                                    <option value="">-- Không cần vật phẩm --</option>
+                                    {availableEvolutionItems.map((item) => (
+                                        <option key={item._id} value={item._id}>
+                                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Số lượng</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="SL"
+                                    value={formData.evolution.requiredItemId ? (formData.evolution.requiredItemQuantity || 1) : ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        evolution: {
+                                            ...formData.evolution,
+                                            requiredItemQuantity: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                                        },
+                                    })}
+                                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
+                                    disabled={!formData.evolution.evolvesTo || !formData.evolution.requiredItemId}
                                 />
                             </div>
                         </div>
@@ -1529,10 +2039,12 @@ export default function PokemonFormPage() {
                     <div className="flex gap-3 pt-6 border-t border-slate-200 sticky bottom-0 bg-white/95 backdrop-blur py-4 -mx-6 px-6 shadow-up">
                         <button
                             type="submit"
-                            disabled={loading}
-                            className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-bold shadow-md transform transition-all active:scale-[0.98]"
+                            disabled={loading || hasDuplicateFormIds}
+                            className={`flex-1 py-3 text-white rounded-lg text-sm font-bold shadow-md transform transition-all active:scale-[0.98] ${loading || hasDuplicateFormIds
+                                ? 'bg-slate-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}`}
                         >
-                            {loading ? 'Đang Xử Lý...' : isEdit ? 'LƯU THAY ĐỔI' : 'TẠO POKEMON MỚI'}
+                            {loading ? 'Đang Xử Lý...' : hasDuplicateFormIds ? 'SỬA DẠNG TRÙNG ĐỂ TIẾP TỤC' : isEdit ? 'LƯU THAY ĐỔI' : 'TẠO POKEMON MỚI'}
                         </button>
                         <button
                             type="button"
@@ -1544,6 +2056,143 @@ export default function PokemonFormPage() {
                     </div>
                 </form>
             </div>
+
+            {showEvolutionTargetModal && (
+                <div
+                    className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+                    onClick={closeEvolutionTargetModal}
+                >
+                    <div
+                        className="w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-lg border border-orange-200 bg-white shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-orange-100 bg-orange-50">
+                            <div>
+                                <h3 className="text-base font-bold text-orange-900">Chọn Pokémon</h3>
+                                <p className="text-xs text-orange-700">
+                                    {modalScopeIsForm
+                                        ? `Áp dụng cho dạng: ${modalScopeForm?.formName || modalScopeForm?.formId || 'form'}`
+                                        : 'Áp dụng cho tiến hóa chính của Pokémon'}
+                                    {' '}.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeEvolutionTargetModal}
+                                className="text-slate-400 hover:text-slate-700"
+                            >
+                                X
+                            </button>
+                        </div>
+
+                        <div className="p-4 border-b border-orange-100 bg-white">
+                            <input
+                                type="text"
+                                value={evolutionTargetSearchTerm}
+                                onChange={(event) => {
+                                    setEvolutionTargetSearchTerm(event.target.value)
+                                    setEvolutionTargetPage(1)
+                                }}
+                                placeholder="Tìm theo tên, số Pokédex, formId, formName..."
+                                className="w-full px-3 py-2 bg-white border border-orange-200 rounded text-sm"
+                            />
+                            <div className="mt-2 text-xs text-slate-600">
+                                Kết quả: {evolutionTargetTotal} Pokémon
+                            </div>
+                        </div>
+
+                        <div className="p-4 overflow-y-auto max-h-[60vh]">
+                            {evolutionTargetPageRows.length === 0 ? (
+                                <div className="text-sm text-slate-500 text-center py-10">Không tìm thấy Pokémon phù hợp.</div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {evolutionTargetPageRows.map((target) => {
+                                        const forms = Array.isArray(target.forms) ? target.forms : []
+                                        const defaultForm = forms.find((entry) => String(entry?.formId || '').trim() === String(target.defaultFormId || '').trim()) || forms[0] || null
+                                        const imageUrl = String(defaultForm?.imageUrl || target.imageUrl || '').trim()
+                                        const isSelected = String(target._id || '') === String(scopedEvolution?.evolvesTo || '')
+
+                                        return (
+                                            <div
+                                                key={target._id}
+                                                className={`text-left rounded border p-3 transition-colors ${isSelected
+                                                    ? 'border-orange-500 bg-orange-50'
+                                                    : 'border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/40'}`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-14 h-14 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                        {imageUrl
+                                                            ? <img src={imageUrl} alt={target.name} className="w-12 h-12 object-contain pixelated" />
+                                                            : <span className="text-slate-300 text-xs">?</span>}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="text-xs text-slate-500">#{String(target.pokedexNumber || 0).padStart(3, '0')}</div>
+                                                        <div className="text-sm font-bold text-slate-800 truncate">{target.name}</div>
+                                                        {isSelected && <div className="text-[10px] font-bold text-orange-700 mt-1">Đang chọn</div>}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handlePickEvolutionTarget(target._id)}
+                                                    className="mt-2 w-full px-2 py-1.5 rounded border border-orange-300 bg-white text-[11px] font-bold text-orange-700 hover:bg-orange-100"
+                                                >
+                                                    Chọn theo dạng mặc định
+                                                </button>
+                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                    {forms.slice(0, 6).map((form) => {
+                                                        const normalizedFormId = String(form?.formId || '').trim().toLowerCase()
+                                                        const isSelectedForm = isSelected && String(scopedEvolution?.targetFormId || '').trim().toLowerCase() === normalizedFormId
+                                                        return (
+                                                        <button
+                                                            key={`${target._id}-${form.formId}`}
+                                                            type="button"
+                                                            onClick={() => handlePickEvolutionTarget(target._id, normalizedFormId)}
+                                                            className={`px-1.5 py-0.5 rounded border text-[10px] ${isSelectedForm
+                                                                ? 'border-orange-400 bg-orange-100 text-orange-800 font-bold'
+                                                                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-orange-100 hover:border-orange-300'}`}
+                                                        >
+                                                            {form.formName || form.formId}
+                                                        </button>
+                                                    )})}
+                                                    {forms.length > 6 && (
+                                                        <span className="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] text-slate-500">
+                                                            +{forms.length - 6} dạng
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-4 py-3 border-t border-orange-100 bg-orange-50 flex items-center justify-between">
+                            <div className="text-xs text-slate-600">
+                                Trang {resolvedEvolutionTargetPage} / {evolutionTargetTotalPages}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setEvolutionTargetPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={resolvedEvolutionTargetPage <= 1}
+                                    className="px-3 py-1.5 rounded border border-slate-300 bg-white text-xs font-bold text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Trước
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setEvolutionTargetPage((prev) => Math.min(evolutionTargetTotalPages, prev + 1))}
+                                    disabled={resolvedEvolutionTargetPage >= evolutionTargetTotalPages}
+                                    className="px-3 py-1.5 rounded border border-slate-300 bg-white text-xs font-bold text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Sau
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showFormVariantModal && (
                 <div

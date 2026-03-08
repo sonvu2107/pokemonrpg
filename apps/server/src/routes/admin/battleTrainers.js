@@ -2,6 +2,8 @@ import express from 'express'
 import BattleTrainer from '../../models/BattleTrainer.js'
 import Pokemon from '../../models/Pokemon.js'
 import Item from '../../models/Item.js'
+import User from '../../models/User.js'
+import BattleSession from '../../models/BattleSession.js'
 
 const router = express.Router()
 
@@ -11,6 +13,13 @@ const TEAM_DAMAGE_PERCENT_MAX = 1000
 const TEAM_DAMAGE_BONUS_MIN = -100
 const TEAM_DAMAGE_BONUS_MAX = 900
 const TRAINER_LEVEL_MIN = 1
+const activeBattleTrainerFilter = {
+    $or: [
+        { isActive: true },
+        { isActive: { $exists: false } },
+        { isActive: null },
+    ],
+}
 
 const clampNumber = (value, min, max) => {
     const parsed = Number.parseInt(value, 10)
@@ -512,6 +521,63 @@ router.get('/usage-summary', async (_req, res) => {
     } catch (error) {
         console.error('GET /api/admin/battle-trainers/usage-summary error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/battle-trainers/reset-history
+router.post('/reset-history', async (req, res) => {
+    try {
+        const keepSessions = Boolean(req.body?.keepSessions)
+
+        const [
+            firstTrainer,
+            totalUsers,
+            usersWithHistory,
+            activeSessions,
+        ] = await Promise.all([
+            BattleTrainer.findOne(activeBattleTrainerFilter)
+                .sort({ orderIndex: 1, createdAt: 1 })
+                .select('_id name orderIndex')
+                .lean(),
+            User.countDocuments({}),
+            User.countDocuments({ completedBattleTrainers: { $exists: true, $ne: [] } }),
+            BattleSession.countDocuments({}),
+        ])
+
+        const resetUsersResult = await User.updateMany(
+            { completedBattleTrainers: { $exists: true, $ne: [] } },
+            { $set: { completedBattleTrainers: [] } }
+        )
+
+        let deletedSessions = 0
+        if (!keepSessions) {
+            const deleteSessionResult = await BattleSession.deleteMany({})
+            deletedSessions = Number(deleteSessionResult.deletedCount || 0)
+        }
+
+        res.json({
+            ok: true,
+            message: 'Đã reset toàn bộ lịch sử leo battle trainer về mốc đầu.',
+            keepSessions,
+            summary: {
+                totalUsers,
+                usersWithHistory,
+                activeSessions,
+                usersMatched: Number(resetUsersResult?.matchedCount || 0),
+                usersModified: Number(resetUsersResult?.modifiedCount || 0),
+                sessionsDeleted: deletedSessions,
+            },
+            firstTrainer: firstTrainer
+                ? {
+                    _id: firstTrainer._id,
+                    name: firstTrainer.name,
+                    orderIndex: firstTrainer.orderIndex,
+                }
+                : null,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/battle-trainers/reset-history error:', error)
+        res.status(500).json({ ok: false, message: 'Reset lịch sử battle trainer thất bại' })
     }
 })
 

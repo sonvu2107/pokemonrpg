@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { pokemonApi } from '../../services/adminApi'
+import { pokemonApi, itemApi } from '../../services/adminApi'
 import { parseEvolutionImportCsv } from '../../utils/evolutionImport'
 import { parsePokemonCsvImport } from '../../utils/pokemonCsvImport'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
@@ -79,9 +79,23 @@ const hasGigantamaxKeywordInStem = (stem = '') => {
     return compact.includes('gigantamax') || compact.includes('gmax')
 }
 
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const normalizePokemonRarity = (value = '') => String(value || '').trim().toLowerCase()
+const isEvolutionItemAllowedForRarity = (item, rarity) => {
+    const normalizedRarity = normalizePokemonRarity(rarity)
+    const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizedRarity)
+    if (rarityIndex < 0) return true
+
+    const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityFrom || 'd'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss'))
+    if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
+    return rarityIndex >= fromIndex && rarityIndex <= toIndex
+}
+
 export default function PokemonListPage() {
     const [pokemon, setPokemon] = useState([])
     const [allPokemon, setAllPokemon] = useState([])
+    const [evolutionItems, setEvolutionItems] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [evolutionEdits, setEvolutionEdits] = useState({})
@@ -124,6 +138,7 @@ export default function PokemonListPage() {
 
     useEffect(() => {
         loadAllPokemon()
+        loadEvolutionItems()
     }, [])
 
     // Sync Top Scrollbar
@@ -168,7 +183,18 @@ export default function PokemonListPage() {
                         ? p.evolution.evolvesTo
                         : p.evolution?.evolvesTo?._id || ''
                     const minLevel = p.evolution?.minLevel ?? ''
-                    next[p._id] = { evolvesTo, minLevel: minLevel === null ? '' : minLevel }
+                    const requiredItemId = typeof p.evolution?.requiredItemId === 'string'
+                        ? p.evolution.requiredItemId
+                        : p.evolution?.requiredItemId?._id || ''
+                    const requiredItemQuantity = p.evolution?.requiredItemQuantity ?? 1
+                    const targetFormId = String(p.evolution?.targetFormId || '').trim().toLowerCase()
+                    next[p._id] = {
+                        evolvesTo,
+                        minLevel: minLevel === null ? '' : minLevel,
+                        targetFormId,
+                        requiredItemId,
+                        requiredItemQuantity: requiredItemId ? requiredItemQuantity : 1,
+                    }
 
                     // Form evolutions
                     if (Array.isArray(p.forms)) {
@@ -177,7 +203,18 @@ export default function PokemonListPage() {
                                 ? form.evolution.evolvesTo
                                 : form.evolution?.evolvesTo?._id || ''
                             const formMinLevel = form.evolution?.minLevel ?? ''
-                            next[`${p._id}_${form.formId}`] = { evolvesTo: formEvolvesTo, minLevel: formMinLevel === null ? '' : formMinLevel }
+                            const formRequiredItemId = typeof form.evolution?.requiredItemId === 'string'
+                                ? form.evolution.requiredItemId
+                                : form.evolution?.requiredItemId?._id || ''
+                            const formRequiredItemQuantity = form.evolution?.requiredItemQuantity ?? 1
+                            const formTargetFormId = String(form.evolution?.targetFormId || '').trim().toLowerCase()
+                            next[`${p._id}_${form.formId}`] = {
+                                evolvesTo: formEvolvesTo,
+                                minLevel: formMinLevel === null ? '' : formMinLevel,
+                                targetFormId: formTargetFormId,
+                                requiredItemId: formRequiredItemId,
+                                requiredItemQuantity: formRequiredItemId ? formRequiredItemQuantity : 1,
+                            }
                         })
                     }
                 })
@@ -221,6 +258,38 @@ export default function PokemonListPage() {
         }
     }
 
+    const loadEvolutionItems = async () => {
+        try {
+            const limit = 100
+            let pageCursor = 1
+            let totalPages = 1
+            const collected = []
+
+            do {
+                const data = await itemApi.list({ page: pageCursor, limit, isEvolutionMaterial: true })
+                if (Array.isArray(data?.items) && data.items.length > 0) {
+                    collected.push(...data.items)
+                }
+
+                const parsedPages = Number.parseInt(data?.pagination?.pages, 10)
+                totalPages = Number.isFinite(parsedPages) && parsedPages > 0 ? parsedPages : 1
+                pageCursor += 1
+            } while (pageCursor <= totalPages)
+
+            const uniqueById = new Map()
+            collected.forEach((entry) => {
+                const itemId = String(entry?._id || '').trim()
+                if (!itemId || uniqueById.has(itemId)) return
+                uniqueById.set(itemId, entry)
+            })
+
+            setEvolutionItems([...uniqueById.values()])
+        } catch (err) {
+            setError(err.message)
+            setEvolutionItems([])
+        }
+    }
+
     const updateEvolutionEdit = (id, patch) => {
         setEvolutionEdits((prev) => ({
             ...prev,
@@ -233,6 +302,47 @@ export default function PokemonListPage() {
         })
     }
 
+    const renderEvolutionItemInputs = (editKey, sourceRarity = '') => {
+        const edit = evolutionEdits[editKey] || {}
+        const hasTarget = Boolean(edit?.evolvesTo)
+        const selectedItemId = String(edit?.requiredItemId || '').trim()
+        const availableItems = evolutionItems.filter((item) => isEvolutionItemAllowedForRarity(item, sourceRarity))
+
+        return (
+            <>
+                <select
+                    value={selectedItemId}
+                    onChange={(e) => updateEvolutionEdit(editKey, {
+                        requiredItemId: e.target.value,
+                        requiredItemQuantity: e.target.value
+                            ? (Math.max(1, Number.parseInt(edit?.requiredItemQuantity, 10) || 1))
+                            : 1,
+                    })}
+                    className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
+                    disabled={!hasTarget}
+                >
+                    <option value="">Không cần item</option>
+                    {availableItems.map((item) => (
+                        <option key={item._id} value={item._id}>
+                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                        </option>
+                    ))}
+                </select>
+                <input
+                    type="number"
+                    min="1"
+                    placeholder="SL"
+                    value={selectedItemId ? (edit?.requiredItemQuantity ?? 1) : ''}
+                    onChange={(e) => updateEvolutionEdit(editKey, {
+                        requiredItemQuantity: Math.max(1, Number.parseInt(e.target.value, 10) || 1),
+                    })}
+                    className="w-14 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
+                    disabled={!hasTarget || !selectedItemId}
+                />
+            </>
+        )
+    }
+
     const handlePokemonCsvFileChange = async (event) => {
         const file = event.target.files?.[0]
         event.target.value = ''
@@ -243,13 +353,13 @@ export default function PokemonListPage() {
             setPokemonCsvImportText(text)
             setError('')
         } catch (err) {
-            setError(`Doc file CSV Pokemon that bai: ${err.message}`)
+            setError(`Đọc file CSV thất bại: ${err.message}`)
         }
     }
 
     const handleApplyPokemonCsvImport = async () => {
         if (!pokemonCsvImportText.trim()) {
-            setError('Vui long dan du lieu CSV Pokemon truoc khi import.')
+            setError('Vui lòng điền dữ liệu CSV Pokemon trước khi import.')
             return
         }
 
@@ -257,12 +367,12 @@ export default function PokemonListPage() {
         setPokemonCsvImportReport(parsed.report)
 
         if (!Array.isArray(parsed.pokemon) || parsed.pokemon.length === 0) {
-            setError('Khong co Pokemon hop le de import.')
+            setError('Không có Pokemon hợp lệ để import.')
             return
         }
 
         if (parsed.pokemon.length > 500) {
-            setError(`So Pokemon hop le qua lon (${parsed.pokemon.length}). Toi da 500 moi lan import.`)
+            setError(`Số Pokemon hợp lệ quá nhiều (${parsed.pokemon.length}). Tối đa 500 mỗi lần import.`)
             return
         }
 
@@ -291,10 +401,10 @@ export default function PokemonListPage() {
             const createdCount = Number.parseInt(result?.createdCount, 10) || 0
             const errorCount = Number.parseInt(result?.errorCount, 10) || 0
             if (createdCount === 0 && errorCount > 0) {
-                setError(`Import hoan tat nhung khong tao duoc Pokemon nao (${errorCount} loi).`)
+                setError(`Import thất bại: (${errorCount} lỗi).`)
             }
         } catch (err) {
-            setError(`Import Pokemon CSV that bai: ${err.message}`)
+            setError(`Import Pokemon CSV thất bại: ${err.message}`)
         } finally {
             setPokemonCsvImporting(false)
         }
@@ -314,9 +424,14 @@ export default function PokemonListPage() {
 
     const handleSaveEvolution = async (p, formId = null) => {
         const key = formId ? `${p._id}_${formId}` : p._id
-        const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '' }
+        const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '', targetFormId: '', requiredItemId: '', requiredItemQuantity: 1 }
         const evolvesToValue = edit.evolvesTo || null
         const minLevelValue = evolvesToValue ? (parseInt(edit.minLevel) || null) : null
+        const targetFormIdValue = evolvesToValue ? (String(edit.targetFormId || '').trim().toLowerCase() || null) : null
+        const requiredItemIdValue = evolvesToValue ? (String(edit.requiredItemId || '').trim() || null) : null
+        const requiredItemQuantityValue = requiredItemIdValue
+            ? Math.max(1, Number.parseInt(edit.requiredItemQuantity, 10) || 1)
+            : null
 
         try {
             setSavingId(key)
@@ -335,7 +450,10 @@ export default function PokemonListPage() {
                             evolution: {
                                 ...f.evolution,
                                 evolvesTo: evolvesToValue,
+                                targetFormId: targetFormIdValue,
                                 minLevel: minLevelValue,
+                                requiredItemId: requiredItemIdValue,
+                                requiredItemQuantity: requiredItemQuantityValue,
                             }
                         }
                     }
@@ -347,7 +465,10 @@ export default function PokemonListPage() {
                 payload = {
                     evolution: {
                         evolvesTo: evolvesToValue,
+                        targetFormId: targetFormIdValue,
                         minLevel: minLevelValue,
+                        requiredItemId: requiredItemIdValue,
+                        requiredItemQuantity: requiredItemQuantityValue,
                     },
                 }
             }
@@ -379,15 +500,22 @@ export default function PokemonListPage() {
 
         const updates = keys.map((key) => {
             const { pokemonId, formId } = parseEvolutionEditKey(key)
-            const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '' }
+            const edit = evolutionEdits[key] || { evolvesTo: '', minLevel: '', targetFormId: '', requiredItemId: '', requiredItemQuantity: 1 }
             const evolvesToValue = edit.evolvesTo || null
             const minLevelValue = evolvesToValue ? (parseInt(edit.minLevel, 10) || null) : null
-
+            const targetFormIdValue = evolvesToValue ? (String(edit.targetFormId || '').trim().toLowerCase() || null) : null
+            const requiredItemIdValue = evolvesToValue ? (String(edit.requiredItemId || '').trim() || null) : null
+            const requiredItemQuantityValue = requiredItemIdValue
+                ? Math.max(1, Number.parseInt(edit.requiredItemQuantity, 10) || 1)
+                : null
             return {
                 pokemonId,
                 formId: formId || undefined,
                 evolvesTo: evolvesToValue,
+                targetFormId: targetFormIdValue,
                 minLevel: minLevelValue,
+                requiredItemId: requiredItemIdValue,
+                requiredItemQuantity: requiredItemQuantityValue,
             }
         })
 
@@ -421,18 +549,18 @@ export default function PokemonListPage() {
             setEvolutionImportText(text)
             setError('')
         } catch (err) {
-            setError(`Doc file import that bai: ${err.message}`)
+            setError(`Đọc file import thất bại: ${err.message}`)
         }
     }
 
     const handleApplyEvolutionImport = async () => {
         if (!evolutionImportText.trim()) {
-            setError('Vui long dan du lieu CSV/TXT truoc khi import.')
+            setError('Vui lòng điền dữ liệu CSV/TXT trước khi import.')
             return
         }
 
         if (!Array.isArray(allPokemon) || allPokemon.length === 0) {
-            setError('Danh sach Pokemon chua tai xong. Vui long thu lai.')
+            setError('Danh sách Pokemon chưa tải xong. Vui lòng thử lại.')
             return
         }
 
@@ -440,12 +568,12 @@ export default function PokemonListPage() {
         setEvolutionImportReport(parsed.report)
 
         if (parsed.updates.length === 0) {
-            setError('Khong tao duoc quy tac tien hoa nao tu du lieu import.')
+            setError('Không tạo được quy tắc tiến hóa nào từ dữ liệu import.')
             return
         }
 
         if (parsed.updates.length > 500) {
-            setError(`So cap nhat qua lon (${parsed.updates.length}). Toi da 500 quy tac moi lan.`)
+            setError(`Số cập nhật quá nhiều (${parsed.updates.length}). Tối đa 500 quy tắc mỗi lần.`)
             return
         }
 
@@ -472,7 +600,7 @@ export default function PokemonListPage() {
                 }
             })
         } catch (err) {
-            setError(`Import tien hoa that bai: ${err.message}`)
+            setError(`Import tiến hóa thất bại: ${err.message}`)
         } finally {
             setEvolutionImporting(false)
         }
@@ -1076,7 +1204,7 @@ export default function PokemonListPage() {
                         <div className="flex items-center gap-2">
                             <select
                                 value={evolutionEdits[p._id]?.evolvesTo || ''}
-                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value, targetFormId: '' })}
                                 className="w-32 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
                             >
                                 <option value="">--</option>
@@ -1095,6 +1223,7 @@ export default function PokemonListPage() {
                                 className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
                                 disabled={!evolutionEdits[p._id]?.evolvesTo}
                             />
+                            {renderEvolutionItemInputs(p._id, p.rarity)}
                             <button
                                 type="button"
                                 onClick={() => handleSaveEvolution(p)}
@@ -1188,7 +1317,7 @@ export default function PokemonListPage() {
                                 <div className="flex items-center gap-2">
                                     <select
                                         value={evolutionEdits[p._id]?.evolvesTo || ''}
-                                        onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                        onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value, targetFormId: '' })}
                                         className="w-32 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
                                     >
                                         <option value="">--</option>
@@ -1207,6 +1336,7 @@ export default function PokemonListPage() {
                                         className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
                                         disabled={!evolutionEdits[p._id]?.evolvesTo}
                                     />
+                                    {renderEvolutionItemInputs(p._id, p.rarity)}
                                 </div>
                             </td>
                             <td className="px-3 py-2 text-right"></td>
@@ -1530,7 +1660,7 @@ export default function PokemonListPage() {
                                                         <div className="flex items-center gap-2">
                                                             <select
                                                                 value={evolutionEdits[p._id]?.evolvesTo || ''}
-                                                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value })}
+                                                                onChange={(e) => updateEvolutionEdit(p._id, { evolvesTo: e.target.value, targetFormId: '' })}
                                                                 className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
                                                             >
                                                                 <option value="">--</option>
@@ -1549,6 +1679,7 @@ export default function PokemonListPage() {
                                                                 className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
                                                                 disabled={!evolutionEdits[p._id]?.evolvesTo}
                                                             />
+                                                            {renderEvolutionItemInputs(p._id, p.rarity)}
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleSaveEvolution(p)}
@@ -1652,7 +1783,7 @@ export default function PokemonListPage() {
                                                                 <div className="flex items-center gap-2">
                                                                     <select
                                                                         value={evolutionEdits[formEditKey]?.evolvesTo || ''}
-                                                                        onChange={(e) => updateEvolutionEdit(formEditKey, { evolvesTo: e.target.value })}
+                                                                        onChange={(e) => updateEvolutionEdit(formEditKey, { evolvesTo: e.target.value, targetFormId: '' })}
                                                                         className="w-36 px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 truncate"
                                                                     >
                                                                         <option value="">--</option>
@@ -1671,6 +1802,7 @@ export default function PokemonListPage() {
                                                                         className="w-12 px-2 py-1 bg-white border border-slate-300 rounded text-xs text-center focus:ring-1 focus:ring-blue-500"
                                                                         disabled={!evolutionEdits[formEditKey]?.evolvesTo}
                                                                     />
+                                                                    {renderEvolutionItemInputs(formEditKey, p.rarity)}
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleSaveEvolution(p, form.formId)}

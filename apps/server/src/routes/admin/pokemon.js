@@ -2,6 +2,7 @@ import express from 'express'
 import mongoose from 'mongoose'
 import Pokemon from '../../models/Pokemon.js'
 import PokemonFormVariant from '../../models/PokemonFormVariant.js'
+import Item from '../../models/Item.js'
 
 const router = express.Router()
 
@@ -58,33 +59,6 @@ const normalizeBaseStats = (stats) => {
     return normalized
 }
 
-const normalizeForms = (forms) => {
-    if (!Array.isArray(forms)) return []
-    return forms
-        .map((f) => {
-            const rawEvolvesTo = f?.evolution?.evolvesTo
-            const evolvesTo = typeof rawEvolvesTo === 'object'
-                ? (rawEvolvesTo?._id || null)
-                : (rawEvolvesTo || null)
-            const parsedMinLevel = Number.parseInt(f?.evolution?.minLevel, 10)
-
-            return {
-                formId: String(f?.formId || '').trim(),
-                formName: String(f?.formName || '').trim(),
-                imageUrl: String(f?.imageUrl || '').trim(),
-                sprites: f?.sprites || {},
-                stats: f?.stats || {},
-                evolution: evolvesTo
-                    ? {
-                        evolvesTo,
-                        minLevel: Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null,
-                    }
-                    : null,
-            }
-        })
-        .filter(f => f.formId)
-}
-
 const normalizeEvolutionTargetId = (value) => {
     if (!value) return null
     if (typeof value === 'object') {
@@ -93,6 +67,154 @@ const normalizeEvolutionTargetId = (value) => {
     }
     const normalized = String(value).trim()
     return normalized || null
+}
+
+const normalizeEvolutionTargetFormId = (value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return normalized || null
+}
+
+const normalizeEvolutionPayload = (value) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const evolvesTo = normalizeEvolutionTargetId(source?.evolvesTo)
+    if (!evolvesTo) return null
+
+    const parsedMinLevel = Number.parseInt(source?.minLevel, 10)
+    const minLevel = Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null
+    const targetFormId = normalizeEvolutionTargetFormId(source?.targetFormId)
+    const requiredItemId = normalizeEvolutionTargetId(source?.requiredItemId)
+    const parsedRequiredItemQuantity = Number.parseInt(source?.requiredItemQuantity, 10)
+    const requiredItemQuantity = requiredItemId
+        ? (Number.isFinite(parsedRequiredItemQuantity) && parsedRequiredItemQuantity > 0 ? parsedRequiredItemQuantity : 1)
+        : null
+
+    return {
+        evolvesTo,
+        targetFormId,
+        minLevel,
+        requiredItemId: requiredItemId || null,
+        requiredItemQuantity,
+    }
+}
+
+const collectRequiredEvolutionItemIds = (entries = []) => {
+    const ids = new Set()
+    for (const entry of Array.isArray(entries) ? entries : []) {
+        const normalized = normalizeEvolutionTargetId(entry)
+        if (normalized) ids.add(normalized)
+    }
+    return [...ids]
+}
+
+const validateEvolutionMaterialItems = async (itemIds = []) => {
+    const normalizedIds = collectRequiredEvolutionItemIds(itemIds)
+    if (normalizedIds.length === 0) return { ok: true, itemById: new Map() }
+
+    for (const itemId of normalizedIds) {
+        if (!mongoose.Types.ObjectId.isValid(itemId)) {
+            return { ok: false, message: `requiredItemId không hợp lệ: ${itemId}` }
+        }
+    }
+
+    const rows = await Item.find({
+        _id: { $in: normalizedIds },
+        isEvolutionMaterial: true,
+    })
+        .select('_id evolutionRarityFrom evolutionRarityTo')
+        .lean()
+
+    const itemById = new Map(rows.map((entry) => [String(entry?._id || '').trim(), entry]))
+    const missingIds = normalizedIds.filter((entry) => !itemById.has(entry))
+    if (missingIds.length > 0) {
+        return {
+            ok: false,
+            message: `Có vật phẩm tiến hóa không hợp lệ hoặc chưa bật cờ tiến hóa: ${missingIds.slice(0, 5).join(', ')}`,
+        }
+    }
+
+    return { ok: true, itemById }
+}
+
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const normalizePokemonRarity = (value = '') => normalizeRarity(value)
+const isEvolutionItemAllowedForRarity = (item, rarity) => {
+    const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
+    if (rarityIndex < 0) return true
+
+    const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityFrom || 'd'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss'))
+    if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
+    return rarityIndex >= fromIndex && rarityIndex <= toIndex
+}
+
+const validateRequiredItemsAgainstRarity = ({
+    rarity,
+    entries = [],
+    itemById = new Map(),
+}) => {
+    const normalizedRarity = normalizePokemonRarity(rarity)
+    for (const entry of Array.isArray(entries) ? entries : []) {
+        const requiredItemId = String(entry?.requiredItemId || '').trim()
+        if (!requiredItemId) continue
+
+        const item = itemById.get(requiredItemId)
+        if (!item) {
+            return {
+                ok: false,
+                message: `Không tìm thấy vật phẩm tiến hóa: ${requiredItemId}`,
+            }
+        }
+
+        if (!isEvolutionItemAllowedForRarity(item, normalizedRarity)) {
+            return {
+                ok: false,
+                message: `Vật phẩm tiến hóa ${requiredItemId} không áp dụng cho rank ${normalizedRarity.toUpperCase()}`,
+            }
+        }
+    }
+
+    return { ok: true }
+}
+
+const validateEvolutionTargetFormIds = ({ entries = [], targetPokemonById = new Map() }) => {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+        const evolvesTo = String(entry?.evolvesTo || '').trim()
+        const targetFormId = normalizeEvolutionTargetFormId(entry?.targetFormId)
+        if (!evolvesTo || !targetFormId) continue
+
+        const targetPokemon = targetPokemonById.get(evolvesTo)
+        if (!targetPokemon) {
+            return { ok: false, message: `Không tìm thấy Pokemon tiến hóa đích: ${evolvesTo}` }
+        }
+
+        const targetForms = Array.isArray(targetPokemon?.forms) ? targetPokemon.forms : []
+        const hasForm = targetForms.length > 0
+            ? targetForms.some((form) => normalizeEvolutionTargetFormId(form?.formId) === targetFormId)
+            : targetFormId === normalizeEvolutionTargetFormId(targetPokemon?.defaultFormId || 'normal')
+
+        if (!hasForm) {
+            return {
+                ok: false,
+                message: `Form tiến hóa đích không tồn tại: ${targetPokemon.name || evolvesTo} (${targetFormId})`,
+            }
+        }
+    }
+
+    return { ok: true }
+}
+
+const normalizeForms = (forms) => {
+    if (!Array.isArray(forms)) return []
+    return forms
+        .map((f) => ({
+            formId: String(f?.formId || '').trim(),
+            formName: String(f?.formName || '').trim(),
+            imageUrl: String(f?.imageUrl || '').trim(),
+            sprites: f?.sprites || {},
+            stats: f?.stats || {},
+            evolution: normalizeEvolutionPayload(f?.evolution),
+        }))
+        .filter(f => f.formId)
 }
 
 const normalizeLevelUpMovesInput = (entries) => {
@@ -248,6 +370,9 @@ router.get('/', async (req, res) => {
                 .skip(skip)
                 .limit(safeLimit)
                 .populate('evolution.evolvesTo', 'name pokedexNumber')
+                .populate('evolution.requiredItemId', 'name imageUrl isEvolutionMaterial')
+                .populate('forms.evolution.evolvesTo', 'name pokedexNumber')
+                .populate('forms.evolution.requiredItemId', 'name imageUrl isEvolutionMaterial')
                 .lean(),
             Pokemon.countDocuments(query),
         ])
@@ -305,8 +430,23 @@ router.put('/evolutions/bulk', async (req, res) => {
             const minLevel = evolvesTo
                 ? (Number.isFinite(parsedMinLevel) && parsedMinLevel > 0 ? parsedMinLevel : null)
                 : null
+            const targetFormId = evolvesTo ? normalizeEvolutionTargetFormId(entry?.targetFormId) : null
 
-            normalizedUpdates.push({ pokemonId, formId, evolvesTo, minLevel })
+            const requiredItemId = evolvesTo ? normalizeEvolutionTargetId(entry?.requiredItemId) : null
+            const parsedRequiredItemQuantity = Number.parseInt(entry?.requiredItemQuantity, 10)
+            const requiredItemQuantity = requiredItemId
+                ? (Number.isFinite(parsedRequiredItemQuantity) && parsedRequiredItemQuantity > 0 ? parsedRequiredItemQuantity : 1)
+                : null
+
+            normalizedUpdates.push({
+                pokemonId,
+                formId,
+                evolvesTo,
+                targetFormId,
+                minLevel,
+                requiredItemId,
+                requiredItemQuantity,
+            })
         }
 
         const dedupedByKey = new Map()
@@ -327,10 +467,49 @@ router.put('/evolutions/bulk', async (req, res) => {
         }
 
         const targetIds = [...new Set(updates.map((entry) => entry.evolvesTo).filter(Boolean))]
+        let targetPokemonById = new Map()
         if (targetIds.length > 0) {
-            const targetCount = await Pokemon.countDocuments({ _id: { $in: targetIds } })
-            if (targetCount !== targetIds.length) {
+            const targetRows = await Pokemon.find({ _id: { $in: targetIds } })
+                .select('_id name defaultFormId forms.formId')
+                .lean()
+            targetPokemonById = new Map(targetRows.map((entry) => [String(entry?._id || '').trim(), entry]))
+            if (targetRows.length !== targetIds.length) {
                 return res.status(400).json({ ok: false, message: 'Có Pokemon tiến hóa đích không tồn tại' })
+            }
+        }
+
+        const targetFormValidation = validateEvolutionTargetFormIds({
+            entries: updates,
+            targetPokemonById,
+        })
+        if (!targetFormValidation.ok) {
+            return res.status(400).json({ ok: false, message: targetFormValidation.message })
+        }
+
+        const requiredItemIds = [...new Set(updates.map((entry) => entry.requiredItemId).filter(Boolean))]
+        let requiredItemValidation = { ok: true, itemById: new Map() }
+        if (requiredItemIds.length > 0) {
+            requiredItemValidation = await validateEvolutionMaterialItems(requiredItemIds)
+            if (!requiredItemValidation.ok) {
+                return res.status(400).json({ ok: false, message: requiredItemValidation.message })
+            }
+        }
+
+        for (const entry of updates) {
+            if (!entry.requiredItemId) continue
+            const sourcePokemon = pokemonById.get(entry.pokemonId)
+            if (!sourcePokemon) continue
+
+            const rarityValidation = validateRequiredItemsAgainstRarity({
+                rarity: sourcePokemon.rarity,
+                entries: [entry],
+                itemById: requiredItemValidation.itemById,
+            })
+            if (!rarityValidation.ok) {
+                return res.status(400).json({
+                    ok: false,
+                    message: `${sourcePokemon.name}: ${rarityValidation.message}`,
+                })
             }
         }
 
@@ -350,13 +529,19 @@ router.put('/evolutions/bulk', async (req, res) => {
                 targetForm.evolution = entry.evolvesTo
                     ? {
                         evolvesTo: entry.evolvesTo,
+                        targetFormId: entry.targetFormId,
                         minLevel: entry.minLevel,
+                        requiredItemId: entry.requiredItemId || null,
+                        requiredItemQuantity: entry.requiredItemId ? entry.requiredItemQuantity : null,
                     }
                     : null
             } else {
                 doc.evolution = {
                     evolvesTo: entry.evolvesTo || null,
+                    targetFormId: entry.evolvesTo ? (entry.targetFormId || null) : null,
                     minLevel: entry.evolvesTo ? entry.minLevel : null,
+                    requiredItemId: entry.evolvesTo ? (entry.requiredItemId || null) : null,
+                    requiredItemQuantity: entry.evolvesTo && entry.requiredItemId ? entry.requiredItemQuantity : null,
                 }
             }
 
@@ -373,6 +558,9 @@ router.put('/evolutions/bulk', async (req, res) => {
         const updatedPokemon = await Pokemon.find({ _id: { $in: [...touchedIds] } })
             .select('name pokedexNumber evolution forms defaultFormId')
             .populate('evolution.evolvesTo', 'name pokedexNumber')
+            .populate('evolution.requiredItemId', 'name imageUrl isEvolutionMaterial')
+            .populate('forms.evolution.evolvesTo', 'name pokedexNumber')
+            .populate('forms.evolution.requiredItemId', 'name imageUrl isEvolutionMaterial')
             .lean()
 
         res.json({
@@ -642,6 +830,7 @@ router.post('/', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = normalizeForms(req.body.forms)
+        const normalizedEvolution = normalizeEvolutionPayload(evolution)
         const resolvedBaseStats = normalizeBaseStats(baseStats || forms[0]?.stats)
         const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = await resolveLevelUpMovesFromCatalog(levelUpMoves || [])
 
@@ -668,6 +857,50 @@ router.post('/', async (req, res) => {
             })
         }
 
+        const requiredItemIds = [
+            normalizedEvolution?.requiredItemId,
+            ...forms.map((entry) => entry?.evolution?.requiredItemId),
+        ].filter(Boolean)
+        let requiredItemValidation = { ok: true, itemById: new Map() }
+        if (requiredItemIds.length > 0) {
+            requiredItemValidation = await validateEvolutionMaterialItems(requiredItemIds)
+            if (!requiredItemValidation.ok) {
+                return res.status(400).json({ ok: false, message: requiredItemValidation.message })
+            }
+        }
+
+        const rarityValidation = validateRequiredItemsAgainstRarity({
+            rarity: normalizeRarity(rarity),
+            entries: [normalizedEvolution, ...forms.map((entry) => entry?.evolution)],
+            itemById: requiredItemValidation.itemById,
+        })
+        if (!rarityValidation.ok) {
+            return res.status(400).json({ ok: false, message: rarityValidation.message })
+        }
+
+        const targetIds = [...new Set([
+            normalizedEvolution?.evolvesTo,
+            ...forms.map((entry) => entry?.evolution?.evolvesTo),
+        ].filter(Boolean))]
+        let targetPokemonById = new Map()
+        if (targetIds.length > 0) {
+            const targetRows = await Pokemon.find({ _id: { $in: targetIds } })
+                .select('_id name defaultFormId forms.formId')
+                .lean()
+            targetPokemonById = new Map(targetRows.map((entry) => [String(entry?._id || '').trim(), entry]))
+            if (targetRows.length !== targetIds.length) {
+                return res.status(400).json({ ok: false, message: 'Có Pokemon tiến hóa đích không tồn tại' })
+            }
+        }
+
+        const targetFormValidation = validateEvolutionTargetFormIds({
+            entries: [normalizedEvolution, ...forms.map((entry) => entry?.evolution)],
+            targetPokemonById,
+        })
+        if (!targetFormValidation.ok) {
+            return res.status(400).json({ ok: false, message: targetFormValidation.message })
+        }
+
         const pokemon = new Pokemon({
             pokedexNumber,
             name,
@@ -681,7 +914,7 @@ router.post('/', async (req, res) => {
             rarityWeight,
             defaultFormId: defaultFormId || forms[0]?.formId || 'normal',
             forms,
-            evolution,
+            evolution: normalizedEvolution,
             levelUpMoves: resolvedLevelUpMoves,
             catchRate,
             baseExperience,
@@ -702,6 +935,7 @@ router.put('/:id', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
         const forms = 'forms' in req.body ? normalizeForms(req.body.forms) : null
+        const normalizedEvolution = evolution !== undefined ? normalizeEvolutionPayload(evolution) : undefined
         const shouldUpdateLevelUpMoves = levelUpMoves !== undefined
         const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = shouldUpdateLevelUpMoves
             ? await resolveLevelUpMovesFromCatalog(levelUpMoves)
@@ -711,10 +945,64 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: levelUpMovesError })
         }
 
+        const requiredItemIds = [
+            normalizedEvolution?.requiredItemId,
+            ...(Array.isArray(forms) ? forms.map((entry) => entry?.evolution?.requiredItemId) : []),
+        ].filter(Boolean)
+        let requiredItemValidation = { ok: true, itemById: new Map() }
+        if (requiredItemIds.length > 0) {
+            requiredItemValidation = await validateEvolutionMaterialItems(requiredItemIds)
+            if (!requiredItemValidation.ok) {
+                return res.status(400).json({ ok: false, message: requiredItemValidation.message })
+            }
+        }
+
         const pokemon = await Pokemon.findById(req.params.id)
 
         if (!pokemon) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
+        }
+
+        const effectiveRarity = normalizeRarity(rarity !== undefined ? rarity : pokemon.rarity)
+        const pendingRarityEntries = [
+            ...(evolution !== undefined ? [normalizedEvolution] : []),
+            ...(Array.isArray(forms) ? forms.map((entry) => entry?.evolution) : []),
+        ]
+        if (pendingRarityEntries.some((entry) => entry?.requiredItemId)) {
+            const rarityValidation = validateRequiredItemsAgainstRarity({
+                rarity: effectiveRarity,
+                entries: pendingRarityEntries,
+                itemById: requiredItemValidation.itemById,
+            })
+            if (!rarityValidation.ok) {
+                return res.status(400).json({ ok: false, message: rarityValidation.message })
+            }
+        }
+
+        const targetEntries = [
+            ...(evolution !== undefined ? [normalizedEvolution] : [pokemon.evolution]),
+            ...(Array.isArray(forms)
+                ? forms.map((entry) => entry?.evolution)
+                : (Array.isArray(pokemon.forms) ? pokemon.forms.map((entry) => entry?.evolution) : [])),
+        ]
+        const targetIds = [...new Set(targetEntries.map((entry) => entry?.evolvesTo).filter(Boolean))]
+        let targetPokemonById = new Map()
+        if (targetIds.length > 0) {
+            const targetRows = await Pokemon.find({ _id: { $in: targetIds } })
+                .select('_id name defaultFormId forms.formId')
+                .lean()
+            targetPokemonById = new Map(targetRows.map((entry) => [String(entry?._id || '').trim(), entry]))
+            if (targetRows.length !== targetIds.length) {
+                return res.status(400).json({ ok: false, message: 'Có Pokemon tiến hóa đích không tồn tại' })
+            }
+        }
+
+        const targetFormValidation = validateEvolutionTargetFormIds({
+            entries: targetEntries,
+            targetPokemonById,
+        })
+        if (!targetFormValidation.ok) {
+            return res.status(400).json({ ok: false, message: targetFormValidation.message })
         }
 
         // Check if new name/pokedex conflicts with other Pokemon
@@ -745,7 +1033,7 @@ router.put('/:id', async (req, res) => {
         if (forms) pokemon.forms = forms
 
         // Update game mechanics fields
-        if (evolution !== undefined) pokemon.evolution = evolution
+        if (evolution !== undefined) pokemon.evolution = normalizedEvolution
         if (shouldUpdateLevelUpMoves) pokemon.levelUpMoves = resolvedLevelUpMoves
         if (catchRate !== undefined) pokemon.catchRate = catchRate
         if (baseExperience !== undefined) pokemon.baseExperience = baseExperience

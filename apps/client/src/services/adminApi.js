@@ -733,6 +733,22 @@ export const battleTrainerApi = {
         }
         return res.json()
     },
+
+    async resetHistory(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/battle-trainers/reset-history`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Reset lịch sử battle trainer thất bại')
+        }
+        return res.json()
+    },
 }
 
 // Item DropRate endpoints
@@ -819,6 +835,22 @@ export const leaderboardRewardApi = {
             body: JSON.stringify(payload || {}),
         })
         if (!res.ok) await throwApiError(res, 'Trao thưởng top tuần thất bại')
+        return res.json()
+    },
+
+    // POST /api/admin/leaderboard-rewards/upload-image
+    async uploadImage(file) {
+        const formData = new FormData()
+        formData.append('image', file)
+
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/upload-image`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeader(),
+            },
+            body: formData,
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải ảnh thưởng top tuần')
         return res.json()
     },
 

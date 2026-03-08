@@ -1,6 +1,6 @@
 import express from 'express'
 import mongoose from 'mongoose'
-import Item, { ITEM_TYPES, ITEM_RARITIES } from '../../models/Item.js'
+import Item, { ITEM_TYPES, ITEM_RARITIES, POKEMON_RARITY_TIERS } from '../../models/Item.js'
 import ItemPurchaseLog from '../../models/ItemPurchaseLog.js'
 
 const router = express.Router()
@@ -13,10 +13,21 @@ const toBoolean = (value, fallback = false) => {
     return normalized === 'true' || normalized === '1' || normalized === 'yes'
 }
 
+const normalizePokemonRarityTier = (value, fallback = 'd') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return POKEMON_RARITY_TIERS.includes(normalized) ? normalized : fallback
+}
+
+const validateEvolutionRarityRange = (fromTier, toTier) => {
+    const fromIndex = POKEMON_RARITY_TIERS.indexOf(fromTier)
+    const toIndex = POKEMON_RARITY_TIERS.indexOf(toTier)
+    return fromIndex >= 0 && toIndex >= 0 && fromIndex <= toIndex
+}
+
 // GET /api/admin/items - List items with search & pagination
 router.get('/', async (req, res) => {
     try {
-        const { search, type, rarity, page = 1, limit = 20 } = req.query
+        const { search, type, rarity, isEvolutionMaterial, page = 1, limit = 20 } = req.query
         const safePage = Math.max(1, parseInt(page, 10) || 1)
         const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
 
@@ -32,6 +43,10 @@ router.get('/', async (req, res) => {
 
         if (rarity) {
             query.rarity = rarity
+        }
+
+        if (isEvolutionMaterial !== undefined && String(isEvolutionMaterial).trim() !== '') {
+            query.isEvolutionMaterial = toBoolean(isEvolutionMaterial, false)
         }
 
         const skip = (safePage - 1) * safeLimit
@@ -57,6 +72,7 @@ router.get('/', async (req, res) => {
             meta: {
                 types: ITEM_TYPES,
                 rarities: ITEM_RARITIES,
+                pokemonRarityTiers: POKEMON_RARITY_TIERS,
             }
         })
     } catch (error) {
@@ -68,7 +84,7 @@ router.get('/', async (req, res) => {
 // GET /api/admin/items/purchase-history - Purchase audit logs
 router.get('/purchase-history', async (req, res) => {
     try {
-        const { search, itemId, page = 1, limit = 20 } = req.query
+        const { search, itemId, shopType, page = 1, limit = 20 } = req.query
         const safePage = Math.max(1, parseInt(page, 10) || 1)
         const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
         const skip = (safePage - 1) * safeLimit
@@ -76,6 +92,10 @@ router.get('/purchase-history', async (req, res) => {
         const preMatch = {}
         if (itemId && mongoose.Types.ObjectId.isValid(String(itemId))) {
             preMatch.itemId = new mongoose.Types.ObjectId(String(itemId))
+        }
+        const normalizedShopType = String(shopType || '').trim().toLowerCase()
+        if (normalizedShopType === 'item' || normalizedShopType === 'moon') {
+            preMatch.shopType = normalizedShopType
         }
 
         const escapedSearch = String(search || '').trim()
@@ -135,6 +155,8 @@ router.get('/purchase-history', async (req, res) => {
                                     quantity: 1,
                                     unitPrice: 1,
                                     totalCost: 1,
+                                    shopType: 1,
+                                    walletCurrency: 1,
                                     walletGoldBefore: 1,
                                     walletGoldAfter: 1,
                                     createdAt: 1,
@@ -174,6 +196,7 @@ router.get('/purchase-history', async (req, res) => {
             },
             meta: {
                 shopItems,
+                shopType: normalizedShopType || 'all',
             },
         })
     } catch (error) {
@@ -201,7 +224,25 @@ router.get('/:id', async (req, res) => {
 // POST /api/admin/items - Create item
 router.post('/', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description, shopPrice, isShopEnabled, effectType, effectValue, effectValueMp } = req.body
+        const {
+            name,
+            type,
+            rarity,
+            imageUrl,
+            description,
+            shopPrice,
+            isShopEnabled,
+            moonShopPrice,
+            isMoonShopEnabled,
+            purchaseLimit,
+            vipPurchaseLimitBonusPerLevel,
+            isEvolutionMaterial,
+            evolutionRarityFrom,
+            evolutionRarityTo,
+            effectType,
+            effectValue,
+            effectValueMp,
+        } = req.body
 
         if (!name) {
             return res.status(400).json({ ok: false, message: 'Thiếu trường bắt buộc' })
@@ -217,6 +258,15 @@ router.post('/', async (req, res) => {
 
         if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
+        }
+        if (moonShopPrice !== undefined && (!Number.isFinite(Number(moonShopPrice)) || Number(moonShopPrice) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giá Nguyệt Các không hợp lệ' })
+        }
+        if (purchaseLimit !== undefined && (!Number.isFinite(Number(purchaseLimit)) || Number(purchaseLimit) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua không hợp lệ' })
+        }
+        if (vipPurchaseLimitBonusPerLevel !== undefined && (!Number.isFinite(Number(vipPurchaseLimitBonusPerLevel)) || Number(vipPurchaseLimitBonusPerLevel) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn cộng thêm theo VIP không hợp lệ' })
         }
 
         if (effectValue !== undefined && !Number.isFinite(Number(effectValue))) {
@@ -241,6 +291,13 @@ router.post('/', async (req, res) => {
             return res.status(409).json({ ok: false, message: 'Tên vật phẩm đã tồn tại' })
         }
 
+        const resolvedIsEvolutionMaterial = toBoolean(isEvolutionMaterial, false)
+        const resolvedEvolutionRarityFrom = normalizePokemonRarityTier(evolutionRarityFrom, 'd')
+        const resolvedEvolutionRarityTo = normalizePokemonRarityTier(evolutionRarityTo, 'sss')
+        if (resolvedIsEvolutionMaterial && !validateEvolutionRarityRange(resolvedEvolutionRarityFrom, resolvedEvolutionRarityTo)) {
+            return res.status(400).json({ ok: false, message: 'Khoảng rank tiến hóa không hợp lệ (From phải <= To)' })
+        }
+
         const item = new Item({
             name,
             type: type || 'misc',
@@ -249,6 +306,15 @@ router.post('/', async (req, res) => {
             description: description || '',
             shopPrice: Number.isFinite(Number(shopPrice)) ? Number(shopPrice) : 0,
             isShopEnabled: toBoolean(isShopEnabled, false),
+            moonShopPrice: Number.isFinite(Number(moonShopPrice)) ? Number(moonShopPrice) : 0,
+            isMoonShopEnabled: toBoolean(isMoonShopEnabled, false),
+            purchaseLimit: Number.isFinite(Number(purchaseLimit)) ? Math.max(0, Number(purchaseLimit)) : 0,
+            vipPurchaseLimitBonusPerLevel: Number.isFinite(Number(vipPurchaseLimitBonusPerLevel))
+                ? Math.max(0, Number(vipPurchaseLimitBonusPerLevel))
+                : 0,
+            isEvolutionMaterial: resolvedIsEvolutionMaterial,
+            evolutionRarityFrom: resolvedEvolutionRarityFrom,
+            evolutionRarityTo: resolvedEvolutionRarityTo,
             effectType: resolvedEffectType,
             effectValue: resolvedEffectType === 'catchMultiplier'
                 ? Math.min(100, Math.max(0, Number(effectValue) || 0))
@@ -268,7 +334,25 @@ router.post('/', async (req, res) => {
 // PUT /api/admin/items/:id - Update item
 router.put('/:id', async (req, res) => {
     try {
-        const { name, type, rarity, imageUrl, description, shopPrice, isShopEnabled, effectType, effectValue, effectValueMp } = req.body
+        const {
+            name,
+            type,
+            rarity,
+            imageUrl,
+            description,
+            shopPrice,
+            isShopEnabled,
+            moonShopPrice,
+            isMoonShopEnabled,
+            purchaseLimit,
+            vipPurchaseLimitBonusPerLevel,
+            isEvolutionMaterial,
+            evolutionRarityFrom,
+            evolutionRarityTo,
+            effectType,
+            effectValue,
+            effectValueMp,
+        } = req.body
 
         const item = await Item.findById(req.params.id)
 
@@ -286,6 +370,15 @@ router.put('/:id', async (req, res) => {
 
         if (shopPrice !== undefined && (!Number.isFinite(Number(shopPrice)) || Number(shopPrice) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giá cửa hàng không hợp lệ' })
+        }
+        if (moonShopPrice !== undefined && (!Number.isFinite(Number(moonShopPrice)) || Number(moonShopPrice) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giá Nguyệt Các không hợp lệ' })
+        }
+        if (purchaseLimit !== undefined && (!Number.isFinite(Number(purchaseLimit)) || Number(purchaseLimit) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua không hợp lệ' })
+        }
+        if (vipPurchaseLimitBonusPerLevel !== undefined && (!Number.isFinite(Number(vipPurchaseLimitBonusPerLevel)) || Number(vipPurchaseLimitBonusPerLevel) < 0)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn cộng thêm theo VIP không hợp lệ' })
         }
 
         if (effectValue !== undefined && !Number.isFinite(Number(effectValue))) {
@@ -311,6 +404,19 @@ router.put('/:id', async (req, res) => {
             }
         }
 
+        const nextIsEvolutionMaterial = isEvolutionMaterial !== undefined
+            ? toBoolean(isEvolutionMaterial, item.isEvolutionMaterial)
+            : item.isEvolutionMaterial
+        const nextEvolutionRarityFrom = evolutionRarityFrom !== undefined
+            ? normalizePokemonRarityTier(evolutionRarityFrom, item.evolutionRarityFrom || 'd')
+            : normalizePokemonRarityTier(item.evolutionRarityFrom, 'd')
+        const nextEvolutionRarityTo = evolutionRarityTo !== undefined
+            ? normalizePokemonRarityTier(evolutionRarityTo, item.evolutionRarityTo || 'sss')
+            : normalizePokemonRarityTier(item.evolutionRarityTo, 'sss')
+        if (nextIsEvolutionMaterial && !validateEvolutionRarityRange(nextEvolutionRarityFrom, nextEvolutionRarityTo)) {
+            return res.status(400).json({ ok: false, message: 'Khoảng rank tiến hóa không hợp lệ (From phải <= To)' })
+        }
+
         if (name !== undefined) item.name = name
         if (type !== undefined) item.type = type
         if (rarity !== undefined) item.rarity = rarity
@@ -318,6 +424,17 @@ router.put('/:id', async (req, res) => {
         if (description !== undefined) item.description = description
         if (shopPrice !== undefined) item.shopPrice = Number(shopPrice)
         if (isShopEnabled !== undefined) item.isShopEnabled = toBoolean(isShopEnabled, item.isShopEnabled)
+        if (moonShopPrice !== undefined) item.moonShopPrice = Math.max(0, Number(moonShopPrice) || 0)
+        if (isMoonShopEnabled !== undefined) item.isMoonShopEnabled = toBoolean(isMoonShopEnabled, item.isMoonShopEnabled)
+        if (purchaseLimit !== undefined) item.purchaseLimit = Math.max(0, Number(purchaseLimit) || 0)
+        if (vipPurchaseLimitBonusPerLevel !== undefined) {
+            item.vipPurchaseLimitBonusPerLevel = Math.max(0, Number(vipPurchaseLimitBonusPerLevel) || 0)
+        }
+        if (isEvolutionMaterial !== undefined) {
+            item.isEvolutionMaterial = toBoolean(isEvolutionMaterial, item.isEvolutionMaterial)
+        }
+        if (evolutionRarityFrom !== undefined) item.evolutionRarityFrom = nextEvolutionRarityFrom
+        if (evolutionRarityTo !== undefined) item.evolutionRarityTo = nextEvolutionRarityTo
         if (effectType !== undefined) item.effectType = effectType
         if (effectValue !== undefined) {
             item.effectValue = nextEffectType === 'catchMultiplier'

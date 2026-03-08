@@ -5,6 +5,7 @@ import Encounter from '../models/Encounter.js'
 import UserPokemon from '../models/UserPokemon.js'
 import MapModel from '../models/Map.js'
 import BattleSession from '../models/BattleSession.js'
+import BattleTrainer from '../models/BattleTrainer.js'
 import User from '../models/User.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
@@ -12,7 +13,9 @@ import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 import { calcMaxHp } from '../utils/gameUtils.js'
+import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
+import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
 
 const router = express.Router()
 const useItemActionGuard = createActionGuard({
@@ -556,7 +559,8 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 targetPokemon = await UserPokemon.findOne({
                     _id: normalizedActivePokemonId,
                     userId,
-                }).populate('pokemonId', 'levelUpMoves baseStats rarity')
+                    location: 'party',
+                }).populate('pokemonId', 'levelUpMoves baseStats rarity forms defaultFormId')
                 if (!targetPokemon) {
                     return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon đang chọn' })
                 }
@@ -595,14 +599,15 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     targetPokemon = await UserPokemon.findOne({
                         _id: activeBattleSession.playerPokemonId,
                         userId,
-                    }).populate('pokemonId', 'levelUpMoves baseStats rarity')
+                        location: 'party',
+                    }).populate('pokemonId', 'levelUpMoves baseStats rarity forms defaultFormId')
                 }
             }
 
             if (!targetPokemon) {
                 targetPokemon = await UserPokemon.findOne({ userId, location: 'party' })
                     .sort({ partyIndex: 1 })
-                    .populate('pokemonId', 'levelUpMoves baseStats rarity')
+                    .populate('pokemonId', 'levelUpMoves baseStats rarity forms defaultFormId')
             }
 
             if (!isTrainerBattleContext && !normalizedEncounterId && targetPokemon) {
@@ -622,13 +627,22 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             if (activeBattleSession) {
                 hpContext = 'battle'
 
-                if (
-                    isTrainerBattleContext
-                    && targetPokemon
-                    && String(activeBattleSession.playerPokemonId || '') !== String(targetPokemon._id)
-                ) {
+                const hasTrainerContextTarget = isTrainerBattleContext && targetPokemon
+                const isSameTrainerBattlePokemon = hasTrainerContextTarget
+                    && String(activeBattleSession.playerPokemonId || '') === String(targetPokemon._id)
+
+                if (hasTrainerContextTarget) {
+                    const resolvedForm = resolvePokemonFormEntry(
+                        targetPokemon?.pokemonId,
+                        targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal'
+                    )
+                    const resolvedBaseStats = resolveEffectivePokemonBaseStats({
+                        pokemonLike: targetPokemon?.pokemonId,
+                        formId: targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal',
+                        resolvedForm,
+                    })
                     const calculatedMaxHp = calcMaxHp(
-                        Number(targetPokemon?.pokemonId?.baseStats?.hp || 1),
+                        Number(resolvedBaseStats?.hp || 1),
                         Math.max(1, Number(targetPokemon.level || 1)),
                         targetPokemon?.pokemonId?.rarity || 'd'
                     )
@@ -645,13 +659,32 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                         ? itemUseContext.playerCurrentHp
                         : fallbackCurrentHpRaw
 
-                    activeBattleSession.playerPokemonId = targetPokemon._id
-                    activeBattleSession.playerMaxHp = Math.max(1, Math.floor(resolvedMaxHp))
-                    activeBattleSession.playerCurrentHp = clampChance(
-                        Math.floor(resolvedCurrentHpRaw),
-                        0,
-                        activeBattleSession.playerMaxHp
-                    )
+                    if (!isSameTrainerBattlePokemon) {
+                        activeBattleSession.playerPokemonId = targetPokemon._id
+                        activeBattleSession.playerMaxHp = Math.max(1, Math.floor(resolvedMaxHp))
+                        activeBattleSession.playerCurrentHp = clampChance(
+                            Math.floor(resolvedCurrentHpRaw),
+                            0,
+                            activeBattleSession.playerMaxHp
+                        )
+                    } else {
+                        const sessionMaxHp = Math.max(1, Number(activeBattleSession.playerMaxHp || calculatedMaxHp))
+                        const normalizedRequestedMaxHp = Number.isFinite(itemUseContext.playerMaxHp)
+                            ? clampChance(Math.floor(itemUseContext.playerMaxHp), 1, calculatedMaxHp)
+                            : sessionMaxHp
+                        const reconciledMaxHp = Math.max(1, Math.min(sessionMaxHp, normalizedRequestedMaxHp, calculatedMaxHp))
+                        const sessionCurrentHp = clampChance(
+                            Math.floor(Number(activeBattleSession.playerCurrentHp || reconciledMaxHp)),
+                            0,
+                            reconciledMaxHp
+                        )
+                        const normalizedRequestedCurrentHp = Number.isFinite(itemUseContext.playerCurrentHp)
+                            ? clampChance(Math.floor(itemUseContext.playerCurrentHp), 0, reconciledMaxHp)
+                            : sessionCurrentHp
+
+                        activeBattleSession.playerMaxHp = reconciledMaxHp
+                        activeBattleSession.playerCurrentHp = Math.min(sessionCurrentHp, normalizedRequestedCurrentHp)
+                    }
                 }
 
                 beforeHp = Math.max(0, Number(activeBattleSession.playerCurrentHp || 0))
@@ -761,6 +794,26 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 await playerState.save()
             }
 
+            let trainerCounterAttack = null
+            if (isTrainerBattleContext && activeBattleSession && targetPokemon) {
+                const team = Array.isArray(activeBattleSession.team) ? activeBattleSession.team : []
+                const currentIndex = Math.max(0, Number(activeBattleSession.currentIndex) || 0)
+                const activeTrainerOpponent = team[currentIndex] || null
+                const trainerDoc = await BattleTrainer.findById(itemUseContext.trainerId)
+                    .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+                    .lean()
+                const trainerTeamEntry = Array.isArray(trainerDoc?.team) ? trainerDoc.team[currentIndex] : null
+                trainerCounterAttack = await applyTrainerPenaltyTurn({
+                    activeBattleSession,
+                    activeTrainerOpponent,
+                    targetPokemon,
+                    trainerSpecies: trainerTeamEntry?.pokemonId || null,
+                    playerCurrentHp: nextHp,
+                    playerMaxHp: maxHp,
+                    reason: 'item',
+                })
+            }
+
             if (targetPokemon) {
                 await targetPokemon.save()
             }
@@ -787,6 +840,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     targetPokemonId: targetPokemon?._id || null,
                     restoredMoves: restoredPpMoves,
                 },
+                trainerCounterAttack,
             })
         }
 

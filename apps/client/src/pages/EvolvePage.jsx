@@ -229,7 +229,11 @@ export default function EvolvePage() {
                                     const baseName = String(species?.name || '').trim()
                                     const targetPokemon = entry?.evolution?.targetPokemon || null
                                     const targetName = String(targetPokemon?.name || 'Chưa có').trim()
-                                    const evolutionLevel = Math.max(1, Number.parseInt(entry?.evolution?.evolutionLevel, 10) || 1)
+                                    const parsedEvolutionLevel = Number.parseInt(entry?.evolution?.evolutionLevel, 10)
+                                    const evolutionLevel = Number.isFinite(parsedEvolutionLevel) && parsedEvolutionLevel >= 1
+                                        ? parsedEvolutionLevel
+                                        : null
+                                    const requiredItem = entry?.evolution?.requiredItem || null
                                     const sprite = resolvePokemonSprite({
                                         species,
                                         formId: entry?.formId,
@@ -275,8 +279,18 @@ export default function EvolvePage() {
                                             </div>
 
                                             <div className="text-xs text-center text-slate-700 mb-3">
-                                                Tiến hóa thành <span className="font-bold">{targetName}</span> (mốc cấp <span className="font-bold">{evolutionLevel}</span>)
+                                                Tiến hóa thành <span className="font-bold">{targetName}</span>
+                                                {evolutionLevel ? <> (mốc cấp <span className="font-bold">{evolutionLevel}</span>)</> : ''}
                                             </div>
+
+                                            {requiredItem && (
+                                                <div className="text-[11px] text-center text-indigo-700 font-semibold mb-3">
+                                                    Cần {formatNumber(requiredItem.requiredQuantity)} {requiredItem.name}
+                                                    {requiredItem.rarityFrom && requiredItem.rarityTo
+                                                        ? ` • Rank ${String(requiredItem.rarityFrom).toUpperCase()}-${String(requiredItem.rarityTo).toUpperCase()}`
+                                                        : ''}
+                                                </div>
+                                            )}
 
                                             <button
                                                 type="button"
@@ -354,6 +368,7 @@ export default function EvolvePage() {
         fallback: targetPokemon?.sprites?.normal || '',
     })
     const evolutionLevel = pokemon.evolution?.evolutionLevel || null
+    const requiredItem = pokemon.evolution?.requiredItem || null
     const canEvolve = Boolean(pokemon.evolution?.canEvolve)
     const displayFromName = evolved ? (evolutionResult?.fromName || currentName) : currentName
     const displayToName = evolved ? (evolutionResult?.toName || targetName) : targetName
@@ -419,6 +434,15 @@ export default function EvolvePage() {
                             <p className="text-green-700 font-medium text-lg bg-green-50 inline-block px-6 py-2 rounded-full border border-green-100">
                                 <span className="font-bold">{currentName}</span> có thể tiến hóa thành <span className="font-bold">{targetName}</span>{evolutionLevel ? <> (mốc cấp <span className="font-bold">{evolutionLevel}</span>)</> : ''}.
                             </p>
+                            {requiredItem && (
+                                <p className="text-indigo-700 font-medium text-sm bg-indigo-50 inline-block px-4 py-2 rounded-full border border-indigo-100">
+                                    Dùng <span className="font-bold">{formatNumber(requiredItem.requiredQuantity)} {requiredItem.name}</span>
+                                    {' '}• Trong túi: <span className="font-bold">{formatNumber(requiredItem.inventoryQuantity)}</span>
+                                    {requiredItem.rarityFrom && requiredItem.rarityTo
+                                        ? <> {' '}• Áp dụng rank <span className="font-bold">{String(requiredItem.rarityFrom).toUpperCase()}-{String(requiredItem.rarityTo).toUpperCase()}</span></>
+                                        : ''}
+                                </p>
+                            )}
                             <div>
                                 <button
                                     onClick={handleEvolve}
@@ -433,8 +457,17 @@ export default function EvolvePage() {
                         <div className="space-y-3">
                             <p className="text-slate-700 font-medium text-lg bg-slate-50 inline-block px-6 py-2 rounded-full border border-slate-200">
                                 {targetPokemon
-                                    ? `${currentName} chưa đủ điều kiện tiến hóa${evolutionLevel ? ` (cần cấp ${evolutionLevel})` : ''}.`
-                                    : `${currentName} chưa có thiết lập tiến hóa theo cấp.`}
+                                    ? (() => {
+                                        if (requiredItem && !requiredItem.hasEnough) {
+                                            const missingQty = Math.max(0, Number(requiredItem.requiredQuantity || 0) - Number(requiredItem.inventoryQuantity || 0))
+                                            if (missingQty <= 0) {
+                                                return `${requiredItem.name} không phù hợp cho rank hiện tại của ${currentName}.`
+                                            }
+                                            return `${currentName} thiếu ${formatNumber(missingQty)} ${requiredItem.name} để tiến hóa.`
+                                        }
+                                        return `${currentName} chưa đủ điều kiện tiến hóa${evolutionLevel ? ` (cần cấp ${evolutionLevel})` : ''}.`
+                                    })()
+                                    : `${currentName} chưa có thiết lập tiến hóa.`}
                             </p>
                         </div>
                     ) : (

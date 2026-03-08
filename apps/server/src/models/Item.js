@@ -19,6 +19,8 @@ export const ITEM_RARITIES = [
     'legendary',
 ]
 
+export const POKEMON_RARITY_TIERS = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+
 const itemSchema = new Schema(
     {
         name: {
@@ -56,9 +58,42 @@ const itemSchema = new Schema(
             default: 0,
             min: 0,
         },
+        moonShopPrice: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         isShopEnabled: {
             type: Boolean,
             default: false,
+        },
+        isMoonShopEnabled: {
+            type: Boolean,
+            default: false,
+        },
+        purchaseLimit: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        vipPurchaseLimitBonusPerLevel: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        isEvolutionMaterial: {
+            type: Boolean,
+            default: false,
+        },
+        evolutionRarityFrom: {
+            type: String,
+            enum: POKEMON_RARITY_TIERS,
+            default: 'd',
+        },
+        evolutionRarityTo: {
+            type: String,
+            enum: POKEMON_RARITY_TIERS,
+            default: 'sss',
         },
         effectType: {
             type: String,
@@ -84,11 +119,25 @@ const itemSchema = new Schema(
 itemSchema.index({ type: 1 })
 itemSchema.index({ rarity: 1 })
 itemSchema.index({ isShopEnabled: 1, shopPrice: 1 })
+itemSchema.index({ isMoonShopEnabled: 1, moonShopPrice: 1 })
+itemSchema.index({ isEvolutionMaterial: 1 })
 
 itemSchema.pre('validate', function (next) {
     if (this.isModified('name') || this.isNew) {
         this.nameLower = this.name.toLowerCase()
     }
+
+    if (this.isEvolutionMaterial) {
+        const fromIndex = POKEMON_RARITY_TIERS.indexOf(String(this.evolutionRarityFrom || '').trim().toLowerCase())
+        const toIndex = POKEMON_RARITY_TIERS.indexOf(String(this.evolutionRarityTo || '').trim().toLowerCase())
+        if (fromIndex < 0 || toIndex < 0) {
+            return next(new Error('evolutionRarityFrom hoặc evolutionRarityTo không hợp lệ'))
+        }
+        if (fromIndex > toIndex) {
+            return next(new Error('evolutionRarityFrom không thể cao hơn evolutionRarityTo'))
+        }
+    }
+
     next()
 })
 

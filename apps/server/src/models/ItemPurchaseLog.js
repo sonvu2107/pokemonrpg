@@ -34,6 +34,17 @@ const itemPurchaseLogSchema = new mongoose.Schema(
             required: true,
             min: 0,
         },
+        shopType: {
+            type: String,
+            enum: ['item', 'moon'],
+            default: 'item',
+            index: true,
+        },
+        walletCurrency: {
+            type: String,
+            enum: ['gold', 'moonPoints'],
+            default: 'gold',
+        },
         walletGoldBefore: {
             type: Number,
             default: 0,
@@ -53,5 +64,6 @@ const itemPurchaseLogSchema = new mongoose.Schema(
 itemPurchaseLogSchema.index({ createdAt: -1, _id: -1 })
 itemPurchaseLogSchema.index({ itemId: 1, createdAt: -1, _id: -1 })
 itemPurchaseLogSchema.index({ buyerId: 1, createdAt: -1, _id: -1 })
+itemPurchaseLogSchema.index({ buyerId: 1, itemId: 1, shopType: 1, createdAt: -1, _id: -1 })
 
 export default mongoose.model('ItemPurchaseLog', itemPurchaseLogSchema)

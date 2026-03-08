@@ -5,6 +5,8 @@ import Pokemon from '../models/Pokemon.js'
 import Move from '../models/Move.js'
 import MarketListing from '../models/MarketListing.js'
 import UserMoveInventory from '../models/UserMoveInventory.js'
+import UserInventory from '../models/UserInventory.js'
+import Item from '../models/Item.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 import {
@@ -26,8 +28,23 @@ const toBoolean = (value) => {
 }
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+const normalizeOptionalFormId = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return normalized || null
+}
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const normalizePokemonRarity = (value = '') => String(value || '').trim().toLowerCase()
+const isEvolutionItemAllowedForRarity = (itemLike = {}, rarity = '') => {
+    const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
+    if (rarityIndex < 0) return true
+
+    const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(itemLike?.evolutionRarityFrom || 'd'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(itemLike?.evolutionRarityTo || 'sss'))
+    if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
+    return rarityIndex >= fromIndex && rarityIndex <= toIndex
+}
 
 const parseTrainerOrigin = (value = '') => {
     const raw = String(value || '').trim()
@@ -320,28 +337,44 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
-    const baseEvolution = species?.evolution || null
-    const baseMinLevel = Number.parseInt(baseEvolution?.minLevel, 10)
-    if (baseEvolution?.evolvesTo && Number.isFinite(baseMinLevel) && baseMinLevel >= 1) {
-        return {
-            evolvesTo: baseEvolution.evolvesTo,
-            minLevel: baseMinLevel,
+    const parseEvolutionRule = (ruleLike = null) => {
+        const rule = ruleLike && typeof ruleLike === 'object' ? ruleLike : {}
+        const evolvesTo = String(rule?.evolvesTo?._id || rule?.evolvesTo || '').trim()
+        if (!evolvesTo) return null
+
+        const parsedMinLevel = Number.parseInt(rule?.minLevel, 10)
+        const minLevel = Number.isFinite(parsedMinLevel) && parsedMinLevel >= 1 ? parsedMinLevel : null
+        const targetFormId = normalizeOptionalFormId(rule?.targetFormId)
+        const requiredItemId = String(rule?.requiredItemId?._id || rule?.requiredItemId || '').trim()
+        const parsedRequiredItemQuantity = Number.parseInt(rule?.requiredItemQuantity, 10)
+        const requiredItemQuantity = requiredItemId
+            ? (Number.isFinite(parsedRequiredItemQuantity) && parsedRequiredItemQuantity > 0 ? parsedRequiredItemQuantity : 1)
+            : null
+
+        if (minLevel === null && !requiredItemId) {
+            return null
         }
+
+        return {
+            evolvesTo,
+            targetFormId,
+            minLevel,
+            requiredItemId: requiredItemId || null,
+            requiredItemQuantity,
+        }
+    }
+
+    const baseEvolution = species?.evolution || null
+    const parsedBaseRule = parseEvolutionRule(baseEvolution)
+    if (parsedBaseRule) {
+        return parsedBaseRule
     }
 
     const normalizedFormId = String(currentFormId || '').trim().toLowerCase()
     const forms = Array.isArray(species?.forms) ? species.forms : []
     const matchedForm = forms.find((entry) => String(entry?.formId || '').trim().toLowerCase() === normalizedFormId) || null
     const formEvolution = matchedForm?.evolution || null
-    const formMinLevel = Number.parseInt(formEvolution?.minLevel, 10)
-    if (formEvolution?.evolvesTo && Number.isFinite(formMinLevel) && formMinLevel >= 1) {
-        return {
-            evolvesTo: formEvolution.evolvesTo,
-            minLevel: formMinLevel,
-        }
-    }
-
-    return null
+    return parseEvolutionRule(formEvolution)
 }
 
 const resolvePokemonFormDisplay = (pokemonLike, requestedFormId = null) => {
@@ -797,6 +830,7 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
 
         const evolvableRows = []
         const targetIdSet = new Set()
+        const requiredItemIdSet = new Set()
 
         for (const entry of userPokemonRows) {
             const species = entry?.pokemonId
@@ -804,19 +838,29 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
 
             const evolutionRule = resolveEvolutionRule(species, entry?.formId)
             const minLevel = Number.parseInt(evolutionRule?.minLevel, 10)
-            if (!evolutionRule?.evolvesTo || !Number.isFinite(minLevel) || minLevel < 1) continue
+            if (!evolutionRule?.evolvesTo) continue
 
             const currentLevel = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
-            if (currentLevel < minLevel) continue
+            const hasMinLevelRequirement = Number.isFinite(minLevel) && minLevel >= 1
+            if (hasMinLevelRequirement && currentLevel < minLevel) continue
 
             const targetId = String(evolutionRule.evolvesTo?._id || evolutionRule.evolvesTo || '').trim()
             if (!targetId) continue
 
+            const requiredItemId = String(evolutionRule.requiredItemId?._id || evolutionRule.requiredItemId || '').trim()
+            const requiredItemQuantity = requiredItemId
+                ? Math.max(1, Number.parseInt(evolutionRule.requiredItemQuantity, 10) || 1)
+                : 0
+
             targetIdSet.add(targetId)
+            if (requiredItemId) requiredItemIdSet.add(requiredItemId)
             evolvableRows.push({
                 entry,
-                minLevel,
+                minLevel: hasMinLevelRequirement ? minLevel : null,
                 targetId,
+                targetFormId: evolutionRule?.targetFormId || null,
+                requiredItemId,
+                requiredItemQuantity,
             })
         }
 
@@ -830,11 +874,41 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
             targetSpeciesRows.map((row) => [String(row?._id || '').trim(), row])
         )
 
-        const rows = evolvableRows.map(({ entry, minLevel, targetId }) => {
+        const requiredItemIds = Array.from(requiredItemIdSet)
+        const [requiredItemRows, inventoryRows] = requiredItemIds.length > 0
+            ? await Promise.all([
+                Item.find({ _id: { $in: requiredItemIds }, isEvolutionMaterial: true })
+                    .select('_id name imageUrl isEvolutionMaterial evolutionRarityFrom evolutionRarityTo')
+                    .lean(),
+                UserInventory.find({
+                    userId: req.user.userId,
+                    itemId: { $in: requiredItemIds },
+                })
+                    .select('itemId quantity')
+                    .lean(),
+            ])
+            : [[], []]
+
+        const requiredItemById = new Map(
+            requiredItemRows.map((row) => [String(row?._id || '').trim(), row])
+        )
+        const inventoryQuantityByItemId = new Map(
+            inventoryRows.map((row) => [String(row?.itemId || '').trim(), Math.max(0, Number(row?.quantity || 0))])
+        )
+
+        const rows = evolvableRows.map(({ entry, minLevel, targetId, targetFormId, requiredItemId, requiredItemQuantity }) => {
             const species = entry?.pokemonId || null
             const currentDisplay = resolvePokemonFormDisplay(species, entry?.formId)
             const targetSpecies = targetSpeciesById.get(targetId) || null
-            const targetDisplay = resolvePokemonFormDisplay(targetSpecies, entry?.formId)
+            const targetDisplay = resolvePokemonFormDisplay(targetSpecies, targetFormId || entry?.formId)
+            const requiredItem = requiredItemId ? requiredItemById.get(requiredItemId) : null
+            const inventoryQuantity = requiredItemId
+                ? Math.max(0, Number(inventoryQuantityByItemId.get(requiredItemId) || 0))
+                : 0
+            const isAllowedByRarity = !requiredItemId || (Boolean(requiredItem) && isEvolutionItemAllowedForRarity(requiredItem, species?.rarity))
+            const hasRequiredItem = !requiredItemId || (isAllowedByRarity && inventoryQuantity >= requiredItemQuantity)
+
+            if (!hasRequiredItem) return null
 
             return {
                 ...entry,
@@ -855,6 +929,18 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
                 evolution: {
                     canEvolve: true,
                     evolutionLevel: minLevel,
+                    requiredItem: requiredItem
+                        ? {
+                            _id: requiredItem._id,
+                            name: requiredItem.name,
+                            imageUrl: requiredItem.imageUrl || '',
+                            requiredQuantity: requiredItemQuantity,
+                            inventoryQuantity,
+                            hasEnough: true,
+                            rarityFrom: String(requiredItem.evolutionRarityFrom || 'd').trim().toLowerCase() || 'd',
+                            rarityTo: String(requiredItem.evolutionRarityTo || 'sss').trim().toLowerCase() || 'sss',
+                        }
+                        : null,
                     targetPokemon: targetSpecies
                         ? {
                             _id: targetSpecies._id,
@@ -865,11 +951,11 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
                             sprites: {
                                 normal: targetDisplay.sprite,
                             },
-                        }
+                    }
                         : null,
                 },
             }
-        })
+        }).filter(Boolean)
 
         const total = rows.length
         const pageRows = rows.slice(skip, skip + limit)
@@ -996,9 +1082,16 @@ router.get('/:id', async (req, res) => {
 
         const evolutionRule = resolveEvolutionRule(basePokemon, userPokemon.formId)
         const minLevel = Number.isFinite(evolutionRule?.minLevel) ? evolutionRule.minLevel : null
-        const hasValidRule = Boolean(evolutionRule?.evolvesTo) && Number.isFinite(minLevel) && minLevel >= 1
+        const requiredItemId = String(evolutionRule?.requiredItemId?._id || evolutionRule?.requiredItemId || '').trim()
+        const requiredItemQuantity = requiredItemId
+            ? Math.max(1, Number.parseInt(evolutionRule?.requiredItemQuantity, 10) || 1)
+            : null
+        const hasValidRule = Boolean(evolutionRule?.evolvesTo) && (Number.isFinite(minLevel) || Boolean(requiredItemId))
         let targetPokemon = null
         let previousPokemon = null
+        let requiredItem = null
+        let requiredItemInventoryQuantity = 0
+        let hasRequiredItem = true
 
         if (hasValidRule) {
             const target = await Pokemon.findById(evolutionRule.evolvesTo)
@@ -1006,7 +1099,7 @@ router.get('/:id', async (req, res) => {
                 .lean()
 
             if (target) {
-                const targetDisplay = resolvePokemonFormDisplay(target, currentFormId)
+                const targetDisplay = resolvePokemonFormDisplay(target, evolutionRule?.targetFormId || currentFormId)
                 targetPokemon = {
                     _id: target._id,
                     name: target.name,
@@ -1019,6 +1112,40 @@ router.get('/:id', async (req, res) => {
                         normal: targetDisplay.sprite,
                     },
                 }
+            }
+        }
+
+        if (requiredItemId) {
+            const itemDoc = await Item.findOne({
+                _id: requiredItemId,
+                isEvolutionMaterial: true,
+            })
+                .select('name imageUrl isEvolutionMaterial evolutionRarityFrom evolutionRarityTo')
+                .lean()
+
+            if (itemDoc) {
+                const isAllowedByRarity = isEvolutionItemAllowedForRarity(itemDoc, basePokemon?.rarity)
+                requiredItem = {
+                    _id: itemDoc._id,
+                    name: itemDoc.name,
+                    imageUrl: itemDoc.imageUrl || '',
+                    requiredQuantity: requiredItemQuantity,
+                    rarityFrom: String(itemDoc.evolutionRarityFrom || 'd').trim().toLowerCase() || 'd',
+                    rarityTo: String(itemDoc.evolutionRarityTo || 'sss').trim().toLowerCase() || 'sss',
+                }
+                const ownerUserId = String(userPokemon?.userId?._id || userPokemon?.userId || '').trim()
+                if (ownerUserId) {
+                    const inventoryEntry = await UserInventory.findOne({
+                        userId: ownerUserId,
+                        itemId: requiredItemId,
+                    })
+                        .select('quantity')
+                        .lean()
+                    requiredItemInventoryQuantity = Math.max(0, Number(inventoryEntry?.quantity || 0))
+                }
+                hasRequiredItem = isAllowedByRarity && requiredItemInventoryQuantity >= requiredItemQuantity
+            } else {
+                hasRequiredItem = false
             }
         }
 
@@ -1070,8 +1197,18 @@ router.get('/:id', async (req, res) => {
         responseData.userId = normalizedOwner
 
         responseData.evolution = {
-            canEvolve: Boolean(targetPokemon) && level >= minLevel,
+            canEvolve: Boolean(targetPokemon)
+                && (minLevel === null || level >= minLevel)
+                && hasRequiredItem,
             evolutionLevel: hasValidRule ? minLevel : null,
+            targetFormId: evolutionRule?.targetFormId || null,
+            requiredItem: requiredItem
+                ? {
+                    ...requiredItem,
+                    inventoryQuantity: requiredItemInventoryQuantity,
+                    hasEnough: hasRequiredItem,
+                }
+                : null,
             targetPokemon,
             previousPokemon,
         }
@@ -1452,13 +1589,18 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         }
 
         const evolutionRule = resolveEvolutionRule(currentSpecies, userPokemon.formId)
-        if (!evolutionRule?.evolvesTo || !Number.isFinite(evolutionRule.minLevel) || evolutionRule.minLevel < 1) {
-            return res.status(400).json({ ok: false, message: 'Pokemon này không có tiến hóa theo cấp độ' })
+        if (!evolutionRule?.evolvesTo) {
+            return res.status(400).json({ ok: false, message: 'Pokemon này chưa có cấu hình tiến hóa' })
         }
 
-        if (userPokemon.level < evolutionRule.minLevel) {
+        if (Number.isFinite(evolutionRule.minLevel) && evolutionRule.minLevel >= 1 && userPokemon.level < evolutionRule.minLevel) {
             return res.status(400).json({ ok: false, message: `Cần đạt cấp ${evolutionRule.minLevel} để tiến hóa` })
         }
+
+        const requiredItemId = String(evolutionRule.requiredItemId?._id || evolutionRule.requiredItemId || '').trim()
+        const requiredItemQuantity = requiredItemId
+            ? Math.max(1, Number.parseInt(evolutionRule.requiredItemQuantity, 10) || 1)
+            : 0
 
         const targetSpecies = await Pokemon.findById(evolutionRule.evolvesTo)
             .select('name imageUrl sprites forms defaultFormId levelUpMoves')
@@ -1468,12 +1610,72 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Pokemon tiến hóa không tồn tại' })
         }
 
+        let consumedItem = null
+        if (requiredItemId) {
+            const requiredItem = await Item.findOne({
+                _id: requiredItemId,
+                isEvolutionMaterial: true,
+            })
+                .select('_id name imageUrl evolutionRarityFrom evolutionRarityTo')
+                .lean()
+
+            if (!requiredItem) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm tiến hóa chưa được cấu hình hợp lệ' })
+            }
+
+            if (!isEvolutionItemAllowedForRarity(requiredItem, currentSpecies?.rarity)) {
+                return res.status(400).json({
+                    ok: false,
+                    message: `${requiredItem.name} chỉ dùng cho Pokemon rank ${String(requiredItem.evolutionRarityFrom || 'd').toUpperCase()} - ${String(requiredItem.evolutionRarityTo || 'sss').toUpperCase()}`,
+                })
+            }
+
+            const updatedInventory = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: requiredItemId,
+                    quantity: { $gte: requiredItemQuantity },
+                },
+                {
+                    $inc: { quantity: -requiredItemQuantity },
+                },
+                {
+                    new: true,
+                }
+            ).lean()
+
+            if (!updatedInventory) {
+                return res.status(400).json({
+                    ok: false,
+                    message: `Bạn không đủ ${requiredItemQuantity} ${requiredItem.name} để tiến hóa`,
+                })
+            }
+
+            const remainingQuantity = Math.max(0, Number(updatedInventory?.quantity || 0))
+            if (remainingQuantity <= 0) {
+                await UserInventory.deleteOne({ _id: updatedInventory._id })
+            }
+
+            consumedItem = {
+                _id: requiredItem._id,
+                name: requiredItem.name,
+                imageUrl: requiredItem.imageUrl || '',
+                quantity: requiredItemQuantity,
+                remainingQuantity,
+            }
+        }
+
         const targetForms = Array.isArray(targetSpecies.forms) ? targetSpecies.forms : []
         const currentFormId = String(userPokemon.formId || '').trim().toLowerCase()
+        const targetFormId = String(evolutionRule?.targetFormId || '').trim().toLowerCase()
+        const hasExplicitTargetForm = targetFormId
+            && targetForms.some((entry) => String(entry?.formId || '').trim().toLowerCase() === targetFormId)
         const canKeepForm = currentFormId && targetForms.some((entry) => String(entry?.formId || '').trim().toLowerCase() === currentFormId)
-        const nextFormId = canKeepForm
-            ? currentFormId
-            : (String(targetSpecies.defaultFormId || '').trim().toLowerCase() || 'normal')
+        const nextFormId = hasExplicitTargetForm
+            ? targetFormId
+            : (canKeepForm
+                ? currentFormId
+                : (String(targetSpecies.defaultFormId || '').trim().toLowerCase() || 'normal'))
 
         const fromName = currentSpecies.name
         userPokemon.pokemonId = targetSpecies._id
@@ -1484,11 +1686,15 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
 
         res.json({
             ok: true,
-            message: `${fromName} đã tiến hóa thành ${targetSpecies.name}!`,
+            message: consumedItem
+                ? `${fromName} đã tiến hóa thành ${targetSpecies.name}! Đã dùng ${consumedItem.quantity} ${consumedItem.name}.`
+                : `${fromName} đã tiến hóa thành ${targetSpecies.name}!`,
             evolution: {
                 from: fromName,
                 to: targetSpecies.name,
                 level: userPokemon.level,
+                targetFormId: nextFormId,
+                consumedItem,
             },
             pokemon: userPokemon,
         })

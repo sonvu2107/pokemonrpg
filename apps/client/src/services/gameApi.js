@@ -164,6 +164,22 @@ export const gameApi = {
         return res.json()
     },
 
+    async switchTrainerBattlePokemon(payload) {
+        const res = await fetch(`${API_URL}/game/battle/trainer/switch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Đổi Pokemon trong battle trainer thất bại')
+        }
+        return res.json()
+    },
+
     // GET /api/game/auto-trainer/status
     async getAutoTrainerStatus() {
         const res = await fetch(`${API_URL}/game/auto-trainer/status`, {
@@ -718,6 +734,51 @@ export const gameApi = {
     // POST /api/shop/items/:itemId/buy
     async buyShopItem(itemId, quantity = 1) {
         const res = await fetch(`${API_URL}/shop/items/${itemId}/buy`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ quantity }),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Mua vật phẩm thất bại')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/moon-items
+    async getMoonShopItems(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/moon-items${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải cửa hàng Nguyệt Các')
+        }
+        return res.json()
+    },
+
+    // GET /api/shop/moon-items/:itemId
+    async getMoonShopItem(itemId) {
+        const res = await fetch(`${API_URL}/shop/moon-items/${itemId}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải chi tiết vật phẩm')
+        }
+        return res.json()
+    },
+
+    // POST /api/shop/moon-items/:itemId/buy
+    async buyMoonShopItem(itemId, quantity = 1) {
+        const res = await fetch(`${API_URL}/shop/moon-items/${itemId}/buy`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

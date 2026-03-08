@@ -92,6 +92,35 @@ export const api = {
         return data
     },
 
+    async getProfileCosmetics() {
+        const res = await fetch(`${API_URL}/auth/profile-cosmetics`, {
+            headers: { ...authHeaders() },
+        })
+        const data = await res.json()
+        if (res.status === 401) {
+            clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
+        }
+        if (!res.ok) throw new Error(data.message || 'Không thể tải danh sách danh hiệu/khung avatar')
+        return data
+    },
+
+    async updateProfileCosmetics(payload = {}) {
+        const res = await fetch(`${API_URL}/auth/profile-cosmetics`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        const data = await res.json()
+        if (res.status === 401) {
+            clearAuthSession(data?.message || 'Phiên đăng nhập không hợp lệ')
+        }
+        if (!res.ok) throw new Error(data.message || 'Không thể cập nhật danh hiệu/khung avatar')
+        return data
+    },
+
     async getStats() {
         const res = await fetch(`${API_URL}/stats`)
         const data = await res.json()

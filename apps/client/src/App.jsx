@@ -24,6 +24,7 @@ const EvolvePage = lazy(() => import('./pages/EvolvePage'))
 const TradesPage = lazy(() => import('./pages/TradesPage'))
 const ShopSellPage = lazy(() => import('./pages/ShopSellPage'))
 const ItemShopPage = lazy(() => import('./pages/ItemShopPage'))
+const MoonShopPage = lazy(() => import('./pages/MoonShopPage'))
 const ItemInfoPage = lazy(() => import('./pages/ItemInfoPage'))
 const SkillShopPage = lazy(() => import('./pages/SkillShopPage'))
 const DailyStatsPage = lazy(() => import('./pages/DailyStatsPage'))
@@ -95,6 +96,7 @@ export default function App() {
                     <Route path="/shop/buy" element={<TradesPage />} />
                     <Route path="/shop/sell" element={<ShopSellPage />} />
                     <Route path="/shop/items" element={<ItemShopPage />} />
+                    <Route path="/shop/moon" element={<MoonShopPage />} />
                     <Route path="/shop/skills" element={<SkillShopPage />} />
                     <Route path="/stats" element={<DailyStatsPage />} />
                     <Route path="/stats/online" element={<OnlineStatsPage />} />
