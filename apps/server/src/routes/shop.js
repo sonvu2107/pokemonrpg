@@ -24,6 +24,7 @@ const ORDER_BY_MAP = {
 
 const SHOP_TYPE_ITEM = 'item'
 const SHOP_TYPE_MOON = 'moon'
+const SHOP_LIMIT_TIMEZONE = String(process.env.GAME_TIMEZONE || 'Asia/Ho_Chi_Minh').trim() || 'Asia/Ho_Chi_Minh'
 
 
 const toSafePage = (value) => Math.max(1, parseInt(value, 10) || 1)
@@ -44,6 +45,30 @@ const computeEffectivePurchaseLimit = (item = null, vipLevel = 0) => {
     const bonusPerLevel = Math.max(0, Number(item?.vipPurchaseLimitBonusPerLevel) || 0)
     const effectiveLimit = baseLimit + (Math.max(0, vipLevel) * bonusPerLevel)
     return Math.max(0, Math.floor(effectiveLimit))
+}
+
+const buildCurrentWeekExpr = (fieldName = '$createdAt') => {
+    const now = new Date()
+    return {
+        $eq: [
+            {
+                $dateTrunc: {
+                    date: fieldName,
+                    unit: 'week',
+                    startOfWeek: 'monday',
+                    timezone: SHOP_LIMIT_TIMEZONE,
+                },
+            },
+            {
+                $dateTrunc: {
+                    date: now,
+                    unit: 'week',
+                    startOfWeek: 'monday',
+                    timezone: SHOP_LIMIT_TIMEZONE,
+                },
+            },
+        ],
+    }
 }
 
 const serializeWallet = (playerState) => {
@@ -121,6 +146,7 @@ router.get('/items', async (req, res) => {
                         buyerId: new mongoose.Types.ObjectId(userId),
                         shopType: SHOP_TYPE_ITEM,
                         itemId: { $in: itemIds },
+                        $expr: buildCurrentWeekExpr('$createdAt'),
                     },
                 },
                 {
@@ -197,6 +223,7 @@ router.get('/items/:itemId', async (req, res) => {
                     buyerId: new mongoose.Types.ObjectId(userId),
                     itemId: new mongoose.Types.ObjectId(itemId),
                     shopType: SHOP_TYPE_ITEM,
+                    $expr: buildCurrentWeekExpr('$createdAt'),
                 },
             },
             {
@@ -261,6 +288,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
                         buyerId: new mongoose.Types.ObjectId(userId),
                         itemId: new mongoose.Types.ObjectId(itemId),
                         shopType: SHOP_TYPE_ITEM,
+                        $expr: buildCurrentWeekExpr('$createdAt'),
                     },
                 },
                 {
@@ -343,6 +371,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
                 quantity: Number(inventoryEntry?.quantity || 0),
             },
             limit: {
+                period: 'week',
                 purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
                 effectivePurchaseLimit,
                 purchasedQuantity: purchasedQuantity + quantity,
@@ -397,6 +426,7 @@ router.get('/moon-items', async (req, res) => {
                         buyerId: new mongoose.Types.ObjectId(userId),
                         shopType: SHOP_TYPE_MOON,
                         itemId: { $in: itemIds },
+                        $expr: buildCurrentWeekExpr('$createdAt'),
                     },
                 },
                 {
@@ -474,6 +504,7 @@ router.get('/moon-items/:itemId', async (req, res) => {
                     buyerId: new mongoose.Types.ObjectId(userId),
                     itemId: new mongoose.Types.ObjectId(itemId),
                     shopType: SHOP_TYPE_MOON,
+                    $expr: buildCurrentWeekExpr('$createdAt'),
                 },
             },
             {
@@ -541,6 +572,7 @@ router.post('/moon-items/:itemId/buy', async (req, res) => {
                         buyerId: new mongoose.Types.ObjectId(userId),
                         itemId: new mongoose.Types.ObjectId(itemId),
                         shopType: SHOP_TYPE_MOON,
+                        $expr: buildCurrentWeekExpr('$createdAt'),
                     },
                 },
                 {
@@ -623,6 +655,7 @@ router.post('/moon-items/:itemId/buy', async (req, res) => {
                 quantity: Number(inventoryEntry?.quantity || 0),
             },
             limit: {
+                period: 'week',
                 purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
                 effectivePurchaseLimit,
                 purchasedQuantity: purchasedQuantity + quantity,

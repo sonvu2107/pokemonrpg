@@ -84,7 +84,7 @@ export default function MoonShopPage() {
         const normalizedQuantity = Math.max(1, Number(quantity) || 1)
         const remainingPurchaseLimit = Math.max(0, Number(item?.remainingPurchaseLimit || 0))
         if (Number(item?.effectivePurchaseLimit || 0) > 0 && normalizedQuantity > remainingPurchaseLimit) {
-            toast.showError(`Vật phẩm này chỉ còn mua được ${remainingPurchaseLimit} lần`)
+            toast.showError(`Vật phẩm này chỉ còn mua được ${remainingPurchaseLimit} lần trong tuần này`)
             return
         }
 
@@ -226,7 +226,7 @@ export default function MoonShopPage() {
                                                     <div className="font-bold text-xl text-indigo-700 sm:text-slate-900">{Number(item.shopPrice || 0).toLocaleString('vi-VN')} <span className="text-sm sm:text-lg font-normal sm:font-bold">điểm</span></div>
                                                     <div className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider font-bold sm:font-normal sm:normal-case sm:tracking-normal w-max sm:mx-auto">nguyệt các</div>
                                                     {Number(item.effectivePurchaseLimit || 0) > 0 && (
-                                                        <div className="text-[11px] mt-1 font-semibold text-amber-700">Còn lại: {Number(item.remainingPurchaseLimit || 0).toLocaleString('vi-VN')}</div>
+                                                        <div className="text-[11px] mt-1 font-semibold text-amber-700">Còn tuần này: {Number(item.remainingPurchaseLimit || 0).toLocaleString('vi-VN')}</div>
                                                     )}
                                                 </div>
 
@@ -369,7 +369,7 @@ export default function MoonShopPage() {
                             </div>
                             {selectedEffectivePurchaseLimit > 0 && (
                                 <div className="flex justify-between text-xs pt-1">
-                                    <span className="text-slate-500">Lượt mua còn lại</span>
+                                    <span className="text-slate-500">Lượt mua còn lại tuần này</span>
                                     <span className="font-semibold text-slate-700">{selectedRemainingPurchaseLimit.toLocaleString('vi-VN')}</span>
                                 </div>
                             )}
@@ -377,7 +377,7 @@ export default function MoonShopPage() {
                                 <div className="text-xs font-bold text-red-600 pt-1">Bạn không đủ Điểm Nguyệt Các để mua số lượng này.</div>
                             )}
                             {isPurchaseLimitReached && (
-                                <div className="text-xs font-bold text-red-600 pt-1">Vật phẩm đã hết lượt mua theo giới hạn hiện tại.</div>
+                                <div className="text-xs font-bold text-red-600 pt-1">Vật phẩm đã hết lượt mua trong tuần này.</div>
                             )}
                             {exceedPurchaseLimit && !isPurchaseLimitReached && (
                                 <div className="text-xs font-bold text-red-600 pt-1">Số lượng vượt quá lượt mua còn lại.</div>
