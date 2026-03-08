@@ -5169,14 +5169,29 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             return res.status(400).json({ ok: false, message: 'Thiếu trainerId hoặc activePokemonId.' })
         }
 
-        const trainerSession = await BattleSession.findOne({
+        const trainerDoc = await BattleTrainer.findById(normalizedTrainerId)
+            .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+            .lean()
+        if (!trainerDoc) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle.' })
+        }
+
+        let trainerSession = await BattleSession.findOne({
             userId,
             trainerId: normalizedTrainerId,
             expiresAt: { $gt: new Date() },
         })
         if (!trainerSession) {
-            return res.status(409).json({ ok: false, message: 'Không tìm thấy phiên battle trainer. Vui lòng vào lại trận.' })
+            trainerSession = await BattleSession.findOne({
+                userId,
+                expiresAt: { $gt: new Date() },
+            }).sort({ updatedAt: -1, createdAt: -1 })
         }
+        if (!trainerSession) {
+            trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainerDoc)
+        }
+
+        const resolvedTrainerId = String(trainerSession.trainerId || normalizedTrainerId).trim()
 
         const team = Array.isArray(trainerSession.team) ? trainerSession.team : []
         const currentIndex = Math.max(0, Number(trainerSession.currentIndex) || 0)
@@ -5184,10 +5199,12 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             return res.status(409).json({ ok: false, message: 'Phiên battle trainer đã kết thúc. Vui lòng vào trận mới.' })
         }
 
-        const trainerDoc = await BattleTrainer.findById(normalizedTrainerId)
-            .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
-            .lean()
-        if (!trainerDoc) {
+        const resolvedTrainerDoc = resolvedTrainerId === normalizedTrainerId
+            ? trainerDoc
+            : await BattleTrainer.findById(resolvedTrainerId)
+                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+                .lean()
+        if (!resolvedTrainerDoc) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle.' })
         }
 
@@ -5221,7 +5238,7 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
         trainerSession.playerCurrentHp = resolvedCurrentHp
 
         const activeTrainerOpponent = team[currentIndex] || null
-        const trainerTeamEntry = Array.isArray(trainerDoc?.team) ? trainerDoc.team[currentIndex] : null
+        const trainerTeamEntry = Array.isArray(resolvedTrainerDoc?.team) ? resolvedTrainerDoc.team[currentIndex] : null
         const counterAttack = await applyTrainerPenaltyTurn({
             activeBattleSession: trainerSession,
             activeTrainerOpponent,
