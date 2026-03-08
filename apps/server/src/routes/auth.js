@@ -553,11 +553,8 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const user = await User.findByIdAndUpdate(
-            req.user.userId,
-            { $addToSet: { completedBattleTrainers: trainerId } },
-            { new: true }
-        ).select('_id completedBattleTrainers')
+        const user = await User.findById(req.user.userId)
+            .select('_id completedBattleTrainers completedBattleTrainerReachedAt')
 
         if (!user) {
             return res.status(404).json({
@@ -566,9 +563,36 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
             })
         }
 
+        const completedTrainerIds = Array.isArray(user.completedBattleTrainers)
+            ? user.completedBattleTrainers.map((value) => String(value || '').trim()).filter(Boolean)
+            : []
+        const completionMapRaw = user.completedBattleTrainerReachedAt instanceof Map
+            ? Object.fromEntries(user.completedBattleTrainerReachedAt.entries())
+            : (user.completedBattleTrainerReachedAt && typeof user.completedBattleTrainerReachedAt === 'object'
+                ? user.completedBattleTrainerReachedAt
+                : {})
+
+        let shouldSave = false
+        if (!completedTrainerIds.includes(trainerId)) {
+            completedTrainerIds.push(trainerId)
+            user.completedBattleTrainers = completedTrainerIds
+            shouldSave = true
+        }
+
+        const completionAt = completionMapRaw?.[trainerId]
+        const hasCompletionAt = completionAt && Number.isFinite(new Date(completionAt).getTime())
+        if (!hasCompletionAt) {
+            user.set(`completedBattleTrainerReachedAt.${trainerId}`, new Date())
+            shouldSave = true
+        }
+
+        if (shouldSave) {
+            await user.save()
+        }
+
         res.json({
             ok: true,
-            completedBattleTrainers: user.completedBattleTrainers || [],
+            completedBattleTrainers: completedTrainerIds,
         })
     } catch (error) {
         next(error)

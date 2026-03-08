@@ -215,6 +215,11 @@ const userSchema = new mongoose.Schema(
             type: [String],
             default: [],
         },
+        completedBattleTrainerReachedAt: {
+            type: Map,
+            of: Date,
+            default: {},
+        },
         autoSearch: {
             enabled: {
                 type: Boolean,

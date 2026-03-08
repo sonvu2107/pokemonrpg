@@ -405,18 +405,68 @@ const buildBattleTrainerLevelLookup = async () => {
     return levelByTrainerId
 }
 
-const resolveHighestCompletedTrainerLevel = (completedTrainerIds = [], levelByTrainerId = new Map()) => {
+const normalizeTrainerCompletionReachedAtMap = (value = null) => {
+    if (value instanceof Map) {
+        return new Map(
+            [...value.entries()]
+                .map(([trainerId, reachedAt]) => [String(trainerId || '').trim(), reachedAt])
+                .filter(([trainerId]) => Boolean(trainerId))
+        )
+    }
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return new Map(
+            Object.entries(value)
+                .map(([trainerId, reachedAt]) => [String(trainerId || '').trim(), reachedAt])
+                .filter(([trainerId]) => Boolean(trainerId))
+        )
+    }
+
+    return new Map()
+}
+
+const parseCompletionTimestamp = (value = null) => {
+    if (!value) return null
+    const timestamp = new Date(value).getTime()
+    return Number.isFinite(timestamp) ? timestamp : null
+}
+
+const resolveHighestCompletedTrainerProgress = (
+    completedTrainerIds = [],
+    completedTrainerReachedAt = null,
+    levelByTrainerId = new Map()
+) => {
     const normalizedIds = Array.isArray(completedTrainerIds) ? completedTrainerIds : []
+    const reachedAtByTrainerId = normalizeTrainerCompletionReachedAtMap(completedTrainerReachedAt)
     let highestLevel = 0
+    let highestLevelReachedAtMs = null
 
     for (const rawTrainerId of normalizedIds) {
         const trainerId = String(rawTrainerId || '').trim()
         if (!trainerId) continue
+
         const level = Math.max(0, Number(levelByTrainerId.get(trainerId) || 0))
-        if (level > highestLevel) highestLevel = level
+        if (level <= 0) continue
+
+        const reachedAtMs = parseCompletionTimestamp(reachedAtByTrainerId.get(trainerId))
+
+        if (level > highestLevel) {
+            highestLevel = level
+            highestLevelReachedAtMs = reachedAtMs
+            continue
+        }
+
+        if (level === highestLevel && reachedAtMs !== null) {
+            if (highestLevelReachedAtMs === null || reachedAtMs < highestLevelReachedAtMs) {
+                highestLevelReachedAtMs = reachedAtMs
+            }
+        }
     }
 
-    return highestLevel
+    return {
+        level: highestLevel,
+        reachedAtMs: highestLevelReachedAtMs,
+    }
 }
 
 const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
@@ -948,7 +998,7 @@ router.get('/overall', async (req, res, next) => {
                 .filter(Boolean)
             const [users, trainerLevelById] = await Promise.all([
                 User.find({ _id: { $in: userIds } })
-                    .select('username avatar role vipTierId vipTierLevel vipTierCode vipBenefits completedBattleTrainers')
+                    .select('username avatar role vipTierId vipTierLevel vipTierCode vipBenefits completedBattleTrainers completedBattleTrainerReachedAt')
                     .lean(),
                 buildBattleTrainerLevelLookup(),
             ])
@@ -961,8 +1011,9 @@ router.get('/overall', async (req, res, next) => {
                 const userId = String(entry?._id || '').trim()
                 const user = userById.get(userId) || null
                 const weeklyPlatinumCoins = Math.max(0, Number(entry?.weeklyPlatinumCoins || 0))
-                const weeklyTrainerBattleLevels = resolveHighestCompletedTrainerLevel(
+                const trainerProgress = resolveHighestCompletedTrainerProgress(
                     user?.completedBattleTrainers,
+                    user?.completedBattleTrainerReachedAt,
                     trainerLevelById
                 )
 
@@ -970,13 +1021,23 @@ router.get('/overall', async (req, res, next) => {
                     userId,
                     user,
                     weeklyPlatinumCoins,
-                    weeklyTrainerBattleLevels,
+                    weeklyTrainerBattleLevels: trainerProgress.level,
+                    highestLevelReachedAtMs: trainerProgress.reachedAtMs,
                 }
             })
 
             mergedRows.sort((a, b) => {
                 if (b.weeklyTrainerBattleLevels !== a.weeklyTrainerBattleLevels) {
                     return b.weeklyTrainerBattleLevels - a.weeklyTrainerBattleLevels
+                }
+                const aReachedAt = Number.isFinite(a.highestLevelReachedAtMs)
+                    ? a.highestLevelReachedAtMs
+                    : Number.MAX_SAFE_INTEGER
+                const bReachedAt = Number.isFinite(b.highestLevelReachedAtMs)
+                    ? b.highestLevelReachedAtMs
+                    : Number.MAX_SAFE_INTEGER
+                if (aReachedAt !== bReachedAt) {
+                    return aReachedAt - bReachedAt
                 }
                 if (b.weeklyPlatinumCoins !== a.weeklyPlatinumCoins) {
                     return b.weeklyPlatinumCoins - a.weeklyPlatinumCoins
@@ -1010,6 +1071,9 @@ router.get('/overall', async (req, res, next) => {
                 weeklyTrainerBattleLevels: entry.weeklyTrainerBattleLevels,
                 platinumCoins: entry.weeklyPlatinumCoins,
                 trainerBattleLevel: entry.weeklyTrainerBattleLevels,
+                trainerBattleReachedAt: Number.isFinite(entry.highestLevelReachedAtMs)
+                    ? new Date(entry.highestLevelReachedAtMs).toISOString()
+                    : null,
             }))
 
             return res.json({

@@ -1494,6 +1494,50 @@ const normalizeTrainerPokemonDamagePercent = (value, fallback = 100) => {
     return clamp(parsed, TRAINER_POKEMON_DAMAGE_PERCENT_MIN, TRAINER_POKEMON_DAMAGE_PERCENT_MAX)
 }
 
+const ensureTrainerCompletionTracked = async (userId, trainerId, completedAt = new Date()) => {
+    const normalizedUserId = String(userId || '').trim()
+    const normalizedTrainerId = String(trainerId || '').trim()
+    if (!normalizedUserId || !normalizedTrainerId) return null
+
+    const user = await User.findById(normalizedUserId)
+        .select('_id completedBattleTrainers completedBattleTrainerReachedAt')
+    if (!user) return null
+
+    const completedTrainerIds = Array.isArray(user.completedBattleTrainers)
+        ? user.completedBattleTrainers.map((value) => String(value || '').trim()).filter(Boolean)
+        : []
+    const completionMapRaw = user.completedBattleTrainerReachedAt instanceof Map
+        ? Object.fromEntries(user.completedBattleTrainerReachedAt.entries())
+        : (user.completedBattleTrainerReachedAt && typeof user.completedBattleTrainerReachedAt === 'object'
+            ? user.completedBattleTrainerReachedAt
+            : {})
+
+    let shouldSave = false
+    if (!completedTrainerIds.includes(normalizedTrainerId)) {
+        completedTrainerIds.push(normalizedTrainerId)
+        user.completedBattleTrainers = completedTrainerIds
+        shouldSave = true
+    }
+
+    const completionTimestamp = completionMapRaw?.[normalizedTrainerId]
+    const hasCompletionTimestamp = completionTimestamp && Number.isFinite(new Date(completionTimestamp).getTime())
+    if (!hasCompletionTimestamp) {
+        user.set(`completedBattleTrainerReachedAt.${normalizedTrainerId}`, completedAt)
+        shouldSave = true
+    }
+
+    if (shouldSave) {
+        await user.save()
+    }
+
+    return {
+        completedTrainerIds,
+        completionAt: user.completedBattleTrainerReachedAt?.get?.(normalizedTrainerId)
+            || completionMapRaw?.[normalizedTrainerId]
+            || completedAt,
+    }
+}
+
 const resolveTrainerBattleForm = (pokemon, formId) => {
     return resolvePokemonForm(pokemon, formId)
 }
@@ -2438,10 +2482,7 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
                     completedCount: completedList.length,
                     userId: req.user.userId,
                 })
-                await User.updateOne(
-                    { _id: req.user.userId },
-                    { $addToSet: { completedBattleTrainers: targetTrainerId } }
-                )
+                await ensureTrainerCompletionTracked(req.user.userId, targetTrainerId)
             }
         }
 
@@ -5428,10 +5469,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
         }
 
         if (normalizedTrainerId) {
-            await User.updateOne(
-                { _id: userId },
-                { $addToSet: { completedBattleTrainers: normalizedTrainerId } }
-            )
+            await ensureTrainerCompletionTracked(userId, normalizedTrainerId)
         }
 
         res.json({
