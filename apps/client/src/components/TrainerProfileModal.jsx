@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Modal from './Modal'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
@@ -63,6 +64,14 @@ export default function TrainerProfileModal({
     onSendFriendRequest,
     onChallenge,
 }) {
+    const [showParty, setShowParty] = useState(true)
+
+    useEffect(() => {
+        if (isOpen) {
+            setShowParty(true)
+        }
+    }, [isOpen, trainer?.userId])
+
     if (!isOpen || !trainer) return null
 
     const selectedProfile = trainer?.profile || {}
@@ -195,65 +204,83 @@ export default function TrainerProfileModal({
 
                 <div className="bg-white border-t border-blue-200">
                     <ProfileSectionHeader title="Đội Hình" />
-                    <div className="bg-slate-100 min-h-[160px] flex items-stretch divide-x divide-blue-200 border-b border-blue-200 overflow-x-auto">
-                        {paddedSelectedParty.map((p, i) => {
-                            if (!p) {
-                                return (
-                                    <div key={`empty-${i}`} className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center gap-2 p-3 bg-slate-50">
-                                        <div className="w-14 h-14 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-300 text-lg font-bold">
-                                            {i + 1}
-                                        </div>
-                                        <span className="text-[10px] text-slate-400 font-medium">Trống</span>
-                                    </div>
-                                )
-                            }
-
-                            const species = p.pokemonId || {}
-                            const { formId } = resolvePokemonForm(species, p.formId)
-                            const sprite = resolvePokemonSprite({
-                                species,
-                                formId,
-                                isShiny: Boolean(p.isShiny),
-                                fallback: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
-                            })
-                            const displayName = p.nickname || species.name || 'Unknown'
-                            const combatPower = resolvePokemonCombatPower(p)
-
-                            return (
-                                <Link
-                                    to={`/pokemon/${p._id}`}
-                                    key={p._id || `slot-${i}`}
-                                    className="min-w-[16.66%] flex-1 flex flex-col items-center justify-between py-3 px-2 bg-white hover:bg-blue-50 transition-colors group border-t-2 border-t-transparent hover:border-t-blue-400"
-                                >
-                                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold truncate max-w-full text-center">
-                                        {species.name || '???'}
-                                    </span>
-                                    {displayName && displayName !== species.name ? (
-                                        <span className="font-bold text-blue-900 text-xs truncate max-w-[80px] text-center group-hover:text-blue-600 transition-colors">
-                                            {displayName}
-                                        </span>
-                                    ) : (
-                                        <span className="invisible text-xs">-</span>
-                                    )}
-                                    <div className="relative w-20 h-20 flex items-center justify-center my-1">
-                                        <img
-                                            src={sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
-                                            className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
-                                            onError={(event) => {
-                                                event.currentTarget.onerror = null
-                                                event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
-                                            }}
-                                        />
-                                        {p.isShiny && (
-                                            <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">★</span>
-                                        )}
-                                    </div>
-                                    <span className="text-xs text-amber-600 font-bold">Lv. {formatNumber(p.level)}</span>
-                                    <span className="text-[11px] text-rose-600 font-bold">LC: {formatNumber(combatPower)}</span>
-                                </Link>
-                            )
-                        })}
+                    <div className="flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-3 py-2">
+                        <div className="text-xs font-medium text-slate-500">
+                            {showParty ? 'Đội hình đang được hiển thị trong modal hồ sơ.' : 'Đội hình hiện đang được thu gọn.'}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowParty((prev) => !prev)}
+                            className="shrink-0 rounded border border-blue-300 bg-white px-3 py-1 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"
+                        >
+                            {showParty ? '[ Ẩn Đội Hình ]' : '[ Hiện Đội Hình ]'}
+                        </button>
                     </div>
+                    {showParty ? (
+                        <div className="bg-slate-100 min-h-[160px] flex items-stretch divide-x divide-blue-200 border-b border-blue-200 overflow-x-auto">
+                            {paddedSelectedParty.map((p, i) => {
+                                if (!p) {
+                                    return (
+                                        <div key={`empty-${i}`} className="min-w-[16.66%] flex-1 flex flex-col items-center justify-center gap-2 p-3 bg-slate-50">
+                                            <div className="w-14 h-14 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-300 text-lg font-bold">
+                                                {i + 1}
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 font-medium">Trống</span>
+                                        </div>
+                                    )
+                                }
+
+                                const species = p.pokemonId || {}
+                                const { formId } = resolvePokemonForm(species, p.formId)
+                                const sprite = resolvePokemonSprite({
+                                    species,
+                                    formId,
+                                    isShiny: Boolean(p.isShiny),
+                                    fallback: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png',
+                                })
+                                const displayName = p.nickname || species.name || 'Unknown'
+                                const combatPower = resolvePokemonCombatPower(p)
+
+                                return (
+                                    <Link
+                                        to={`/pokemon/${p._id}`}
+                                        key={p._id || `slot-${i}`}
+                                        className="min-w-[16.66%] flex-1 flex flex-col items-center justify-between py-3 px-2 bg-white hover:bg-blue-50 transition-colors group border-t-2 border-t-transparent hover:border-t-blue-400"
+                                    >
+                                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold truncate max-w-full text-center">
+                                            {species.name || '???'}
+                                        </span>
+                                        {displayName && displayName !== species.name ? (
+                                            <span className="font-bold text-blue-900 text-xs truncate max-w-[80px] text-center group-hover:text-blue-600 transition-colors">
+                                                {displayName}
+                                            </span>
+                                        ) : (
+                                            <span className="invisible text-xs">-</span>
+                                        )}
+                                        <div className="relative w-20 h-20 flex items-center justify-center my-1">
+                                            <img
+                                                src={sprite || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'}
+                                                className="max-w-full max-h-full pixelated rendering-pixelated group-hover:scale-110 transition-transform duration-200 drop-shadow-md"
+                                                onError={(event) => {
+                                                    event.currentTarget.onerror = null
+                                                    event.currentTarget.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                                }}
+                                            />
+                                            {p.isShiny && (
+                                                <span className="absolute -top-1 -right-1 text-amber-400 text-sm drop-shadow-sm">★</span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-amber-600 font-bold">Lv. {formatNumber(p.level)}</span>
+                                        <span className="text-[11px] text-rose-600 font-bold">LC: {formatNumber(combatPower)}</span>
+                                    </Link>
+                                )
+                            })}
+                        </div>
+                    ) : (
+                        <div className="border-b border-blue-200 bg-slate-50 px-4 py-8 text-center text-sm italic text-slate-500">
+                            Nhấn "Hiện Đội Hình" để mở lại phần đội hình của huấn luyện viên.
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-white border-t border-blue-200">

@@ -4,6 +4,7 @@ import User from '../models/User.js'
 import BattleTrainer from '../models/BattleTrainer.js'
 import WorkerLock from '../models/WorkerLock.js'
 import { getPartyDirect } from '../services/workerService.js'
+import { createCompletedTrainerBattleSession } from '../services/trainerBattleSessionService.js'
 import {
     getGameDayKey,
     hasVipAutoTrainerAccess,
@@ -22,7 +23,6 @@ const LOCK_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_LOCK_TTL_MS, 35000, 5000,
 const BATCH_SIZE = toSafeInt(process.env.AUTO_TRAINER_BATCH_SIZE, 120, 10, 500)
 const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 12, 1, 50)
 const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 90000, 5000, 300000)
-const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 260, 60, 1000)
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_TRAINER_LOGS_LIMIT = 12
@@ -163,119 +163,23 @@ const getTrainerMetaCached = async (trainerId = '') => {
             { isActive: null },
         ],
     })
-        .select('_id name team.level')
+        .select('_id name team')
+        .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types')
         .lean()
+
+    const normalizedTrainer = trainer
+        ? {
+            ...trainer,
+            level: resolveTrainerAverageLevel(trainer),
+        }
+        : null
 
     trainerMetaCache.set(normalizedTrainerId, {
         cachedAtMs: nowMs,
-        data: trainer || null,
+        data: normalizedTrainer,
     })
 
-    return trainer || null
-}
-
-const normalizePartyMoves = (moves = []) => {
-    const list = Array.isArray(moves) ? moves : []
-    const normalized = list
-        .map((entry) => {
-            if (typeof entry === 'string') {
-                const name = String(entry || '').trim()
-                if (!name) return null
-                return { name, currentPp: 10, maxPp: 10 }
-            }
-
-            const name = String(entry?.name || entry?.moveName || '').trim()
-            if (!name) return null
-            const maxPpRaw = Number(entry?.maxPp ?? entry?.pp)
-            const maxPp = Number.isFinite(maxPpRaw) && maxPpRaw > 0 ? Math.floor(maxPpRaw) : 10
-            const currentPpRaw = Number(entry?.currentPp ?? entry?.pp)
-            const currentPp = Number.isFinite(currentPpRaw)
-                ? Math.max(0, Math.min(maxPp, Math.floor(currentPpRaw)))
-                : maxPp
-
-            return {
-                ...entry,
-                name,
-                currentPp,
-                maxPp,
-            }
-        })
-        .filter(Boolean)
-
-    return normalized.length > 0
-        ? normalized
-        : [{ name: 'Struggle', currentPp: 99, maxPp: 99 }]
-}
-
-const pickPreferredMove = (moves = []) => {
-    const pool = (Array.isArray(moves) ? moves : [])
-        .filter((entry) => Number(entry?.currentPp) > 0)
-
-    if (pool.length === 0) {
-        return { name: 'Struggle', currentPp: 99, maxPp: 99 }
-    }
-
-    const offensiveMoves = pool
-        .filter((entry) => {
-            const category = String(entry?.category || '').trim().toLowerCase()
-            const power = Number(entry?.power)
-            return category !== 'status' && Number.isFinite(power) && power > 0
-        })
-        .sort((a, b) => {
-            const powerDiff = (Number(b?.power) || 0) - (Number(a?.power) || 0)
-            if (powerDiff !== 0) return powerDiff
-            return (Number(b?.accuracy) || 100) - (Number(a?.accuracy) || 100)
-        })
-
-    if (offensiveMoves.length > 0) {
-        return offensiveMoves[0]
-    }
-
-    return pool[0]
-}
-
-const isTrainerBattleFinished = (opponentState = {}) => {
-    if (Boolean(opponentState?.defeatedAll)) return true
-
-    const team = Array.isArray(opponentState?.team) ? opponentState.team : []
-    if (team.length === 0) return false
-
-    const currentIndex = Number(opponentState?.currentIndex)
-    if (Number.isFinite(currentIndex) && currentIndex >= team.length) return true
-
-    return team.every((entry) => Number(entry?.currentHp ?? entry?.maxHp ?? 0) <= 0)
-}
-
-const buildOpponentPayload = (opponentState = {}, fallback = null) => {
-    const team = Array.isArray(opponentState?.team) ? opponentState.team : []
-    const currentIndex = Number.isFinite(Number(opponentState?.currentIndex))
-        ? Math.max(0, Math.floor(Number(opponentState.currentIndex)))
-        : 0
-
-    const activeTarget = team[currentIndex]
-        || team.find((entry) => Number(entry?.currentHp ?? entry?.maxHp ?? 0) > 0)
-        || fallback
-
-    const maxHp = Math.max(1, Number(activeTarget?.maxHp || 1))
-    const currentHpRaw = Number(activeTarget?.currentHp)
-    const currentHp = Number.isFinite(currentHpRaw)
-        ? Math.max(0, Math.min(maxHp, Math.floor(currentHpRaw)))
-        : maxHp
-
-    return {
-        name: String(activeTarget?.name || 'Opponent').trim() || 'Opponent',
-        level: Math.max(1, Number(activeTarget?.level || 1)),
-        currentHp,
-        maxHp,
-        baseStats: activeTarget?.baseStats && typeof activeTarget.baseStats === 'object' ? activeTarget.baseStats : {},
-        status: String(activeTarget?.status || '').trim(),
-        statusTurns: Math.max(0, Number(activeTarget?.statusTurns || 0)),
-        statStages: activeTarget?.statStages && typeof activeTarget.statStages === 'object' ? activeTarget.statStages : {},
-        damageGuards: activeTarget?.damageGuards && typeof activeTarget.damageGuards === 'object' ? activeTarget.damageGuards : {},
-        wasDamagedLastTurn: Boolean(activeTarget?.wasDamagedLastTurn),
-        volatileState: activeTarget?.volatileState && typeof activeTarget.volatileState === 'object' ? activeTarget.volatileState : {},
-        types: Array.isArray(activeTarget?.types) ? activeTarget.types : [],
-    }
+    return normalizedTrainer
 }
 
 const formatTrainerOutcomeReasonForLog = (reason = '') => {
@@ -326,247 +230,59 @@ const updateAutoTrainerState = async ({ userId, setPatch = {}, lastAction = null
     await User.updateOne({ _id: userId }, updateDoc)
 }
 
-const runSingleBattle = async ({ userId, token, trainerId, trainerMeta, attackIntervalMs, resetTrainerSession, deadlineAt }) => {
+const runAutoTrainerBattleFlow = async ({ userId, token, trainerId, trainerMeta, attackIntervalMs, deadlineAt }) => {
+    void attackIntervalMs
+
     const partyResponse = await getPartyDirect(userId)
-    const partyData = Array.isArray(partyResponse?.party) ? partyResponse.party : []
-
-    const partyState = partyData
-        .filter(Boolean)
-        .map((slot) => {
-            const maxHp = Math.max(1, Number(slot?.stats?.hp || 1))
-            return {
-                id: normalizeId(slot?._id),
-                level: Math.max(1, Number(slot?.level || 1)),
-                maxHp,
-                currentHp: maxHp,
-                baseStats: slot?.stats && typeof slot.stats === 'object'
-                    ? slot.stats
-                    : (slot?.pokemonId?.baseStats && typeof slot.pokemonId.baseStats === 'object' ? slot.pokemonId.baseStats : {}),
-                moves: normalizePartyMoves(slot?.moves),
-            }
-        })
-
-    if (partyState.length === 0) {
+    const partyData = (Array.isArray(partyResponse?.party) ? partyResponse.party : []).filter(Boolean)
+    if (partyData.length === 0) {
         return { ok: false, code: 'NO_PARTY', reason: 'Bạn cần có Pokemon trong đội hình để auto battle trainer.' }
     }
 
-    const findNextAliveSlotIndex = (startIndex = -1) => {
-        const total = partyState.length
-        for (let step = 1; step <= total; step += 1) {
-            const idx = (startIndex + step + total) % total
-            if (Number(partyState[idx]?.currentHp || 0) > 0) return idx
-        }
-        return -1
+    const activeSlot = partyData[0] || null
+    const activePokemonId = normalizeId(activeSlot?._id)
+    if (!activePokemonId) {
+        return { ok: false, code: 'MISSING_ACTIVE_POKEMON', reason: 'Không xác định được Pokemon nhận EXP.' }
     }
 
-    let activeSlotIndex = findNextAliveSlotIndex(-1)
-    if (activeSlotIndex === -1) {
-        return { ok: false, code: 'NO_AVAILABLE_POKEMON', reason: 'Không có Pokemon nào còn HP để chiến đấu.' }
+    if (!Array.isArray(trainerMeta?.team) || trainerMeta.team.length === 0) {
+        return { ok: false, code: 'TRAINER_UNAVAILABLE', reason: 'Trainer đã chọn không còn khả dụng.' }
     }
 
-    let shouldResetTrainerSession = Boolean(resetTrainerSession)
-    let fieldState = {}
-    let opponentPayload = {
-        name: trainerMeta?.name || 'Trainer',
-        level: Math.max(1, Number(trainerMeta?.level || 1)),
-        currentHp: 1,
-        maxHp: 1,
-        baseStats: {},
-        status: '',
-        statusTurns: 0,
-        statStages: {},
-        damageGuards: {},
-        wasDamagedLastTurn: false,
-        volatileState: {},
-        types: [],
-    }
-
-    for (let turn = 0; turn < MAX_BATTLE_TURNS; turn += 1) {
-        if (Date.now() >= deadlineAt) {
-            return { ok: false, code: 'TIME_BUDGET', reason: 'TIME_BUDGET' }
-        }
-
-        const activeSlot = partyState[activeSlotIndex]
-        if (!activeSlot) {
-            return { ok: false, code: 'NO_ACTIVE_SLOT', reason: 'Không tìm thấy Pokemon đang chiến đấu.' }
-        }
-
-        if (activeSlot.currentHp <= 0) {
-            const switchedIndex = findNextAliveSlotIndex(activeSlotIndex)
-            if (switchedIndex === -1) {
-                return { ok: false, code: 'PLAYER_DEFEATED', reason: 'Pokemon của bạn đã bại trận.' }
-            }
-            activeSlotIndex = switchedIndex
-            continue
-        }
-
-        const selectedMove = pickPreferredMove(activeSlot.moves)
-
-        try {
-            const attackResponse = await callApi({
-                token,
-                path: '/api/game/battle/attack',
-                method: 'POST',
-                body: {
-                    moveName: selectedMove?.name,
-                    move: selectedMove,
-                    trainerId,
-                    activePokemonId: activeSlot.id,
-                    fieldState,
-                    opponent: opponentPayload,
-                    player: {
-                        level: activeSlot.level,
-                        currentHp: Math.max(0, Math.min(activeSlot.maxHp, Number(activeSlot.currentHp || 0))),
-                        maxHp: activeSlot.maxHp,
-                        baseStats: activeSlot.baseStats || {},
-                        status: '',
-                        statusTurns: 0,
-                        statStages: {},
-                        damageGuards: {},
-                        wasDamagedLastTurn: false,
-                        volatileState: {},
-                    },
-                    resetTrainerSession: shouldResetTrainerSession,
-                },
-                deadlineAt,
-                timeoutMs: 12000,
-            })
-
-            shouldResetTrainerSession = false
-            const battle = attackResponse?.battle || {}
-            const battlePlayer = battle?.player || {}
-            const battleOpponent = battle?.opponent || {}
-
-            const nextPlayerMaxHp = Math.max(1, Number(battlePlayer?.maxHp || activeSlot.maxHp || 1))
-            const nextPlayerCurrentHpRaw = Number(battlePlayer?.currentHp)
-            const nextPlayerCurrentHp = Number.isFinite(nextPlayerCurrentHpRaw)
-                ? Math.max(0, Math.min(nextPlayerMaxHp, Math.floor(nextPlayerCurrentHpRaw)))
-                : activeSlot.currentHp
-
-            activeSlot.maxHp = nextPlayerMaxHp
-            activeSlot.currentHp = nextPlayerCurrentHp
-
-            const movePpState = Array.isArray(battlePlayer?.movePpState) ? battlePlayer.movePpState : []
-            if (movePpState.length > 0) {
-                const ppMap = new Map(
-                    movePpState.map((entry) => [
-                        String(entry?.moveName || '').trim().toLowerCase(),
-                        {
-                            currentPp: Math.max(0, Number(entry?.currentPp || 0)),
-                            maxPp: Math.max(1, Number(entry?.maxPp || 1)),
-                        },
-                    ])
-                )
-
-                activeSlot.moves = activeSlot.moves.map((entry) => {
-                    const key = String(entry?.name || '').trim().toLowerCase()
-                    const patch = ppMap.get(key)
-                    return patch ? { ...entry, ...patch } : entry
-                })
-            }
-
-            if (isTrainerBattleFinished(battleOpponent)) {
-                return { ok: true, code: 'WIN' }
-            }
-
-            fieldState = battle?.fieldState && typeof battle.fieldState === 'object' ? battle.fieldState : fieldState
-            opponentPayload = buildOpponentPayload(battleOpponent, opponentPayload)
-
-            if (activeSlot.currentHp <= 0) {
-                const switchedIndex = findNextAliveSlotIndex(activeSlotIndex)
-                if (switchedIndex === -1) {
-                    return { ok: false, code: 'PLAYER_DEFEATED', reason: 'Pokemon của bạn đã bại trận.' }
-                }
-                activeSlotIndex = switchedIndex
-            }
-        } catch (error) {
-            const message = String(error?.message || '').trim()
-            const normalized = normalizeSearchText(message)
-            const errorCode = String(error?.code || '').trim().toUpperCase()
-            if (errorCode === 'TIME_BUDGET') {
-                return { ok: false, code: 'TIME_BUDGET', reason: 'TIME_BUDGET' }
-            }
-            if (errorCode === 'REQUEST_TIMEOUT') {
-                return { ok: false, code: 'REQUEST_TIMEOUT', reason: 'REQUEST_TIMEOUT' }
-            }
-            if (errorCode === 'ACTION_COOLDOWN') {
-                const retryAfterMs = Math.max(200, Number(error?.payload?.retryAfterMs || attackIntervalMs || 200))
-                await sleep(retryAfterMs)
-                turn -= 1
-                continue
-            }
-            if (normalized.includes('doi hinh huan luyen vien da bi danh bai') || normalized.includes('nhan ket qua tran dau')) {
-                return { ok: true, code: 'WIN' }
-            }
-            if (normalized.includes('khong tim thay huan luyen vien battle')) {
-                return { ok: false, code: 'TRAINER_UNAVAILABLE', reason: 'TRAINER_UNAVAILABLE' }
-            }
-            if (Number(error?.status) === 409 && (errorCode === 'BATTLE_SESSION_CONFLICT' || normalized.includes('phien battle dang duoc xu ly'))) {
-                return { ok: false, code: 'SESSION_CONFLICT', reason: 'SESSION_CONFLICT' }
-            }
-            if (normalized.includes('pokemon cua ban da bai tran')) {
-                return { ok: false, code: 'PLAYER_DEFEATED', reason: message || 'Pokemon của bạn đã bại trận.' }
-            }
-            if (normalized.includes('qua nhanh')) {
-                await sleep(Math.max(200, attackIntervalMs))
-                turn -= 1
-                continue
-            }
-            return { ok: false, code: 'ATTACK_ERROR', reason: message || 'Battle thất bại.' }
-        }
-
-        await sleep(Math.max(100, attackIntervalMs))
-    }
-
-    return { ok: false, code: 'MAX_TURNS', reason: 'Quá số lượt tối đa khi auto battle trainer.' }
-}
-
-const runAutoTrainerBattleFlow = async ({ userId, token, trainerId, trainerMeta, attackIntervalMs, deadlineAt }) => {
-    const resumed = await runSingleBattle({
+    await createCompletedTrainerBattleSession({
         userId,
-        token,
-        trainerId,
-        trainerMeta,
-        attackIntervalMs,
-        resetTrainerSession: false,
-        deadlineAt,
+        trainer: trainerMeta,
+        activePokemonId,
     })
-
-    let outcome = resumed
-    const canRetryFreshSession = (
-        !resumed.ok
-        && resumed.code !== 'TIME_BUDGET'
-        && resumed.code !== 'REQUEST_TIMEOUT'
-        && resumed.code !== 'TRAINER_UNAVAILABLE'
-        && resumed.code !== 'MAX_TURNS'
-    )
-
-    if (canRetryFreshSession) {
-        outcome = await runSingleBattle({
-            userId,
-            token,
-            trainerId,
-            trainerMeta,
-            attackIntervalMs,
-            resetTrainerSession: true,
-            deadlineAt,
-        })
-    }
-
-    if (!outcome.ok) {
-        return outcome
-    }
 
     try {
         await callApiWithRetry({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
     } catch (error) {
         const normalized = normalizeSearchText(error?.message || '')
-        if (!normalized.includes('da duoc nhan') && !normalized.includes('phan thuong battle da duoc nhan')) {
+        if (normalized.includes('da duoc nhan') || normalized.includes('phan thuong battle da duoc nhan')) {
+            return { ok: true, code: 'SUCCESS' }
+        }
+
+        const normalizedCode = String(error?.code || '').trim().toUpperCase()
+        if (normalizedCode === 'TIME_BUDGET' || normalizedCode === 'REQUEST_TIMEOUT') {
             return {
                 ok: false,
-                code: 'RESOLVE_ERROR',
-                reason: String(error?.message || 'Không thể nhận kết quả battle').trim(),
+                code: normalizedCode,
+                reason: normalizedCode,
             }
+        }
+        if (error?.status === 404) {
+            return {
+                ok: false,
+                code: 'TRAINER_UNAVAILABLE',
+                reason: 'Trainer đã chọn không còn khả dụng.',
+            }
+        }
+
+        return {
+            ok: false,
+            code: 'RESOLVE_ERROR',
+            reason: String(error?.message || 'Không thể nhận kết quả battle').trim(),
         }
     }
 
@@ -577,8 +293,7 @@ const shouldDisableOnFailureCode = (code = '') => {
     const normalized = String(code || '').trim().toUpperCase()
     return (
         normalized === 'NO_PARTY'
-        || normalized === 'NO_AVAILABLE_POKEMON'
-        || normalized === 'NO_ACTIVE_SLOT'
+        || normalized === 'MISSING_ACTIVE_POKEMON'
     )
 }
 
@@ -769,6 +484,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         id: trainerId,
         name: String(trainer?.name || 'Trainer').trim() || 'Trainer',
         level: resolveTrainerAverageLevel(trainer),
+        team: Array.isArray(trainer?.team) ? trainer.team : [],
     }
 
     const outcome = await runAutoTrainerBattleFlow({
@@ -815,25 +531,6 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         })
         stats.skipped += 1
         stats.skippedReasons.REQUEST_TIMEOUT = (stats.skippedReasons.REQUEST_TIMEOUT || 0) + 1
-        return
-    }
-
-    if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'SESSION_CONFLICT') {
-        await updateAutoTrainerState({
-            userId,
-            setPatch: {
-                ...baseSyncPatch,
-            },
-            lastAction: {
-                action: 'tick',
-                result: 'skipped',
-                reason: 'SESSION_CONFLICT',
-                targetId: trainerId,
-                at: now,
-            },
-        })
-        stats.skipped += 1
-        stats.skippedReasons.SESSION_CONFLICT = (stats.skippedReasons.SESSION_CONFLICT || 0) + 1
         return
     }
 
@@ -1117,7 +814,7 @@ export const startAutoTrainerWorker = ({ baseUrl }) => {
         runTick()
     }, 1200)
 
-    console.log(`[auto-trainer-worker] started (tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, minUserBudget=${MIN_EFFECTIVE_USER_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
+    console.log(`[auto-trainer-worker] started (mode=resolve_only, tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, minUserBudget=${MIN_EFFECTIVE_USER_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
 }
 
 export const stopAutoTrainerWorker = () => {

@@ -1316,7 +1316,7 @@ export default function BattleTrainerPage() {
                             </div>
                         ) : (
                             <div className="mt-2 text-[11px] text-slate-500">
-                                Chưa có mốc sát thương. Nếu để trống, tất cả trainer auto dùng mức mặc định (0% thêm, tức 100%).
+                                Chưa có mốc sát thương. Nếu để trống, hệ thống dùng độ khó mặc định theo level (mốc cao sẽ tăng sát thương tự động).
                             </div>
                         )}
                     </div>

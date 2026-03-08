@@ -44,6 +44,11 @@ import {
 } from '../utils/autoTrainerUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import {
+    buildTrainerBattleTeam,
+    getOrCreateTrainerBattleSession,
+    getTrainerBattleSessionExpiryDate as getBattleSessionExpiryDate,
+} from '../services/trainerBattleSessionService.js'
 
 
 
@@ -1475,9 +1480,6 @@ const resolvePokemonImageForForm = (pokemon, formId, isShiny = false) => {
     return normalSprite
 }
 
-const ACTIVE_TRAINER_BATTLE_TTL_MS = 30 * 60 * 1000
-const getBattleSessionExpiryDate = () => new Date(Date.now() + ACTIVE_TRAINER_BATTLE_TTL_MS)
-
 const getSpecialDefenseStat = (stats = {}) => (
     Number(stats?.spdef) || Number(stats?.spldef) || 0
 )
@@ -1494,93 +1496,6 @@ const normalizeTrainerPokemonDamagePercent = (value, fallback = 100) => {
 
 const resolveTrainerBattleForm = (pokemon, formId) => {
     return resolvePokemonForm(pokemon, formId)
-}
-
-const buildTrainerBattleTeam = (trainer) => {
-    const team = Array.isArray(trainer?.team) ? trainer.team : []
-    return team
-        .map((entry, index) => {
-            const pokemon = entry?.pokemonId
-            if (!pokemon) return null
-            const level = Math.max(1, Number(entry?.level) || 1)
-            const { form, formId } = resolveTrainerBattleForm(pokemon, entry?.formId)
-            const baseStats = resolveEffectivePokemonBaseStats({
-                pokemonLike: pokemon,
-                formId,
-                resolvedForm: form,
-            })
-            const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity)
-            const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
-            const types = normalizePokemonTypes(pokemon.types)
-            return {
-                slot: index,
-                pokemonId: pokemon._id,
-                name: pokemon.name || 'Pokemon',
-                level,
-                formId,
-                damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
-                types,
-                baseStats: scaledStats,
-                currentHp: maxHp,
-                maxHp,
-                status: '',
-                statusTurns: 0,
-                statStages: {},
-                damageGuards: {},
-                wasDamagedLastTurn: false,
-                volatileState: {},
-                counterMoves: [],
-                counterMoveCursor: 0,
-                counterMoveMode: 'smart-random',
-            }
-        })
-        .filter(Boolean)
-}
-
-const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer) => {
-    const now = new Date()
-    const expiresAt = getBattleSessionExpiryDate()
-    let session = await BattleSession.findOne({ userId, trainerId })
-
-    if (!session) {
-        return BattleSession.create({
-            userId,
-            trainerId,
-            team: buildTrainerBattleTeam(trainer),
-            knockoutCounts: [],
-            currentIndex: 0,
-            playerStatus: '',
-            playerStatusTurns: 0,
-            playerStatStages: {},
-            playerDamageGuards: {},
-            playerWasDamagedLastTurn: false,
-            playerVolatileState: {},
-            fieldState: {},
-            expiresAt,
-        })
-    }
-
-    const isActive = session.expiresAt && session.expiresAt > now && Array.isArray(session.team) && session.team.length > 0
-    if (!isActive) {
-        session.team = buildTrainerBattleTeam(trainer)
-        session.knockoutCounts = []
-        session.currentIndex = 0
-        session.playerPokemonId = null
-        session.playerCurrentHp = 0
-        session.playerMaxHp = 1
-        session.playerStatus = ''
-        session.playerStatusTurns = 0
-        session.playerStatStages = {}
-        session.playerDamageGuards = {}
-        session.playerWasDamagedLastTurn = false
-        session.playerVolatileState = {}
-        session.fieldState = {}
-    }
-
-    session.expiresAt = expiresAt
-    session.updatedAt = now
-    await session.save()
-    return session
 }
 
 const getAliveOpponentIndex = (team, startIndex = 0) => {

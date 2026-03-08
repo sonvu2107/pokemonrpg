@@ -87,10 +87,22 @@ const parseDamageBonusRules = (rulesLike = []) => {
         .filter(Boolean)
 }
 
+const resolveDefaultAutoDamagePercentByLevel = (level) => {
+    const normalizedLevel = parsePositiveInt(level, 1)
+    if (normalizedLevel >= 1900) return 320
+    if (normalizedLevel >= 1700) return 280
+    if (normalizedLevel >= 1500) return 240
+    if (normalizedLevel >= 1200) return 210
+    if (normalizedLevel >= 900) return 180
+    if (normalizedLevel >= 700) return 160
+    if (normalizedLevel >= 500) return 140
+    return 100
+}
+
 const resolveTeamDamagePercentByLevel = (level, damageBonusRules = []) => {
     const normalizedLevel = parsePositiveInt(level, 1)
     if (!Array.isArray(damageBonusRules) || damageBonusRules.length === 0) {
-        return 100
+        return resolveDefaultAutoDamagePercentByLevel(normalizedLevel)
     }
 
     let appliedBonusPercent = 0
@@ -298,12 +310,15 @@ const buildAutoTeam = (pokemonPool, level, seed, teamSize = 3, damagePercent = 1
     const normalizeRarity = (value) => String(value || '').trim().toLowerCase()
     const allowedRaritiesByLevel = (() => {
         const normalizedLevel = parsePositiveInt(level, 1)
-        if (normalizedLevel >= 120) return ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
-        if (normalizedLevel >= 90) return ['ss', 's', 'a', 'b', 'c', 'd']
-        if (normalizedLevel >= 70) return ['s', 'a', 'b', 'c', 'd']
-        if (normalizedLevel >= 50) return ['a', 'b', 'c', 'd']
-        if (normalizedLevel >= 30) return ['b', 'c', 'd']
-        if (normalizedLevel >= 15) return ['c', 'd']
+        if (normalizedLevel >= 3200) return ['sss']
+        if (normalizedLevel >= 2400) return ['sss', 'ss']
+        if (normalizedLevel >= 1800) return ['ss', 'sss']
+        if (normalizedLevel >= 1400) return ['s', 'ss', 'sss']
+        if (normalizedLevel >= 1000) return ['a', 's', 'ss']
+        if (normalizedLevel >= 700) return ['a', 'b', 's']
+        if (normalizedLevel >= 500) return ['a', 'b', 'c']
+        if (normalizedLevel >= 300) return ['b', 'c', 'd']
+        if (normalizedLevel >= 120) return ['c', 'd']
         return ['d']
     })()
 

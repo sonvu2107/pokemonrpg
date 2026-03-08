@@ -47,6 +47,8 @@
         "snapshot:auto-trainer-team-levels": "node src/scripts/createAutoTrainerTeamLevelSnapshot.js",
         "fix:auto-trainer-team-levels:dry": "node src/scripts/fixAutoTrainerTeamLevelsByMilestone.js --dry-run",
         "fix:auto-trainer-team-levels": "node src/scripts/fixAutoTrainerTeamLevelsByMilestone.js",
+        "rebalance:auto-trainer-difficulty:dry": "node src/scripts/rebalanceAutoTrainerDifficulty.js --dry-run",
+        "rebalance:auto-trainer-difficulty": "node src/scripts/rebalanceAutoTrainerDifficulty.js",
         "rollback:auto-trainer-team-levels:dry": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js --dry-run",
         "rollback:auto-trainer-team-levels": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js"
     },
