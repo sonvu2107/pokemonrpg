@@ -42,7 +42,13 @@
         "reset:pokemon-moves:all:dry": "node src/resetPokemonMoves.js --mode all",
         "reset:pokemon-moves:all": "node src/resetPokemonMoves.js --apply --mode all",
         "repair:party-indexes:dry": "node src/scripts/repairPartyIndexes.js",
-        "repair:party-indexes": "node src/scripts/repairPartyIndexes.js --apply"
+        "repair:party-indexes": "node src/scripts/repairPartyIndexes.js --apply",
+        "snapshot:auto-trainer-team-levels:dry": "node src/scripts/createAutoTrainerTeamLevelSnapshot.js --dry-run",
+        "snapshot:auto-trainer-team-levels": "node src/scripts/createAutoTrainerTeamLevelSnapshot.js",
+        "fix:auto-trainer-team-levels:dry": "node src/scripts/fixAutoTrainerTeamLevelsByMilestone.js --dry-run",
+        "fix:auto-trainer-team-levels": "node src/scripts/fixAutoTrainerTeamLevelsByMilestone.js",
+        "rollback:auto-trainer-team-levels:dry": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js --dry-run",
+        "rollback:auto-trainer-team-levels": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",

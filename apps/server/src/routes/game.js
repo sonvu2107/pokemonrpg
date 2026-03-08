@@ -2502,13 +2502,6 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
                 return res.status(400).json({ ok: false, message: 'Hãy chọn trainer đã pass để bật auto battle.' })
             }
 
-            const isCompletedTrainer = (Array.isArray(user.completedBattleTrainers) ? user.completedBattleTrainers : [])
-                .map((entry) => normalizeAutoTrainerId(entry))
-                .includes(targetTrainerId)
-            if (!isCompletedTrainer) {
-                return res.status(400).json({ ok: false, message: 'Trainer đã chọn chưa được hoàn thành.' })
-            }
-
             const trainerExists = await BattleTrainer.exists({
                 _id: targetTrainerId,
                 $or: [
@@ -2519,6 +2512,21 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             })
             if (!trainerExists) {
                 return res.status(404).json({ ok: false, message: 'Trainer đã chọn không còn khả dụng.' })
+            }
+
+            const completedList = (Array.isArray(user.completedBattleTrainers) ? user.completedBattleTrainers : [])
+                .map((entry) => normalizeAutoTrainerId(entry))
+            const isCompletedTrainer = completedList.includes(targetTrainerId)
+            if (!isCompletedTrainer) {
+                console.warn('[auto-trainer-settings] auto-repair: adding trainer to completedBattleTrainers:', {
+                    targetTrainerId,
+                    completedCount: completedList.length,
+                    userId: req.user.userId,
+                })
+                await User.updateOne(
+                    { _id: req.user.userId },
+                    { $addToSet: { completedBattleTrainers: targetTrainerId } }
+                )
             }
         }
 

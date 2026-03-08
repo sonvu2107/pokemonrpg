@@ -1287,9 +1287,14 @@ export function BattlePage() {
         const logs = Array.isArray(status?.logs) ? status.logs : []
         setAutoTrainerServerLogs(logs)
         const latestLogMessage = formatFriendlyAutoTrainerMessage(logs[0]?.message)
+        const latestActionReason = formatFriendlyAutoTrainerMessage(status?.lastAction?.reason)
+        const latestActionResult = String(status?.lastAction?.result || '').trim().toLowerCase()
+        const latestActionHint = (latestActionResult === 'error' || latestActionResult === 'skipped')
+            ? latestActionReason
+            : ''
         setAutoTrainerServerStatus(
             (Boolean(status?.enabled)
-                ? `Đang chạy ngầm. ${latestLogMessage || 'Đang tự chiến theo cấu hình.'}`
+                ? `Đang chạy ngầm. ${latestActionHint ? `Lần gần nhất: ${latestActionHint}.` : (latestLogMessage || 'Đang tự chiến theo cấu hình.')}`
                 : (latestLogMessage || 'Tự chiến huấn luyện viên đang tắt.'))
         )
     }

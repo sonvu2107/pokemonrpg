@@ -21,7 +21,7 @@ const TICK_INTERVAL_MS = toSafeInt(process.env.AUTO_TRAINER_TICK_MS, 5000, 3000,
 const LOCK_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_LOCK_TTL_MS, 35000, 5000, 300000)
 const BATCH_SIZE = toSafeInt(process.env.AUTO_TRAINER_BATCH_SIZE, 120, 10, 500)
 const CONCURRENCY = toSafeInt(process.env.AUTO_TRAINER_CONCURRENCY, 12, 1, 50)
-const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 30000, 1000, 120000)
+const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_TIME_BUDGET_MS, 90000, 5000, 300000)
 const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 260, 60, 1000)
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
@@ -111,6 +111,7 @@ const callApi = async ({ token, path, method = 'GET', body = null, deadlineAt = 
         const error = new Error(String(data?.message || `API ${path} thất bại`).trim())
         error.status = response.status
         error.code = String(data?.code || '').trim()
+        error.payload = data
         throw error
     }
 
@@ -487,6 +488,12 @@ const runSingleBattle = async ({ userId, token, trainerId, trainerMeta, attackIn
             if (errorCode === 'REQUEST_TIMEOUT') {
                 return { ok: false, code: 'REQUEST_TIMEOUT', reason: 'REQUEST_TIMEOUT' }
             }
+            if (errorCode === 'ACTION_COOLDOWN') {
+                const retryAfterMs = Math.max(200, Number(error?.payload?.retryAfterMs || attackIntervalMs || 200))
+                await sleep(retryAfterMs)
+                turn -= 1
+                continue
+            }
             if (normalized.includes('doi hinh huan luyen vien da bi danh bai') || normalized.includes('nhan ket qua tran dau')) {
                 return { ok: true, code: 'WIN' }
             }
@@ -501,6 +508,7 @@ const runSingleBattle = async ({ userId, token, trainerId, trainerMeta, attackIn
             }
             if (normalized.includes('qua nhanh')) {
                 await sleep(Math.max(200, attackIntervalMs))
+                turn -= 1
                 continue
             }
             return { ok: false, code: 'ATTACK_ERROR', reason: message || 'Battle thất bại.' }
@@ -529,6 +537,7 @@ const runAutoTrainerBattleFlow = async ({ userId, token, trainerId, trainerMeta,
         && resumed.code !== 'TIME_BUDGET'
         && resumed.code !== 'REQUEST_TIMEOUT'
         && resumed.code !== 'TRAINER_UNAVAILABLE'
+        && resumed.code !== 'MAX_TURNS'
     )
 
     if (canRetryFreshSession) {
@@ -692,34 +701,6 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    const completedTrainerSet = new Set(
-        (Array.isArray(userDoc?.completedBattleTrainers) ? userDoc.completedBattleTrainers : [])
-            .map((entry) => normalizeId(entry))
-            .filter(Boolean)
-    )
-    if (!completedTrainerSet.has(trainerId)) {
-        await updateAutoTrainerState({
-            userId,
-            setPatch: {
-                ...baseSyncPatch,
-                'autoTrainer.enabled': false,
-                'autoTrainer.startedAt': null,
-                'autoTrainer.lastRuntimeAt': null,
-            },
-            lastAction: {
-                action: 'eligibility',
-                result: 'skipped',
-                reason: 'TRAINER_NOT_COMPLETED',
-                targetId: trainerId,
-                at: now,
-            },
-            logMessage: 'Đã dừng auto battle trainer: trainer đã chọn chưa được hoàn thành.',
-            logType: 'warn',
-        })
-        stats.skipped += 1
-        return
-    }
-
     const trainer = await getTrainerMetaCached(trainerId)
     if (!trainer) {
         await updateAutoTrainerState({
@@ -742,6 +723,19 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         })
         stats.skipped += 1
         return
+    }
+
+    const completedTrainerSet = new Set(
+        (Array.isArray(userDoc?.completedBattleTrainers) ? userDoc.completedBattleTrainers : [])
+            .map((entry) => normalizeId(entry))
+            .filter(Boolean)
+    )
+    if (!completedTrainerSet.has(trainerId)) {
+        console.warn(`[auto-trainer-worker] auto-repair: adding trainer ${trainerId} to completedBattleTrainers for user ${userId}`)
+        await User.updateOne(
+            { _id: userId },
+            { $addToSet: { completedBattleTrainers: trainerId } }
+        )
     }
 
     if (Date.now() >= deadlineAt) {
@@ -769,7 +763,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         level: resolveTrainerAverageLevel(trainer),
     }
 
-    const attackIntervalMs = Math.max(100, toSafeInt(autoState.attackIntervalMs, 200))
+    const attackIntervalMs = Math.max(450, toSafeInt(autoState.attackIntervalMs, 700))
     const outcome = await runAutoTrainerBattleFlow({
         userId,
         token,
@@ -1046,9 +1040,9 @@ const runTick = async () => {
             stats.fetched = users.length
             if (users.length === 0) return
 
-            const deadlineAt = Date.now() + TIME_BUDGET_MS
             await runWithConcurrency(users, CONCURRENCY, async (user) => {
                 try {
+                    const deadlineAt = Date.now() + TIME_BUDGET_MS
                     await processUser(user, deadlineAt, stats)
                     if (POST_USER_COOLDOWN_MS > 0) {
                         await sleep(POST_USER_COOLDOWN_MS)
@@ -1116,7 +1110,7 @@ export const startAutoTrainerWorker = ({ baseUrl }) => {
         runTick()
     }, 1200)
 
-    console.log(`[auto-trainer-worker] started (tick=${TICK_INTERVAL_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
+    console.log(`[auto-trainer-worker] started (tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
 }
 
 export const stopAutoTrainerWorker = () => {
