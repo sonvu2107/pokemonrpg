@@ -5,6 +5,19 @@ import { io } from 'socket.io-client'
 const ChatContext = createContext()
 const MAX_MESSAGES = 200
 const TYPING_TIMEOUT_MS = 3000
+const IS_DEV = Boolean(import.meta.env.DEV)
+
+const debugLog = (...args) => {
+  if (IS_DEV) {
+    console.log(...args)
+  }
+}
+
+const debugError = (...args) => {
+  if (IS_DEV) {
+    console.error(...args)
+  }
+}
 
 export const useChat = () => {
   const context = useContext(ChatContext)
@@ -28,10 +41,10 @@ export function ChatProvider({ children }) {
 
   // Initialize socket connection
   useEffect(() => {
-    console.log('ChatContext: useEffect triggered', { hasUser: !!user, hasToken: !!token })
+    debugLog('ChatContext: useEffect triggered', { hasUser: !!user, hasToken: !!token })
     
     if (!user || !token) {
-      console.log('ChatContext: No user or token, cleaning up')
+      debugLog('ChatContext: No user or token, cleaning up')
       // Cleanup if user logs out
       if (socket) {
         socket.disconnect()
@@ -48,7 +61,7 @@ export function ChatProvider({ children }) {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
     const socketUrl = import.meta.env.VITE_SOCKET_URL || apiUrl.replace('/api', '')
     
-    console.log('ChatContext: Connecting to socket', { 
+    debugLog('ChatContext: Connecting to socket', {
       socketUrl, 
       apiUrl,
       VITE_SOCKET_URL: import.meta.env.VITE_SOCKET_URL,
@@ -80,22 +93,22 @@ export function ChatProvider({ children }) {
 
     // Connection events
     newSocket.on('connect', () => {
-      console.log('ChatContext: Socket connected!', newSocket.id)
+      debugLog('ChatContext: Socket connected!', newSocket.id)
       setIsConnected(true)
       setError(null)
       
       // Join global chat room
-      console.log('ChatContext: Joining global chat room')
+      debugLog('ChatContext: Joining global chat room')
       newSocket.emit('chat:join_global')
     })
 
     newSocket.on('disconnect', () => {
-      console.log('ChatContext: Socket disconnected')
+      debugLog('ChatContext: Socket disconnected')
       setIsConnected(false)
     })
 
     newSocket.on('connect_error', (err) => {
-      console.error('ChatContext: Socket connection error:', err.message)
+      debugError('ChatContext: Socket connection error:', err.message)
       setError('Không thể kết nối đến chat server')
       setIsConnected(false)
     })

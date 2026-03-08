@@ -337,7 +337,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
 
         const [user, playerState, partyRows] = await Promise.all([
             User.findById(targetUserId)
-                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
+                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline showPartyInProfile')
                 .lean(),
             PlayerState.findOne({ userId: targetUserId })
                 .select('level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
@@ -394,6 +394,11 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
         }
 
         const now = new Date()
+        const viewerUserId = String(req.user?.userId || '').trim()
+        const showPartyInProfile = user?.showPartyInProfile !== false
+        const canViewParty = Boolean(viewerUserId) && viewerUserId === String(user?._id || '')
+            ? true
+            : showPartyInProfile
 
         res.json({
             ok: true,
@@ -420,9 +425,11 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                     autoBattleTrainerUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
                 },
                 isOnline: Boolean(user?.isOnline),
+                showPartyInProfile,
+                canViewParty,
                 playTime: formatPlayTime(user?.createdAt, now),
                 profile,
-                party: slots,
+                party: canViewParty ? slots : createEmptyPartySlots(),
             },
         })
     } catch (error) {

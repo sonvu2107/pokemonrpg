@@ -21,7 +21,8 @@ export default function EditProfilePage() {
         username: '',
         email: '',
         avatar: '',
-        signature: ''
+        signature: '',
+        showPartyInProfile: true,
     })
     const [passwordForm, setPasswordForm] = useState({
         currentPassword: '',
@@ -40,7 +41,8 @@ export default function EditProfilePage() {
                 username: user.username || '',
                 email: user.email || '',
                 avatar: user.avatar || '',
-                signature: user.signature || ''
+                signature: user.signature || '',
+                showPartyInProfile: user.showPartyInProfile !== false,
             })
         }
     }, [user])
@@ -210,6 +212,20 @@ export default function EditProfilePage() {
                                 className="w-full px-3 py-2 border border-slate-300 rounded focus:border-blue-500 focus:outline-none"
                                 placeholder="Nhập chữ ký của bạn..."
                             ></textarea>
+                        </div>
+                        <div className="rounded border border-blue-200 bg-blue-50/60 px-4 py-3">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(formData.showPartyInProfile)}
+                                    onChange={(e) => setFormData({ ...formData, showPartyInProfile: e.target.checked })}
+                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>
+                                    <span className="block text-sm font-bold text-slate-800">Cho người chơi khác xem đội hình</span>
+                                    <span className="block text-xs text-slate-500 mt-1">Khi tắt, đội hình sẽ bị ẩn trên modal hồ sơ, bạn bè, online và bảng xếp hạng. Bạn vẫn tự xem được đội hình của mình.</span>
+                                </span>
+                            </label>
                         </div>
 
                         <div className="pt-4 border-t border-slate-100">

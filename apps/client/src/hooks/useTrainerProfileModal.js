@@ -41,6 +41,8 @@ const buildSeedTrainer = (userLike = {}) => {
         createdAt: userLike?.createdAt || null,
         lastActive: userLike?.lastActive || null,
         playTime: String(userLike?.playTime || '').trim(),
+        showPartyInProfile: userLike?.showPartyInProfile !== false,
+        canViewParty: true,
         profile: {
             level: 1,
             experience: 0,
@@ -78,6 +80,7 @@ export function useTrainerProfileModal({ defaultReturnTo = '/friends' } = {}) {
         const party = Array.isArray(trainer?.party) ? trainer.party : []
         return party.some((slot) => Boolean(slot?._id))
     }, [trainer])
+    const canViewParty = trainer?.canViewParty !== false
 
     const closeTrainerProfile = useCallback(() => {
         profileRequestRef.current = 0
@@ -179,6 +182,7 @@ export function useTrainerProfileModal({ defaultReturnTo = '/friends' } = {}) {
             sendingFriendRequest,
             isSelfTrainer,
             hasChallengeParty,
+            canViewParty,
             onSendFriendRequest: sendFriendRequestFromModal,
             onChallenge: challengeFromModal,
         },

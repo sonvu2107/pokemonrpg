@@ -427,6 +427,7 @@ export default function FriendsPage() {
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
     const selectedUserId = normalizeUserId(selectedTrainer?.userId)
+    const canViewParty = selectedTrainer?.canViewParty !== false
     const selectedParty = Array.isArray(selectedTrainer?.party)
         ? selectedTrainer.party.slice(0, PARTY_SLOT_TOTAL)
         : []
@@ -937,19 +938,21 @@ export default function FriendsPage() {
 
                         <div className="bg-white border-t border-blue-200">
                             <ProfileSectionHeader title="Đội Hình" />
-                            <div className="flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-3 py-2">
-                                <div className="text-xs font-medium text-slate-500">
-                                    {showTrainerParty ? 'Đội hình đang được hiển thị trong hồ sơ bạn bè.' : 'Đội hình hiện đang được thu gọn.'}
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowTrainerParty((prev) => !prev)}
-                                    className="shrink-0 rounded border border-blue-300 bg-white px-3 py-1 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"
-                                >
-                                    {showTrainerParty ? '[ Ẩn Đội Hình ]' : '[ Hiện Đội Hình ]'}
-                                </button>
-                            </div>
-                            {showTrainerParty ? (
+                            {canViewParty ? (
+                                <>
+                                    <div className="flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-3 py-2">
+                                        <div className="text-xs font-medium text-slate-500">
+                                            {showTrainerParty ? 'Đội hình đang được hiển thị trong hồ sơ bạn bè.' : 'Đội hình hiện đang được thu gọn.'}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTrainerParty((prev) => !prev)}
+                                            className="shrink-0 rounded border border-blue-300 bg-white px-3 py-1 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"
+                                        >
+                                            {showTrainerParty ? '[ Ẩn Đội Hình ]' : '[ Hiện Đội Hình ]'}
+                                        </button>
+                                    </div>
+                                    {showTrainerParty ? (
                                 <div className="bg-slate-100 min-h-[160px] flex items-stretch divide-x divide-blue-200 border-b border-blue-200 overflow-x-auto">
                                     {paddedSelectedParty.map((p, i) => {
                                         if (!p) {
@@ -1012,6 +1015,12 @@ export default function FriendsPage() {
                             ) : (
                                 <div className="border-b border-blue-200 bg-slate-50 px-4 py-8 text-center text-sm italic text-slate-500">
                                     Nhấn "Hiện Đội Hình" để xem lại đội hình của người chơi này.
+                                </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="border-b border-blue-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                                    Huấn luyện viên này đang ẩn đội hình với người chơi khác.
                                 </div>
                             )}
                         </div>

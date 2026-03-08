@@ -12,7 +12,7 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
-const USER_SELECT_FIELDS = 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits isOnline createdAt lastActive signature'
+const USER_SELECT_FIELDS = 'username avatar role vipTierId vipTierLevel vipTierCode vipBenefits isOnline createdAt lastActive signature showPartyInProfile'
 const PARTY_SLOT_TOTAL = 6
 
 const toSafeIsoDate = (value) => {
@@ -261,11 +261,12 @@ const serializeUser = (userLike, benefitsByUserId = null) => {
     lastActive: toSafeIsoDate(userLike?.lastActive),
     playTime: formatPlayTime(userLike?.createdAt),
     signature: String(userLike?.signature || '').trim(),
+    showPartyInProfile: userLike?.showPartyInProfile !== false,
     vipBenefits: normalizeVipBenefits(effectiveVipBenefits),
 }
 }
 
-const buildTrainerDetail = async (targetUserId) => {
+const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
     const [user, playerState, partyRows] = await Promise.all([
         User.findById(targetUserId)
             .select(USER_SELECT_FIELDS)
@@ -332,6 +333,10 @@ const buildTrainerDetail = async (targetUserId) => {
     }
 
     const now = new Date()
+    const normalizedViewerUserId = String(viewerUserId || '').trim()
+    const isSelfViewer = Boolean(normalizedViewerUserId) && normalizedViewerUserId === String(user?._id || '')
+    const showPartyInProfile = user?.showPartyInProfile !== false
+    const canViewParty = isSelfViewer || showPartyInProfile
 
     return {
         userId: String(user?._id || ''),
@@ -346,9 +351,11 @@ const buildTrainerDetail = async (targetUserId) => {
         vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
         vipBenefits: effectiveVipBenefits,
         isOnline: Boolean(user?.isOnline),
+        showPartyInProfile,
+        canViewParty,
         playTime: formatPlayTime(user?.createdAt, now),
         profile,
-        party: slots,
+        party: canViewParty ? slots : createEmptyPartySlots(),
     }
 }
 
@@ -439,7 +446,7 @@ router.get('/profile/:userId', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'userId không hợp lệ' })
         }
 
-        const trainer = await buildTrainerDetail(targetUserId)
+        const trainer = await buildTrainerDetail(targetUserId, req.user.userId)
         if (!trainer) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người chơi' })
         }

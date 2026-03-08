@@ -171,6 +171,10 @@ const userSchema = new mongoose.Schema(
             type: String,
             default: '',
         },
+        showPartyInProfile: {
+            type: Boolean,
+            default: true,
+        },
         lastLoginIp: {
             type: String,
             default: '',

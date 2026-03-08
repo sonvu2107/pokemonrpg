@@ -120,6 +120,7 @@ const serializeAuthUser = (userLike, vipBenefitsLike = null) => {
         lastLoginIp: userLike.lastLoginIp || '',
         avatar: userLike.avatar,
         signature: userLike.signature,
+        showPartyInProfile: userLike?.showPartyInProfile !== false,
         isOnline: userLike.isOnline,
         lastActive: userLike.lastActive,
         role: userLike.role,
@@ -577,7 +578,7 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
 // PUT /api/auth/profile (protected)
 router.put('/profile', authMiddleware, async (req, res, next) => {
     try {
-        const { username, avatar, signature } = req.body
+        const { username, avatar, signature, showPartyInProfile } = req.body
 
         // Validate username if provided
         if (username && username.trim().length === 0) {
@@ -600,6 +601,7 @@ router.put('/profile', authMiddleware, async (req, res, next) => {
         if (username !== undefined) user.username = username
         if (avatar !== undefined) user.avatar = avatar
         if (signature !== undefined) user.signature = signature
+        if (showPartyInProfile !== undefined) user.showPartyInProfile = showPartyInProfile !== false
 
         await user.save()
 
