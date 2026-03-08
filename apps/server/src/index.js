@@ -1,13 +1,10 @@
-import dotenv from 'dotenv'
+import './config/env.js'
 import http from 'http'
 import app from './app.js'
 import { connectDB } from './config/db.js'
 import { initSocket } from './socket/index.js'
 import { startAutoTrainerWorker } from './workers/autoTrainerWorker.js'
 import { startAutoSearchWorker } from './workers/autoSearchWorker.js'
-
-// Load environment variables
-dotenv.config()
 
 // Create HTTP server
 const server = http.createServer(app)

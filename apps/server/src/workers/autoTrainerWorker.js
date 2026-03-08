@@ -26,6 +26,7 @@ const MAX_BATTLE_TURNS = toSafeInt(process.env.AUTO_TRAINER_MAX_BATTLE_TURNS, 26
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_TRAINER_LOGS_LIMIT = 12
+const MIN_EFFECTIVE_USER_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_MIN_EFFECTIVE_USER_BUDGET_MS, 30000, 10000, 300000)
 
 let intervalRef = null
 let localBusy = false
@@ -738,7 +739,14 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         )
     }
 
-    if (Date.now() >= deadlineAt) {
+    const attackIntervalMs = Math.max(100, toSafeInt(autoState.attackIntervalMs, 200))
+    const estimatedBattleBudgetMs = Math.min(
+        300000,
+        Math.max(MIN_EFFECTIVE_USER_BUDGET_MS, attackIntervalMs * 220 + 15000)
+    )
+    const effectiveDeadlineAt = Math.min(deadlineAt, Date.now() + estimatedBattleBudgetMs)
+
+    if (Date.now() >= effectiveDeadlineAt) {
         await updateAutoTrainerState({
             userId,
             setPatch: {
@@ -763,14 +771,13 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         level: resolveTrainerAverageLevel(trainer),
     }
 
-    const attackIntervalMs = Math.max(450, toSafeInt(autoState.attackIntervalMs, 700))
     const outcome = await runAutoTrainerBattleFlow({
         userId,
         token,
         trainerId,
         trainerMeta,
         attackIntervalMs,
-        deadlineAt,
+        deadlineAt: effectiveDeadlineAt,
     })
 
     if (!outcome.ok && String(outcome.code || '').trim().toUpperCase() === 'TIME_BUDGET') {
@@ -1110,7 +1117,7 @@ export const startAutoTrainerWorker = ({ baseUrl }) => {
         runTick()
     }, 1200)
 
-    console.log(`[auto-trainer-worker] started (tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
+    console.log(`[auto-trainer-worker] started (tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, minUserBudget=${MIN_EFFECTIVE_USER_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
 }
 
 export const stopAutoTrainerWorker = () => {
