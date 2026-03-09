@@ -94,6 +94,8 @@ const buildMapPayload = (data = {}) => {
         specialPokemonEncounterRate: Number(data?.specialPokemonEncounterRate ?? 0),
         requiredSearches: Math.max(0, Number(data?.requiredSearches) || 0),
         requiredPlayerLevel: Math.max(1, Number(data?.requiredPlayerLevel) || 1),
+        requiredVipLevel: Math.max(0, Number(data?.requiredVipLevel) || 0),
+        autoSearchRequiredVipLevel: Math.max(0, Number(data?.autoSearchRequiredVipLevel) || 0),
         encounterRate: Number(data?.encounterRate ?? 1),
         itemDropRate: Number(data?.itemDropRate ?? 0),
         rarityCatchBonusPercent: normalizeMapRarityCatchBonusPercent(data?.rarityCatchBonusPercent),
