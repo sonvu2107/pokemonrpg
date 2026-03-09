@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { gameApi } from '../../services/gameApi'
 import { leaderboardRewardApi, userApi } from '../../services/adminApi'
 import { uploadToCloudinary } from '../../utils/cloudinaryUtils'
+import VipAvatar from '../../components/VipAvatar'
+import VipTitleBadge from '../../components/VipTitleBadge'
 
 const MODE_OPTIONS = [
     { value: 'wealth', label: 'Top Tài Phú Tuần' },
@@ -166,6 +168,22 @@ const getCosmeticConfigForRank = (configs = [], rank) => {
     const safeRank = Math.max(1, Number.parseInt(rank, 10) || 1)
     return configs.find((entry) => Number(entry?.rank || 0) === safeRank) || null
 }
+
+const buildCosmeticPreviewUser = (rank, config = {}) => ({
+    username: `Top ${rank}`,
+    vipBenefits: {
+        titleImageUrl: String(config?.titleImageUrl || '').trim(),
+        avatarFrameUrl: String(config?.avatarFrameUrl || '').trim(),
+    },
+})
+
+const buildRewardPreviewUser = (rewardLike = {}) => ({
+    username: 'Reward Preview',
+    vipBenefits: {
+        titleImageUrl: String(rewardLike?.rewardTitleImageUrl || '').trim(),
+        avatarFrameUrl: String(rewardLike?.rewardAvatarFrameUrl || '').trim(),
+    },
+})
 
 export default function WeeklyLeaderboardRewardPage() {
     const [mode, setMode] = useState('wealth')
@@ -852,6 +870,7 @@ export default function WeeklyLeaderboardRewardPage() {
                             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
                                 {COSMETIC_CONFIG_RANKS.map((rank) => {
                                     const config = getCosmeticConfigForRank(cosmeticConfigs, rank) || { rank, titleImageUrl: '', avatarFrameUrl: '' }
+                                    const previewUser = buildCosmeticPreviewUser(rank, config)
                                     const titleUploadKey = `${rank}:titleImageUrl`
                                     const frameUploadKey = `${rank}:avatarFrameUrl`
                                     const savingKey = `${mode}:${rank}`
@@ -867,6 +886,34 @@ export default function WeeklyLeaderboardRewardPage() {
                                                 >
                                                     {savingCosmeticConfigKey === savingKey ? 'Đang lưu...' : 'Lưu cấu hình'}
                                                 </button>
+                                            </div>
+
+                                            <div className="rounded-xl border border-slate-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_45%,#f8fafc_100%)] p-3 shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <VipAvatar
+                                                        userLike={previewUser}
+                                                        fallback="trainer"
+                                                        alt={`Preview top ${rank}`}
+                                                        wrapperClassName="h-16 w-16 shrink-0"
+                                                        imageClassName="h-full w-full"
+                                                        frameClassName="h-full w-full object-contain"
+                                                    />
+                                                    <div className="min-w-0 space-y-1">
+                                                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-700">Preview Top {rank}</div>
+                                                        <div className="font-bold text-slate-800">Bộ trao thưởng tuần</div>
+                                                        <div className="flex min-h-8 items-center">
+                                                            <VipTitleBadge
+                                                                userLike={previewUser}
+                                                                fallback="dash"
+                                                                imageClassName="h-8 max-w-[180px] object-contain"
+                                                                textClassName="text-xs font-bold text-amber-600 truncate max-w-[180px]"
+                                                            />
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500">
+                                                            {config.titleImageUrl || config.avatarFrameUrl ? 'Hiển thị giống style đặc quyền VIP.' : 'Chưa có ảnh danh hiệu hoặc khung để preview.'}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             {selectedRewardTypes.titleImage && (
@@ -1220,9 +1267,31 @@ export default function WeeklyLeaderboardRewardPage() {
                                                 <div className="space-y-0.5">
                                                     {rewardStatus.entries.map((rewardLog) => (
                                                         <div key={rewardLog?.id || `${userId}-${rewardLog?.rewardType || 'reward'}`} className="text-xs">
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700">
-                                                                {getRewardTypeLabel(rewardLog?.rewardType)}: {formatRewardSummary(rewardLog)}
-                                                            </span>
+                                                            {isCosmeticRewardType(rewardLog?.rewardType) ? (
+                                                                <div className="inline-flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                                                    <span className="font-bold text-emerald-700">{getRewardTypeLabel(rewardLog?.rewardType)}:</span>
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <VipAvatar
+                                                                            userLike={buildRewardPreviewUser(rewardLog)}
+                                                                            fallback="trainer"
+                                                                            alt="Reward preview"
+                                                                            wrapperClassName="h-8 w-8 shrink-0"
+                                                                            imageClassName="h-full w-full"
+                                                                            frameClassName="h-full w-full object-contain"
+                                                                        />
+                                                                        <VipTitleBadge
+                                                                            userLike={buildRewardPreviewUser(rewardLog)}
+                                                                            fallback="dash"
+                                                                            imageClassName="h-6 max-w-[120px] object-contain"
+                                                                            textClassName="text-[11px] font-bold text-amber-600 truncate max-w-[120px]"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700">
+                                                                    {getRewardTypeLabel(rewardLog?.rewardType)}: {formatRewardSummary(rewardLog)}
+                                                                </span>
+                                                            )}
                                                             <span className="ml-1 text-slate-500">
                                                                 {formatDateTime(rewardLog?.rewardedAt)}
                                                             </span>
@@ -1343,9 +1412,31 @@ export default function WeeklyLeaderboardRewardPage() {
                                         <div className="space-y-1">
                                             {rewardStatus.entries.map((rewardLog) => (
                                                 <div key={rewardLog?.id || `${userId}-${rewardLog?.rewardType || 'reward-mobile'}`} className="text-xs">
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700">
-                                                        {getRewardTypeLabel(rewardLog?.rewardType)}: {formatRewardSummary(rewardLog)}
-                                                    </span>
+                                                    {isCosmeticRewardType(rewardLog?.rewardType) ? (
+                                                        <div className="inline-flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                                            <span className="font-bold text-emerald-700">{getRewardTypeLabel(rewardLog?.rewardType)}:</span>
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <VipAvatar
+                                                                    userLike={buildRewardPreviewUser(rewardLog)}
+                                                                    fallback="trainer"
+                                                                    alt="Reward preview"
+                                                                    wrapperClassName="h-8 w-8 shrink-0"
+                                                                    imageClassName="h-full w-full"
+                                                                    frameClassName="h-full w-full object-contain"
+                                                                />
+                                                                <VipTitleBadge
+                                                                    userLike={buildRewardPreviewUser(rewardLog)}
+                                                                    fallback="dash"
+                                                                    imageClassName="h-6 max-w-[120px] object-contain"
+                                                                    textClassName="text-[11px] font-bold text-amber-600 truncate max-w-[120px]"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700">
+                                                            {getRewardTypeLabel(rewardLog?.rewardType)}: {formatRewardSummary(rewardLog)}
+                                                        </span>
+                                                    )}
                                                     <span className="ml-1 text-slate-500">{formatDateTime(rewardLog?.rewardedAt)}</span>
                                                 </div>
                                             ))}
