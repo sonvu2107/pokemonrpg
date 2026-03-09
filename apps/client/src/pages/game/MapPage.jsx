@@ -313,7 +313,7 @@ export default function MapPage() {
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
     const [isEncounterDetailExpanded, setIsEncounterDetailExpanded] = useState(true)
     const [detailTab, setDetailTab] = useState('pokemon')
-    const [pokemonSortKey, setPokemonSortKey] = useState('encounterPercent')
+    const [pokemonSortKey, setPokemonSortKey] = useState('name')
     const [pokemonSortDirection, setPokemonSortDirection] = useState('desc')
     const [pokemonPage, setPokemonPage] = useState(1)
     const [pokemonPageSize, setPokemonPageSize] = useState(MAP_DETAIL_PAGE_SIZE_OPTIONS[0])
@@ -1107,7 +1107,6 @@ export default function MapPage() {
             const leftPokemon = left?.pokemonId || {}
             const rightPokemon = right?.pokemonId || {}
             const leftValueByKey = {
-                encounterPercent: Number(left?.encounterPercent || 0),
                 name: String(leftPokemon?.name || ''),
                 pokedexNumber: Number(leftPokemon?.pokedexNumber || 0),
                 rarity: POKEMON_RARITY_ORDER[String(leftPokemon?.rarity || '').trim().toLowerCase()] ?? -1,
@@ -1116,7 +1115,6 @@ export default function MapPage() {
                 type: String(Array.isArray(leftPokemon?.types) ? leftPokemon.types[0] : ''),
             }
             const rightValueByKey = {
-                encounterPercent: Number(right?.encounterPercent || 0),
                 name: String(rightPokemon?.name || ''),
                 pokedexNumber: Number(rightPokemon?.pokedexNumber || 0),
                 rarity: POKEMON_RARITY_ORDER[String(rightPokemon?.rarity || '').trim().toLowerCase()] ?? -1,
@@ -1420,7 +1418,6 @@ export default function MapPage() {
                                                 <option value="special">Đặc biệt</option>
                                             </select>
                                             <select value={pokemonSortKey} onChange={(e) => setPokemonSortKey(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
-                                                <option value="encounterPercent">Tỷ lệ xuất hiện</option>
                                                 <option value="name">Tên</option>
                                                 <option value="pokedexNumber">Pokedex</option>
                                                 <option value="rarity">Độ hiếm</option>
@@ -1445,13 +1442,12 @@ export default function MapPage() {
                                                     <th className="px-3 py-2 text-center font-bold">Loại</th>
                                                     <th className="px-3 py-2 text-center font-bold">Độ hiếm</th>
                                                     <th className="px-3 py-2 text-center font-bold">Hệ</th>
-                                                    <th className="px-3 py-2 text-right font-bold">Tỷ lệ xuất hiện</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {paginatedPokemonEncounters.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan={5} className="px-3 py-8 text-center text-slate-500">Không tìm thấy Pokemon phù hợp bộ lọc.</td>
+                                                        <td colSpan={4} className="px-3 py-8 text-center text-slate-500">Không tìm thấy Pokemon phù hợp bộ lọc.</td>
                                                     </tr>
                                                 ) : paginatedPokemonEncounters.map((entry) => {
                                                     const pokemon = entry?.pokemonId || {}
@@ -1475,7 +1471,6 @@ export default function MapPage() {
                                                             <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-1 font-bold ${entry?.source === 'special' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{entry?.source === 'special' ? 'Đặc biệt' : 'Thường'}</span></td>
                                                             <td className="px-3 py-2 text-center"><span className={`font-bold ${rarityMeta.text}`}>{rarityMeta.label}</span></td>
                                                             <td className="px-3 py-2 text-center text-slate-700">{types.length > 0 ? types.map((type) => capitalizeWords(type)).join(', ') : '-'}</td>
-                                                            <td className="px-3 py-2 text-right font-bold text-blue-700">{formatPercent(entry?.encounterPercent)}</td>
                                                         </tr>
                                                     )
                                                 })}
