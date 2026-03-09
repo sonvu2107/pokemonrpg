@@ -12,14 +12,12 @@ import { hasVipAutoBattleTrainerAccess } from '../utils/vip'
 import { getVipAutoLimitConfig } from '../utils/vipAutoLimits'
 import { battleTrainersQueryOptions, inventoryQueryOptions, mapsQueryOptions, profileQueryOptions } from '../hooks/queries/gameQueries'
 
-const TRAINER_ORDER_STORAGE_KEY = 'battle_trainer_order_index'
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_BUTTON_REPOSITION_COOLDOWN_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_CHALLENGE_INTERVAL_MS = 2 * 60 * 1000
-const AUTO_TRAINER_TARGET_STORAGE_KEY = 'battle_auto_trainer_target_id_v1'
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
     { value: 700, label: 'Vừa (0.7s)' },
@@ -65,27 +63,6 @@ const formatFriendlyAutoTrainerMessage = (value = '') => {
         .replace(/Auto battle trainer dung do loi:/i, 'Auto battle trainer tạm dừng do lỗi:')
 
     return message
-}
-const readStoredAutoTrainerTargetId = () => {
-    if (typeof window === 'undefined') return ''
-    try {
-        return normalizeEntityId(window.localStorage.getItem(AUTO_TRAINER_TARGET_STORAGE_KEY))
-    } catch {
-        return ''
-    }
-}
-const writeStoredAutoTrainerTargetId = (value = '') => {
-    if (typeof window === 'undefined') return
-    const normalized = normalizeEntityId(value)
-    try {
-        if (!normalized) {
-            window.localStorage.removeItem(AUTO_TRAINER_TARGET_STORAGE_KEY)
-            return
-        }
-        window.localStorage.setItem(AUTO_TRAINER_TARGET_STORAGE_KEY, normalized)
-    } catch {
-        // ignore storage error
-    }
 }
 const buildAutoTrainerConfigSnapshot = ({ enabled, trainerId, attackIntervalMs }) => {
     return JSON.stringify({
@@ -945,6 +922,7 @@ export function BattlePage() {
     const [completedCarouselIndex, setCompletedCarouselIndex] = useState(0)
     const [completedEntriesPerView, setCompletedEntriesPerView] = useState(DESKTOP_COMPLETED_ENTRIES_PER_VIEW)
     const [hoveredCompletedId, setHoveredCompletedId] = useState(null)
+    const [hoveredCompletedTooltipPos, setHoveredCompletedTooltipPos] = useState(null)
     const [activeTab, setActiveTab] = useState('fight')
     const [inventory, setInventory] = useState([])
     const [selectedMoveIndex, setSelectedMoveIndex] = useState(0)
@@ -968,7 +946,7 @@ export function BattlePage() {
     const [autoTrainerAttackEnabled, setAutoTrainerAttackEnabled] = useState(false)
     const [autoTrainerStartedAtMs, setAutoTrainerStartedAtMs] = useState(0)
     const [autoTrainerAttackIntervalMs, setAutoTrainerAttackIntervalMs] = useState(DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
-    const [autoTrainerTargetId, setAutoTrainerTargetId] = useState(() => readStoredAutoTrainerTargetId())
+    const [autoTrainerTargetId, setAutoTrainerTargetId] = useState('')
     const [autoTrainerServerStatus, setAutoTrainerServerStatus] = useState('')
     const [autoTrainerServerLogs, setAutoTrainerServerLogs] = useState([])
     const [isAutoTrainerConfigDirty, setIsAutoTrainerConfigDirty] = useState(false)
@@ -1035,6 +1013,15 @@ export function BattlePage() {
     }
     const completedSlideCount = completedSlides.length
 
+    const updateCompletedTooltipPosition = (element) => {
+        if (typeof window === 'undefined' || !element) return
+        const rect = element.getBoundingClientRect()
+        setHoveredCompletedTooltipPos({
+            left: rect.left + (rect.width / 2),
+            top: rect.top - 10,
+        })
+    }
+
     useEffect(() => {
         const normalizedCompletedIds = completedEntries
             .map((entry) => normalizeEntityId(entry?.id))
@@ -1046,24 +1033,14 @@ export function BattlePage() {
 
         const normalizedTargetId = normalizeEntityId(autoTrainerTargetId)
         if (normalizedTargetId && normalizedCompletedIds.includes(normalizedTargetId)) {
-            writeStoredAutoTrainerTargetId(normalizedTargetId)
             return
         }
 
-        if (normalizedTargetId) {
-            return
-        }
-
-        const storedTargetId = readStoredAutoTrainerTargetId()
-        if (storedTargetId && normalizedCompletedIds.includes(storedTargetId)) {
-            setAutoTrainerTargetId(storedTargetId)
-            return
-        }
+        if (normalizedTargetId) return
 
         const fallbackId = normalizedCompletedIds[0]
         if (fallbackId) {
             setAutoTrainerTargetId(fallbackId)
-            writeStoredAutoTrainerTargetId(fallbackId)
         }
     }, [completedEntries, autoTrainerTargetId])
 
@@ -1151,19 +1128,6 @@ export function BattlePage() {
         return -1
     }
 
-    const getStoredTrainerOrder = () => {
-        const raw = window.localStorage.getItem(TRAINER_ORDER_STORAGE_KEY)
-        const parsed = Number.parseInt(raw || '0', 10)
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-    }
-
-    const setStoredTrainerOrder = (value) => {
-        const parsed = Number.parseInt(String(value || '0'), 10)
-        const normalized = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-        window.localStorage.setItem(TRAINER_ORDER_STORAGE_KEY, String(normalized))
-        return normalized
-    }
-
     const getTrainerOrderFromProgress = (trainers = [], completedTrainerIds = new Set()) => {
         if (!Array.isArray(trainers) || trainers.length === 0) return 0
 
@@ -1185,7 +1149,7 @@ export function BattlePage() {
             return firstUncompletedIndex
         }
 
-        return getStoredTrainerOrder() % trainers.length
+        return Math.max(0, trainers.length - 1)
     }
 
     const getTrainerByOrder = (trainers = [], preferredOrder = null) => {
@@ -1194,7 +1158,7 @@ export function BattlePage() {
         }
         const computedOrder = Number.isFinite(preferredOrder)
             ? Math.max(0, Math.floor(preferredOrder))
-            : getStoredTrainerOrder()
+            : Math.max(0, trainers.length - 1)
         const trainerOrder = computedOrder % trainers.length
         return {
             trainer: trainers[trainerOrder],
@@ -1255,11 +1219,7 @@ export function BattlePage() {
     const applyAutoTrainerStatus = (status = {}, options = {}) => {
         const forceConfig = Boolean(options?.forceConfig)
         const normalizedStatusTrainerId = normalizeEntityId(status?.trainerId)
-        const normalizedLocalTrainerId = normalizeEntityId(autoTrainerTargetId)
-        const shouldKeepLocalTrainerSelection = !Boolean(status?.enabled) && Boolean(normalizedLocalTrainerId)
-        const resolvedTrainerId = shouldKeepLocalTrainerSelection
-            ? normalizedLocalTrainerId
-            : normalizedStatusTrainerId
+        const resolvedTrainerId = normalizedStatusTrainerId
         const serverSnapshot = buildAutoTrainerConfigSnapshot({
             enabled: Boolean(status?.enabled),
             trainerId: normalizedStatusTrainerId,
@@ -1271,7 +1231,6 @@ export function BattlePage() {
         if (shouldApplyConfig) {
             setAutoTrainerAttackEnabled(Boolean(status?.enabled))
             setAutoTrainerTargetId(resolvedTrainerId)
-            writeStoredAutoTrainerTargetId(resolvedTrainerId)
             setAutoTrainerAttackIntervalMs(Math.max(450, Number(status?.attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS))
             setAutoTrainerStartedAtMs(status?.startedAt ? new Date(status.startedAt).getTime() : 0)
 
@@ -1452,7 +1411,8 @@ export function BattlePage() {
             })
     }, [onlineChallengeUserId, rankedChallengeReturnTo, loading, isStartingOnlineChallenge, partyCandidates.length, activeBattleMode, view])
 
-    const loadData = async () => {
+    const loadData = async (options = {}) => {
+        const forceProfileRefetch = Boolean(options?.forceProfileRefetch)
         setLoading(true)
         setLoadingTrainerLobby(!isExternalChallengeRequested)
         try {
@@ -1471,10 +1431,13 @@ export function BattlePage() {
             }
 
             if (isExternalChallengeRequested) {
+                const profileQueryConfig = forceProfileRefetch
+                    ? { ...profileQueryOptions(), staleTime: 0 }
+                    : profileQueryOptions()
                 const [partyData, encounterData, profileData] = await Promise.all([
                     gameApi.getParty(),
                     gameApi.getActiveEncounter(),
-                    queryClient.fetchQuery(profileQueryOptions()),
+                    queryClient.fetchQuery(profileQueryConfig),
                 ])
 
                 setParty(hydratePartyWithBattleHp(partyData))
@@ -1511,10 +1474,13 @@ export function BattlePage() {
                 return
             }
 
+            const profileQueryConfig = forceProfileRefetch
+                ? { ...profileQueryOptions(), staleTime: 0 }
+                : profileQueryOptions()
             const [partyData, encounterData, profileData] = await Promise.all([
                 gameApi.getParty(),
                 gameApi.getActiveEncounter(),
-                queryClient.fetchQuery(profileQueryOptions()),
+                queryClient.fetchQuery(profileQueryConfig),
             ])
 
             setParty(hydratePartyWithBattleHp(partyData))
@@ -1541,7 +1507,6 @@ export function BattlePage() {
                 setCompletedCarouselIndex(0)
 
                 const syncedTrainerOrder = getTrainerOrderFromProgress(cachedTrainerList, completedTrainerIds)
-                setStoredTrainerOrder(syncedTrainerOrder)
                 const { trainer, trainerOrder } = getTrainerByOrder(cachedTrainerList, syncedTrainerOrder)
                 const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
                 setOpponent(builtOpponent)
@@ -1577,7 +1542,6 @@ export function BattlePage() {
                     setCompletedCarouselIndex(0)
 
                     const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
-                    setStoredTrainerOrder(syncedTrainerOrder)
                     const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
                     const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
                     setOpponent(builtOpponent)
@@ -2343,7 +2307,6 @@ export function BattlePage() {
 
                     if (masterPokemon.length > 0) {
                         const syncedTrainerOrder = getTrainerOrderFromProgress(masterPokemon, nextCompletedIds)
-                        setStoredTrainerOrder(syncedTrainerOrder)
                         const { trainer, trainerOrder } = getTrainerByOrder(masterPokemon, syncedTrainerOrder)
                         setOpponent(buildOpponent(null, trainer, trainerOrder))
                     }
@@ -3217,13 +3180,15 @@ export function BattlePage() {
         }
 
         setAutoTrainerTargetId(normalizedId)
-        writeStoredAutoTrainerTargetId(normalizedId)
         setOpponent(rematchOpponent)
         startBattleWithOpponent(rematchOpponent)
     }
 
     const selectedAutoTrainerEntry = completedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(autoTrainerTargetId)
+    ) || null
+    const hoveredCompletedEntry = completedEntries.find(
+        (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(hoveredCompletedId)
     ) || null
     const hasMissingAutoTrainerSelection = Boolean(normalizeEntityId(autoTrainerTargetId)) && !selectedAutoTrainerEntry
 
@@ -3292,7 +3257,6 @@ export function BattlePage() {
                         const nextTrainerId = normalizeEntityId(e.target.value)
                         markAutoTrainerConfigDirty()
                         setAutoTrainerTargetId(nextTrainerId)
-                        writeStoredAutoTrainerTargetId(nextTrainerId)
                     }}
                     disabled={!hasAutoTrainerTargets || autoTrainerAttackEnabled}
                     className="px-2 py-1 border border-slate-300 rounded bg-white text-xs max-w-[230px]"
@@ -3611,7 +3575,7 @@ export function BattlePage() {
                                         setActiveTab('fight')
                                         setBattlePlayerIndex(0)
                                         setBattlePartyHpState([])
-                                        loadData()
+                                        loadData({ forceProfileRefetch: true })
                                     }}
                                     className="px-6 py-2 bg-white border border-blue-400 hover:bg-blue-50 text-blue-800 font-bold rounded shadow-sm"
                                 >
@@ -3752,6 +3716,7 @@ export function BattlePage() {
                                     type="button"
                                     onClick={() => {
                                         setHoveredCompletedId(null)
+                                        setHoveredCompletedTooltipPos(null)
                                         setCompletedCarouselIndex((prev) => Math.max(0, prev - 1))
                                     }}
                                     disabled={completedCarouselIndex === 0}
@@ -3774,43 +3739,26 @@ export function BattlePage() {
                                                 {slideEntries.map((entry) => (
                                                     <div
                                                         key={entry.id}
-                                                        className="relative z-0 shrink-0 cursor-pointer transition-transform hover:z-40 hover:scale-105"
-                                                        onMouseEnter={() => setHoveredCompletedId(entry.id)}
-                                                        onMouseLeave={() => setHoveredCompletedId(null)}
+                                                        className="relative z-0 shrink-0 cursor-pointer transition-transform hover:z-[200] hover:scale-105"
+                                                        onMouseEnter={(event) => {
+                                                            setHoveredCompletedId(entry.id)
+                                                            updateCompletedTooltipPosition(event.currentTarget)
+                                                        }}
+                                                        onMouseMove={(event) => {
+                                                            if (normalizeEntityId(hoveredCompletedId) !== normalizeEntityId(entry.id)) return
+                                                            updateCompletedTooltipPosition(event.currentTarget)
+                                                        }}
+                                                        onMouseLeave={() => {
+                                                            setHoveredCompletedId(null)
+                                                            setHoveredCompletedTooltipPos(null)
+                                                        }}
                                                         onClick={() => handleRematchTrainer(entry)}
-                                                        title={`Đấu lại với ${entry.name}`}
+                                                        aria-label={`Đấu lại với ${entry.name}`}
                                                     >
                                                         <img
                                                             src={entry.image}
                                                             className="w-20 h-20 object-contain pixelated"
                                                         />
-                                                        {hoveredCompletedId === entry.id && (
-                                                            <div className="absolute left-1/2 bottom-full mb-3 w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-50">
-                                                                <div className="font-bold text-slate-700 mb-2">Thông tin</div>
-                                                                <div className="flex gap-2 items-start">
-                                                                    <img src={entry.image} className="w-12 h-12 object-contain pixelated" />
-                                                                    <div>
-                                                                        <div className="font-bold">Huấn luyện viên {entry.name}:</div>
-                                                                        <div className="italic text-slate-600">"{entry.quote}"</div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="mt-3 font-bold">Đội hình Pokémon</div>
-                                                                <div className="flex gap-4 mt-2">
-                                                                    {entry.team.map((poke) => (
-                                                                        <div key={poke.id} className="flex flex-col items-center">
-                                                                            {poke.sprite ? (
-                                                                                <img src={poke.sprite} className="w-8 h-8 pixelated" />
-                                                                            ) : (
-                                                                                <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
-                                                                            )}
-                                                                            <div className="text-[10px] font-bold">L. {poke.level}</div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                                <div className="mt-3 font-bold">Phần thưởng Pokémon</div>
-                                                                <div>{entry.prize}</div>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -3818,10 +3766,45 @@ export function BattlePage() {
                                     </div>
                                 </div>
 
+                                {hoveredCompletedEntry && hoveredCompletedTooltipPos && (
+                                    <div
+                                        className="fixed w-[320px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-full bg-white border border-slate-200 rounded shadow-lg p-3 text-xs z-[9999] pointer-events-none"
+                                        style={{
+                                            left: `${hoveredCompletedTooltipPos.left}px`,
+                                            top: `${hoveredCompletedTooltipPos.top}px`,
+                                        }}
+                                    >
+                                        <div className="font-bold text-slate-700 mb-2">Thông tin</div>
+                                        <div className="flex gap-2 items-start">
+                                            <img src={hoveredCompletedEntry.image} className="w-12 h-12 object-contain pixelated" />
+                                            <div>
+                                                <div className="font-bold">Huấn luyện viên {hoveredCompletedEntry.name}:</div>
+                                                <div className="italic text-slate-600">"{hoveredCompletedEntry.quote}"</div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 font-bold">Đội hình Pokémon</div>
+                                        <div className="flex gap-4 mt-2">
+                                            {hoveredCompletedEntry.team.map((poke) => (
+                                                <div key={poke.id} className="flex flex-col items-center">
+                                                    {poke.sprite ? (
+                                                        <img src={poke.sprite} className="w-8 h-8 pixelated" />
+                                                    ) : (
+                                                        <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
+                                                    )}
+                                                    <div className="text-[10px] font-bold">L. {poke.level}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="mt-3 font-bold">Phần thưởng Pokémon</div>
+                                        <div>{hoveredCompletedEntry.prize}</div>
+                                    </div>
+                                )}
+
                                 <button
                                     type="button"
                                     onClick={() => {
                                         setHoveredCompletedId(null)
+                                        setHoveredCompletedTooltipPos(null)
                                         setCompletedCarouselIndex((prev) => Math.min(completedSlideCount - 1, prev + 1))
                                     }}
                                     disabled={completedCarouselIndex >= completedSlideCount - 1}
