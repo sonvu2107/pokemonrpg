@@ -545,8 +545,36 @@ router.post('/reset-history', async (req, res) => {
         ])
 
         const resetUsersResult = await User.updateMany(
-            { completedBattleTrainers: { $exists: true, $ne: [] } },
-            { $set: { completedBattleTrainers: [] } }
+            {
+                $or: [
+                    { completedBattleTrainers: { $exists: true, $ne: [] } },
+                    { completedBattleTrainerReachedAt: { $exists: true, $ne: {} } },
+                    { 'autoTrainer.enabled': true },
+                    { 'autoTrainer.trainerId': { $exists: true, $ne: '' } },
+                    { 'autoTrainer.startedAt': { $ne: null } },
+                    { 'autoTrainer.lastRuntimeAt': { $ne: null } },
+                    { 'autoTrainer.logs.0': { $exists: true } },
+                    { 'autoTrainer.lastAction.at': { $ne: null } },
+                ],
+            },
+            {
+                $set: {
+                    completedBattleTrainers: [],
+                    completedBattleTrainerReachedAt: {},
+                    'autoTrainer.enabled': false,
+                    'autoTrainer.trainerId': '',
+                    'autoTrainer.startedAt': null,
+                    'autoTrainer.lastRuntimeAt': null,
+                    'autoTrainer.lastAction': {
+                        action: 'admin_reset_history',
+                        result: 'reset',
+                        reason: 'BATTLE_TRAINER_HISTORY_RESET',
+                        targetId: '',
+                        at: new Date(),
+                    },
+                    'autoTrainer.logs': [],
+                },
+            }
         )
 
         let deletedSessions = 0

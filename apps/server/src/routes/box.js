@@ -23,7 +23,7 @@ router.get('/', async (req, res) => {
 
         const pageNum = Math.max(1, parseInt(page, 10) || 1)
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 28))
-        const query = withActiveUserPokemonFilter({ userId: req.user.userId })
+        const query = withActiveUserPokemonFilter({ userId: req.user.userId, location: 'box' })
         if (search) {
             const searchRegex = new RegExp(escapeRegExp(search), 'i')
             const species = await Pokemon.find({ name: searchRegex }).select('_id').lean()
@@ -65,7 +65,10 @@ router.get('/', async (req, res) => {
             sortOptions = { pokemonId: 1 }
         }
 
-        const total = await UserPokemon.countDocuments(query)
+        const [total, partyCount] = await Promise.all([
+            UserPokemon.countDocuments(query),
+            UserPokemon.countDocuments(withActiveUserPokemonFilter({ userId: req.user.userId, location: 'party' })),
+        ])
 
         let userPokemon = []
 
@@ -162,9 +165,9 @@ router.get('/', async (req, res) => {
                 pages: Math.ceil(total / limitNum)
             },
             counts: {
-                total,
+                total: total + partyCount,
                 box: total,
-                party: 0
+                party: partyCount,
             }
         })
 
