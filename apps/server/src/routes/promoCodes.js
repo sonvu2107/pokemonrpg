@@ -1,6 +1,7 @@
 import express from 'express'
 import PromoCode from '../models/PromoCode.js'
 import PromoCodeClaim from '../models/PromoCodeClaim.js'
+import DailyActivity from '../models/DailyActivity.js'
 import PlayerState from '../models/PlayerState.js'
 import UserInventory from '../models/UserInventory.js'
 import UserPokemon from '../models/UserPokemon.js'
@@ -16,6 +17,28 @@ const CODE_REGEX = /^[A-Z0-9_-]{3,30}$/
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+const toDailyDateKey = (date = new Date()) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
+const trackGiftCodePlatinumCoins = async (userId, platinumCoins = 0) => {
+    const safeAmount = Math.max(0, Math.floor(Number(platinumCoins) || 0))
+    if (safeAmount <= 0) return
+
+    const date = toDailyDateKey()
+    await DailyActivity.findOneAndUpdate(
+        { userId, date },
+        {
+            $setOnInsert: { userId, date },
+            $inc: { platinumCoins: safeAmount },
+        },
+        { upsert: true }
+    )
+}
 
 router.use(authMiddleware)
 
@@ -349,6 +372,7 @@ router.post('/redeem', async (req, res) => {
             )
 
             emitPlayerState(String(userId), playerState)
+            await trackGiftCodePlatinumCoins(userId, walletInc.gold)
 
             claimResult = {
                 rewardType: 'bundle',
