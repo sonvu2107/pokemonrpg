@@ -72,7 +72,6 @@ const AUTO_SEARCH_INTERVAL_OPTIONS = [
     { value: 2500, label: 'Rất chậm (2.5s)' },
 ]
 const DEFAULT_AUTO_SEARCH_INTERVAL_MS = AUTO_SEARCH_INTERVAL_OPTIONS[1].value
-const EVENT_MAP_PATTERN = /(^|[\s_-])(event|su-kien|sukien)($|[\s_-])/i
 const AUTO_SEARCH_RARITY_KEYS = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
 const AUTO_SEARCH_ACTION_OPTIONS = [
     { value: 'catch', label: 'Dùng bóng bắt' },
@@ -221,11 +220,7 @@ const buildEncounterSummary = (result = {}) => {
 
 const isEventMapLike = (mapLike = null) => {
     if (!mapLike || typeof mapLike !== 'object') return false
-    if (Boolean(mapLike.isEventMap)) return true
-
-    const slug = String(mapLike.slug || '').trim().toLowerCase()
-    const name = String(mapLike.name || '').trim().toLowerCase()
-    return EVENT_MAP_PATTERN.test(slug) || EVENT_MAP_PATTERN.test(name)
+    return Boolean(mapLike.isEventMap)
 }
 
 export default function MapPage() {
