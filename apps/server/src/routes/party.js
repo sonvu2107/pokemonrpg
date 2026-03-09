@@ -5,20 +5,17 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { enforcePartyUniqueSpeciesForUser } from '../utils/partyDuplicateUtils.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const router = express.Router()
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
 const resolveFormStats = (species = {}, formId = null) => {
-    const forms = Array.isArray(species?.forms) ? species.forms : []
-    const defaultFormId = normalizeFormId(species?.defaultFormId || 'normal')
-    const requestedFormId = normalizeFormId(formId || defaultFormId)
-    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId)
-        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
-        || forms[0]
-        || null
-    return resolvedForm?.stats || species?.baseStats || {}
+    return resolveEffectivePokemonBaseStats({
+        pokemonLike: species,
+        formId: normalizeFormId(formId || species?.defaultFormId || 'normal'),
+    })
 }
 
 const serializePartyPokemon = ({ entry, moveLookupMap }) => {
