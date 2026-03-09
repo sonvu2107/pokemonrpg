@@ -2291,7 +2291,7 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
         let resolvedMap = null
         if (nextMapSlug) {
             resolvedMap = await MapModel.findOne({ slug: nextMapSlug })
-                .select('_id slug name isEventMap')
+                .select('_id slug name isEventMap autoSearchRequiredVipLevel')
                 .lean()
             if (!resolvedMap && nextEnabled) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ đã chọn cho tự tìm kiếm.' })
@@ -2300,6 +2300,15 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
 
         if (nextEnabled && resolvedMap && isEventMapLike(resolvedMap)) {
             return res.status(400).json({ ok: false, message: 'Bản đồ sự kiện không hỗ trợ tự tìm kiếm.' })
+        }
+
+        const currentVipLevel = Math.max(0, Number(user?.vipTierLevel) || 0)
+        const autoSearchRequiredVipLevel = Math.max(0, Number(resolvedMap?.autoSearchRequiredVipLevel) || 0)
+        if (nextEnabled && resolvedMap && currentVipLevel < autoSearchRequiredVipLevel) {
+            return res.status(403).json({
+                ok: false,
+                message: `Map này yêu cầu VIP ${autoSearchRequiredVipLevel} để bật tự tìm kiếm.`,
+            })
         }
 
         const isCatchConfigured = AUTO_SEARCH_RARITY_KEYS.some(

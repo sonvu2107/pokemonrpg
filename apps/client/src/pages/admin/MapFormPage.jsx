@@ -93,6 +93,7 @@ export default function MapFormPage() {
         requiredSearches: 0,
         requiredPlayerLevel: 1,
         requiredVipLevel: 0,
+        autoSearchRequiredVipLevel: 0,
         encounterRate: 1,
         itemDropRate: 0,
         rarityCatchBonusPercent: { ...DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT },
@@ -209,6 +210,7 @@ export default function MapFormPage() {
                 requiredSearches: map.requiredSearches || 0,
                 requiredPlayerLevel: Math.max(1, Number(map.requiredPlayerLevel) || 1),
                 requiredVipLevel: Math.max(0, Number(map.requiredVipLevel) || 0),
+                autoSearchRequiredVipLevel: Math.max(0, Number(map.autoSearchRequiredVipLevel) || 0),
                 encounterRate: map.encounterRate ?? 1,
                 itemDropRate: map.itemDropRate ?? 0,
                 rarityCatchBonusPercent: normalizeMapRarityCatchBonusPercent(map.rarityCatchBonusPercent),
@@ -254,6 +256,11 @@ export default function MapFormPage() {
 
         if (Number(formData.requiredVipLevel) < 0) {
             setError('VIP yêu cầu vào map phải >= 0')
+            return
+        }
+
+        if (Number(formData.autoSearchRequiredVipLevel) < 0) {
+            setError('VIP mở auto tìm phải >= 0')
             return
         }
 
@@ -652,6 +659,21 @@ export default function MapFormPage() {
                                     <p className="text-xs text-slate-500 mt-1">0 = mọi người vào được, 1 = cần VIP 1 trở lên.</p>
                                 </div>
                             </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>VIP mở Auto tìm</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={formData.autoSearchRequiredVipLevel}
+                                        onChange={(e) => setFormData({ ...formData, autoSearchRequiredVipLevel: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">0 = chỉ cần có quyền auto từ VIP hiện tại; 1/2/3... = map này yêu cầu thêm mốc VIP để bật auto.</p>
+                                </div>
+                            </div>
                             <div className="grid grid-cols-2 gap-6 mt-4">
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
@@ -772,6 +794,12 @@ export default function MapFormPage() {
                             <p className="pl-8 text-xs text-slate-500 mb-4">
                                 Khi bật, người chơi vẫn vào map bình thường nhưng sẽ không dùng được tính năng auto tìm kiếm.
                             </p>
+
+                            {!formData.isEventMap && (
+                                <p className="pl-8 text-xs text-blue-700 mb-4 font-semibold">
+                                    Auto tìm map này hiện yêu cầu tối thiểu VIP {Math.max(0, Number(formData.autoSearchRequiredVipLevel) || 0)}.
+                                </p>
+                            )}
 
                             {formData.isLegendary && (
                                 <div className="pl-8 animate-fade-in">

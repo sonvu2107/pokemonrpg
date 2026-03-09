@@ -21,7 +21,7 @@ export const getOrderedMapsCached = async ({ forceRefresh = false } = {}) => {
     }
 
     const maps = await MapModel.find({})
-        .select('name slug levelMin levelMax isLegendary isEventMap iconId requiredSearches requiredPlayerLevel requiredVipLevel orderIndex')
+        .select('name slug levelMin levelMax isLegendary isEventMap iconId requiredSearches requiredPlayerLevel requiredVipLevel autoSearchRequiredVipLevel orderIndex')
         .sort({ orderIndex: 1, createdAt: 1, _id: 1 })
         .lean()
 

@@ -153,7 +153,7 @@ const getMapMetaCached = async (mapSlug = '') => {
     }
 
     const map = await MapModel.findOne({ slug: normalizedSlug })
-        .select('_id slug name isEventMap')
+        .select('_id slug name isEventMap autoSearchRequiredVipLevel')
         .lean()
 
     mapMetaCache.set(normalizedSlug, {
@@ -454,6 +454,31 @@ const processUser = async (userDoc, deadlineAt, stats) => {
                 at: now,
             },
             logMessage: 'Đã dừng auto tìm kiếm: map event không hỗ trợ auto.',
+            logType: 'warn',
+        })
+        stats.skipped += 1
+        return
+    }
+
+    const currentVipLevel = Math.max(0, Number(userDoc?.vipTierLevel) || 0)
+    const autoSearchRequiredVipLevel = Math.max(0, Number(map?.autoSearchRequiredVipLevel) || 0)
+    if (currentVipLevel < autoSearchRequiredVipLevel) {
+        await updateAutoSearchState({
+            userId,
+            setPatch: {
+                ...baseSyncPatchWithCount,
+                'autoSearch.enabled': false,
+                'autoSearch.startedAt': null,
+                'autoSearch.lastRuntimeAt': null,
+            },
+            lastAction: {
+                action: 'eligibility',
+                result: 'skipped',
+                reason: 'MAP_VIP_REQUIREMENT_NOT_MET',
+                targetId: mapSlug,
+                at: now,
+            },
+            logMessage: `Đã dừng auto tìm kiếm: map yêu cầu VIP ${autoSearchRequiredVipLevel}.`,
             logType: 'warn',
         })
         stats.skipped += 1

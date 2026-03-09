@@ -267,6 +267,7 @@ router.post('/', async (req, res) => {
             requiredSearches,
             requiredPlayerLevel,
             requiredVipLevel,
+            autoSearchRequiredVipLevel,
             encounterRate,
             itemDropRate,
             rarityCatchBonusPercent,
@@ -320,6 +321,10 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
         }
 
+        if (autoSearchRequiredVipLevel !== undefined && Number(autoSearchRequiredVipLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'autoSearchRequiredVipLevel phải >= 0' })
+        }
+
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
             return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
@@ -358,6 +363,7 @@ router.post('/', async (req, res) => {
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
             requiredPlayerLevel: requiredPlayerLevel !== undefined ? Math.max(1, Number(requiredPlayerLevel) || 1) : 1,
             requiredVipLevel: requiredVipLevel !== undefined ? Math.max(0, Number(requiredVipLevel) || 0) : 0,
+            autoSearchRequiredVipLevel: autoSearchRequiredVipLevel !== undefined ? Math.max(0, Number(autoSearchRequiredVipLevel) || 0) : 0,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
             rarityCatchBonusPercent: normalizedRarityCatchBonusPercent,
@@ -399,6 +405,7 @@ router.put('/:id', async (req, res) => {
             requiredSearches,
             requiredPlayerLevel,
             requiredVipLevel,
+            autoSearchRequiredVipLevel,
             encounterRate,
             itemDropRate,
             rarityCatchBonusPercent,
@@ -455,6 +462,10 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
         }
 
+        if (autoSearchRequiredVipLevel !== undefined && Number(autoSearchRequiredVipLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'autoSearchRequiredVipLevel phải >= 0' })
+        }
+
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
             return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
@@ -498,6 +509,9 @@ router.put('/:id', async (req, res) => {
         map.requiredVipLevel = requiredVipLevel !== undefined
             ? Math.max(0, Number(requiredVipLevel) || 0)
             : map.requiredVipLevel
+        map.autoSearchRequiredVipLevel = autoSearchRequiredVipLevel !== undefined
+            ? Math.max(0, Number(autoSearchRequiredVipLevel) || 0)
+            : map.autoSearchRequiredVipLevel
         map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
         map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate
         map.rarityCatchBonusPercent = rarityCatchBonusPercent !== undefined

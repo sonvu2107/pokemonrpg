@@ -7,7 +7,7 @@ import { gameApi } from '../../services/gameApi'
 import { getRarityStyle } from '../../utils/rarityStyles'
 import Modal from '../../components/Modal'
 import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
-import { hasVipAutoSearchAccess } from '../../utils/vip'
+import { getVipTierLevel, hasVipAutoSearchAccess } from '../../utils/vip'
 import { getVipAutoLimitConfig } from '../../utils/vipAutoLimits'
 import { inventoryQueryOptions } from '../../hooks/queries/gameQueries'
 
@@ -323,6 +323,10 @@ export default function MapPage() {
     const unlockRemainingVipLevels = Math.max(0, requiredVipLevel - currentVipLevel)
     const isCurrentMapEvent = isEventMapLike(map)
     const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
+    const effectiveVipLevel = Math.max(0, getVipTierLevel(user))
+    const autoSearchRequiredVipLevel = Math.max(0, Number(map?.autoSearchRequiredVipLevel) || 0)
+    const remainingAutoSearchVipLevels = Math.max(0, autoSearchRequiredVipLevel - effectiveVipLevel)
+    const canUseCurrentMapAutoSearch = canUseVipAutoSearch && !isCurrentMapEvent && remainingAutoSearchVipLevels === 0
     const autoSearchLimitConfig = getVipAutoLimitConfig(user, 'map-search')
     const autoSearchDurationLimitMinutes = autoSearchLimitConfig.durationMinutes
     const availablePokeballs = (Array.isArray(inventory) ? inventory : [])
@@ -1060,6 +1064,12 @@ export default function MapPage() {
                                     {unlockRemainingVipLevels > 0 ? <span className="ml-1 text-red-600 font-bold">- thiếu {unlockRemainingVipLevels} cấp VIP</span> : null}
                                 </div>
                             )}
+                            {autoSearchRequiredVipLevel > 0 && (
+                                <div className="mt-1 text-blue-800">
+                                    Mở auto tìm: <span className="font-bold">VIP {autoSearchRequiredVipLevel}</span> trở lên
+                                    {remainingAutoSearchVipLevels > 0 ? <span className="ml-1 text-red-600 font-bold">- còn thiếu {remainingAutoSearchVipLevels} cấp VIP</span> : null}
+                                </div>
+                            )}
                             {requiredSearches > 0 && (
                                 <div className="mt-1">
                                     Yêu cầu tìm kiếm: <span className="font-bold">{requiredSearches}</span> lần tại <Link to={unlockInfo?.sourceMap?.slug ? `/map/${unlockInfo.sourceMap.slug}` : '#'} className="font-bold text-blue-700 hover:underline">{unlockInfo?.sourceMap?.name || 'bản đồ trước'}</Link>.
@@ -1372,6 +1382,11 @@ export default function MapPage() {
                                                     return
                                                 }
 
+                                                if (remainingAutoSearchVipLevels > 0) {
+                                                    setLastResult({ encountered: false, message: `Map này yêu cầu VIP ${autoSearchRequiredVipLevel} để bật tự tìm kiếm.` })
+                                                    return
+                                                }
+
                                                 if (isLocked) {
                                                     setLastResult({ encountered: false, message: 'Bản đồ đang bị khóa. Không thể bật tự tìm kiếm.' })
                                                     return
@@ -1407,7 +1422,7 @@ export default function MapPage() {
                                                 setActionMessage(String(error?.message || 'Không thể cập nhật tự tìm kiếm.'))
                                             }
                                         }}
-                                        disabled={isLocked || !canUseVipAutoSearch}
+                                        disabled={isLocked || !canUseCurrentMapAutoSearch}
                                     className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoSearchEnabled
                                         ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
                                         : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
@@ -1429,7 +1444,7 @@ export default function MapPage() {
                                             markAutoSearchConfigDirty()
                                             setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
                                         }}
-                                        disabled={!canUseVipAutoSearch}
+                                        disabled={!canUseCurrentMapAutoSearch}
                                         className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
                                     >
                                         {AUTO_SEARCH_INTERVAL_OPTIONS.map((option) => (
@@ -1446,7 +1461,7 @@ export default function MapPage() {
                                             markAutoSearchConfigDirty()
                                             setAutoCatchFormMode(String(e.target.value || 'all'))
                                         }}
-                                        disabled={!canUseVipAutoSearch}
+                                        disabled={!canUseCurrentMapAutoSearch}
                                         className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
                                     >
                                         {AUTO_CATCH_FORM_OPTIONS.map((option) => (
@@ -1465,7 +1480,7 @@ export default function MapPage() {
                                         markAutoSearchConfigDirty()
                                         setAutoCatchBallId(String(e.target.value || ''))
                                     }}
-                                    disabled={!canUseVipAutoSearch}
+                                    disabled={!canUseCurrentMapAutoSearch}
                                     className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
                                 >
                                     {availablePokeballs.length === 0 && <option value="">Hết bóng</option>}
@@ -1498,7 +1513,7 @@ export default function MapPage() {
                                                             [rarityKey]: nextAction,
                                                         }))
                                                     }}
-                                                    disabled={!canUseVipAutoSearch}
+                                                    disabled={!canUseCurrentMapAutoSearch}
                                                     className="px-2 py-1 border border-slate-300 rounded bg-white text-[11px]"
                                                 >
                                                     {AUTO_SEARCH_ACTION_OPTIONS.map((option) => (
@@ -1529,9 +1544,11 @@ export default function MapPage() {
                                             ? 'Bản đồ này là sự kiện nên tự tìm bị khóa.'
                                             : (!canUseVipAutoSearch
                                                 ? 'Tự tìm kiếm là quyền lợi dành cho tài khoản VIP.'
+                                                : (remainingAutoSearchVipLevels > 0
+                                                    ? `Map này yêu cầu VIP ${autoSearchRequiredVipLevel} để bật tự tìm kiếm. Bạn còn thiếu ${remainingAutoSearchVipLevels} cấp VIP.`
                                                 : (autoSearchEnabled
                                                     ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
-                                                    : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.'))}
+                                                    : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.')))}
                                     </div>
 
                                     {autoSearchServerStatus && (
