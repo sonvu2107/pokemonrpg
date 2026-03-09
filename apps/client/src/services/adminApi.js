@@ -487,6 +487,70 @@ export const itemApi = {
     },
 }
 
+export const badgeAdminApi = {
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/badges?${query}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải danh sách huy hiệu')
+        }
+        return res.json()
+    },
+
+    async getById(id) {
+        const res = await fetch(`${API_URL}/admin/badges/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải huy hiệu')
+        }
+        return res.json()
+    },
+
+    async create(data = {}) {
+        const res = await fetch(`${API_URL}/admin/badges`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tạo huy hiệu')
+        }
+        return res.json()
+    },
+
+    async update(id, data = {}) {
+        const res = await fetch(`${API_URL}/admin/badges/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(data),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể cập nhật huy hiệu')
+        }
+        return res.json()
+    },
+
+    async delete(id) {
+        const res = await fetch(`${API_URL}/admin/badges/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể xóa huy hiệu')
+        }
+        return res.json()
+    },
+}
+
 // Move endpoints
 export const moveApi = {
     async list(params = {}) {

@@ -17,6 +17,7 @@ const PokemonBoxPage = lazy(() => import('./pages/PokemonBoxPage'))
 const PokemonInfoPage = lazy(() => import('./pages/PokemonInfoPage'))
 const ChangePartyPage = lazy(() => import('./pages/ChangePartyPage'))
 const PokedexPage = lazy(() => import('./pages/PokedexPage'))
+const BadgesPage = lazy(() => import('./pages/BadgesPage'))
 const RankingsPage = lazy(() => import('./pages/RankingsPage'))
 const PokemonRankingsPage = lazy(() => import('./pages/PokemonRankingsPage'))
 const PokemonRarityPage = lazy(() => import('./pages/PokemonRarityPage'))
@@ -45,6 +46,7 @@ const MapFormPage = lazy(() => import('./pages/admin/MapFormPage'))
 const DropRateManagerPage = lazy(() => import('./pages/admin/DropRateManagerPage'))
 const ItemListPage = lazy(() => import('./pages/admin/ItemListPage'))
 const ItemFormPage = lazy(() => import('./pages/admin/ItemFormPage'))
+const BadgeManagerPage = lazy(() => import('./pages/admin/BadgeManagerPage'))
 const MoveListPage = lazy(() => import('./pages/admin/MoveListPage'))
 const MoveFormPage = lazy(() => import('./pages/admin/MoveFormPage'))
 const ItemDropRateManagerPage = lazy(() => import('./pages/admin/ItemDropRateManagerPage'))
@@ -86,6 +88,7 @@ export default function App() {
                     <Route path="/map/:slug" element={<MapPage />} />
                     <Route path="/box" element={<PokemonBoxPage />} />
                     <Route path="/pokedex" element={<PokedexPage />} />
+                    <Route path="/badges" element={<BadgesPage />} />
                     <Route path="/pokemon/:id" element={<PokemonInfoPage />} />
                     <Route path="/items/:id" element={<ItemInfoPage />} />
                     <Route path="/pokemon/:id/evolve" element={<EvolvePage />} />
@@ -127,6 +130,7 @@ export default function App() {
                     <Route path="/admin/items" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemListPage /></AdminRouteGuard>} />
                     <Route path="/admin/items/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
                     <Route path="/admin/items/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
+                    <Route path="/admin/badges" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BADGES}><BadgeManagerPage /></AdminRouteGuard>} />
                     <Route path="/admin/moves" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveListPage /></AdminRouteGuard>} />
                     <Route path="/admin/moves/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />
                     <Route path="/admin/moves/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />

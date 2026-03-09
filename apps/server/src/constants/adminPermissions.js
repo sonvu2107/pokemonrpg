@@ -3,6 +3,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
     POKEMON: 'pokemon',
     MAPS: 'maps',
     ITEMS: 'items',
+    BADGES: 'badges',
     MOVES: 'moves',
     NEWS: 'news',
     BATTLE: 'battle',
@@ -31,7 +32,10 @@ export const getEffectiveAdminPermissions = (userLike) => {
     if (normalized === null || normalized.length === 0) {
         return [...ALL_ADMIN_PERMISSIONS]
     }
-    return normalized
+    return [...new Set([
+        ...normalized,
+        ADMIN_PERMISSIONS.BADGES,
+    ])]
 }
 
 export const hasAdminPermission = (userLike, requiredPermission) => {

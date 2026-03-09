@@ -9,6 +9,7 @@ import WeeklyLeaderboardReward from '../models/WeeklyLeaderboardReward.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { expireVipUsersIfNeeded, resetExpiredVipUser } from '../utils/vipStatus.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
+import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 import { extractClientIp } from '../utils/ipUtils.js'
 
 const router = express.Router()
@@ -269,6 +270,9 @@ const serializeAuthUser = (userLike, vipBenefitsLike = null) => {
         recoveryPinUpdatedAt: userLike.recoveryPinUpdatedAt || null,
         adminPermissions,
         completedBattleTrainers: userLike.completedBattleTrainers || [],
+        equippedBadgeIds: Array.isArray(userLike?.equippedBadgeIds)
+            ? userLike.equippedBadgeIds.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, BADGE_MAX_EQUIPPED)
+            : [],
         isBanned: Boolean(userLike.isBanned),
         banReason: userLike.banReason || '',
         bannedUntil: userLike.bannedUntil || null,
@@ -691,10 +695,18 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 
         const effectiveVipBenefits = mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits)
 
+        const badgeOverview = await buildBadgeOverviewForUser(user._id, { userDoc: user.toObject() })
+
         res.json({
             ok: true,
             user: serializeAuthUser(user, effectiveVipBenefits),
             playerState: serializePlayerState(playerState),
+            badges: {
+                equippedBadgeIds: badgeOverview.equippedBadgeIds,
+                equippedBadges: badgeOverview.equippedBadges,
+                activeBonuses: badgeOverview.activeBonuses,
+                maxEquipped: BADGE_MAX_EQUIPPED,
+            },
         })
     } catch (error) {
         next(error)

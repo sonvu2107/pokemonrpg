@@ -44,6 +44,7 @@ import {
 } from '../utils/autoTrainerUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { loadBattleBadgeBonusStateForUser } from '../utils/badgeUtils.js'
 import {
     buildTrainerBattleTeam,
     getOrCreateTrainerBattleSession,
@@ -246,6 +247,13 @@ const applyPercentBonus = (baseValue = 0, bonusPercent = 0) => {
     return Math.max(1, Math.floor(normalizedBase * (1 + (normalizedPercent / 100))))
 }
 
+const applyPercentMultiplier = (baseValue = 0, bonusPercent = 0) => {
+    const normalizedBase = Math.max(0, Number(baseValue) || 0)
+    const normalizedPercent = Math.max(0, Number(bonusPercent) || 0)
+    if (normalizedBase <= 0 || normalizedPercent <= 0) return normalizedBase
+    return normalizedBase * (1 + (normalizedPercent / 100))
+}
+
 const resolveWildPlayerBattleSnapshot = async (userId) => {
     const leadPartyPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ userId, location: 'party' }))
         .sort({ partyIndex: 1, _id: 1 })
@@ -267,7 +275,8 @@ const resolveWildPlayerBattleSnapshot = async (userId) => {
         resolvedForm,
     })
     const scaledStats = calcStatsForLevel(baseStats, level, species.rarity)
-    const maxHp = Math.max(1, calcMaxHp(baseStats?.hp, level, species.rarity))
+    const badgeBonusState = await loadBattleBadgeBonusStateForUser(userId, normalizePokemonTypes(species.types))
+    const maxHp = Math.max(1, applyPercentBonus(calcMaxHp(baseStats?.hp, level, species.rarity), badgeBonusState?.hpBonusPercent || 0))
     const defense = Math.max(
         1,
         Number(scaledStats?.def) ||
@@ -3167,7 +3176,11 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
             })
         }
 
-        const damage = rollDamage(encounter.level)
+        const badgeBonusState = await loadBattleBadgeBonusStateForUser(
+            userId,
+            Array.isArray(encounter.playerTypes) ? encounter.playerTypes : []
+        )
+        const damage = Math.max(1, Math.floor(applyPercentMultiplier(rollDamage(encounter.level), badgeBonusState?.damageBonusPercent || 0)))
         encounter.hp = Math.max(0, encounter.hp - damage)
         const defeatedWild = encounter.hp <= 0
 
@@ -3769,7 +3782,8 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             (20 + attackerLevel * 2)
         )
 
-        const playerMaxHp = Math.max(1, calcMaxHp(attackerBaseStats?.hp, attackerLevel, attackerSpecies.rarity))
+        const badgeBonusState = await loadBattleBadgeBonusStateForUser(req.user.userId, attackerTypes)
+        const playerMaxHp = Math.max(1, applyPercentBonus(calcMaxHp(attackerBaseStats?.hp, attackerLevel, attackerSpecies.rarity), badgeBonusState?.hpBonusPercent || 0))
         const parsedPlayerCurrentHp = Number(player.currentHp)
         let playerCurrentHp = clamp(
             Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
@@ -4352,7 +4366,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         const playerEffectiveSpeed = applyStatStageToValue(
-            Math.max(1, Number(attackerScaledStats?.spd) || 1),
+            Math.max(1, Math.floor(applyPercentMultiplier(Number(attackerScaledStats?.spd) || 1, badgeBonusState?.speedBonusPercent || 0))),
             playerStatStages?.spd
         )
         const opponentEffectiveSpeed = applyStatStageToValue(
@@ -4684,7 +4698,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             battleExtraLogs.push(`${targetName} được bảo vệ khỏi đòn chí mạng.`)
         }
         const playerCriticalMultiplier = didPlayerCritical ? 1.5 : 1
-        const playerDamageModifier = playerStabMultiplier * playerTypeEffectiveness.multiplier * playerCriticalMultiplier
+        const playerDamageModifier = playerStabMultiplier
+            * playerTypeEffectiveness.multiplier
+            * playerCriticalMultiplier
+            * (1 + (Math.max(0, Number(badgeBonusState?.damageBonusPercent) || 0) / 100))
 
         const onHitEffects = didPlayerMoveHit
             ? applyEffectSpecs({

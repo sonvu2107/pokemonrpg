@@ -142,6 +142,27 @@ export const api = {
         if (!res.ok) throw new Error(data.message || 'Cập nhật thất bại')
         return data
     },
+    async getBadges() {
+        const res = await fetch(`${API_URL}/badges`, {
+            headers: { ...authHeaders() },
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Không thể tải huy hiệu')
+        return data
+    },
+    async updateEquippedBadges(badgeIds = []) {
+        const res = await fetch(`${API_URL}/badges/equipped`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders(),
+            },
+            body: JSON.stringify({ badgeIds }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.message || 'Không thể cập nhật huy hiệu trưng bày')
+        return data
+    },
     async getBox(params = {}) {
         const query = new URLSearchParams(params).toString()
         const res = await fetch(`${API_URL}/box?${query}`, {

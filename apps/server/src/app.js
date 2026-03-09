@@ -23,10 +23,12 @@ import dailyRewardsAdminRoutes from './routes/admin/dailyRewards.js'
 import promoCodesAdminRoutes from './routes/admin/promoCodes.js'
 import leaderboardRewardsAdminRoutes from './routes/admin/leaderboardRewards.js'
 import auctionsAdminRoutes from './routes/admin/auctions.js'
+import badgesAdminRoutes from './routes/admin/badges.js'
 import messagesRoutes from './routes/messages.js'
 import promoCodeRoutes from './routes/promoCodes.js'
 import friendsRoutes from './routes/friends.js'
 import valleyRoutes from './routes/valley.js'
+import badgesRoutes from './routes/badges.js'
 import { authMiddleware, requireAdmin, requireAdminPermission } from './middleware/auth.js'
 import { apiLogger } from './middleware/apiLogger.js'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions.js'
@@ -191,12 +193,14 @@ app.use('/api/messages', messagesRoutes)
 app.use('/api/promo-codes', promoCodeRoutes)
 app.use('/api/friends', friendsRoutes)
 app.use('/api/valley', valleyRoutes)
+app.use('/api/badges', badgesRoutes)
 
 // Admin routes (protected with auth + requireAdmin + stricter rate limit)
 app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.POKEMON), pokemonAdminRoutes)
 app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), mapsAdminRoutes)
 app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), dropRatesAdminRoutes)
 app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.ITEMS), itemAdminRoutes)
+app.use('/api/admin/badges', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BADGES), badgesAdminRoutes)
 app.use('/api/admin/moves', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MOVES), moveAdminRoutes)
 app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), itemDropRatesAdminRoutes)
 app.use('/api/admin/users', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.USERS), userAdminRoutes)

@@ -83,6 +83,7 @@ export default function RightColumn() {
         { to: '/admin/pokemon', label: 'Quản lý Pokémon', permission: ADMIN_PERMISSIONS.POKEMON },
         { to: '/admin/maps', label: 'Quản lý Bản Đồ', permission: ADMIN_PERMISSIONS.MAPS },
         { to: '/admin/items', label: 'Quản lý Vật Phẩm', permission: ADMIN_PERMISSIONS.ITEMS },
+        { to: '/admin/badges', label: 'Quản lý Huy Hiệu', permission: ADMIN_PERMISSIONS.BADGES },
         { to: '/admin/moves', label: 'Quản lý Kỹ Năng', permission: ADMIN_PERMISSIONS.MOVES },
         { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
         { to: '/admin/battle', label: 'Quản lý Battle', permission: ADMIN_PERMISSIONS.BATTLE },
@@ -142,7 +143,7 @@ export default function RightColumn() {
                 <SidebarLink to="/profile">Hồ sơ ({user?.username || 'Khách'})</SidebarLink>
                 <SidebarLink to="/inventory">Túi đồ</SidebarLink>
                 <SidebarLink to="/profile/edit">Sửa hồ sơ</SidebarLink>
-                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Danh hiệu')}>Danh hiệu</SidebarLink>
+                <SidebarLink to="/badges">Huy hiệu</SidebarLink>
             </SidebarSection>
 
             <SidebarSection title="Pokemon" iconId={823}>

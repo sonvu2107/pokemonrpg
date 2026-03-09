@@ -220,6 +220,15 @@ const userSchema = new mongoose.Schema(
             type: [String],
             default: [],
         },
+        equippedBadgeIds: {
+            type: [
+                {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'BadgeDefinition',
+                }
+            ],
+            default: [],
+        },
         completedBattleTrainerReachedAt: {
             type: Map,
             of: Date,

@@ -6,6 +6,7 @@ const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
     map: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/town-map.png",
     items: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/potion.png",
+    badges: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/contest-pass.png",
     moves: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/tm-normal.png",
     news: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/oaks-letter.png",
     users: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/vs-seeker.png",
@@ -57,7 +58,7 @@ export default function AdminDashboard() {
     const groups = [
         {
             title: 'Dữ Liệu Game',
-            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.MOVES, ADMIN_PERMISSIONS.BATTLE, ADMIN_PERMISSIONS.REWARDS],
+            permissions: [ADMIN_PERMISSIONS.POKEMON, ADMIN_PERMISSIONS.MAPS, ADMIN_PERMISSIONS.ITEMS, ADMIN_PERMISSIONS.BADGES, ADMIN_PERMISSIONS.MOVES, ADMIN_PERMISSIONS.BATTLE, ADMIN_PERMISSIONS.REWARDS],
             cards: [
                 {
                     permission: ADMIN_PERMISSIONS.POKEMON,
@@ -74,6 +75,14 @@ export default function AdminDashboard() {
                     to: '/admin/items',
                     icon: ICONS.items,
                     color: 'amber',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.BADGES,
+                    title: 'Quản Lý Huy Hiệu',
+                    description: 'Tạo nhiệm vụ, ảnh huy hiệu và bonus trưng bày',
+                    to: '/admin/badges',
+                    icon: ICONS.badges,
+                    color: 'yellow',
                 },
                 {
                     permission: ADMIN_PERMISSIONS.MOVES,
