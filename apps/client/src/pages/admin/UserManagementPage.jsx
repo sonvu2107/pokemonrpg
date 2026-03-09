@@ -879,10 +879,10 @@ export default function UserManagementPage() {
 
             <div className="bg-white rounded-lg shadow-sm border border-blue-200 flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
                 <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full">
-                    <table className="w-full text-xs min-w-[1020px] lg:min-w-[1120px]">
-                        <thead className="bg-slate-50 text-slate-700 uppercase text-[11px] tracking-wide border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                    <table className="w-full text-sm text-slate-700 min-w-[1020px] lg:min-w-[1120px]">
+                        <thead className="bg-slate-50 text-slate-800 uppercase text-[11px] tracking-wide border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="px-3 py-2 text-center font-bold w-12">
+                                <th className="whitespace-nowrap px-3 py-3 text-center font-semibold w-12">
                                     <input
                                         type="checkbox"
                                         checked={allCurrentPageSelected}
@@ -892,14 +892,14 @@ export default function UserManagementPage() {
                                         title="Chọn tất cả tài khoản trong trang hiện tại"
                                     />
                                 </th>
-                                <th className="px-3 py-2 text-left font-bold min-w-[200px]">Email</th>
-                                <th className="px-3 py-2 text-left font-bold min-w-[140px]">Username</th>
-                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Trạng thái</th>
-                                <th className="px-3 py-2 text-left font-bold min-w-[130px]">IP gần nhất</th>
-                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Role</th>
-                                <th className="px-3 py-2 text-left font-bold min-w-[300px]">Admin Modules</th>
-                                <th className="px-3 py-2 text-center font-bold min-w-[220px]">Trao thưởng / Kiểm soát</th>
-                                <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Ngày tạo</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-left font-semibold min-w-[220px]">Email</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-left font-semibold min-w-[180px]">Username</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-center font-semibold">Trạng thái</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-left font-semibold min-w-[140px]">IP gần nhất</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-center font-semibold">Role</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-left font-semibold min-w-[300px]">Admin Modules</th>
+                                <th className="px-3 py-3 text-center font-semibold min-w-[260px]">Trao thưởng / Kiểm soát</th>
+                                <th className="whitespace-nowrap px-3 py-3 text-center font-semibold">Ngày tạo</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -918,8 +918,8 @@ export default function UserManagementPage() {
                                 ).trim()
 
                                 return (
-                                    <tr key={user._id} className="hover:bg-blue-50/30 transition-colors align-top">
-                                        <td className="px-3 py-2 text-center">
+                                    <tr key={user._id} className="align-middle transition-colors hover:bg-slate-50">
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-center">
                                             <input
                                                 type="checkbox"
                                                 checked={isSelected}
@@ -928,9 +928,9 @@ export default function UserManagementPage() {
                                                 className="accent-blue-600"
                                             />
                                         </td>
-                                        <td className="px-3 py-2 font-medium text-slate-800 break-all">{user.email}</td>
-                                        <td className="px-3 py-2 text-slate-600">{user.username || '-'}</td>
-                                        <td className="px-3 py-2 text-center">
+                                        <td className="px-3 py-3 align-middle font-medium text-slate-900 break-all">{user.email}</td>
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-slate-600">{user.username || '-'}</td>
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-center">
                                             {isUserCurrentlyBanned(user) ? (
                                                 <div className="inline-flex flex-col items-center gap-1">
                                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
@@ -951,7 +951,7 @@ export default function UserManagementPage() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 text-xs text-slate-600">
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-xs text-slate-600">
                                             {user.lastLoginIp ? (
                                                 <button
                                                     type="button"
@@ -965,18 +965,18 @@ export default function UserManagementPage() {
                                                 <span className="text-slate-400">--</span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 text-center">
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-center">
                                             <div className="inline-flex flex-col items-center gap-1">
                                                 <select
                                                     value={user.role}
                                                     onChange={(e) => handleRoleChange(user._id, e.target.value)}
                                                     disabled={roleUpdating}
-                                                    className={`px-3 py-1 rounded-md text-xs font-bold border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${user.role === 'admin'
-                                                        ? 'bg-amber-100 text-amber-700 border-amber-300'
+                                                    className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${user.role === 'admin'
+                                                        ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                                                         : (user.role === 'vip'
-                                                            ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                                                            : 'bg-slate-100 text-slate-700 border-slate-300')
-                                                        } ${roleUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-95'}`}
+                                                            ? 'bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100'
+                                                            : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100')
+                                                        } ${roleUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                                                 >
                                                     <option value="user">User</option>
                                                     <option value="vip">VIP</option>
@@ -1022,7 +1022,7 @@ export default function UserManagementPage() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-3 align-middle">
                                             {!isAdmin ? (
                                                 <span className="text-xs text-slate-400">Không áp dụng</span>
                                             ) : (
@@ -1050,48 +1050,48 @@ export default function UserManagementPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 text-center">
-                                            <div className="grid grid-cols-3 gap-1.5 max-w-[320px] mx-auto">
+                                        <td className="px-3 py-3 align-middle text-center">
+                                            <div className="flex flex-wrap justify-center gap-2 min-w-[260px] mx-auto">
                                                 <button
                                                     onClick={() => openPokemonGrantModal(user)}
-                                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold shadow-sm"
+                                                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors duration-200 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-600 hover:text-white"
                                                 >
                                                     Pokemon
                                                 </button>
                                                 <button
                                                     onClick={() => openItemGrantModal(user)}
-                                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-sm"
+                                                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors duration-200 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white"
                                                 >
                                                     Vật phẩm
                                                 </button>
                                                 <button
                                                     onClick={() => openVipBenefitModal(user)}
                                                     disabled={updatingVipBenefitUserId === user._id}
-                                                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-[11px] font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors duration-200 bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                     {updatingVipBenefitUserId === user._id ? 'Đang lưu...' : `VIP ${Number(user?.vipTierLevel || 0) > 0 ? `Lv.${user.vipTierLevel}` : ''}`.trim()}
                                                 </button>
                                                 <button
                                                     onClick={() => handleToggleUserBan(user)}
                                                     disabled={updatingBanUserId === user._id}
-                                                    className={`px-2 py-1 rounded text-[11px] font-bold shadow-sm disabled:opacity-50 ${isUserCurrentlyBanned(user)
-                                                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                                                        : 'bg-red-600 hover:bg-red-700 text-white'
+                                                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors duration-200 disabled:opacity-50 ${isUserCurrentlyBanned(user)
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-500 hover:text-white'
+                                                        : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-600 hover:text-white'
                                                         }`}
                                                 >
                                                     {updatingBanUserId === user._id
                                                         ? 'Đang cập nhật...'
-                                                        : (isUserCurrentlyBanned(user) ? 'Gỡ khóa TK' : 'Khóa TK')}
+                                                        : (isUserCurrentlyBanned(user) ? 'Gỡ khóa' : 'Khóa TK')}
                                                 </button>
                                                 <button
                                                     onClick={() => handleBanIpFromUser(user)}
-                                                    className="px-2 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold shadow-sm"
+                                                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors duration-200 bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-700 hover:text-white"
                                                 >
                                                     Ban IP
                                                 </button>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-2 text-center text-slate-500 text-xs whitespace-nowrap">
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-center text-slate-500 text-xs">
                                             {new Date(user.createdAt).toLocaleDateString('vi-VN')}
                                         </td>
                                     </tr>
@@ -1128,7 +1128,7 @@ export default function UserManagementPage() {
 
             {vipBenefitModal.open && vipBenefitModal.user && (
                 <div className="fixed inset-0 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white w-full max-w-lg rounded-lg border border-slate-200 shadow-2xl">
+                    <div className="bg-white w-full max-w-4xl rounded-lg border border-slate-200 shadow-2xl">
                         <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/60 flex items-center justify-between">
                             <div>
                                 <h3 className="text-lg font-bold text-amber-800">Quản lý quyền lợi VIP</h3>
@@ -1146,156 +1146,164 @@ export default function UserManagementPage() {
                             </button>
                         </div>
 
-                        <div className="p-5 space-y-4">
+                        <div className="p-5">
                             {vipBenefitModal.error && (
-                                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm font-medium">
+                                <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded text-sm font-medium mb-4">
                                     {vipBenefitModal.error}
                                 </div>
                             )}
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">Cấp VIP (VIP 1 - VIP X)</label>
-                                <p className="text-xs text-amber-700 mb-2">Bạn có thể chọn chính xác thời gian hết hạn VIP. Nếu không đổi thì mặc định là sau 1 tháng.</p>
-                                <select
-                                    value={vipBenefitModal.form.vipTierId}
-                                    onChange={(e) => updateVipBenefitFormField('vipTierId', e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                >
-                                    <option value="">Chọn cấp VIP</option>
-                                    {vipTiers.map((tier) => (
-                                        <option key={tier._id} value={tier._id}>
-                                            VIP {tier.level} - {tier.name || tier.code}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Cấp VIP (VIP 1 - VIP X)</label>
+                                        <p className="text-[11px] text-amber-700 mb-1.5 leading-tight">Bạn có thể chọn thời gian hết hạn cố định. Nếu không chọn sẽ mặc định cộng 1 tháng.</p>
+                                        <select
+                                            value={vipBenefitModal.form.vipTierId}
+                                            onChange={(e) => updateVipBenefitFormField('vipTierId', e.target.value)}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            <option value="">Chọn cấp VIP</option>
+                                            {vipTiers.map((tier) => (
+                                                <option key={tier._id} value={tier._id}>
+                                                    VIP {tier.level} - {tier.name || tier.code}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">Thời gian hết hạn VIP</label>
-                                <input
-                                    type="datetime-local"
-                                    value={vipBenefitModal.form.vipExpiresAt}
-                                    onChange={(e) => updateVipBenefitFormField('vipExpiresAt', e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                />
-                            </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Thời gian hết hạn VIP</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={vipBenefitModal.form.vipExpiresAt}
+                                            onChange={(e) => updateVipBenefitFormField('vipExpiresAt', e.target.value)}
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">Danh hiệu VIP</label>
-                                <input
-                                    type="text"
-                                    maxLength={80}
-                                    value={vipBenefitModal.form.title}
-                                    onChange={(e) => updateVipBenefitFormField('title', e.target.value)}
-                                    placeholder="VD: VIP Kim Cương"
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                />
-                            </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Danh hiệu VIP</label>
+                                        <input
+                                            type="text"
+                                            maxLength={80}
+                                            value={vipBenefitModal.form.title}
+                                            onChange={(e) => updateVipBenefitFormField('title', e.target.value)}
+                                            placeholder="VD: VIP Kim Cương"
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">URL ảnh danh hiệu VIP</label>
-                                <input
-                                    type="url"
-                                    value={vipBenefitModal.form.titleImageUrl}
-                                    onChange={(e) => updateVipBenefitFormField('titleImageUrl', e.target.value)}
-                                    placeholder="https://..."
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                />
-                            </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">URL ảnh danh hiệu VIP</label>
+                                        <input
+                                            type="url"
+                                            value={vipBenefitModal.form.titleImageUrl}
+                                            onChange={(e) => updateVipBenefitFormField('titleImageUrl', e.target.value)}
+                                            placeholder="https://..."
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">Avatar frame URL</label>
-                                <input
-                                    type="url"
-                                    value={vipBenefitModal.form.avatarFrameUrl}
-                                    onChange={(e) => updateVipBenefitFormField('avatarFrameUrl', e.target.value)}
-                                    placeholder="https://..."
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                />
-                            </div>
-
-                            <label className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 bg-slate-50">
-                                <span className="text-sm font-semibold text-slate-700">Cho phép auto tìm kiếm</span>
-                                <input
-                                    type="checkbox"
-                                    checked={Boolean(vipBenefitModal.form.autoSearchEnabled)}
-                                    onChange={(e) => updateVipBenefitFormField('autoSearchEnabled', e.target.checked)}
-                                    className="accent-amber-600"
-                                />
-                            </label>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">Thời gian auto tìm (phút)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={vipBenefitModal.form.autoSearchDurationMinutes}
-                                        onChange={(e) => updateVipBenefitFormField('autoSearchDurationMinutes', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    />
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Avatar frame URL</label>
+                                        <input
+                                            type="url"
+                                            value={vipBenefitModal.form.avatarFrameUrl}
+                                            onChange={(e) => updateVipBenefitFormField('avatarFrameUrl', e.target.value)}
+                                            placeholder="https://..."
+                                            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">Số lượt auto tìm / ngày</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={vipBenefitModal.form.autoSearchUsesPerDay}
-                                        onChange={(e) => updateVipBenefitFormField('autoSearchUsesPerDay', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    />
+
+                                <div className="space-y-4">
+                                    <div className="space-y-3 bg-slate-50 p-3 rounded-md border border-slate-200">
+                                        <label className="flex items-center justify-between gap-3">
+                                            <span className="text-sm font-semibold text-slate-700">Cho phép auto tìm kiếm</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(vipBenefitModal.form.autoSearchEnabled)}
+                                                onChange={(e) => updateVipBenefitFormField('autoSearchEnabled', e.target.checked)}
+                                                className="accent-amber-600"
+                                            />
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 mb-1">Thời gian (phút)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={vipBenefitModal.form.autoSearchDurationMinutes}
+                                                    onChange={(e) => updateVipBenefitFormField('autoSearchDurationMinutes', e.target.value)}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 mb-1">Số lượt / ngày</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={vipBenefitModal.form.autoSearchUsesPerDay}
+                                                    onChange={(e) => updateVipBenefitFormField('autoSearchUsesPerDay', e.target.value)}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3 bg-slate-50 p-3 rounded-md border border-slate-200">
+                                        <label className="flex items-center justify-between gap-3">
+                                            <span className="text-sm font-semibold text-slate-700">Cho phép auto battle trainer</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(vipBenefitModal.form.autoBattleTrainerEnabled)}
+                                                onChange={(e) => updateVipBenefitFormField('autoBattleTrainerEnabled', e.target.checked)}
+                                                className="accent-amber-600"
+                                            />
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 mb-1">Thời gian (phút)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={vipBenefitModal.form.autoBattleTrainerDurationMinutes}
+                                                    onChange={(e) => updateVipBenefitFormField('autoBattleTrainerDurationMinutes', e.target.value)}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-slate-600 mb-1">Số lượt / ngày</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={vipBenefitModal.form.autoBattleTrainerUsesPerDay}
+                                                    onChange={(e) => updateVipBenefitFormField('autoBattleTrainerUsesPerDay', e.target.value)}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <label className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2 bg-slate-50">
-                                <span className="text-sm font-semibold text-slate-700">Cho phép auto battle trainer</span>
-                                <input
-                                    type="checkbox"
-                                    checked={Boolean(vipBenefitModal.form.autoBattleTrainerEnabled)}
-                                    onChange={(e) => updateVipBenefitFormField('autoBattleTrainerEnabled', e.target.checked)}
-                                    className="accent-amber-600"
-                                />
-                            </label>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">Thời gian auto battle (phút)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={vipBenefitModal.form.autoBattleTrainerDurationMinutes}
-                                        onChange={(e) => updateVipBenefitFormField('autoBattleTrainerDurationMinutes', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">Số lượt auto battle / ngày</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={vipBenefitModal.form.autoBattleTrainerUsesPerDay}
-                                        onChange={(e) => updateVipBenefitFormField('autoBattleTrainerUsesPerDay', e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-1">
-                                <button
-                                    type="button"
-                                    onClick={submitVipBenefitModal}
-                                    disabled={vipBenefitModal.submitting}
-                                    className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-sm font-bold disabled:opacity-50"
-                                >
-                                    {vipBenefitModal.submitting ? 'Đang lưu...' : 'Lưu quyền lợi'}
-                                </button>
+                            <div className="flex justify-end gap-3 pt-4 mt-5 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={() => closeVipBenefitModal()}
                                     disabled={vipBenefitModal.submitting}
-                                    className="flex-1 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50"
+                                    className="px-6 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-bold disabled:opacity-50 min-w-[100px]"
                                 >
                                     Hủy
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={submitVipBenefitModal}
+                                    disabled={vipBenefitModal.submitting}
+                                    className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-sm font-bold disabled:opacity-50 shadow-sm min-w-[140px]"
+                                >
+                                    {vipBenefitModal.submitting ? 'Đang lưu...' : 'Lưu quyền lợi'}
                                 </button>
                             </div>
                         </div>

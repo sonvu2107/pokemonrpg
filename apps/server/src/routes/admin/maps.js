@@ -6,6 +6,7 @@ import upload from '../../middleware/upload.js'
 import { uploadMapImageToCloudinary, uploadSpecialPokemonImageToCloudinary } from '../../utils/cloudinary.js'
 import { invalidateOrderedMapsCache } from '../../utils/orderedMapsCache.js'
 import { invalidateMapDropRateCache } from '../../utils/dropRateCache.js'
+import { invalidatePublicMapsCache } from '../maps.js'
 
 const router = express.Router()
 
@@ -373,6 +374,7 @@ router.post('/', async (req, res) => {
         await map.save()
         invalidateOrderedMapsCache()
         invalidateMapDropRateCache()
+        invalidatePublicMapsCache()
 
         res.status(201).json({ ok: true, map })
     } catch (error) {
@@ -522,6 +524,7 @@ router.put('/:id', async (req, res) => {
         await map.save()
         invalidateOrderedMapsCache()
         invalidateMapDropRateCache(map._id)
+        invalidatePublicMapsCache()
 
         res.json({ ok: true, map })
     } catch (error) {
@@ -543,6 +546,7 @@ router.delete('/:id', async (req, res) => {
         await map.deleteOne()
         invalidateOrderedMapsCache()
         invalidateMapDropRateCache(map._id)
+        invalidatePublicMapsCache()
 
         res.json({ ok: true, message: 'Đã xóa bản đồ' })
     } catch (error) {

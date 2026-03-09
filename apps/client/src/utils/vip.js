@@ -41,11 +41,15 @@ export const getVipAvatarFrameUrl = (userLike) => {
 }
 
 export const hasVipAutoSearchAccess = (userLike) => {
-    if (!isVipRole(userLike)) return false
-    return userLike?.vipBenefits?.autoSearchEnabled !== false
+    const level = getVipTierLevel(userLike)
+    const role = normalizeRole(userLike?.role)
+    const roleEligible = role === 'vip' || role === 'admin'
+    return userLike?.vipBenefits?.autoSearchEnabled !== false && (roleEligible || level > 0)
 }
 
 export const hasVipAutoBattleTrainerAccess = (userLike) => {
-    if (!isVipRole(userLike)) return false
-    return userLike?.vipBenefits?.autoBattleTrainerEnabled !== false
+    const level = getVipTierLevel(userLike)
+    const role = normalizeRole(userLike?.role)
+    const roleEligible = role === 'vip' || role === 'admin'
+    return userLike?.vipBenefits?.autoBattleTrainerEnabled !== false && (roleEligible || level > 0)
 }

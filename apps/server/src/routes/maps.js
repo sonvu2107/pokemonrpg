@@ -18,6 +18,18 @@ let allMapsCache = {
 
 const mapDetailCache = new globalThis.Map()
 
+export const invalidatePublicMapsCache = () => {
+    legendaryMapsCache = {
+        value: null,
+        expiresAt: 0,
+    }
+    allMapsCache = {
+        value: null,
+        expiresAt: 0,
+    }
+    mapDetailCache.clear()
+}
+
 const pruneMapDetailCache = () => {
     const now = Date.now()
     for (const [key, cached] of mapDetailCache.entries()) {
