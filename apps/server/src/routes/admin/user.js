@@ -173,6 +173,28 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
     }
 }
 
+const resetDailyAutoUsage = (userDoc) => {
+    if (!userDoc || typeof userDoc !== 'object') return
+
+    userDoc.autoSearch = {
+        ...userDoc.autoSearch,
+        dayCount: 0,
+        dayRuntimeMs: 0,
+        lastRuntimeAt: null,
+        startedAt: null,
+        enabled: false,
+    }
+
+    userDoc.autoTrainer = {
+        ...userDoc.autoTrainer,
+        dayCount: 0,
+        dayRuntimeMs: 0,
+        lastRuntimeAt: null,
+        startedAt: null,
+        enabled: false,
+    }
+}
+
 const buildVipTierResponse = (tierLike) => {
     const tier = tierLike?.toObject ? tierLike.toObject() : tierLike
     if (!tier) return null
@@ -782,9 +804,12 @@ router.put('/:id/vip-tier', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const previousVipTierLevel = Math.max(0, parseInt(user?.vipTierLevel, 10) || 0)
+        const nextVipTierLevel = Math.max(1, parseInt(tier.level, 10) || 1)
+
         user.role = 'vip'
         user.vipTierId = tier._id
-        user.vipTierLevel = Math.max(1, parseInt(tier.level, 10) || 1)
+        user.vipTierLevel = nextVipTierLevel
         user.vipTierCode = normalizeVipTierCode(tier.code)
         user.vipExpiresAt = expiresAt || addOneMonth(new Date())
 
@@ -794,6 +819,10 @@ router.put('/:id/vip-tier', async (req, res) => {
                 ...normalizeVipBenefits(user.vipBenefits),
                 ...tierBenefits,
             }
+        }
+
+        if (nextVipTierLevel > previousVipTierLevel) {
+            resetDailyAutoUsage(user)
         }
 
         await user.save()
