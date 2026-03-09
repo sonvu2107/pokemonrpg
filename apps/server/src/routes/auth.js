@@ -14,6 +14,7 @@ const router = express.Router()
 const RECOVERY_PIN_REGEX = /^\d{6}$/
 const REGISTRATION_IP_WINDOW_MS = 24 * 60 * 60 * 1000
 const COSMETIC_REWARD_TYPES = Object.freeze(['titleImage', 'avatarFrame'])
+const WEEKLY_COSMETIC_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 
 const createRateLimitHandler = (code, fallbackMessage, fallbackWindowMs) => (req, res) => {
     const resetTimeMs = req.rateLimit?.resetTime
@@ -111,6 +112,71 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
     }
 }
 
+const getRewardGrantedAt = (rewardLike = {}) => {
+    const rewardedAt = new Date(rewardLike?.rewardedAt || rewardLike?.createdAt || 0)
+    if (Number.isNaN(rewardedAt.getTime())) {
+        return null
+    }
+    return rewardedAt
+}
+
+const getRewardExpiresAt = (rewardLike = {}) => {
+    const grantedAt = getRewardGrantedAt(rewardLike)
+    if (!grantedAt) return null
+    return new Date(grantedAt.getTime() + WEEKLY_COSMETIC_DURATION_MS)
+}
+
+const isWeeklyCosmeticRewardActive = (rewardLike = {}, nowMs = Date.now()) => {
+    const expiresAt = getRewardExpiresAt(rewardLike)
+    if (!expiresAt) return false
+    return expiresAt.getTime() > nowMs
+}
+
+const hasSameVipVisualBenefits = (leftLike = {}, rightLike = {}) => {
+    const left = normalizeVipBenefits(leftLike)
+    const right = normalizeVipBenefits(rightLike)
+    return left.title === right.title
+        && left.titleImageUrl === right.titleImageUrl
+        && left.avatarFrameUrl === right.avatarFrameUrl
+        && left.autoSearchEnabled === right.autoSearchEnabled
+        && left.autoSearchDurationMinutes === right.autoSearchDurationMinutes
+        && left.autoSearchUsesPerDay === right.autoSearchUsesPerDay
+        && left.autoBattleTrainerEnabled === right.autoBattleTrainerEnabled
+        && left.autoBattleTrainerDurationMinutes === right.autoBattleTrainerDurationMinutes
+        && left.autoBattleTrainerUsesPerDay === right.autoBattleTrainerUsesPerDay
+}
+
+const sanitizeEquippedProfileCosmetics = (currentBenefitsLike = {}, tierBenefitsLike = {}, activeRewardRows = []) => {
+    const currentBenefits = normalizeVipBenefits(currentBenefitsLike)
+    const tierBenefits = normalizeVipBenefits(tierBenefitsLike)
+    const nextBenefits = {
+        ...currentBenefits,
+    }
+
+    const activeTitleSet = new Set(
+        activeRewardRows
+            .filter((row) => String(row?.rewardType || '').trim() === 'titleImage')
+            .map((row) => String(row?.rewardTitleImageUrl || '').trim())
+            .filter(Boolean)
+    )
+    const activeFrameSet = new Set(
+        activeRewardRows
+            .filter((row) => String(row?.rewardType || '').trim() === 'avatarFrame')
+            .map((row) => String(row?.rewardAvatarFrameUrl || '').trim())
+            .filter(Boolean)
+    )
+
+    if (nextBenefits.titleImageUrl && nextBenefits.titleImageUrl !== tierBenefits.titleImageUrl && !activeTitleSet.has(nextBenefits.titleImageUrl)) {
+        nextBenefits.titleImageUrl = ''
+    }
+
+    if (nextBenefits.avatarFrameUrl && nextBenefits.avatarFrameUrl !== tierBenefits.avatarFrameUrl && !activeFrameSet.has(nextBenefits.avatarFrameUrl)) {
+        nextBenefits.avatarFrameUrl = ''
+    }
+
+    return nextBenefits
+}
+
 const buildOwnedProfileCosmetics = (rewardRows = [], currentBenefitsLike = {}) => {
     const currentBenefits = normalizeVipBenefits(currentBenefitsLike)
     const titleMap = new Map()
@@ -122,6 +188,7 @@ const buildOwnedProfileCosmetics = (rewardRows = [], currentBenefitsLike = {}) =
         if (!normalizedImageUrl) return
         const targetMap = normalizedType === 'titleImage' ? titleMap : frameMap
         if (!targetMap.has(normalizedImageUrl)) {
+            const expiresAt = rewardedAt ? new Date(new Date(rewardedAt).getTime() + WEEKLY_COSMETIC_DURATION_MS) : null
             targetMap.set(normalizedImageUrl, {
                 imageUrl: normalizedImageUrl,
                 rewardId: String(rewardId || '').trim(),
@@ -129,6 +196,7 @@ const buildOwnedProfileCosmetics = (rewardRows = [], currentBenefitsLike = {}) =
                 mode: String(mode || '').trim(),
                 rank: Math.max(0, Number(rank || 0)),
                 rewardedAt: rewardedAt || null,
+                expiresAt,
             })
         }
     }
@@ -583,7 +651,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const [playerState, vipTier] = await Promise.all([
+        const [playerState, vipTier, rewardRows] = await Promise.all([
             PlayerState.findOne({ userId: user._id }),
             (() => {
                 if (user?.vipTierId) {
@@ -595,9 +663,27 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 }
                 return Promise.resolve(null)
             })(),
+            WeeklyLeaderboardReward.find({
+                userId: user._id,
+                rewardType: { $in: COSMETIC_REWARD_TYPES },
+            })
+                .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl rewardedAt createdAt')
+                .sort({ rewardedAt: -1, _id: -1 })
+                .lean(),
         ])
 
-        const effectiveVipBenefits = mergeVipVisualBenefits(user?.vipBenefits, vipTier?.benefits)
+        const activeRewardRows = rewardRows.filter((row) => isWeeklyCosmeticRewardActive(row))
+        const sanitizedVipBenefits = sanitizeEquippedProfileCosmetics(user?.vipBenefits, vipTier?.benefits, activeRewardRows)
+
+        if (!hasSameVipVisualBenefits(user?.vipBenefits, sanitizedVipBenefits)) {
+            user.vipBenefits = {
+                ...user.vipBenefits,
+                ...sanitizedVipBenefits,
+            }
+            await user.save()
+        }
+
+        const effectiveVipBenefits = mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits)
 
         res.json({
             ok: true,
@@ -613,7 +699,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 router.get('/profile-cosmetics', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select('vipBenefits')
+            .select('vipBenefits vipTierId vipTierLevel')
             .lean()
 
         if (!user) {
@@ -623,16 +709,30 @@ router.get('/profile-cosmetics', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const rewardRows = await WeeklyLeaderboardReward.find({
-            userId: req.user.userId,
-            rewardType: { $in: COSMETIC_REWARD_TYPES },
-        })
-            .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
-            .sort({ rewardedAt: -1, _id: -1 })
-            .lean()
+        const [vipTier, rewardRows] = await Promise.all([
+            (() => {
+                if (user?.vipTierId) {
+                    return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
+                }
+                const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
+                if (vipTierLevel > 0) {
+                    return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
+                }
+                return Promise.resolve(null)
+            })(),
+            WeeklyLeaderboardReward.find({
+                userId: req.user.userId,
+                rewardType: { $in: COSMETIC_REWARD_TYPES },
+            })
+                .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
+                .sort({ rewardedAt: -1, _id: -1 })
+                .lean(),
+        ])
 
-        const owned = buildOwnedProfileCosmetics(rewardRows, user?.vipBenefits)
-        const currentVipBenefits = normalizeVipBenefits(user?.vipBenefits)
+        const activeRewardRows = rewardRows.filter((row) => isWeeklyCosmeticRewardActive(row))
+        const sanitizedVipBenefits = sanitizeEquippedProfileCosmetics(user?.vipBenefits, vipTier?.benefits, activeRewardRows)
+        const owned = buildOwnedProfileCosmetics(activeRewardRows, mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits))
+        const currentVipBenefits = mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits)
 
         res.json({
             ok: true,
@@ -668,19 +768,33 @@ router.put('/profile-cosmetics', authMiddleware, async (req, res, next) => {
             })
         }
 
-        const rewardRows = await WeeklyLeaderboardReward.find({
-            userId: req.user.userId,
-            rewardType: { $in: COSMETIC_REWARD_TYPES },
-        })
-            .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
-            .sort({ rewardedAt: -1, _id: -1 })
-            .lean()
+        const [vipTier, rewardRows] = await Promise.all([
+            (() => {
+                if (user?.vipTierId) {
+                    return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
+                }
+                const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
+                if (vipTierLevel > 0) {
+                    return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
+                }
+                return Promise.resolve(null)
+            })(),
+            WeeklyLeaderboardReward.find({
+                userId: req.user.userId,
+                rewardType: { $in: COSMETIC_REWARD_TYPES },
+            })
+                .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl weekStart mode rank rewardedAt createdAt')
+                .sort({ rewardedAt: -1, _id: -1 })
+                .lean(),
+        ])
 
-        const owned = buildOwnedProfileCosmetics(rewardRows, user?.vipBenefits)
+        const activeRewardRows = rewardRows.filter((row) => isWeeklyCosmeticRewardActive(row))
+        const sanitizedVipBenefits = sanitizeEquippedProfileCosmetics(user?.vipBenefits, vipTier?.benefits, activeRewardRows)
+        const owned = buildOwnedProfileCosmetics(activeRewardRows, mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits))
         const ownedTitleSet = new Set(owned.titleImages.map((entry) => String(entry?.imageUrl || '').trim()).filter(Boolean))
         const ownedFrameSet = new Set(owned.avatarFrames.map((entry) => String(entry?.imageUrl || '').trim()).filter(Boolean))
 
-        const currentBenefits = normalizeVipBenefits(user.vipBenefits)
+        const currentBenefits = normalizeVipBenefits(sanitizedVipBenefits)
         const nextBenefits = {
             ...currentBenefits,
         }

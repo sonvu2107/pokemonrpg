@@ -7,6 +7,7 @@ import Pokemon from '../../models/Pokemon.js'
 import UserInventory from '../../models/UserInventory.js'
 import UserPokemon from '../../models/UserPokemon.js'
 import WeeklyLeaderboardReward from '../../models/WeeklyLeaderboardReward.js'
+import LeaderboardCosmeticConfig from '../../models/LeaderboardCosmeticConfig.js'
 import upload from '../../middleware/upload.js'
 import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 
@@ -15,6 +16,7 @@ const router = express.Router()
 const VALID_MODES = new Set(['wealth', 'trainerBattle', 'lc'])
 const VALID_REWARD_TYPES = new Set(['platinumCoins', 'moonPoints', 'item', 'pokemon', 'titleImage', 'avatarFrame'])
 const COSMETIC_REWARD_TYPE_SET = new Set(['titleImage', 'avatarFrame'])
+const COSMETIC_CONFIG_RANKS = [1, 2, 3]
 let rewardIndexesSyncPromise = null
 
 const ensureRewardIndexesSynced = async () => {
@@ -190,6 +192,15 @@ const serializeRewardEntry = (entry = {}) => ({
     },
 })
 
+const serializeCosmeticConfig = (entry = {}) => ({
+    id: String(entry?._id || '').trim(),
+    mode: String(entry?.mode || 'wealth').trim(),
+    rank: Math.max(1, Number(entry?.rank || 1)),
+    titleImageUrl: String(entry?.titleImageUrl || '').trim(),
+    avatarFrameUrl: String(entry?.avatarFrameUrl || '').trim(),
+    updatedAt: entry?.updatedAt || entry?.createdAt || null,
+})
+
 // POST /api/admin/leaderboard-rewards/upload-image
 router.post('/upload-image', upload.single('image'), async (req, res) => {
     try {
@@ -212,6 +223,66 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
     } catch (error) {
         console.error('POST /api/admin/leaderboard-rewards/upload-image error:', error)
         return res.status(500).json({ ok: false, message: error.message || 'Tải ảnh thất bại' })
+    }
+})
+
+// GET /api/admin/leaderboard-rewards/cosmetic-configs?mode=wealth
+router.get('/cosmetic-configs', async (req, res) => {
+    try {
+        const mode = normalizeMode(req.query.mode)
+        if (!VALID_MODES.has(mode)) {
+            return res.status(400).json({ ok: false, message: 'Mode leaderboard không hợp lệ' })
+        }
+
+        const rows = await LeaderboardCosmeticConfig.find({ mode, rank: { $in: COSMETIC_CONFIG_RANKS } })
+            .sort({ rank: 1, _id: 1 })
+            .lean()
+        const rowByRank = new Map(rows.map((entry) => [Number(entry?.rank || 0), entry]))
+
+        return res.json({
+            ok: true,
+            mode,
+            configs: COSMETIC_CONFIG_RANKS.map((rank) => serializeCosmeticConfig(rowByRank.get(rank) || { mode, rank })),
+        })
+    } catch (error) {
+        console.error('GET /api/admin/leaderboard-rewards/cosmetic-configs error:', error)
+        return res.status(500).json({ ok: false, message: 'Không thể tải cấu hình khung/danh hiệu top tuần' })
+    }
+})
+
+// PUT /api/admin/leaderboard-rewards/cosmetic-configs/:mode/:rank
+router.put('/cosmetic-configs/:mode/:rank', async (req, res) => {
+    try {
+        const mode = normalizeMode(req.params.mode)
+        const rank = clamp(toSafeInt(req.params.rank, 0), 0, 999)
+        if (!VALID_MODES.has(mode)) {
+            return res.status(400).json({ ok: false, message: 'Mode leaderboard không hợp lệ' })
+        }
+        if (!COSMETIC_CONFIG_RANKS.includes(rank)) {
+            return res.status(400).json({ ok: false, message: 'Chỉ hỗ trợ cấu hình top 1-3' })
+        }
+
+        const row = await LeaderboardCosmeticConfig.findOneAndUpdate(
+            { mode, rank },
+            {
+                $set: {
+                    mode,
+                    rank,
+                    titleImageUrl: String(req.body?.titleImageUrl || '').trim(),
+                    avatarFrameUrl: String(req.body?.avatarFrameUrl || '').trim(),
+                },
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        ).lean()
+
+        return res.json({
+            ok: true,
+            message: `Đã lưu cấu hình cosmetic cho top ${rank}`,
+            config: serializeCosmeticConfig(row),
+        })
+    } catch (error) {
+        console.error('PUT /api/admin/leaderboard-rewards/cosmetic-configs/:mode/:rank error:', error)
+        return res.status(500).json({ ok: false, message: 'Không thể lưu cấu hình khung/danh hiệu top tuần' })
     }
 })
 
@@ -378,12 +449,6 @@ router.post('/award', async (req, res) => {
 
             const titleImageUrl = String(rawEntry?.titleImageUrl || '').trim()
             const avatarFrameUrl = String(rawEntry?.avatarFrameUrl || '').trim()
-            if (rewardType === 'titleImage' && !titleImageUrl) {
-                return res.status(400).json({ ok: false, message: 'Vui lòng chọn ảnh danh hiệu trước khi trao thưởng' })
-            }
-            if (rewardType === 'avatarFrame' && !avatarFrameUrl) {
-                return res.status(400).json({ ok: false, message: 'Vui lòng chọn ảnh khung avatar trước khi trao thưởng' })
-            }
 
             normalizedRewardEntries.push({
                 rewardType,
@@ -403,6 +468,18 @@ router.post('/award', async (req, res) => {
         const rank = Math.max(1, Number.parseInt(req.body?.rank, 10) || 1)
         const scoreValue = Math.max(0, Number(req.body?.scoreValue || 0))
         const note = String(req.body?.note || '').trim().slice(0, 300)
+
+        let cosmeticConfig = null
+        if (normalizedRewardEntries.some((entry) => COSMETIC_REWARD_TYPE_SET.has(entry.rewardType))) {
+            if (!COSMETIC_CONFIG_RANKS.includes(rank)) {
+                return res.status(400).json({ ok: false, message: 'Khung và danh hiệu top tuần chỉ hỗ trợ top 1-3' })
+            }
+
+            cosmeticConfig = await LeaderboardCosmeticConfig.findOne({ mode, rank }).lean()
+            if (!cosmeticConfig) {
+                return res.status(400).json({ ok: false, message: `Chưa cấu hình khung/danh hiệu cố định cho top ${rank}` })
+            }
+        }
 
         const [targetUser, rewardedBy] = await Promise.all([
             User.findById(targetUserId).select('username').lean(),
@@ -574,16 +651,16 @@ router.post('/award', async (req, res) => {
             }
 
             if (rewardType === 'titleImage') {
-                rewardTitleImageUrl = String(rewardEntry?.titleImageUrl || '').trim()
+                rewardTitleImageUrl = String(cosmeticConfig?.titleImageUrl || rewardEntry?.titleImageUrl || '').trim()
                 if (!rewardTitleImageUrl) {
-                    return res.status(400).json({ ok: false, message: 'Ảnh danh hiệu không hợp lệ' })
+                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh danh hiệu cho top ${rank}` })
                 }
             }
 
             if (rewardType === 'avatarFrame') {
-                rewardAvatarFrameUrl = String(rewardEntry?.avatarFrameUrl || '').trim()
+                rewardAvatarFrameUrl = String(cosmeticConfig?.avatarFrameUrl || rewardEntry?.avatarFrameUrl || '').trim()
                 if (!rewardAvatarFrameUrl) {
-                    return res.status(400).json({ ok: false, message: 'Ảnh khung avatar không hợp lệ' })
+                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh khung avatar cho top ${rank}` })
                 }
             }
 

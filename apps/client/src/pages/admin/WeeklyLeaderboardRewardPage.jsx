@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../../services/gameApi'
-import { leaderboardRewardApi } from '../../services/adminApi'
+import { leaderboardRewardApi, userApi } from '../../services/adminApi'
 import { uploadToCloudinary } from '../../utils/cloudinaryUtils'
 
 const MODE_OPTIONS = [
@@ -21,6 +21,7 @@ const REWARD_TYPE_OPTIONS = [
 
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
 const POKEMON_MODAL_PAGE_SIZE = 40
+const COSMETIC_CONFIG_RANKS = [1, 2, 3]
 
 const normalizeFormId = (value = 'normal') => String(value || 'normal').trim().toLowerCase() || 'normal'
 
@@ -117,9 +118,17 @@ const validateImageFile = (file) => {
     return ''
 }
 
-const buildRewardStatusByUserId = (rewardRows = []) => {
+const buildRewardStatusByUserId = (rewardRows = [], modeFilter = '') => {
+    const normalizedModeFilter = String(modeFilter || '').trim()
     const map = {}
     for (const entry of rewardRows) {
+        if (normalizedModeFilter) {
+            const entryMode = String(entry?.mode || '').trim()
+            if (entryMode !== normalizedModeFilter) {
+                continue
+            }
+        }
+
         const userId = String(entry?.userId || '').trim()
         if (!userId) continue
         if (!map[userId]) {
@@ -145,12 +154,28 @@ const buildRewardStatusByUserId = (rewardRows = []) => {
     return map
 }
 
+const createDefaultCosmeticConfigs = (mode) => COSMETIC_CONFIG_RANKS.map((rank) => ({
+    id: '',
+    mode,
+    rank,
+    titleImageUrl: '',
+    avatarFrameUrl: '',
+}))
+
+const getCosmeticConfigForRank = (configs = [], rank) => {
+    const safeRank = Math.max(1, Number.parseInt(rank, 10) || 1)
+    return configs.find((entry) => Number(entry?.rank || 0) === safeRank) || null
+}
+
 export default function WeeklyLeaderboardRewardPage() {
     const [mode, setMode] = useState('wealth')
     const [page, setPage] = useState(1)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [searchKeyword, setSearchKeyword] = useState('')
+    const [searchingUsers, setSearchingUsers] = useState(false)
     const [rankings, setRankings] = useState([])
+    const [searchedRankings, setSearchedRankings] = useState([])
     const [pagination, setPagination] = useState(null)
     const [period, setPeriod] = useState(null)
     const [rewardStatusByUserId, setRewardStatusByUserId] = useState({})
@@ -182,12 +207,9 @@ export default function WeeklyLeaderboardRewardPage() {
     const [rewardPokemonFormId, setRewardPokemonFormId] = useState('normal')
     const [rewardPokemonLevel, setRewardPokemonLevel] = useState('5')
     const [rewardPokemonIsShiny, setRewardPokemonIsShiny] = useState(false)
-    const [rewardTitleImageUrl, setRewardTitleImageUrl] = useState('')
-    const [rewardAvatarFrameUrl, setRewardAvatarFrameUrl] = useState('')
-    const [uploadingRewardAsset, setUploadingRewardAsset] = useState({
-        title: false,
-        frame: false,
-    })
+    const [cosmeticConfigs, setCosmeticConfigs] = useState(createDefaultCosmeticConfigs('wealth'))
+    const [savingCosmeticConfigKey, setSavingCosmeticConfigKey] = useState('')
+    const [uploadingRewardAsset, setUploadingRewardAsset] = useState({})
 
     const primaryLabel = useMemo(() => getPrimaryLabelByMode(mode), [mode])
     const selectedRewardTypeValues = useMemo(() => {
@@ -195,12 +217,20 @@ export default function WeeklyLeaderboardRewardPage() {
             .map((entry) => entry.value)
             .filter((type) => Boolean(selectedRewardTypes?.[type]))
     }, [selectedRewardTypes])
+    const activeSearchKeyword = String(searchKeyword || '').trim()
+    const displayedRankings = activeSearchKeyword ? searchedRankings : rankings
 
     const loadRewardStatus = async (targetMode, weekStart) => {
         const rewardData = await leaderboardRewardApi.list({ mode: targetMode, weekStart })
         const rewardRows = Array.isArray(rewardData?.rewards) ? rewardData.rewards : []
-        setRewardStatusByUserId(buildRewardStatusByUserId(rewardRows))
+        setRewardStatusByUserId(buildRewardStatusByUserId(rewardRows, targetMode))
         setRewardedTotal(Math.max(0, Number(rewardData?.totalRewarded || rewardRows.length || 0)))
+    }
+
+    const loadCosmeticConfigs = async (targetMode) => {
+        const configData = await leaderboardRewardApi.getCosmeticConfigs(targetMode)
+        const rows = Array.isArray(configData?.configs) ? configData.configs : []
+        setCosmeticConfigs(rows.length > 0 ? rows : createDefaultCosmeticConfigs(targetMode))
     }
 
     const loadData = async (targetMode, targetPage) => {
@@ -217,7 +247,10 @@ export default function WeeklyLeaderboardRewardPage() {
             setPeriod(rankingPeriod)
 
             const weekStart = String(rankingPeriod?.weekStart || '').trim()
-            await loadRewardStatus(targetMode, weekStart)
+            await Promise.all([
+                loadRewardStatus(targetMode, weekStart),
+                loadCosmeticConfigs(targetMode),
+            ])
 
             setRewardAmountByUserId((prev) => {
                 const next = { ...prev }
@@ -247,6 +280,10 @@ export default function WeeklyLeaderboardRewardPage() {
 
     useEffect(() => {
         setPage(1)
+    }, [mode])
+
+    useEffect(() => {
+        setSearchedRankings([])
     }, [mode])
 
     useEffect(() => {
@@ -416,14 +453,23 @@ export default function WeeklyLeaderboardRewardPage() {
         setPokemonPickerOpen(false)
     }
 
-    const handleUploadRewardAsset = async (type, file) => {
+    const handleCosmeticConfigFieldChange = (rank, field, value) => {
+        setCosmeticConfigs((prev) => prev.map((entry) => (
+            Number(entry?.rank || 0) === Number(rank)
+                ? { ...entry, [field]: value }
+                : entry
+        )))
+    }
+
+    const handleUploadRewardAsset = async (rank, type, file) => {
         const validationError = validateImageFile(file)
         if (validationError) {
             setError(validationError)
             return
         }
 
-        const key = type === 'title' ? 'title' : 'frame'
+        const field = type === 'title' ? 'titleImageUrl' : 'avatarFrameUrl'
+        const key = `${rank}:${field}`
         try {
             setError('')
             setUploadingRewardAsset((prev) => ({ ...prev, [key]: true }))
@@ -442,11 +488,7 @@ export default function WeeklyLeaderboardRewardPage() {
             if (!imageUrl) {
                 throw new Error('Không nhận được URL ảnh sau khi tải lên')
             }
-            if (type === 'title') {
-                setRewardTitleImageUrl(imageUrl)
-            } else {
-                setRewardAvatarFrameUrl(imageUrl)
-            }
+            handleCosmeticConfigFieldChange(rank, field, imageUrl)
         } catch (err) {
             setError(err.message || 'Không thể tải ảnh thưởng')
         } finally {
@@ -454,9 +496,85 @@ export default function WeeklyLeaderboardRewardPage() {
         }
     }
 
+    const handleSaveCosmeticConfig = async (rank) => {
+        const targetConfig = getCosmeticConfigForRank(cosmeticConfigs, rank)
+        if (!targetConfig) return
+
+        try {
+            setError('')
+            setSavingCosmeticConfigKey(`${mode}:${rank}`)
+            const res = await leaderboardRewardApi.updateCosmeticConfig(mode, rank, {
+                titleImageUrl: String(targetConfig?.titleImageUrl || '').trim(),
+                avatarFrameUrl: String(targetConfig?.avatarFrameUrl || '').trim(),
+            })
+            const savedConfig = res?.config || targetConfig
+            setCosmeticConfigs((prev) => prev.map((entry) => (
+                Number(entry?.rank || 0) === Number(rank) ? savedConfig : entry
+            )))
+        } catch (err) {
+            setError(err.message || 'Không thể lưu cấu hình top tuần')
+        } finally {
+            setSavingCosmeticConfigKey('')
+        }
+    }
+
+    const handleSearchUsers = async () => {
+        const keyword = String(searchKeyword || '').trim()
+        if (!keyword) {
+            setSearchedRankings([])
+            return
+        }
+
+        try {
+            setSearchingUsers(true)
+            setError('')
+
+            const userRes = await userApi.list({ search: keyword, page: 1, limit: 100 })
+            const matchedUsers = Array.isArray(userRes?.users) ? userRes.users : []
+            const matchedUserIds = new Set(matchedUsers.map((entry) => String(entry?._id || '').trim()).filter(Boolean))
+
+            if (matchedUserIds.size === 0) {
+                setSearchedRankings([])
+                return
+            }
+
+            const firstPage = await gameApi.getRankings('overall', 1, 100, { mode })
+            const firstRows = Array.isArray(firstPage?.rankings) ? firstPage.rankings : []
+            const totalPages = Math.max(1, Number(firstPage?.pagination?.totalPages || 1))
+
+            const otherPages = totalPages > 1
+                ? await Promise.all(
+                    Array.from({ length: totalPages - 1 }, (_, index) => gameApi.getRankings('overall', index + 2, 100, { mode }))
+                )
+                : []
+
+            const allRows = [
+                ...firstRows,
+                ...otherPages.flatMap((pageData) => Array.isArray(pageData?.rankings) ? pageData.rankings : []),
+            ]
+
+            setSearchedRankings(
+                allRows.filter((entry) => matchedUserIds.has(String(entry?.userId || '').trim()))
+            )
+        } catch (err) {
+            setError(err.message || 'Không thể tìm người chơi theo email hoặc tên')
+            setSearchedRankings([])
+        } finally {
+            setSearchingUsers(false)
+        }
+    }
+
+    const handleClearSearch = () => {
+        setSearchKeyword('')
+        setSearchedRankings([])
+        setError('')
+    }
+
     const handleAward = async (player) => {
         const userId = String(player?.userId || '').trim()
         if (!userId) return
+        const playerRank = Math.max(1, Number.parseInt(player?.rank, 10) || 1)
+        const cosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, playerRank)
 
         const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
         const selectedTypes = selectedRewardTypeValues
@@ -470,7 +588,7 @@ export default function WeeklyLeaderboardRewardPage() {
 
         for (const type of selectedTypes) {
             const alreadyForType = rewardStatus.byType?.[type]
-            if (alreadyForType) {
+            if (alreadyForType && String(alreadyForType?.mode || '').trim() === String(mode || '').trim()) {
                 skippedTypes.push(getRewardTypeLabel(type))
                 continue
             }
@@ -490,12 +608,20 @@ export default function WeeklyLeaderboardRewardPage() {
                 alert('Vui lòng chọn Pokemon để trao thưởng')
                 return
             }
-            if (type === 'titleImage' && !String(rewardTitleImageUrl || '').trim()) {
-                alert('Vui lòng tải/chọn ảnh danh hiệu trước khi trao thưởng')
+            if (type === 'titleImage' && playerRank > 3) {
+                alert('Danh hiệu top tuần chỉ hỗ trợ cho top 1-3')
                 return
             }
-            if (type === 'avatarFrame' && !String(rewardAvatarFrameUrl || '').trim()) {
-                alert('Vui lòng tải/chọn ảnh khung avatar trước khi trao thưởng')
+            if (type === 'titleImage' && !String(cosmeticConfig?.titleImageUrl || '').trim()) {
+                alert(`Top ${playerRank} chưa được cấu hình ảnh danh hiệu cố định`)
+                return
+            }
+            if (type === 'avatarFrame' && playerRank > 3) {
+                alert('Khung avatar top tuần chỉ hỗ trợ cho top 1-3')
+                return
+            }
+            if (type === 'avatarFrame' && !String(cosmeticConfig?.avatarFrameUrl || '').trim()) {
+                alert(`Top ${playerRank} chưa được cấu hình ảnh khung avatar cố định`)
                 return
             }
 
@@ -507,8 +633,8 @@ export default function WeeklyLeaderboardRewardPage() {
                 pokemonFormId: type === 'pokemon' ? rewardPokemonFormId : 'normal',
                 pokemonLevel: type === 'pokemon' ? Math.max(1, Number.parseInt(rewardPokemonLevel, 10) || 5) : 5,
                 pokemonIsShiny: type === 'pokemon' ? Boolean(rewardPokemonIsShiny) : false,
-                titleImageUrl: type === 'titleImage' ? String(rewardTitleImageUrl || '').trim() : '',
-                avatarFrameUrl: type === 'avatarFrame' ? String(rewardAvatarFrameUrl || '').trim() : '',
+                titleImageUrl: type === 'titleImage' ? String(cosmeticConfig?.titleImageUrl || '').trim() : '',
+                avatarFrameUrl: type === 'avatarFrame' ? String(cosmeticConfig?.avatarFrameUrl || '').trim() : '',
             })
         }
 
@@ -562,7 +688,7 @@ export default function WeeklyLeaderboardRewardPage() {
         ? `${period.weekStart} - ${period.weekEnd}`
         : '--'
 
-    if (loading && rankings.length === 0) {
+    if (loading && rankings.length === 0 && displayedRankings.length === 0) {
         return <div className="text-center py-8 text-blue-800 font-medium">Đang tải leaderboard quản trị...</div>
     }
 
@@ -612,6 +738,49 @@ export default function WeeklyLeaderboardRewardPage() {
                     </div>
                 </div>
 
+                <div className="rounded border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div className="text-xs font-bold text-slate-500 uppercase">Tìm người chơi trong BXH tuần</div>
+                    <div className="flex flex-col md:flex-row gap-2">
+                        <input
+                            type="text"
+                            value={searchKeyword}
+                            onChange={(e) => setSearchKeyword(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    handleSearchUsers()
+                                }
+                            }}
+                            placeholder="Tìm theo email hoặc tên người chơi..."
+                            className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={handleSearchUsers}
+                                disabled={searchingUsers}
+                                className="px-3 py-2 rounded border border-blue-300 bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-60"
+                            >
+                                {searchingUsers ? 'Đang tìm...' : 'Tìm'}
+                            </button>
+                            {activeSearchKeyword && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearSearch}
+                                    className="px-3 py-2 rounded border border-slate-300 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50"
+                                >
+                                    Xóa lọc
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    {activeSearchKeyword && (
+                        <div className="text-xs font-semibold text-slate-600">
+                            Kết quả cho "{activeSearchKeyword}": {numberFormat(displayedRankings.length)} người chơi khớp trong BXH {mode === 'wealth' ? 'Tài Phú' : mode === 'trainerBattle' ? 'Leo Tháp' : 'LC Party'} tuần.
+                        </div>
+                    )}
+                </div>
+
                 <div className="rounded border border-slate-200 bg-slate-50 p-3 space-y-3">
                     <div className="text-xs font-bold text-slate-500 uppercase">Cấu hình loại thưởng</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -635,81 +804,106 @@ export default function WeeklyLeaderboardRewardPage() {
 
                     {(selectedRewardTypes.titleImage || selectedRewardTypes.avatarFrame) && (
                         <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-3">
-                            <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ảnh thưởng danh hiệu/khung</div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {selectedRewardTypes.titleImage && (
-                                    <div className="space-y-2">
-                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh danh hiệu top tuần</div>
-                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                                            {rewardTitleImageUrl ? (
-                                                <img src={rewardTitleImageUrl} alt="Danh hiệu top" className="max-h-full max-w-full object-contain" />
-                                            ) : (
-                                                <span className="text-[11px] text-slate-400">Chưa chọn ảnh danh hiệu</span>
-                                            )}
-                                        </div>
-                                        <input
-                                            id="leaderboard-reward-title-upload"
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                                const file = e.target.files?.[0]
-                                                e.target.value = ''
-                                                handleUploadRewardAsset('title', file)
-                                            }}
-                                        />
-                                        <label
-                                            htmlFor="leaderboard-reward-title-upload"
-                                            className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                                        >
-                                            {uploadingRewardAsset.title ? 'Đang tải ảnh...' : 'Tải ảnh danh hiệu'}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={rewardTitleImageUrl}
-                                            onChange={(e) => setRewardTitleImageUrl(e.target.value)}
-                                            placeholder="URL ảnh danh hiệu"
-                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
-                                        />
-                                    </div>
-                                )}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Cố định khung / danh hiệu theo top 1-3</div>
+                                <div className="text-[11px] font-semibold text-blue-700">Trao thưởng cosmetic sẽ tự lấy theo BXH hiện tại + hạng của người chơi</div>
+                            </div>
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                                {COSMETIC_CONFIG_RANKS.map((rank) => {
+                                    const config = getCosmeticConfigForRank(cosmeticConfigs, rank) || { rank, titleImageUrl: '', avatarFrameUrl: '' }
+                                    const titleUploadKey = `${rank}:titleImageUrl`
+                                    const frameUploadKey = `${rank}:avatarFrameUrl`
+                                    const savingKey = `${mode}:${rank}`
+                                    return (
+                                        <div key={`${mode}-top-${rank}`} className="rounded border border-slate-200 bg-white p-3 space-y-3">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="text-sm font-bold text-slate-800">Top {rank}</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSaveCosmeticConfig(rank)}
+                                                    disabled={savingCosmeticConfigKey === savingKey}
+                                                    className="px-2.5 py-1.5 rounded border border-blue-300 bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60"
+                                                >
+                                                    {savingCosmeticConfigKey === savingKey ? 'Đang lưu...' : 'Lưu cấu hình'}
+                                                </button>
+                                            </div>
 
-                                {selectedRewardTypes.avatarFrame && (
-                                    <div className="space-y-2">
-                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh khung avatar top tuần</div>
-                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                                            {rewardAvatarFrameUrl ? (
-                                                <img src={rewardAvatarFrameUrl} alt="Khung top" className="max-h-full max-w-full object-contain" />
-                                            ) : (
-                                                <span className="text-[11px] text-slate-400">Chưa chọn ảnh khung</span>
+                                            {selectedRewardTypes.titleImage && (
+                                                <div className="space-y-2">
+                                                    <div className="text-[11px] font-semibold text-slate-700">Danh hiệu cố định</div>
+                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                        {config.titleImageUrl ? (
+                                                            <img src={config.titleImageUrl} alt={`Danh hiệu top ${rank}`} className="max-h-full max-w-full object-contain" />
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400">Chưa cấu hình danh hiệu</span>
+                                                        )}
+                                                    </div>
+                                                    <input
+                                                        id={`leaderboard-reward-title-upload-${rank}`}
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0]
+                                                            e.target.value = ''
+                                                            handleUploadRewardAsset(rank, 'title', file)
+                                                        }}
+                                                    />
+                                                    <label
+                                                        htmlFor={`leaderboard-reward-title-upload-${rank}`}
+                                                        className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                                    >
+                                                        {uploadingRewardAsset[titleUploadKey] ? 'Đang tải ảnh...' : 'Tải ảnh danh hiệu'}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={config.titleImageUrl}
+                                                        onChange={(e) => handleCosmeticConfigFieldChange(rank, 'titleImageUrl', e.target.value)}
+                                                        placeholder="URL ảnh danh hiệu"
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {selectedRewardTypes.avatarFrame && (
+                                                <div className="space-y-2">
+                                                    <div className="text-[11px] font-semibold text-slate-700">Khung avatar cố định</div>
+                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                        {config.avatarFrameUrl ? (
+                                                            <img src={config.avatarFrameUrl} alt={`Khung top ${rank}`} className="max-h-full max-w-full object-contain" />
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400">Chưa cấu hình khung</span>
+                                                        )}
+                                                    </div>
+                                                    <input
+                                                        id={`leaderboard-reward-frame-upload-${rank}`}
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0]
+                                                            e.target.value = ''
+                                                            handleUploadRewardAsset(rank, 'frame', file)
+                                                        }}
+                                                    />
+                                                    <label
+                                                        htmlFor={`leaderboard-reward-frame-upload-${rank}`}
+                                                        className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                                    >
+                                                        {uploadingRewardAsset[frameUploadKey] ? 'Đang tải ảnh...' : 'Tải ảnh khung'}
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={config.avatarFrameUrl}
+                                                        onChange={(e) => handleCosmeticConfigFieldChange(rank, 'avatarFrameUrl', e.target.value)}
+                                                        placeholder="URL ảnh khung avatar"
+                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                                                    />
+                                                </div>
                                             )}
                                         </div>
-                                        <input
-                                            id="leaderboard-reward-frame-upload"
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                                const file = e.target.files?.[0]
-                                                e.target.value = ''
-                                                handleUploadRewardAsset('frame', file)
-                                            }}
-                                        />
-                                        <label
-                                            htmlFor="leaderboard-reward-frame-upload"
-                                            className="inline-flex w-full items-center justify-center rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                                        >
-                                            {uploadingRewardAsset.frame ? 'Đang tải ảnh...' : 'Tải ảnh khung'}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={rewardAvatarFrameUrl}
-                                            onChange={(e) => setRewardAvatarFrameUrl(e.target.value)}
-                                            placeholder="URL ảnh khung avatar"
-                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
-                                        />
-                                    </div>
-                                )}
+                                    )
+                                })}
                             </div>
                         </div>
                     )}
@@ -953,13 +1147,13 @@ export default function WeeklyLeaderboardRewardPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {rankings.length === 0 ? (
+                            {displayedRankings.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-4 py-8 text-center text-slate-400 italic">
-                                        Chưa có dữ liệu top tuần
+                                        {activeSearchKeyword ? 'Không tìm thấy người chơi khớp trong BXH tuần' : 'Chưa có dữ liệu top tuần'}
                                     </td>
                                 </tr>
-                            ) : rankings.map((entry, index) => {
+                            ) : displayedRankings.map((entry, index) => {
                                 const userId = String(entry?.userId || '').trim()
                                 const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
                                 const isRewarding = rewardingUserId === userId
@@ -1004,19 +1198,21 @@ export default function WeeklyLeaderboardRewardPage() {
                                                 {selectedRewardTypeValues.map((type) => {
                                                     const typeAwarded = Boolean(rewardStatus.byType?.[type])
                                                     const cosmeticType = isCosmeticRewardType(type)
+                                                    const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, entry?.rank)
+                                                    const cosmeticOutOfRange = cosmeticType && Number(entry?.rank || 0) > 3
                                                     const cosmeticMissing = type === 'titleImage'
-                                                        ? !String(rewardTitleImageUrl || '').trim()
-                                                        : (type === 'avatarFrame' ? !String(rewardAvatarFrameUrl || '').trim() : false)
+                                                        ? !String(rankCosmeticConfig?.titleImageUrl || '').trim()
+                                                        : (type === 'avatarFrame' ? !String(rankCosmeticConfig?.avatarFrameUrl || '').trim() : false)
                                                     return (
                                                         <div key={`${userId}-${type}`} className="flex items-center gap-2">
                                                             <span className={`w-24 text-[11px] font-bold ${typeAwarded ? 'text-emerald-700' : 'text-slate-600'}`}>
                                                                 {getRewardTypeLabel(type)}
                                                             </span>
                                                             {cosmeticType ? (
-                                                                <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                                <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticOutOfRange || cosmeticMissing
                                                                     ? 'border-amber-300 bg-amber-50 text-amber-700'
                                                                     : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-                                                                    {cosmeticMissing ? 'Chưa chọn ảnh' : 'Sẵn sàng trao ảnh'}
+                                                                    {cosmeticOutOfRange ? 'Chi top 1-3' : (cosmeticMissing ? 'Chưa cấu hình' : 'Theo cấu hình top')}
                                                                 </span>
                                                             ) : (
                                                                 <input
@@ -1053,11 +1249,11 @@ export default function WeeklyLeaderboardRewardPage() {
                 </div>
 
                 <div className="md:hidden space-y-3 p-3">
-                    {rankings.length === 0 ? (
+                    {displayedRankings.length === 0 ? (
                         <div className="px-4 py-6 text-center text-slate-400 italic border border-slate-200 rounded">
-                            Chưa có dữ liệu top tuần
+                            {activeSearchKeyword ? 'Không tìm thấy người chơi khớp trong BXH tuần' : 'Chưa có dữ liệu top tuần'}
                         </div>
-                    ) : rankings.map((entry) => {
+                    ) : displayedRankings.map((entry) => {
                         const userId = String(entry?.userId || '').trim()
                         const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
                         const isRewarding = rewardingUserId === userId
@@ -1097,19 +1293,21 @@ export default function WeeklyLeaderboardRewardPage() {
                                     {selectedRewardTypeValues.map((type) => {
                                         const typeAwarded = Boolean(rewardStatus.byType?.[type])
                                         const cosmeticType = isCosmeticRewardType(type)
+                                        const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, entry?.rank)
+                                        const cosmeticOutOfRange = cosmeticType && Number(entry?.rank || 0) > 3
                                         const cosmeticMissing = type === 'titleImage'
-                                            ? !String(rewardTitleImageUrl || '').trim()
-                                            : (type === 'avatarFrame' ? !String(rewardAvatarFrameUrl || '').trim() : false)
+                                            ? !String(rankCosmeticConfig?.titleImageUrl || '').trim()
+                                            : (type === 'avatarFrame' ? !String(rankCosmeticConfig?.avatarFrameUrl || '').trim() : false)
                                         return (
                                             <div key={`${userId}-${type}-mobile`} className="flex items-center gap-2">
                                                 <span className={`w-24 text-[11px] font-bold ${typeAwarded ? 'text-emerald-700' : 'text-slate-600'}`}>
                                                     {getRewardTypeLabel(type)}
                                                 </span>
                                                 {cosmeticType ? (
-                                                    <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                    <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticOutOfRange || cosmeticMissing
                                                         ? 'border-amber-300 bg-amber-50 text-amber-700'
                                                         : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-                                                        {cosmeticMissing ? 'Chưa chọn ảnh' : 'Sẵn sàng'}
+                                                        {cosmeticOutOfRange ? 'Chi top 1-3' : (cosmeticMissing ? 'Chưa cấu hình' : 'Theo cấu hình')}
                                                     </span>
                                                 ) : (
                                                     <input

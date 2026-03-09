@@ -854,6 +854,30 @@ export const leaderboardRewardApi = {
         return res.json()
     },
 
+    async getCosmeticConfigs(mode) {
+        const query = new URLSearchParams()
+        if (mode) query.append('mode', String(mode))
+        const queryString = query.toString()
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/cosmetic-configs${queryString ? `?${queryString}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải cấu hình khung/danh hiệu top tuần')
+        return res.json()
+    },
+
+    async updateCosmeticConfig(mode, rank, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/cosmetic-configs/${mode}/${rank}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể lưu cấu hình khung/danh hiệu top tuần')
+        return res.json()
+    },
+
     // GET /api/admin/leaderboard-rewards/meta/items
     async lookupItems(params = {}) {
         const query = new URLSearchParams()
