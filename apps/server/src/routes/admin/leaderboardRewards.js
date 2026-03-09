@@ -453,6 +453,7 @@ router.post('/award', async (req, res) => {
             normalizedRewardEntries.push({
                 rewardType,
                 rewardAmount: COSMETIC_REWARD_TYPE_SET.has(rewardType) ? 1 : rewardAmount,
+                cosmeticConfigRank: clamp(toSafeInt(rawEntry?.cosmeticConfigRank, 0), 0, 999),
                 itemId: String(rawEntry?.itemId || '').trim(),
                 pokemonId: String(rawEntry?.pokemonId || '').trim(),
                 pokemonFormId: normalizeFormId(rawEntry?.pokemonFormId || rawEntry?.formId || 'normal'),
@@ -469,15 +470,28 @@ router.post('/award', async (req, res) => {
         const scoreValue = Math.max(0, Number(req.body?.scoreValue || 0))
         const note = String(req.body?.note || '').trim().slice(0, 300)
 
-        let cosmeticConfig = null
-        if (normalizedRewardEntries.some((entry) => COSMETIC_REWARD_TYPE_SET.has(entry.rewardType))) {
-            if (!COSMETIC_CONFIG_RANKS.includes(rank)) {
-                return res.status(400).json({ ok: false, message: 'Khung và danh hiệu top tuần chỉ hỗ trợ top 1-3' })
+        const requestedCosmeticRanks = Array.from(new Set(
+            normalizedRewardEntries
+                .filter((entry) => COSMETIC_REWARD_TYPE_SET.has(entry.rewardType))
+                .map((entry) => Math.max(0, Number(entry?.cosmeticConfigRank || 0)))
+        ))
+        const cosmeticConfigByRank = new Map()
+        if (requestedCosmeticRanks.length > 0) {
+            for (const cosmeticRank of requestedCosmeticRanks) {
+                if (!COSMETIC_CONFIG_RANKS.includes(cosmeticRank)) {
+                    return res.status(400).json({ ok: false, message: 'Khung và danh hiệu top tuần chỉ cho chọn cấu hình top 1-3' })
+                }
             }
 
-            cosmeticConfig = await LeaderboardCosmeticConfig.findOne({ mode, rank }).lean()
-            if (!cosmeticConfig) {
-                return res.status(400).json({ ok: false, message: `Chưa cấu hình khung/danh hiệu cố định cho top ${rank}` })
+            const cosmeticConfigs = await LeaderboardCosmeticConfig.find({ mode, rank: { $in: requestedCosmeticRanks } }).lean()
+            cosmeticConfigs.forEach((entry) => {
+                cosmeticConfigByRank.set(Math.max(0, Number(entry?.rank || 0)), entry)
+            })
+
+            for (const cosmeticRank of requestedCosmeticRanks) {
+                if (!cosmeticConfigByRank.has(cosmeticRank)) {
+                    return res.status(400).json({ ok: false, message: `Chưa cấu hình khung/danh hiệu cố định cho top ${cosmeticRank}` })
+                }
             }
         }
 
@@ -651,16 +665,20 @@ router.post('/award', async (req, res) => {
             }
 
             if (rewardType === 'titleImage') {
+                const cosmeticConfigRank = Math.max(0, Number(rewardEntry?.cosmeticConfigRank || 0))
+                const cosmeticConfig = cosmeticConfigByRank.get(cosmeticConfigRank) || null
                 rewardTitleImageUrl = String(cosmeticConfig?.titleImageUrl || rewardEntry?.titleImageUrl || '').trim()
                 if (!rewardTitleImageUrl) {
-                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh danh hiệu cho top ${rank}` })
+                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh danh hiệu cho top ${cosmeticConfigRank}` })
                 }
             }
 
             if (rewardType === 'avatarFrame') {
+                const cosmeticConfigRank = Math.max(0, Number(rewardEntry?.cosmeticConfigRank || 0))
+                const cosmeticConfig = cosmeticConfigByRank.get(cosmeticConfigRank) || null
                 rewardAvatarFrameUrl = String(cosmeticConfig?.avatarFrameUrl || rewardEntry?.avatarFrameUrl || '').trim()
                 if (!rewardAvatarFrameUrl) {
-                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh khung avatar cho top ${rank}` })
+                    return res.status(400).json({ ok: false, message: `Chưa cấu hình ảnh khung avatar cho top ${cosmeticConfigRank}` })
                 }
             }
 

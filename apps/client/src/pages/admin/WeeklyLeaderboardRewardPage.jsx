@@ -207,6 +207,10 @@ export default function WeeklyLeaderboardRewardPage() {
     const [rewardPokemonFormId, setRewardPokemonFormId] = useState('normal')
     const [rewardPokemonLevel, setRewardPokemonLevel] = useState('5')
     const [rewardPokemonIsShiny, setRewardPokemonIsShiny] = useState(false)
+    const [selectedCosmeticRanks, setSelectedCosmeticRanks] = useState({
+        titleImage: 1,
+        avatarFrame: 1,
+    })
     const [cosmeticConfigs, setCosmeticConfigs] = useState(createDefaultCosmeticConfigs('wealth'))
     const [savingCosmeticConfigKey, setSavingCosmeticConfigKey] = useState('')
     const [uploadingRewardAsset, setUploadingRewardAsset] = useState({})
@@ -461,6 +465,11 @@ export default function WeeklyLeaderboardRewardPage() {
         )))
     }
 
+    const handleSelectedCosmeticRankChange = (rewardType, value) => {
+        const safeRank = COSMETIC_CONFIG_RANKS.includes(Number(value)) ? Number(value) : 1
+        setSelectedCosmeticRanks((prev) => ({ ...prev, [rewardType]: safeRank }))
+    }
+
     const handleUploadRewardAsset = async (rank, type, file) => {
         const validationError = validateImageFile(file)
         if (validationError) {
@@ -573,8 +582,6 @@ export default function WeeklyLeaderboardRewardPage() {
     const handleAward = async (player) => {
         const userId = String(player?.userId || '').trim()
         if (!userId) return
-        const playerRank = Math.max(1, Number.parseInt(player?.rank, 10) || 1)
-        const cosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, playerRank)
 
         const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
         const selectedTypes = selectedRewardTypeValues
@@ -608,26 +615,26 @@ export default function WeeklyLeaderboardRewardPage() {
                 alert('Vui lòng chọn Pokemon để trao thưởng')
                 return
             }
-            if (type === 'titleImage' && playerRank > 3) {
-                alert('Danh hiệu top tuần chỉ hỗ trợ cho top 1-3')
-                return
-            }
+            const cosmeticConfigRank = isCosmeticRewardType(type)
+                ? Math.max(1, Number.parseInt(selectedCosmeticRanks?.[type], 10) || 1)
+                : 0
+            const cosmeticConfig = isCosmeticRewardType(type)
+                ? getCosmeticConfigForRank(cosmeticConfigs, cosmeticConfigRank)
+                : null
+
             if (type === 'titleImage' && !String(cosmeticConfig?.titleImageUrl || '').trim()) {
-                alert(`Top ${playerRank} chưa được cấu hình ảnh danh hiệu cố định`)
-                return
-            }
-            if (type === 'avatarFrame' && playerRank > 3) {
-                alert('Khung avatar top tuần chỉ hỗ trợ cho top 1-3')
+                alert(`Top ${cosmeticConfigRank} chưa được cấu hình ảnh danh hiệu cố định`)
                 return
             }
             if (type === 'avatarFrame' && !String(cosmeticConfig?.avatarFrameUrl || '').trim()) {
-                alert(`Top ${playerRank} chưa được cấu hình ảnh khung avatar cố định`)
+                alert(`Top ${cosmeticConfigRank} chưa được cấu hình ảnh khung avatar cố định`)
                 return
             }
 
             rewardEntries.push({
                 rewardType: type,
                 rewardAmount: amount,
+                cosmeticConfigRank,
                 itemId: type === 'item' ? rewardItemId : null,
                 pokemonId: type === 'pokemon' ? rewardPokemonId : null,
                 pokemonFormId: type === 'pokemon' ? rewardPokemonFormId : 'normal',
@@ -652,8 +659,8 @@ export default function WeeklyLeaderboardRewardPage() {
                 const shinyText = entry.pokemonIsShiny ? ' (Shiny)' : ''
                 return `${numberFormat(entry.rewardAmount)} ${selectedPoke?.name || 'Pokemon'} Lv.${numberFormat(entry.pokemonLevel)}${shinyText}`
             }
-            if (entry.rewardType === 'titleImage') return 'ảnh danh hiệu'
-            if (entry.rewardType === 'avatarFrame') return 'ảnh khung avatar'
+            if (entry.rewardType === 'titleImage') return `ảnh danh hiệu top ${entry?.cosmeticConfigRank || 1}`
+            if (entry.rewardType === 'avatarFrame') return `ảnh khung avatar top ${entry?.cosmeticConfigRank || 1}`
             return `${numberFormat(entry.rewardAmount)} Xu Bạch Kim`
         }).join(' + ')
 
@@ -806,7 +813,7 @@ export default function WeeklyLeaderboardRewardPage() {
                         <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Cố định khung / danh hiệu theo top 1-3</div>
-                                <div className="text-[11px] font-semibold text-blue-700">Trao thưởng cosmetic sẽ tự lấy theo BXH hiện tại + hạng của người chơi</div>
+                                <div className="text-[11px] font-semibold text-blue-700">Khi trao, chọn trực tiếp bộ top 1, top 2 hoặc top 3 ngay tại từng dòng quà</div>
                             </div>
                             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
                                 {COSMETIC_CONFIG_RANKS.map((rank) => {
@@ -1198,8 +1205,8 @@ export default function WeeklyLeaderboardRewardPage() {
                                                 {selectedRewardTypeValues.map((type) => {
                                                     const typeAwarded = Boolean(rewardStatus.byType?.[type])
                                                     const cosmeticType = isCosmeticRewardType(type)
-                                                    const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, entry?.rank)
-                                                    const cosmeticOutOfRange = cosmeticType && Number(entry?.rank || 0) > 3
+                                                    const selectedCosmeticRank = cosmeticType ? Math.max(1, Number.parseInt(selectedCosmeticRanks?.[type], 10) || 1) : 0
+                                                    const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, selectedCosmeticRank)
                                                     const cosmeticMissing = type === 'titleImage'
                                                         ? !String(rankCosmeticConfig?.titleImageUrl || '').trim()
                                                         : (type === 'avatarFrame' ? !String(rankCosmeticConfig?.avatarFrameUrl || '').trim() : false)
@@ -1209,11 +1216,23 @@ export default function WeeklyLeaderboardRewardPage() {
                                                                 {getRewardTypeLabel(type)}
                                                             </span>
                                                             {cosmeticType ? (
-                                                                <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticOutOfRange || cosmeticMissing
-                                                                    ? 'border-amber-300 bg-amber-50 text-amber-700'
-                                                                    : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-                                                                    {cosmeticOutOfRange ? 'Chi top 1-3' : (cosmeticMissing ? 'Chưa cấu hình' : 'Theo cấu hình top')}
-                                                                </span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <select
+                                                                        value={selectedCosmeticRank}
+                                                                        onChange={(e) => handleSelectedCosmeticRankChange(type, e.target.value)}
+                                                                        disabled={typeAwarded || isRewarding}
+                                                                        className="w-32 px-2 py-1.5 border border-slate-300 rounded text-xs bg-white disabled:bg-slate-100 disabled:text-slate-500"
+                                                                    >
+                                                                        {COSMETIC_CONFIG_RANKS.map((rank) => (
+                                                                            <option key={`${userId}-${type}-rank-${rank}`} value={rank}>Trao top {rank}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                                        ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                                                        : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                                                        {cosmeticMissing ? 'Chưa cấu hình' : 'Sẵn sàng'}
+                                                                    </span>
+                                                                </div>
                                                             ) : (
                                                                 <input
                                                                     type="number"
@@ -1293,8 +1312,8 @@ export default function WeeklyLeaderboardRewardPage() {
                                     {selectedRewardTypeValues.map((type) => {
                                         const typeAwarded = Boolean(rewardStatus.byType?.[type])
                                         const cosmeticType = isCosmeticRewardType(type)
-                                        const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, entry?.rank)
-                                        const cosmeticOutOfRange = cosmeticType && Number(entry?.rank || 0) > 3
+                                        const selectedCosmeticRank = cosmeticType ? Math.max(1, Number.parseInt(selectedCosmeticRanks?.[type], 10) || 1) : 0
+                                        const rankCosmeticConfig = getCosmeticConfigForRank(cosmeticConfigs, selectedCosmeticRank)
                                         const cosmeticMissing = type === 'titleImage'
                                             ? !String(rankCosmeticConfig?.titleImageUrl || '').trim()
                                             : (type === 'avatarFrame' ? !String(rankCosmeticConfig?.avatarFrameUrl || '').trim() : false)
@@ -1304,11 +1323,23 @@ export default function WeeklyLeaderboardRewardPage() {
                                                     {getRewardTypeLabel(type)}
                                                 </span>
                                                 {cosmeticType ? (
-                                                    <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticOutOfRange || cosmeticMissing
-                                                        ? 'border-amber-300 bg-amber-50 text-amber-700'
-                                                        : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-                                                        {cosmeticOutOfRange ? 'Chi top 1-3' : (cosmeticMissing ? 'Chưa cấu hình' : 'Theo cấu hình')}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <select
+                                                            value={selectedCosmeticRank}
+                                                            onChange={(e) => handleSelectedCosmeticRankChange(type, e.target.value)}
+                                                            disabled={typeAwarded || isRewarding}
+                                                            className="w-32 px-2 py-1.5 border border-slate-300 rounded text-xs bg-white disabled:bg-slate-100 disabled:text-slate-500"
+                                                        >
+                                                            {COSMETIC_CONFIG_RANKS.map((rank) => (
+                                                                <option key={`${userId}-${type}-mobile-rank-${rank}`} value={rank}>Trao top {rank}</option>
+                                                            ))}
+                                                        </select>
+                                                        <span className={`inline-flex items-center rounded border px-2 py-1 text-[11px] font-semibold ${cosmeticMissing
+                                                            ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                                            : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                                                            {cosmeticMissing ? 'Chưa cấu hình' : 'Sẵn sàng'}
+                                                        </span>
+                                                    </div>
                                                 ) : (
                                                     <input
                                                         type="number"
