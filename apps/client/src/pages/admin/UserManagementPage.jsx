@@ -6,8 +6,16 @@ import { ADMIN_PERMISSION_OPTIONS } from '../../constants/adminPermissions'
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const DEFAULT_ITEM_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'
 
+const toLocalDateTimeInputValue = (value) => {
+    const date = value ? new Date(value) : new Date(Date.now() + (30 * 24 * 60 * 60 * 1000))
+    if (Number.isNaN(date.getTime())) return ''
+    const offsetMs = date.getTimezoneOffset() * 60000
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
 const createDefaultVipBenefitForm = () => ({
     vipTierId: '',
+    vipExpiresAt: toLocalDateTimeInputValue(),
     title: '',
     titleImageUrl: '',
     avatarFrameUrl: '',
@@ -26,6 +34,7 @@ const normalizeVipBenefitFormFromUser = (userLike) => {
         : {}
     return {
         vipTierId: String(userLike?.vipTierId || base.vipTierId).trim(),
+        vipExpiresAt: toLocalDateTimeInputValue(userLike?.vipExpiresAt),
         title: String(source.title || base.title).trim().slice(0, 80),
         titleImageUrl: String(source.titleImageUrl || base.titleImageUrl).trim(),
         avatarFrameUrl: String(source.avatarFrameUrl || base.avatarFrameUrl).trim(),
@@ -271,6 +280,7 @@ export default function UserManagementPage() {
 
             const tierRes = await userApi.updateVipTier(targetUser._id, {
                 tierId: selectedTierId,
+                expiresAt: String(vipBenefitModal.form.vipExpiresAt || '').trim(),
                 applyBenefits: true,
             })
             const tierUpdatedUser = tierRes?.user || null
@@ -973,9 +983,16 @@ export default function UserManagementPage() {
                                                     <option value="admin">Admin</option>
                                                 </select>
                                                 {user.role === 'vip' ? (
-                                                    <span className="px-1.5 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-[10px] font-bold text-yellow-700">
-                                                        VIP Lv.{Math.max(1, Number(user?.vipTierLevel || 1))}{user?.vipTierCode ? ` • ${user.vipTierCode}` : ''}
-                                                    </span>
+                                                    <div className="flex flex-col items-start gap-1">
+                                                        <span className="px-1.5 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-[10px] font-bold text-yellow-700">
+                                                            VIP Lv.{Math.max(1, Number(user?.vipTierLevel || 1))}{user?.vipTierCode ? ` • ${user.vipTierCode}` : ''}
+                                                        </span>
+                                                        {user?.vipExpiresAt ? (
+                                                            <span className="text-[10px] text-amber-700 font-semibold">
+                                                                Hết hạn: {new Date(user.vipExpiresAt).toLocaleString('vi-VN')}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
                                                 ) : (
                                                     <span className="text-[10px] text-slate-400">--</span>
                                                 )}
@@ -1138,6 +1155,7 @@ export default function UserManagementPage() {
 
                             <div>
                                 <label className="block text-sm font-bold text-slate-700 mb-1">Cấp VIP (VIP 1 - VIP X)</label>
+                                <p className="text-xs text-amber-700 mb-2">Bạn có thể chọn chính xác thời gian hết hạn VIP. Nếu không đổi thì mặc định là sau 1 tháng.</p>
                                 <select
                                     value={vipBenefitModal.form.vipTierId}
                                     onChange={(e) => updateVipBenefitFormField('vipTierId', e.target.value)}
@@ -1150,6 +1168,16 @@ export default function UserManagementPage() {
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Thời gian hết hạn VIP</label>
+                                <input
+                                    type="datetime-local"
+                                    value={vipBenefitModal.form.vipExpiresAt}
+                                    onChange={(e) => updateVipBenefitFormField('vipExpiresAt', e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                />
                             </div>
 
                             <div>

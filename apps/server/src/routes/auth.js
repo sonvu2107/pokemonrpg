@@ -7,6 +7,7 @@ import PlayerState from '../models/PlayerState.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import WeeklyLeaderboardReward from '../models/WeeklyLeaderboardReward.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { expireVipUsersIfNeeded, resetExpiredVipUser } from '../utils/vipStatus.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 import { extractClientIp } from '../utils/ipUtils.js'
 
@@ -262,6 +263,7 @@ const serializeAuthUser = (userLike, vipBenefitsLike = null) => {
         vipTierId: userLike?.vipTierId ? String(userLike.vipTierId) : null,
         vipTierLevel: Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0),
         vipTierCode: String(userLike?.vipTierCode || '').trim().toUpperCase(),
+        vipExpiresAt: userLike?.vipExpiresAt || null,
         vipBenefits: normalizeVipBenefits(vipBenefitsLike || userLike.vipBenefits),
         hasRecoveryPin: Boolean(userLike.recoveryPinHash || userLike.recoveryPinUpdatedAt),
         recoveryPinUpdatedAt: userLike.recoveryPinUpdatedAt || null,
@@ -374,6 +376,8 @@ router.post('/register', registerLimiter, async (req, res, next) => {
 // POST /api/auth/login
 router.post('/login', async (req, res, next) => {
     try {
+        await expireVipUsersIfNeeded(User)
+
         const { email, password } = req.body
         const normalizedEmail = String(email || '').trim().toLowerCase()
         const loginIp = extractClientIp(req)
@@ -394,6 +398,8 @@ router.post('/login', async (req, res, next) => {
                 message: 'Thông tin đăng nhập không hợp lệ',
             })
         }
+
+        await resetExpiredVipUser(user)
 
         const now = Date.now()
         const banUntilMs = user.bannedUntil ? new Date(user.bannedUntil).getTime() : null

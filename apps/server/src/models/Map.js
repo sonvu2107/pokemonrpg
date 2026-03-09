@@ -163,6 +163,11 @@ const mapSchema = new mongoose.Schema(
             default: 1,
             min: 1,
         },
+        requiredVipLevel: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         encounterRate: {
             type: Number,
             default: 1,

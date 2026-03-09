@@ -312,6 +312,15 @@ export default function MapPage() {
         (isLocked ? unlockInfo?.currentPlayerLevel : playerState?.level) ?? 1
     )
     const unlockRemainingLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
+    const requiredVipLevel = Math.max(
+        0,
+        (isLocked ? unlockInfo?.requiredVipLevel : map?.requiredVipLevel) ?? 0
+    )
+    const currentVipLevel = Math.max(
+        0,
+        (isLocked ? unlockInfo?.currentVipLevel : user?.vipTierLevel) ?? 0
+    )
+    const unlockRemainingVipLevels = Math.max(0, requiredVipLevel - currentVipLevel)
     const isCurrentMapEvent = isEventMapLike(map)
     const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
     const autoSearchLimitConfig = getVipAutoLimitConfig(user, 'map-search')
@@ -1045,6 +1054,12 @@ export default function MapPage() {
                                 Yêu cầu cấp: <span className="font-bold">Lv {requiredPlayerLevel}</span> (hiện tại Lv {currentPlayerLevel})
                                 {unlockRemainingLevels > 0 ? <span className="ml-1 text-red-600 font-bold">- thiếu {unlockRemainingLevels} cấp</span> : null}
                             </div>
+                            {requiredVipLevel > 0 && (
+                                <div className="mt-1">
+                                    Yêu cầu VIP: <span className="font-bold">VIP {requiredVipLevel}</span> (hiện tại VIP {currentVipLevel})
+                                    {unlockRemainingVipLevels > 0 ? <span className="ml-1 text-red-600 font-bold">- thiếu {unlockRemainingVipLevels} cấp VIP</span> : null}
+                                </div>
+                            )}
                             {requiredSearches > 0 && (
                                 <div className="mt-1">
                                     Yêu cầu tìm kiếm: <span className="font-bold">{requiredSearches}</span> lần tại <Link to={unlockInfo?.sourceMap?.slug ? `/map/${unlockInfo.sourceMap.slug}` : '#'} className="font-bold text-blue-700 hover:underline">{unlockInfo?.sourceMap?.name || 'bản đồ trước'}</Link>.

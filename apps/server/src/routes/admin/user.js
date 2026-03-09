@@ -30,6 +30,7 @@ import {
     hasAdminPermission,
     normalizeAdminPermissions,
 } from '../../constants/adminPermissions.js'
+import { addOneMonth, buildVipResetPayload, expireVipUsersIfNeeded } from '../../utils/vipStatus.js'
 
 const router = express.Router()
 
@@ -198,6 +199,7 @@ const buildUserResponse = (user) => {
         vipTierId: safeRaw?.vipTierId ? String(safeRaw.vipTierId) : null,
         vipTierLevel: Math.max(0, Number.parseInt(safeRaw?.vipTierLevel, 10) || 0),
         vipTierCode: String(safeRaw?.vipTierCode || '').trim().toUpperCase(),
+        vipExpiresAt: safeRaw?.vipExpiresAt || null,
         vipBenefits: normalizeVipBenefits(safeRaw?.vipBenefits),
         adminPermissions: getEffectiveAdminPermissions(safeRaw),
     }
@@ -206,6 +208,8 @@ const buildUserResponse = (user) => {
 // GET /api/admin/users - List all users with pagination and search
 router.get('/', async (req, res) => {
     try {
+        await expireVipUsersIfNeeded(User)
+
         await User.updateMany(
             {
                 isBanned: true,
@@ -222,11 +226,16 @@ router.get('/', async (req, res) => {
             }
         )
 
-        const { search, page = 1, limit = 20 } = req.query
+        const { search, role, page = 1, limit = 20 } = req.query
         const safePage = Math.max(1, parseInt(page, 10) || 1)
         const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+        const normalizedRole = String(role || '').trim().toLowerCase()
 
         const query = {}
+
+        if (['user', 'vip', 'admin'].includes(normalizedRole)) {
+            query.role = normalizedRole
+        }
 
         // Search by email or username
         if (search) {
@@ -742,6 +751,7 @@ router.put('/:id/vip-tier', async (req, res) => {
         const tierId = String(payload.tierId || '').trim()
         const level = parseInt(payload.level, 10)
         const applyBenefits = payload.applyBenefits !== false
+        const expiresAt = parseOptionalFutureDate(payload.expiresAt)
 
         let tier = null
         if (tierId) {
@@ -759,6 +769,14 @@ router.put('/:id/vip-tier', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy cấp VIP phù hợp' })
         }
 
+        if (payload.expiresAt !== undefined && payload.expiresAt !== null && payload.expiresAt !== '' && !expiresAt) {
+            return res.status(400).json({ ok: false, message: 'Thời gian hết hạn VIP không hợp lệ' })
+        }
+
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+            return res.status(400).json({ ok: false, message: 'Thời gian hết hạn VIP phải ở tương lai' })
+        }
+
         const user = await User.findById(targetUserId)
         if (!user) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
@@ -768,6 +786,7 @@ router.put('/:id/vip-tier', async (req, res) => {
         user.vipTierId = tier._id
         user.vipTierLevel = Math.max(1, parseInt(tier.level, 10) || 1)
         user.vipTierCode = normalizeVipTierCode(tier.code)
+        user.vipExpiresAt = expiresAt || addOneMonth(new Date())
 
         if (applyBenefits) {
             const tierBenefits = normalizeVipTierBenefits(tier.benefits || {})
@@ -783,7 +802,7 @@ router.put('/:id/vip-tier', async (req, res) => {
             ok: true,
             user: buildUserResponse(user),
             tier: buildVipTierResponse(tier),
-            message: `Đã gán ${tier.name || tier.code} cho người dùng`,
+            message: `Đã gán ${tier.name || tier.code} cho người dùng đến ${user.vipExpiresAt ? new Date(user.vipExpiresAt).toLocaleString('vi-VN') : 'khi hết hạn'}`,
         })
     } catch (error) {
         console.error('PUT /api/admin/users/:id/vip-tier error:', error)
@@ -1151,6 +1170,18 @@ router.put('/:id/role', async (req, res) => {
         user.role = role
         if (role === 'admin' && (!Array.isArray(user.adminPermissions) || user.adminPermissions.length === 0)) {
             user.adminPermissions = [...ALL_ADMIN_PERMISSIONS]
+        }
+        if (role === 'vip') {
+            user.vipExpiresAt = addOneMonth(new Date())
+        } else {
+            Object.assign(user, buildVipResetPayload(), {
+                role,
+                adminPermissions: role === 'admin'
+                    ? (Array.isArray(user.adminPermissions) && user.adminPermissions.length > 0
+                        ? user.adminPermissions
+                        : [...ALL_ADMIN_PERMISSIONS])
+                    : user.adminPermissions,
+            })
         }
         await user.save()
 

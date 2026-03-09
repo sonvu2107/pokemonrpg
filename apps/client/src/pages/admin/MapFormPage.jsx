@@ -92,6 +92,7 @@ export default function MapFormPage() {
         specialPokemonEncounterRate: 0,
         requiredSearches: 0,
         requiredPlayerLevel: 1,
+        requiredVipLevel: 0,
         encounterRate: 1,
         itemDropRate: 0,
         rarityCatchBonusPercent: { ...DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT },
@@ -207,6 +208,7 @@ export default function MapFormPage() {
                 specialPokemonEncounterRate: map.specialPokemonEncounterRate ?? 0,
                 requiredSearches: map.requiredSearches || 0,
                 requiredPlayerLevel: Math.max(1, Number(map.requiredPlayerLevel) || 1),
+                requiredVipLevel: Math.max(0, Number(map.requiredVipLevel) || 0),
                 encounterRate: map.encounterRate ?? 1,
                 itemDropRate: map.itemDropRate ?? 0,
                 rarityCatchBonusPercent: normalizeMapRarityCatchBonusPercent(map.rarityCatchBonusPercent),
@@ -247,6 +249,11 @@ export default function MapFormPage() {
 
         if (Number(formData.requiredPlayerLevel) < 1) {
             setError('Lv yêu cầu vào map phải >= 1')
+            return
+        }
+
+        if (Number(formData.requiredVipLevel) < 0) {
+            setError('VIP yêu cầu vào map phải >= 0')
             return
         }
 
@@ -590,7 +597,7 @@ export default function MapFormPage() {
                             </div>
 
                             {/* Map Progression Settings */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
                                         <span>Số Lượt Tìm Kiếm Yêu Cầu</span>
@@ -630,6 +637,19 @@ export default function MapFormPage() {
                                         className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Người chơi phải đạt cấp này để vào map.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>VIP Yêu Cầu</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={formData.requiredVipLevel}
+                                        onChange={(e) => setFormData({ ...formData, requiredVipLevel: Math.max(0, parseInt(e.target.value) || 0) })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">0 = mọi người vào được, 1 = cần VIP 1 trở lên.</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-6 mt-4">

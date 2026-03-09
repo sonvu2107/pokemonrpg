@@ -134,7 +134,7 @@ router.get('/legendary', async (req, res) => {
         const legendaryMaps = await MapModel.find({ isLegendary: true })
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .select('name slug iconId isEventMap specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
+            .select('name slug iconId isEventMap specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel requiredVipLevel')
             .sort({ createdAt: 1 })
             .lean()
 
@@ -163,7 +163,7 @@ router.get('/', async (req, res) => {
         const maps = await MapModel.find({})
             .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
             .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .select('name slug levelMin levelMax isLegendary isEventMap iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel')
+            .select('name slug levelMin levelMax isLegendary isEventMap iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel requiredVipLevel')
             .sort({ levelMin: 1 })
             .lean()
 

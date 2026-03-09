@@ -1924,11 +1924,14 @@ const resolveNextMapInTrack = (maps, index) => {
     return null
 }
 
-const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
+const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1, vipLevel = 0) => {
     const currentMap = maps[index] || null
     const currentPlayerLevel = Math.max(1, Number(playerLevel) || 1)
     const requiredPlayerLevel = Math.max(1, Number(currentMap?.requiredPlayerLevel) || 1)
     const remainingPlayerLevels = Math.max(0, requiredPlayerLevel - currentPlayerLevel)
+    const currentVipLevel = Math.max(0, Number(vipLevel) || 0)
+    const requiredVipLevel = Math.max(0, Number(currentMap?.requiredVipLevel) || 0)
+    const remainingVipLevels = Math.max(0, requiredVipLevel - currentVipLevel)
 
     const sourceMap = resolveSourceMapForUnlock(maps, index)
     if (!sourceMap) {
@@ -1939,8 +1942,12 @@ const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
             requiredPlayerLevel,
             currentPlayerLevel,
             remainingPlayerLevels,
+            requiredVipLevel,
+            currentVipLevel,
+            remainingVipLevels,
             isSearchRequirementMet: true,
             isLevelRequirementMet: remainingPlayerLevels === 0,
+            isVipRequirementMet: remainingVipLevels === 0,
             sourceMap: null,
         }
     }
@@ -1957,8 +1964,12 @@ const buildUnlockRequirement = (maps, index, progressById, playerLevel = 1) => {
         requiredPlayerLevel,
         currentPlayerLevel,
         remainingPlayerLevels,
+        requiredVipLevel,
+        currentVipLevel,
+        remainingVipLevels,
         isSearchRequirementMet: remainingSearches === 0,
         isLevelRequirementMet: remainingPlayerLevels === 0,
+        isVipRequirementMet: remainingVipLevels === 0,
         sourceMap: {
             id: sourceMap._id,
             name: sourceMap.name,
@@ -2576,6 +2587,7 @@ router.post('/search', authMiddleware, searchActionGuard, async (req, res, next)
         const { mapSlug } = req.body
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
+        const currentVipLevel = Math.max(0, Number(req.user?.vipTierLevel) || 0)
 
         // 1. Validate Map
         const map = await MapModel.findOne({ slug: mapSlug })
@@ -2604,8 +2616,10 @@ router.post('/search', authMiddleware, searchActionGuard, async (req, res, next)
                     .lean()
                 progressById = buildProgressIndex(sourceProgress ? [sourceProgress] : [])
             }
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel)
-            const isUnlocked = unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel, currentVipLevel)
+            const isUnlocked = unlockRequirement.remainingSearches === 0
+                && unlockRequirement.remainingPlayerLevels === 0
+                && unlockRequirement.remainingVipLevels === 0
             if (!isUnlocked) {
                 return res.status(403).json({
                     ok: false,
@@ -2899,6 +2913,7 @@ router.get('/maps', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
+        const currentVipLevel = Math.max(0, Number(req.user?.vipTierLevel) || 0)
         const orderedMaps = await getOrderedMaps()
         const mapIds = orderedMaps.map((map) => map._id)
         const playerLevelState = await PlayerState.findOne({ userId })
@@ -2911,8 +2926,12 @@ router.get('/maps', authMiddleware, async (req, res, next) => {
         const progressById = buildProgressIndex(progresses)
 
         const mapsWithUnlockState = orderedMaps.map((map, index) => {
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById, currentPlayerLevel)
-            const isUnlocked = isAdmin || (unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0)
+            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById, currentPlayerLevel, currentVipLevel)
+            const isUnlocked = isAdmin || (
+                unlockRequirement.remainingSearches === 0
+                && unlockRequirement.remainingPlayerLevels === 0
+                && unlockRequirement.remainingVipLevels === 0
+            )
             return { map, unlockRequirement, isUnlocked }
         })
 
@@ -2954,6 +2973,7 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
+        const currentVipLevel = Math.max(0, Number(req.user?.vipTierLevel) || 0)
         const playerState = await PlayerState.findOne({ userId })
             .select('gold moonPoints level')
             .lean()
@@ -2986,8 +3006,12 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
             }
         }
         const progressById = buildProgressIndex(progresses)
-        const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel)
-        const isUnlocked = isAdmin || (unlockRequirement.remainingSearches === 0 && unlockRequirement.remainingPlayerLevels === 0)
+        const unlockRequirement = buildUnlockRequirement(orderedMaps, mapIndex, progressById, currentPlayerLevel, currentVipLevel)
+        const isUnlocked = isAdmin || (
+            unlockRequirement.remainingSearches === 0
+            && unlockRequirement.remainingPlayerLevels === 0
+            && unlockRequirement.remainingVipLevels === 0
+        )
 
         if (!isUnlocked) {
             return res.status(403).json({
@@ -3020,6 +3044,9 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
                 requiredPlayerLevel: unlockRequirement.requiredPlayerLevel,
                 currentPlayerLevel,
                 remainingPlayerLevels: Math.max(0, unlockRequirement.requiredPlayerLevel - currentPlayerLevel),
+                requiredVipLevel: unlockRequirement.requiredVipLevel,
+                currentVipLevel,
+                remainingVipLevels: Math.max(0, unlockRequirement.requiredVipLevel - currentVipLevel),
                 sourceMap: unlockRequirement.sourceMap,
             },
             isUnlocked: true,

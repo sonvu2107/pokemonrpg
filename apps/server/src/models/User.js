@@ -146,6 +146,11 @@ const userSchema = new mongoose.Schema(
             uppercase: true,
             maxlength: 32,
         },
+        vipExpiresAt: {
+            type: Date,
+            default: null,
+            index: true,
+        },
         adminPermissions: {
             type: [
                 {

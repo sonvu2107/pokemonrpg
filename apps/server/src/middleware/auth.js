@@ -1,9 +1,12 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import { hasAdminPermission } from '../constants/adminPermissions.js'
+import { applyVipResetToUserLike, expireVipUsersIfNeeded, isVipCurrentlyExpired } from '../utils/vipStatus.js'
 
 export const authMiddleware = async (req, res, next) => {
     try {
+        await expireVipUsersIfNeeded(User)
+
         // Get token from Authorization header
         const authHeader = req.headers.authorization
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -19,7 +22,7 @@ export const authMiddleware = async (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
         const dbUser = await User.findById(decoded.userId)
-            .select('role adminPermissions isBanned banReason bannedUntil')
+            .select('role adminPermissions isBanned banReason bannedUntil vipTierLevel vipExpiresAt vipTierId vipTierCode vipBenefits')
             .lean()
 
         if (!dbUser) {
@@ -60,11 +63,25 @@ export const authMiddleware = async (req, res, next) => {
             })
         }
 
+        if (isVipCurrentlyExpired(dbUser)) {
+            applyVipResetToUserLike(dbUser)
+            await User.updateOne({ _id: decoded.userId }, { $set: {
+                role: dbUser.role,
+                vipTierId: dbUser.vipTierId,
+                vipTierLevel: dbUser.vipTierLevel,
+                vipTierCode: dbUser.vipTierCode,
+                vipExpiresAt: dbUser.vipExpiresAt,
+                vipBenefits: dbUser.vipBenefits,
+            } })
+        }
+
         // Attach user info to request
         req.user = {
             ...decoded,
             role: dbUser.role,
             adminPermissions: dbUser.adminPermissions,
+            vipTierLevel: Math.max(0, Number.parseInt(dbUser.vipTierLevel, 10) || 0),
+            vipExpiresAt: dbUser.vipExpiresAt || null,
         }
         next()
     } catch (error) {

@@ -266,6 +266,7 @@ router.post('/', async (req, res) => {
             specialPokemonEncounterRate,
             requiredSearches,
             requiredPlayerLevel,
+            requiredVipLevel,
             encounterRate,
             itemDropRate,
             rarityCatchBonusPercent,
@@ -315,6 +316,10 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredPlayerLevel phải >= 1' })
         }
 
+        if (requiredVipLevel !== undefined && Number(requiredVipLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
+        }
+
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
             return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
@@ -352,6 +357,7 @@ router.post('/', async (req, res) => {
             specialPokemonEncounterRate: specialPokemonEncounterRate !== undefined ? specialPokemonEncounterRate : 0,
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
             requiredPlayerLevel: requiredPlayerLevel !== undefined ? Math.max(1, Number(requiredPlayerLevel) || 1) : 1,
+            requiredVipLevel: requiredVipLevel !== undefined ? Math.max(0, Number(requiredVipLevel) || 0) : 0,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
             rarityCatchBonusPercent: normalizedRarityCatchBonusPercent,
@@ -392,6 +398,7 @@ router.put('/:id', async (req, res) => {
             specialPokemonEncounterRate,
             requiredSearches,
             requiredPlayerLevel,
+            requiredVipLevel,
             encounterRate,
             itemDropRate,
             rarityCatchBonusPercent,
@@ -444,6 +451,10 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredPlayerLevel phải >= 1' })
         }
 
+        if (requiredVipLevel !== undefined && Number(requiredVipLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
+        }
+
         // Validate encounterRate
         if (encounterRate !== undefined && (encounterRate < 0 || encounterRate > 1)) {
             return res.status(400).json({ ok: false, message: 'encounterRate phải trong khoảng 0 đến 1' })
@@ -484,6 +495,9 @@ router.put('/:id', async (req, res) => {
         map.requiredPlayerLevel = requiredPlayerLevel !== undefined
             ? Math.max(1, Number(requiredPlayerLevel) || 1)
             : map.requiredPlayerLevel
+        map.requiredVipLevel = requiredVipLevel !== undefined
+            ? Math.max(0, Number(requiredVipLevel) || 0)
+            : map.requiredVipLevel
         map.encounterRate = encounterRate !== undefined ? encounterRate : map.encounterRate
         map.itemDropRate = itemDropRate !== undefined ? itemDropRate : map.itemDropRate
         map.rarityCatchBonusPercent = rarityCatchBonusPercent !== undefined

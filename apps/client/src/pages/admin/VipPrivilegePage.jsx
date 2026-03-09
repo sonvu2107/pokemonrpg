@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { vipTierApi } from '../../services/adminApi'
+import { userApi, vipTierApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
+
+const toLocalDateTimeInputValue = (value) => {
+    const date = value ? new Date(value) : null
+    if (!date || Number.isNaN(date.getTime())) return ''
+    const offsetMs = date.getTimezoneOffset() * 60000
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
 
 const createDefaultTierForm = () => ({
     code: '',
@@ -127,9 +134,14 @@ const AutoOptionRow = ({ label, description, checked, onChange }) => (
 
 export default function VipPrivilegePage() {
     const [tiers, setTiers] = useState([])
+    const [vipUsers, setVipUsers] = useState([])
+    const [vipExpiryDraftByUserId, setVipExpiryDraftByUserId] = useState({})
     const [loading, setLoading] = useState(true)
+    const [vipUsersLoading, setVipUsersLoading] = useState(true)
+    const [updatingVipExpiryUserId, setUpdatingVipExpiryUserId] = useState('')
     const [error, setError] = useState('')
     const [search, setSearch] = useState('')
+    const [vipUserSearch, setVipUserSearch] = useState('')
     const [showInactive, setShowInactive] = useState(true)
     const [saving, setSaving] = useState(false)
     const [deletingId, setDeletingId] = useState('')
@@ -156,8 +168,82 @@ export default function VipPrivilegePage() {
         }
     }
 
+    const loadVipUsers = async () => {
+        try {
+            setVipUsersLoading(true)
+            const res = await userApi.list({ role: 'vip', limit: 100 })
+            const nextUsers = Array.isArray(res?.users) ? res.users : []
+            setVipUsers(nextUsers)
+            setVipExpiryDraftByUserId(
+                nextUsers.reduce((acc, user) => {
+                    const userId = String(user?._id || '').trim()
+                    if (!userId) return acc
+                    acc[userId] = toLocalDateTimeInputValue(user?.vipExpiresAt)
+                    return acc
+                }, {})
+            )
+        } catch (err) {
+            setVipUsers([])
+            setError((prev) => prev || err.message || 'Không thể tải danh sách user VIP')
+        } finally {
+            setVipUsersLoading(false)
+        }
+    }
+
+    const refreshPageData = async () => {
+        await Promise.all([loadTiers(), loadVipUsers()])
+    }
+
+    const handleVipExpiryDraftChange = (userId, value) => {
+        const normalizedUserId = String(userId || '').trim()
+        if (!normalizedUserId) return
+        setVipExpiryDraftByUserId((prev) => ({
+            ...prev,
+            [normalizedUserId]: value,
+        }))
+    }
+
+    const handleUpdateVipExpiry = async (user) => {
+        const userId = String(user?._id || '').trim()
+        if (!userId) return
+
+        const expiresAt = String(vipExpiryDraftByUserId?.[userId] || '').trim()
+        if (!expiresAt) {
+            setError('Vui lòng chọn thời gian hết hạn VIP.')
+            return
+        }
+
+        try {
+            setUpdatingVipExpiryUserId(userId)
+            setError('')
+            const payload = {
+                expiresAt,
+                applyBenefits: false,
+            }
+
+            if (user?.vipTierId) {
+                payload.tierId = user.vipTierId
+            } else {
+                payload.level = Math.max(1, Number(user?.vipTierLevel || 1))
+            }
+
+            const res = await userApi.updateVipTier(userId, payload)
+            if (res?.user) {
+                setVipUsers((prev) => prev.map((entry) => (entry._id === userId ? res.user : entry)))
+                setVipExpiryDraftByUserId((prev) => ({
+                    ...prev,
+                    [userId]: toLocalDateTimeInputValue(res.user?.vipExpiresAt),
+                }))
+            }
+        } catch (err) {
+            setError(err.message || 'Không thể cập nhật thời gian hết hạn VIP')
+        } finally {
+            setUpdatingVipExpiryUserId('')
+        }
+    }
+
     useEffect(() => {
-        loadTiers()
+        refreshPageData()
     }, [showInactive])
 
     const visibleTiers = useMemo(() => {
@@ -168,6 +254,15 @@ export default function VipPrivilegePage() {
             return text.includes(keyword)
         })
     }, [tiers, search])
+
+    const visibleVipUsers = useMemo(() => {
+        const keyword = vipUserSearch.trim().toLowerCase()
+        if (!keyword) return vipUsers
+        return vipUsers.filter((user) => {
+            const text = `${user?.username || ''} ${user?.email || ''} ${user?.vipTierCode || ''} ${user?.vipTierLevel || 0}`.toLowerCase()
+            return text.includes(keyword)
+        })
+    }, [vipUsers, vipUserSearch])
 
     const handleEdit = (tier) => {
         setEditingId(String(tier?._id || ''))
@@ -190,7 +285,7 @@ export default function VipPrivilegePage() {
             } else {
                 await vipTierApi.create(payload)
             }
-            await loadTiers()
+            await refreshPageData()
             resetForm()
         } catch (err) {
             setError(err.message || 'Không thể lưu cấu hình đặc quyền VIP')
@@ -212,7 +307,7 @@ export default function VipPrivilegePage() {
             if (editingId === tierId) {
                 resetForm()
             }
-            await loadTiers()
+            await refreshPageData()
         } catch (err) {
             setError(err.message || 'Không thể xóa cấp VIP')
         } finally {
@@ -228,7 +323,7 @@ export default function VipPrivilegePage() {
             const toLevel = Math.max(1, parseInt(rangeForm.toLevel, 10) || fromLevel)
             const res = await vipTierApi.createRange({ fromLevel, toLevel })
             alert(res?.message || 'Đã tạo dải cấp VIP')
-            await loadTiers()
+            await refreshPageData()
         } catch (err) {
             setError(err.message || 'Không thể tạo dải cấp VIP')
         } finally {
@@ -617,6 +712,72 @@ export default function VipPrivilegePage() {
                             {saving ? 'Đang lưu...' : (editingId ? 'Cập nhật cấp VIP' : 'Tạo cấp VIP')}
                         </button>
                     </form>
+                </div>
+
+                <div className="bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-blue-100 bg-amber-50/60 flex flex-wrap items-center gap-2 justify-between">
+                        <div className="font-bold text-slate-800">Danh sách user đang có VIP ({visibleVipUsers.length})</div>
+                        <div className="flex flex-wrap items-center w-full sm:w-auto gap-2">
+                            <input
+                                type="text"
+                                value={vipUserSearch}
+                                onChange={(e) => setVipUserSearch(e.target.value)}
+                                placeholder="Tìm user VIP..."
+                                className="px-3 py-1.5 border border-slate-300 rounded text-sm flex-1 min-w-[120px]"
+                            />
+                            <button
+                                type="button"
+                                onClick={loadVipUsers}
+                                className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-bold"
+                            >
+                                Làm mới
+                            </button>
+                        </div>
+                    </div>
+
+                    {vipUsersLoading ? (
+                        <div className="p-6 text-center text-slate-500 font-bold">Đang tải danh sách VIP...</div>
+                    ) : visibleVipUsers.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 italic">Hiện chưa có user nào đang sở hữu VIP.</div>
+                    ) : (
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 bg-amber-50/20">
+                            {visibleVipUsers.map((user) => (
+                                <div key={user._id} className="rounded-lg border border-amber-200 bg-white p-3 shadow-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-slate-800 truncate">{user.username || user.email}</div>
+                                            <div className="text-xs text-slate-500 break-all">{user.email}</div>
+                                        </div>
+                                        <span className="shrink-0 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200">
+                                            VIP {Math.max(1, Number(user?.vipTierLevel || 1))}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 space-y-1 text-xs text-slate-600">
+                                        <div>Mã VIP: <span className="font-semibold text-slate-800">{user?.vipTierCode || '--'}</span></div>
+                                        <div>Hết hạn: <span className="font-semibold text-amber-700">{user?.vipExpiresAt ? new Date(user.vipExpiresAt).toLocaleString('vi-VN') : '--'}</span></div>
+                                        <div>Vai trò: <span className="font-semibold text-slate-800 uppercase">{user?.role || 'user'}</span></div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-amber-100 space-y-2">
+                                        <label className="block text-[11px] font-bold text-slate-700">Chọn thời gian hết hạn</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={vipExpiryDraftByUserId?.[user._id] || ''}
+                                            onChange={(e) => handleVipExpiryDraftChange(user._id, e.target.value)}
+                                            className="w-full px-2.5 py-2 border border-slate-300 rounded text-xs"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleUpdateVipExpiry(user)}
+                                            disabled={updatingVipExpiryUserId === user._id}
+                                            className="w-full px-3 py-2 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-60"
+                                        >
+                                            {updatingVipExpiryUserId === user._id ? 'Đang lưu...' : 'Lưu thời gian hết hạn'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
