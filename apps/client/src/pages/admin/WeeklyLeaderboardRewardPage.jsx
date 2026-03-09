@@ -181,6 +181,7 @@ export default function WeeklyLeaderboardRewardPage() {
     const [rewardStatusByUserId, setRewardStatusByUserId] = useState({})
     const [rewardAmountByUserId, setRewardAmountByUserId] = useState({})
     const [rewardingUserId, setRewardingUserId] = useState('')
+    const [revokingUserId, setRevokingUserId] = useState('')
     const [rewardedTotal, setRewardedTotal] = useState(0)
     const [selectedRewardTypes, setSelectedRewardTypes] = useState({
         platinumCoins: true,
@@ -690,6 +691,39 @@ export default function WeeklyLeaderboardRewardPage() {
         }
     }
 
+    const handleRevoke = async (player) => {
+        const userId = String(player?.userId || '').trim()
+        if (!userId) return
+
+        const rewardStatus = rewardStatusByUserId[userId] || { entries: [] }
+        if (!Array.isArray(rewardStatus.entries) || rewardStatus.entries.length === 0) {
+            alert('Người chơi này chưa có phần thưởng để thu hồi')
+            return
+        }
+
+        const confirmed = confirm(`Thu hồi toàn bộ phần thưởng top tuần đã trao cho ${player?.username || 'người chơi'}?`)
+        if (!confirmed) return
+
+        try {
+            setRevokingUserId(userId)
+            const res = await leaderboardRewardApi.revoke({
+                mode,
+                weekStart: period?.weekStart || '',
+                userId,
+            })
+            if (Array.isArray(res?.warnings) && res.warnings.length > 0) {
+                alert(`Đã thu hồi, nhưng có cảnh báo:\n- ${res.warnings.join('\n- ')}`)
+            } else {
+                alert(res?.message || 'Thu hồi phần thưởng thành công')
+            }
+            await loadRewardStatus(mode, String(period?.weekStart || '').trim())
+        } catch (err) {
+            alert(err.message || 'Thu hồi phần thưởng thất bại')
+        } finally {
+            setRevokingUserId('')
+        }
+    }
+
     const totalUsers = Math.max(0, Number(pagination?.totalUsers || 0))
     const periodText = period?.weekStart && period?.weekEnd
         ? `${period.weekStart} - ${period.weekEnd}`
@@ -1164,6 +1198,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                 const userId = String(entry?.userId || '').trim()
                                 const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
                                 const isRewarding = rewardingUserId === userId
+                                const isRevoking = revokingUserId === userId
                                 const scoreValue = getPrimaryValueByMode(mode, entry)
                                 const availableRewardTypes = selectedRewardTypeValues.filter((type) => !rewardStatus.byType?.[type])
                                 const isAllSelectedTypesRewarded = availableRewardTypes.length === 0
@@ -1250,14 +1285,26 @@ export default function WeeklyLeaderboardRewardPage() {
                                                         </div>
                                                     )
                                                 })}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleAward(entry)}
-                                                    disabled={isAllSelectedTypesRewarded || isRewarding || selectedRewardTypeValues.length === 0}
-                                                    className="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    {isRewarding ? 'Đang trao...' : (isAllSelectedTypesRewarded ? 'Đã trao hết loại chọn' : `Trao ${availableRewardTypes.length} loại`)}
-                                                </button>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAward(entry)}
+                                                        disabled={isAllSelectedTypesRewarded || isRewarding || isRevoking || selectedRewardTypeValues.length === 0}
+                                                        className="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {isRewarding ? 'Đang trao...' : (isAllSelectedTypesRewarded ? 'Đã trao hết loại chọn' : `Trao ${availableRewardTypes.length} loại`)}
+                                                    </button>
+                                                    {rewardStatus.entries.length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRevoke(entry)}
+                                                            disabled={isRewarding || isRevoking}
+                                                            className="px-3 py-1.5 rounded text-xs font-bold bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isRevoking ? 'Đang thu hồi...' : 'Thu hồi'}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
@@ -1276,6 +1323,7 @@ export default function WeeklyLeaderboardRewardPage() {
                         const userId = String(entry?.userId || '').trim()
                         const rewardStatus = rewardStatusByUserId[userId] || { entries: [], byType: {} }
                         const isRewarding = rewardingUserId === userId
+                        const isRevoking = revokingUserId === userId
                         const scoreValue = getPrimaryValueByMode(mode, entry)
                         const availableRewardTypes = selectedRewardTypeValues.filter((type) => !rewardStatus.byType?.[type])
                         const isAllSelectedTypesRewarded = availableRewardTypes.length === 0
@@ -1356,14 +1404,26 @@ export default function WeeklyLeaderboardRewardPage() {
                                             </div>
                                         )
                                     })}
-                                    <button
-                                        type="button"
-                                        onClick={() => handleAward(entry)}
-                                        disabled={isAllSelectedTypesRewarded || isRewarding || selectedRewardTypeValues.length === 0}
-                                        className="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isRewarding ? 'Đang trao...' : (isAllSelectedTypesRewarded ? 'Đã trao hết loại chọn' : `Trao ${availableRewardTypes.length} loại`)}
-                                    </button>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAward(entry)}
+                                            disabled={isAllSelectedTypesRewarded || isRewarding || isRevoking || selectedRewardTypeValues.length === 0}
+                                            className="px-3 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isRewarding ? 'Đang trao...' : (isAllSelectedTypesRewarded ? 'Đã trao hết loại chọn' : `Trao ${availableRewardTypes.length} loại`)}
+                                        </button>
+                                        {rewardStatus.entries.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRevoke(entry)}
+                                                disabled={isRewarding || isRevoking}
+                                                className="px-3 py-1.5 rounded text-xs font-bold bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isRevoking ? 'Đang thu hồi...' : 'Thu hồi'}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )

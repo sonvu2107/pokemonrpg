@@ -838,6 +838,20 @@ export const leaderboardRewardApi = {
         return res.json()
     },
 
+    // POST /api/admin/leaderboard-rewards/revoke
+    async revoke(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/leaderboard-rewards/revoke`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) await throwApiError(res, 'Thu hồi thưởng top tuần thất bại')
+        return res.json()
+    },
+
     // POST /api/admin/leaderboard-rewards/upload-image
     async uploadImage(file) {
         const formData = new FormData()

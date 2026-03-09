@@ -192,6 +192,10 @@ const serializeRewardEntry = (entry = {}) => ({
     },
 })
 
+const buildPokemonRewardOriginToken = ({ weekStart = '', mode = 'wealth', rewardedBy = '' } = {}) => (
+    `weekly_leaderboard_reward:${String(weekStart || '').trim()}:${String(mode || 'wealth').trim()}:admin:${String(rewardedBy || '').trim()}`
+)
+
 const serializeCosmeticConfig = (entry = {}) => ({
     id: String(entry?._id || '').trim(),
     mode: String(entry?.mode || 'wealth').trim(),
@@ -645,7 +649,7 @@ router.post('/award', async (req, res) => {
                 rewardPokemonLevel = clamp(toSafeInt(rewardEntry.pokemonLevel, 5), 1, 1000)
                 rewardPokemonIsShiny = Boolean(rewardEntry.pokemonIsShiny)
 
-                const originToken = `weekly_leaderboard_reward:${weekStart}:${mode}:admin:${req.user.userId}`
+                const originToken = buildPokemonRewardOriginToken({ weekStart, mode, rewardedBy: req.user.userId })
                 const pokemonAwardDocs = Array.from({ length: rewardAmount }, () => ({
                     userId: targetUserId,
                     pokemonId: rewardEntry.pokemonId,
@@ -727,6 +731,115 @@ router.post('/award', async (req, res) => {
         }
         console.error('POST /api/admin/leaderboard-rewards/award error:', error)
         return res.status(500).json({ ok: false, message: 'Trao thưởng leaderboard thất bại' })
+    }
+})
+
+// POST /api/admin/leaderboard-rewards/revoke
+router.post('/revoke', async (req, res) => {
+    const session = await mongoose.startSession()
+
+    try {
+        await ensureRewardIndexesSynced()
+
+        const mode = normalizeMode(req.body?.mode)
+        if (!VALID_MODES.has(mode)) {
+            return res.status(400).json({ ok: false, message: 'Mode leaderboard không hợp lệ' })
+        }
+
+        const requestedWeekStart = normalizeWeekStart(req.body?.weekStart)
+        const currentPeriod = buildWeeklyPeriod(new Date())
+        const weekStart = requestedWeekStart || currentPeriod.weekStart
+
+        const targetUserId = String(req.body?.userId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+            return res.status(400).json({ ok: false, message: 'userId không hợp lệ' })
+        }
+
+        const rewardRows = await WeeklyLeaderboardReward.find({ weekStart, mode, userId: targetUserId })
+            .sort({ rewardedAt: -1, _id: -1 })
+            .session(session)
+
+        if (rewardRows.length === 0) {
+            return res.status(404).json({ ok: false, message: 'Người chơi này chưa có phần thưởng để thu hồi trong tuần đã chọn' })
+        }
+
+        const warnings = []
+
+        await session.withTransaction(async () => {
+            for (const rewardRow of rewardRows) {
+                const rewardType = normalizeRewardType(rewardRow?.rewardType)
+                const rewardAmount = Math.max(1, Number.parseInt(rewardRow?.rewardAmount, 10) || 1)
+
+                if (rewardType === 'platinumCoins' || rewardType === 'moonPoints') {
+                    const playerState = await PlayerState.findOne({ userId: targetUserId }).session(session)
+                    if (playerState) {
+                        const field = rewardType === 'platinumCoins' ? 'gold' : 'moonPoints'
+                        const currentValue = Math.max(0, Number(playerState?.[field] || 0))
+                        playerState[field] = Math.max(0, currentValue - rewardAmount)
+                        await playerState.save({ session })
+                    }
+                }
+
+                if (rewardType === 'item' && rewardRow?.rewardItemId) {
+                    const inventoryDoc = await UserInventory.findOne({ userId: targetUserId, itemId: rewardRow.rewardItemId }).session(session)
+                    if (inventoryDoc) {
+                        const currentQuantity = Math.max(0, Number(inventoryDoc?.quantity || 0))
+                        const nextQuantity = Math.max(0, currentQuantity - rewardAmount)
+                        if (nextQuantity <= 0) {
+                            await inventoryDoc.deleteOne({ session })
+                        } else {
+                            inventoryDoc.quantity = nextQuantity
+                            await inventoryDoc.save({ session })
+                        }
+                    } else {
+                        warnings.push(`Không tìm thấy vật phẩm đã trao để thu hồi: ${rewardRow.rewardItemNameSnapshot || 'Item'}`)
+                    }
+                }
+
+                if (rewardType === 'pokemon' && rewardRow?.rewardPokemonId) {
+                    const originToken = buildPokemonRewardOriginToken({
+                        weekStart,
+                        mode,
+                        rewardedBy: rewardRow?.rewardedBy,
+                    })
+
+                    const pokemonDocs = await UserPokemon.find({
+                        userId: targetUserId,
+                        pokemonId: rewardRow.rewardPokemonId,
+                        formId: normalizeFormId(rewardRow.rewardPokemonFormId || 'normal'),
+                        level: Math.max(1, Number.parseInt(rewardRow.rewardPokemonLevel, 10) || 5),
+                        isShiny: Boolean(rewardRow.rewardPokemonIsShiny),
+                        originalTrainer: originToken,
+                    })
+                        .sort({ createdAt: -1, _id: -1 })
+                        .limit(rewardAmount)
+                        .session(session)
+
+                    if (pokemonDocs.length < rewardAmount) {
+                        warnings.push(`Chỉ tìm thấy ${pokemonDocs.length}/${rewardAmount} Pokemon để thu hồi: ${rewardRow.rewardPokemonNameSnapshot || 'Pokemon'}`)
+                    }
+
+                    const pokemonIdsToDelete = pokemonDocs.map((entry) => entry?._id).filter(Boolean)
+                    if (pokemonIdsToDelete.length > 0) {
+                        await UserPokemon.deleteMany({ _id: { $in: pokemonIdsToDelete } }).session(session)
+                    }
+                }
+            }
+
+            await WeeklyLeaderboardReward.deleteMany({ _id: { $in: rewardRows.map((entry) => entry._id) } }).session(session)
+        })
+
+        return res.json({
+            ok: true,
+            message: `Đã thu hồi ${rewardRows.length} phần thưởng của người chơi trong tuần này`,
+            revokedCount: rewardRows.length,
+            warnings,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/leaderboard-rewards/revoke error:', error)
+        return res.status(500).json({ ok: false, message: 'Thu hồi phần thưởng leaderboard thất bại' })
+    } finally {
+        await session.endSession()
     }
 })
 
