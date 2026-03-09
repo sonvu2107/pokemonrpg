@@ -824,7 +824,7 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
 
         const userPokemonRows = await UserPokemon.find(query)
             .select('pokemonId nickname level formId isShiny location createdAt updatedAt')
-            .populate('pokemonId', 'name pokedexNumber rarity imageUrl sprites forms defaultFormId evolution')
+            .populate('pokemonId', 'name pokedexNumber rarity imageUrl sprites baseStats forms defaultFormId evolution')
             .sort({ level: -1, updatedAt: -1, _id: -1 })
             .lean()
 
@@ -1603,7 +1603,7 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
             : 0
 
         const targetSpecies = await Pokemon.findById(evolutionRule.evolvesTo)
-            .select('name imageUrl sprites forms defaultFormId levelUpMoves')
+            .select('name imageUrl sprites baseStats forms defaultFormId levelUpMoves')
             .lean()
 
         if (!targetSpecies) {

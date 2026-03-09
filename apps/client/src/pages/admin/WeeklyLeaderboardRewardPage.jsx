@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../../services/gameApi'
 import { leaderboardRewardApi } from '../../services/adminApi'
+import { uploadToCloudinary } from '../../utils/cloudinaryUtils'
 
 const MODE_OPTIONS = [
     { value: 'wealth', label: 'Top Tài Phú Tuần' },
@@ -426,8 +427,18 @@ export default function WeeklyLeaderboardRewardPage() {
         try {
             setError('')
             setUploadingRewardAsset((prev) => ({ ...prev, [key]: true }))
-            const uploadRes = await leaderboardRewardApi.uploadImage(file)
-            const imageUrl = String(uploadRes?.imageUrl || '').trim()
+            let imageUrl = ''
+
+            try {
+                imageUrl = await uploadToCloudinary(file, undefined, { folder: 'pokemon/vip-assets' })
+            } catch (directUploadError) {
+                const uploadRes = await leaderboardRewardApi.uploadImage(file)
+                imageUrl = String(uploadRes?.imageUrl || '').trim()
+                if (!imageUrl) {
+                    throw directUploadError
+                }
+            }
+
             if (!imageUrl) {
                 throw new Error('Không nhận được URL ảnh sau khi tải lên')
             }
