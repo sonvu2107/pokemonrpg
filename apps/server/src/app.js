@@ -22,6 +22,7 @@ import dailyCheckinRoutes from './routes/dailyCheckin.js'
 import dailyRewardsAdminRoutes from './routes/admin/dailyRewards.js'
 import promoCodesAdminRoutes from './routes/admin/promoCodes.js'
 import leaderboardRewardsAdminRoutes from './routes/admin/leaderboardRewards.js'
+import auctionsAdminRoutes from './routes/admin/auctions.js'
 import messagesRoutes from './routes/messages.js'
 import promoCodeRoutes from './routes/promoCodes.js'
 import friendsRoutes from './routes/friends.js'
@@ -35,6 +36,7 @@ import pokemonRoutes from './routes/pokemon.js'
 import partyRoutes from './routes/party.js'
 import inventoryRoutes from './routes/inventory.js'
 import shopRoutes from './routes/shop.js'
+import auctionsRoutes from './routes/auctions.js'
 import IpBan from './models/IpBan.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -183,6 +185,7 @@ app.use('/api/party', partyRoutes)
 app.use('/api/battle-trainers', battleTrainersRoutes)
 app.use('/api/inventory', inventoryRoutes)
 app.use('/api/shop', shopRoutes)
+app.use('/api/auctions', auctionsRoutes)
 app.use('/api/daily-checkin', dailyCheckinRoutes)
 app.use('/api/messages', messagesRoutes)
 app.use('/api/promo-codes', promoCodeRoutes)
@@ -201,6 +204,7 @@ app.use('/api/admin/battle-trainers', adminLimiter, authMiddleware, requireAdmin
 app.use('/api/admin/daily-rewards', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.REWARDS), dailyRewardsAdminRoutes)
 app.use('/api/admin/promo-codes', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.CODES), promoCodesAdminRoutes)
 app.use('/api/admin/leaderboard-rewards', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.REWARDS), leaderboardRewardsAdminRoutes)
+app.use('/api/admin/auctions', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.AUCTIONS), auctionsAdminRoutes)
 
 // Error handlers
 app.use(notFound)

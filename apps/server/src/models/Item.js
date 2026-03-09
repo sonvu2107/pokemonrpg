@@ -71,6 +71,10 @@ const itemSchema = new Schema(
             type: Boolean,
             default: false,
         },
+        isTradable: {
+            type: Boolean,
+            default: false,
+        },
         purchaseLimit: {
             type: Number,
             default: 0,
@@ -97,7 +101,7 @@ const itemSchema = new Schema(
         },
         effectType: {
             type: String,
-            enum: ['none', 'catchMultiplier', 'heal', 'healAmount'],
+            enum: ['none', 'catchMultiplier', 'heal', 'healAmount', 'grantVipTier'],
             default: 'none',
         },
         effectValue: {
@@ -109,6 +113,13 @@ const itemSchema = new Schema(
             type: Number,
             default: 0,
             min: 0,
+        },
+        effectDurationUnit: {
+            type: String,
+            enum: ['month', 'week'],
+            default: 'month',
+            trim: true,
+            lowercase: true,
         },
     },
     {

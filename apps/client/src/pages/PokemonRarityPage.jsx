@@ -224,10 +224,10 @@ export default function PokemonRarityPage() {
             <div className="text-center mb-6">
                 <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">Bảng Độ Hiếm Pokémon</h1>
                 <div className="flex items-center justify-center gap-2 text-sm font-bold flex-wrap">
-                    <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Chung</Link>
-                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Pokémon</Link>
-                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-600 text-white">Độ Hiếm</Link>
-                    <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Hàng Ngày</Link>
+                    <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Chung</Link>
+                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Pokémon</Link>
+                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-600 text-white whitespace-nowrap">Độ Hiếm</Link>
+                    <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Hàng Ngày</Link>
                 </div>
             </div>
 

@@ -57,6 +57,12 @@ const resolveEffectSummary = (item) => {
         const pp = Number(item?.effectValueMp || 0)
         return `Hồi ${hp} HP, ${pp} PP`
     }
+    if (effectType === 'grantVipTier') {
+        const vipLevel = Math.max(1, Number(item?.effectValue || 1))
+        const durationValue = Math.max(1, Number(item?.effectValueMp || 1))
+        const durationUnit = String(item?.effectDurationUnit || 'month') === 'week' ? 'tuần' : 'tháng'
+        return `Dùng để kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
+    }
     return 'Không có hiệu ứng'
 }
 
@@ -69,27 +75,28 @@ export default function ItemInfoPage() {
     const [item, setItem] = useState(null)
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [inventoryQuantity, setInventoryQuantity] = useState(0)
+    const [usingItem, setUsingItem] = useState(false)
+
+    const loadItemDetail = async () => {
+        try {
+            setLoading(true)
+            setError('')
+            const data = await gameApi.getItemDetail(id)
+            setItem(data?.item || null)
+            setWallet({
+                platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
+                moonPoints: Number(data?.wallet?.moonPoints || 0),
+            })
+            setInventoryQuantity(Number(data?.inventory?.quantity || 0))
+        } catch (err) {
+            setError(err.message || 'Không thể tải chi tiết vật phẩm')
+            setItem(null)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     useEffect(() => {
-        const loadItemDetail = async () => {
-            try {
-                setLoading(true)
-                setError('')
-                const data = await gameApi.getItemDetail(id)
-                setItem(data?.item || null)
-                setWallet({
-                    platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
-                    moonPoints: Number(data?.wallet?.moonPoints || 0),
-                })
-                setInventoryQuantity(Number(data?.inventory?.quantity || 0))
-            } catch (err) {
-                setError(err.message || 'Không thể tải chi tiết vật phẩm')
-                setItem(null)
-            } finally {
-                setLoading(false)
-            }
-        }
-
         loadItemDetail()
     }, [id])
 
@@ -97,6 +104,23 @@ export default function ItemInfoPage() {
     const rarityMeta = RARITY_META[item?.rarity] || RARITY_META.common
     const effectSummary = useMemo(() => resolveEffectSummary(item), [item])
     const isOnSale = Boolean(item?.isShopEnabled && Number(item?.shopPrice || 0) > 0)
+    const canUseDirectly = String(item?.effectType || '') === 'grantVipTier' && inventoryQuantity > 0
+
+    const handleUseItem = async () => {
+        if (!item?._id || !canUseDirectly) return
+        if (!confirm(`Dùng ${item.name} ngay bây giờ?`)) return
+
+        try {
+            setUsingItem(true)
+            const result = await gameApi.useItem(item._id, 1)
+            alert(result?.message || 'Dùng vật phẩm thành công')
+            await loadItemDetail()
+        } catch (err) {
+            alert(err.message || 'Không thể dùng vật phẩm')
+        } finally {
+            setUsingItem(false)
+        }
+    }
 
     if (loading) {
         return (
@@ -187,6 +211,16 @@ export default function ItemInfoPage() {
                 >
                     Mở Túi Đồ
                 </Link>
+                {canUseDirectly && (
+                    <button
+                        type="button"
+                        onClick={handleUseItem}
+                        disabled={usingItem}
+                        className="px-4 py-2 bg-amber-100 border border-amber-200 hover:bg-amber-200 text-amber-800 rounded text-sm font-bold disabled:opacity-60"
+                    >
+                        {usingItem ? 'Đang dùng...' : 'Dùng ngay'}
+                    </button>
+                )}
                 <Link
                     to="/shop/items"
                     className="px-4 py-2 bg-cyan-100 border border-cyan-200 hover:bg-cyan-200 text-cyan-800 rounded text-sm font-bold"

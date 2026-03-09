@@ -16,6 +16,7 @@ import { calcMaxHp } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
 import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
+import { addOneMonth } from '../utils/vipStatus.js'
 
 const router = express.Router()
 const useItemActionGuard = createActionGuard({
@@ -200,6 +201,52 @@ const ALLOWED_ITEM_USE_BATTLE_MODES = new Set(['trainer', 'duel', 'online'])
 const normalizeItemUseBattleMode = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
     return ALLOWED_ITEM_USE_BATTLE_MODES.has(normalized) ? normalized : ''
+}
+
+const addMonthsFromBase = (baseValue = new Date(), months = 1) => {
+    let nextDate = baseValue instanceof Date ? new Date(baseValue) : new Date(baseValue)
+    if (Number.isNaN(nextDate.getTime())) {
+        nextDate = new Date()
+    }
+
+    const totalMonths = Math.max(1, Math.floor(Number(months) || 1))
+    for (let index = 0; index < totalMonths; index += 1) {
+        nextDate = addOneMonth(nextDate) || nextDate
+    }
+    return nextDate
+}
+
+const addWeeksFromBase = (baseValue = new Date(), weeks = 1) => {
+    let nextDate = baseValue instanceof Date ? new Date(baseValue) : new Date(baseValue)
+    if (Number.isNaN(nextDate.getTime())) {
+        nextDate = new Date()
+    }
+
+    const totalWeeks = Math.max(1, Math.floor(Number(weeks) || 1))
+    nextDate.setDate(nextDate.getDate() + (totalWeeks * 7))
+    return nextDate
+}
+
+const resetDailyAutoUsage = (userDoc) => {
+    if (!userDoc || typeof userDoc !== 'object') return
+
+    userDoc.autoSearch = {
+        ...userDoc.autoSearch,
+        enabled: false,
+        startedAt: null,
+        dayCount: 0,
+        dayRuntimeMs: 0,
+        lastRuntimeAt: null,
+    }
+
+    userDoc.autoTrainer = {
+        ...userDoc.autoTrainer,
+        enabled: false,
+        startedAt: null,
+        dayCount: 0,
+        dayRuntimeMs: 0,
+        lastRuntimeAt: null,
+    }
 }
 
 const normalizeItemUseContext = (requestBody = {}) => {
@@ -841,6 +888,101 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     restoredMoves: restoredPpMoves,
                 },
                 trainerCounterAttack,
+            })
+        }
+
+        if (item.effectType === 'grantVipTier') {
+            if (qty !== 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP chỉ được dùng từng cái một' })
+            }
+
+            const targetVipLevel = Math.max(0, Number.parseInt(item.effectValue, 10) || 0)
+            const vipDurationValue = Math.max(1, Number.parseInt(item.effectValueMp, 10) || 1)
+            const vipDurationUnit = ['week', 'month'].includes(String(item.effectDurationUnit || '').trim().toLowerCase())
+                ? String(item.effectDurationUnit).trim().toLowerCase()
+                : 'month'
+            if (targetVipLevel <= 0) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP chưa được cấu hình đúng cấp VIP' })
+            }
+
+            const [entry, userDoc, vipTier] = await Promise.all([
+                UserInventory.findOne({ userId, itemId: normalizedItemId }),
+                User.findById(userId),
+                VipPrivilegeTier.findOne({ level: targetVipLevel }),
+            ])
+
+            if (!entry || Number(entry.quantity || 0) < qty) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+            if (!userDoc) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
+            }
+            if (!vipTier) {
+                return res.status(400).json({ ok: false, message: `Chưa tồn tại tier VIP ${targetVipLevel} để áp dụng vật phẩm` })
+            }
+
+            const now = new Date()
+            const currentVipLevel = Math.max(0, Number.parseInt(userDoc?.vipTierLevel, 10) || 0)
+            const currentExpiresAt = userDoc?.vipExpiresAt ? new Date(userDoc.vipExpiresAt) : null
+            const hasActiveVip = currentExpiresAt && !Number.isNaN(currentExpiresAt.getTime()) && currentExpiresAt.getTime() > Date.now()
+
+            if (hasActiveVip && currentVipLevel > targetVipLevel) {
+                return res.status(400).json({ ok: false, message: `Bạn đang sở hữu VIP ${currentVipLevel} cao hơn vật phẩm này.` })
+            }
+
+            const baseDate = hasActiveVip && currentExpiresAt ? currentExpiresAt : now
+            const nextExpiresAt = vipDurationUnit === 'week'
+                ? addWeeksFromBase(baseDate, vipDurationValue)
+                : addMonthsFromBase(baseDate, vipDurationValue)
+            const durationLabel = `${vipDurationValue} ${vipDurationUnit === 'week' ? 'tuần' : 'tháng'}`
+
+            entry.quantity -= qty
+            if (entry.quantity <= 0) {
+                await entry.deleteOne()
+            } else {
+                await entry.save()
+            }
+
+            userDoc.role = 'vip'
+            userDoc.vipTierId = vipTier._id
+            userDoc.vipTierLevel = Math.max(1, Number.parseInt(vipTier.level, 10) || 1)
+            userDoc.vipTierCode = String(vipTier.code || '').trim().toUpperCase()
+            userDoc.vipExpiresAt = nextExpiresAt
+            userDoc.vipBenefits = {
+                ...(userDoc.vipBenefits || {}),
+                ...((vipTier?.benefits && typeof vipTier.benefits === 'object') ? vipTier.benefits : {}),
+            }
+
+            if (userDoc.vipTierLevel > currentVipLevel) {
+                resetDailyAutoUsage(userDoc)
+            }
+
+            await userDoc.save()
+
+            return res.json({
+                ok: true,
+                message: `Đã kích hoạt VIP ${userDoc.vipTierLevel} trong ${durationLabel}.`,
+                itemId: normalizedItemId,
+                quantity: qty,
+                effect: {
+                    type: 'grantVipTier',
+                    vipTierLevel: userDoc.vipTierLevel,
+                    vipDurationValue,
+                    vipDurationUnit,
+                    vipExpiresAt: nextExpiresAt,
+                },
+                user: {
+                    role: userDoc.role,
+                    vipTierId: userDoc.vipTierId,
+                    vipTierLevel: userDoc.vipTierLevel,
+                    vipTierCode: userDoc.vipTierCode || '',
+                    vipExpiresAt: userDoc.vipExpiresAt,
+                    vipBenefits: userDoc.vipBenefits || {},
+                },
+                globalNotification: {
+                    type: 'success',
+                    message: `Kich hoat thanh cong VIP ${userDoc.vipTierLevel}.`,
+                },
             })
         }
 

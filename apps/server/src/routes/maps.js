@@ -1,6 +1,7 @@
 import express from 'express'
 import MapModel from '../models/Map.js'
 import DropRate from '../models/DropRate.js'
+import ItemDropRate from '../models/ItemDropRate.js'
 
 const router = express.Router()
 const MAPS_CACHE_TTL_MS = 30 * 1000
@@ -82,6 +83,8 @@ const writeMapDetailCached = (slug, value) => {
 }
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const clampRate = (value) => Math.max(0, Math.min(1, Number(value) || 0))
+const toPercent = (value) => Number((clampRate(value) * 100).toFixed(4))
 
 const toSpecialPokemonDisplay = (pokemon, formId = null) => {
     if (!pokemon) return null
@@ -120,6 +123,32 @@ const resolveSpecialPokemonsForMap = (map) => {
         .filter(Boolean)
 }
 
+const resolveSpecialPokemonConfigsForMap = (map) => {
+    const configs = Array.isArray(map?.specialPokemonConfigs) ? map.specialPokemonConfigs : []
+    if (configs.length > 0) {
+        return configs
+            .map((entry) => {
+                const pokemon = entry?.pokemonId
+                const weight = Number(entry?.weight)
+                if (!pokemon || !(weight > 0)) return null
+                return {
+                    pokemon,
+                    formId: normalizeFormId(entry?.formId),
+                    weight,
+                }
+            })
+            .filter(Boolean)
+    }
+
+    return (Array.isArray(map?.specialPokemonIds) ? map.specialPokemonIds : [])
+        .map((pokemon) => (pokemon ? {
+            pokemon,
+            formId: 'normal',
+            weight: 1,
+        } : null))
+        .filter(Boolean)
+}
+
 const resolveFormForDrop = (pokemon, formId) => {
     if (!pokemon) return { formId: 'normal', form: null }
     const forms = Array.isArray(pokemon.forms) ? pokemon.forms : []
@@ -135,6 +164,80 @@ const resolveFormForDrop = (pokemon, formId) => {
     return { formId: resolvedFormId, form }
 }
 
+const buildMapPokemonEncounters = (map, dropRates = []) => {
+    const encounterRate = clampRate(map?.encounterRate)
+    const specialConfigs = resolveSpecialPokemonConfigsForMap(map)
+    const hasSpecialPool = specialConfigs.length > 0
+    const specialPoolShare = hasSpecialPool ? clampRate(map?.specialPokemonEncounterRate) : 0
+    const normalPoolShare = hasSpecialPool ? Math.max(0, 1 - specialPoolShare) : 1
+    const specialTotalWeight = specialConfigs.reduce((sum, entry) => sum + (Number(entry?.weight) > 0 ? Number(entry.weight) : 0), 0)
+    const normalTotalWeight = dropRates.reduce((sum, entry) => sum + (Number(entry?.weight) > 0 ? Number(entry.weight) : 0), 0)
+
+    const specialEntries = specialConfigs.map((entry) => {
+        const pokemon = entry.pokemon
+        const weight = Number(entry.weight) > 0 ? Number(entry.weight) : 0
+        const { formId, form } = resolveFormForDrop(pokemon, entry.formId)
+        const poolRate = specialTotalWeight > 0 ? (weight / specialTotalWeight) : 0
+        const encounterChance = encounterRate * specialPoolShare * poolRate
+        const resolvedImageUrl = form?.imageUrl || form?.sprites?.normal || form?.sprites?.icon || pokemon?.imageUrl || pokemon?.sprites?.normal || pokemon?.sprites?.icon || ''
+
+        return {
+            _id: `special:${pokemon?._id || pokemon?.id || pokemon?.name || formId}`,
+            source: 'special',
+            pokemonId: pokemon,
+            formId,
+            form,
+            resolvedSprites: form?.sprites || pokemon?.sprites || {},
+            resolvedImageUrl,
+            weight,
+            poolPercent: toPercent(poolRate),
+            encounterPercent: toPercent(encounterChance),
+        }
+    })
+
+    const normalEntries = dropRates.map((entry) => {
+        const weight = Number(entry?.weight) > 0 ? Number(entry.weight) : 0
+        const poolRate = normalTotalWeight > 0 ? (weight / normalTotalWeight) : 0
+        const encounterChance = encounterRate * normalPoolShare * poolRate
+        return {
+            ...entry,
+            source: 'normal',
+            poolPercent: toPercent(poolRate),
+            encounterPercent: toPercent(encounterChance),
+        }
+    })
+
+    return [...specialEntries, ...normalEntries]
+        .filter((entry) => entry?.pokemonId)
+        .sort((left, right) => {
+            const encounterDiff = Number(right?.encounterPercent || 0) - Number(left?.encounterPercent || 0)
+            if (encounterDiff !== 0) return encounterDiff
+            return String(left?.pokemonId?.name || '').localeCompare(String(right?.pokemonId?.name || ''), 'vi')
+        })
+}
+
+const buildMapItemDrops = (map, itemDropRates = []) => {
+    const itemDropRate = clampRate(map?.itemDropRate)
+    const totalWeight = itemDropRates.reduce((sum, entry) => sum + (Number(entry?.weight) > 0 ? Number(entry.weight) : 0), 0)
+
+    return itemDropRates
+        .map((entry) => {
+            const weight = Number(entry?.weight) > 0 ? Number(entry.weight) : 0
+            const poolRate = totalWeight > 0 ? (weight / totalWeight) : 0
+            return {
+                ...entry,
+                poolPercent: toPercent(poolRate),
+                dropPercent: toPercent(itemDropRate * poolRate),
+            }
+        })
+        .filter((entry) => entry?.itemId)
+        .sort((left, right) => {
+            const dropDiff = Number(right?.dropPercent || 0) - Number(left?.dropPercent || 0)
+            if (dropDiff !== 0) return dropDiff
+            return String(left?.itemId?.name || '').localeCompare(String(right?.itemId?.name || ''), 'vi')
+        })
+}
+
 // GET /api/maps/legendary - Get all legendary maps (public endpoint)
 router.get('/legendary', async (req, res) => {
     try {
@@ -144,8 +247,8 @@ router.get('/legendary', async (req, res) => {
         }
 
         const legendaryMaps = await MapModel.find({ isLegendary: true })
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
             .select('name slug iconId isEventMap specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel requiredVipLevel autoSearchRequiredVipLevel')
             .sort({ createdAt: 1 })
             .lean()
@@ -173,8 +276,8 @@ router.get('/', async (req, res) => {
         }
 
         const maps = await MapModel.find({})
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
             .select('name slug levelMin levelMax isLegendary isEventMap iconId specialPokemonImages specialPokemonIds specialPokemonConfigs mapImageUrl requiredPlayerLevel requiredVipLevel autoSearchRequiredVipLevel')
             .sort({ levelMin: 1 })
             .lean()
@@ -203,8 +306,8 @@ router.get('/:slug', async (req, res) => {
         }
 
         const map = await MapModel.findOne({ slug })
-            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId')
-            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .populate('specialPokemonIds', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
+            .populate('specialPokemonConfigs.pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId rarity')
             .lean()
 
         if (!map) {
@@ -213,6 +316,11 @@ router.get('/:slug', async (req, res) => {
 
         const dropRates = await DropRate.find({ mapId: map._id })
             .populate('pokemonId', 'name pokedexNumber sprites imageUrl types rarity forms defaultFormId')
+            .sort({ weight: -1 })
+            .lean()
+
+        const itemDropRates = await ItemDropRate.find({ mapId: map._id })
+            .populate('itemId', 'name description imageUrl type rarity effectType effectValue effectValueMp')
             .sort({ weight: -1 })
             .lean()
 
@@ -234,7 +342,16 @@ router.get('/:slug', async (req, res) => {
             }
         })
 
-        const response = { ok: true, map: resolvedMap, dropRates: resolvedDropRates }
+        const resolvedItemDropRates = buildMapItemDrops(map, itemDropRates)
+        const pokemonEncounters = buildMapPokemonEncounters(map, resolvedDropRates)
+
+        const response = {
+            ok: true,
+            map: resolvedMap,
+            dropRates: resolvedDropRates,
+            itemDropRates: resolvedItemDropRates,
+            pokemonEncounters,
+        }
         writeMapDetailCached(slug, response)
         res.json(response)
     } catch (error) {

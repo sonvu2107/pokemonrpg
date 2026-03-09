@@ -878,8 +878,8 @@ export default function UserManagementPage() {
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border border-blue-200 flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
-                <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full">
-                    <table className="w-full text-sm text-slate-700 min-w-[1020px] lg:min-w-[1120px]">
+                <div className="overflow-auto max-h-[65vh] custom-scrollbar w-full" style={{ transform: 'rotateX(180deg)' }}>
+                    <table className="w-full text-sm text-slate-700 min-w-[1020px] lg:min-w-[1120px]" style={{ transform: 'rotateX(180deg)' }}>
                         <thead className="bg-slate-50 text-slate-800 uppercase text-[11px] tracking-wide border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                             <tr>
                                 <th className="whitespace-nowrap px-3 py-3 text-center font-semibold w-12">

@@ -872,6 +872,133 @@ export const gameApi = {
         return res.json()
     },
 
+    async getItemMarketSellData(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/item-market/sell${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải dữ liệu bán vật phẩm')
+        return res.json()
+    },
+
+    async createItemMarketListing(payload) {
+        const res = await fetch(`${API_URL}/shop/item-market/sell/list`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Tạo tin đăng vật phẩm thất bại')
+        return res.json()
+    },
+
+    async cancelItemMarketListing(listingId) {
+        const res = await fetch(`${API_URL}/shop/item-market/sell/${listingId}/cancel`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Hủy tin đăng vật phẩm thất bại')
+        return res.json()
+    },
+
+    async getItemMarketListings(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/item-market/buy${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải khu giao dịch vật phẩm')
+        return res.json()
+    },
+
+    async buyItemMarketListing(listingId) {
+        const res = await fetch(`${API_URL}/shop/item-market/buy/${listingId}`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Mua vật phẩm giao dịch thất bại')
+        return res.json()
+    },
+
+    async getAuctions(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách đấu giá')
+        return res.json()
+    },
+
+    async getParticipatedAuctions(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions/me/participated${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải phiên đấu giá bạn đã tham gia')
+        return res.json()
+    },
+
+    async getAuctionDetail(id) {
+        const res = await fetch(`${API_URL}/auctions/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải chi tiết đấu giá')
+        return res.json()
+    },
+
+    async getAuctionBids(id, params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions/${id}/bids${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải lịch sử đấu giá')
+        return res.json()
+    },
+
+    async placeAuctionBid(id, amount) {
+        const res = await fetch(`${API_URL}/auctions/${id}/bid`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ amount }),
+        })
+        if (!res.ok) await throwApiError(res, 'Đặt giá đấu thất bại')
+        return res.json()
+    },
+
     // GET /api/rankings/:type - Get rankings
     async getRankings(type = 'overall', page = 1, limit = 35, params = {}) {
         const searchParams = new URLSearchParams({

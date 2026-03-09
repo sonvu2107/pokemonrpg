@@ -304,21 +304,21 @@ export default function RankingsPage() {
             {/* Header with coins */}
             <div className="text-center mb-6">
                 <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">{pageTitle}</h1>
-                <div className="flex items-center justify-center gap-2 text-sm font-bold">
-                    <Link to="/rankings/overall" className={`px-3 py-1 rounded ${!isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Chung</Link>
-                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Pokémon</Link>
-                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Độ Hiếm</Link>
-                    <Link to="/rankings/daily" className={`px-3 py-1 rounded ${isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Hàng Ngày</Link>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-bold">
+                    <Link to="/rankings/overall" className={`px-3 py-1 rounded whitespace-nowrap ${!isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Chung</Link>
+                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Pokémon</Link>
+                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Độ Hiếm</Link>
+                    <Link to="/rankings/daily" className={`px-3 py-1 rounded whitespace-nowrap ${isDaily ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>Hàng Ngày</Link>
                 </div>
                 {!isDaily && (
                     <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-center gap-2 text-xs sm:text-sm font-bold">
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm font-bold">
                             {OVERALL_TABS.map((tab) => (
                                 <button
                                     key={tab.value}
                                     type="button"
                                     onClick={() => setOverallMode(tab.value)}
-                                    className={`rounded px-3 py-1 border transition-colors ${overallMode === tab.value
+                                    className={`whitespace-nowrap rounded px-3 py-1 border transition-colors ${overallMode === tab.value
                                         ? 'bg-cyan-600 border-cyan-700 text-white'
                                         : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
                                         }`}
@@ -354,7 +354,7 @@ export default function RankingsPage() {
                             <button
                                 key={tab.value}
                                 onClick={() => setDailyType(tab.value)}
-                                className={`rounded px-3 py-1 transition-colors ${dailyType === tab.value
+                                className={`whitespace-nowrap rounded px-3 py-1 transition-colors ${dailyType === tab.value
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-white text-blue-700 hover:bg-blue-100'
                                     }`}
@@ -369,7 +369,7 @@ export default function RankingsPage() {
                             <button
                                 key={item.value}
                                 onClick={() => setSelectedDate(item.value)}
-                                className={`rounded px-3 py-1 transition-colors ${selectedDate === item.value
+                                className={`whitespace-nowrap rounded px-3 py-1 transition-colors ${selectedDate === item.value
                                     ? 'bg-cyan-600 text-white'
                                     : 'bg-white text-slate-700 hover:bg-blue-100'
                                     }`}
@@ -379,7 +379,7 @@ export default function RankingsPage() {
                         ))}
                         <button
                             onClick={() => setSelectedDate(todayKey)}
-                            className={`rounded px-3 py-1 transition-colors ${selectedDate === todayKey
+                            className={`whitespace-nowrap rounded px-3 py-1 transition-colors ${selectedDate === todayKey
                                 ? 'bg-cyan-600 text-white'
                                 : 'bg-white text-slate-700 hover:bg-blue-100'
                                 }`}

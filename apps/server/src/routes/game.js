@@ -853,6 +853,50 @@ const applyStatStageToValue = (value, stage = 0) => {
     return Math.max(1, Math.floor(numericValue * multiplier))
 }
 
+const resolveBattleTurnOrder = ({
+    playerPriority = 0,
+    opponentPriority = 0,
+    playerSpeed = 1,
+    opponentSpeed = 1,
+    random = Math.random,
+} = {}) => {
+    const normalizedPlayerPriority = clamp(Math.floor(Number(playerPriority) || 0), -7, 7)
+    const normalizedOpponentPriority = clamp(Math.floor(Number(opponentPriority) || 0), -7, 7)
+    const normalizedPlayerSpeed = Math.max(1, Math.floor(Number(playerSpeed) || 1))
+    const normalizedOpponentSpeed = Math.max(1, Math.floor(Number(opponentSpeed) || 1))
+
+    if (normalizedPlayerPriority !== normalizedOpponentPriority) {
+        return {
+            playerActsFirst: normalizedPlayerPriority > normalizedOpponentPriority,
+            reason: 'priority',
+            playerPriority: normalizedPlayerPriority,
+            opponentPriority: normalizedOpponentPriority,
+            playerSpeed: normalizedPlayerSpeed,
+            opponentSpeed: normalizedOpponentSpeed,
+        }
+    }
+
+    if (normalizedPlayerSpeed !== normalizedOpponentSpeed) {
+        return {
+            playerActsFirst: normalizedPlayerSpeed > normalizedOpponentSpeed,
+            reason: 'speed',
+            playerPriority: normalizedPlayerPriority,
+            opponentPriority: normalizedOpponentPriority,
+            playerSpeed: normalizedPlayerSpeed,
+            opponentSpeed: normalizedOpponentSpeed,
+        }
+    }
+
+    return {
+        playerActsFirst: random() < 0.5,
+        reason: 'speed-tie',
+        playerPriority: normalizedPlayerPriority,
+        opponentPriority: normalizedOpponentPriority,
+        playerSpeed: normalizedPlayerSpeed,
+        opponentSpeed: normalizedOpponentSpeed,
+    }
+}
+
 const resolveActionAvailabilityByStatus = ({ status = '', statusTurns = 0, random = Math.random } = {}) => {
     const normalizedStatus = normalizeBattleStatus(status)
     const normalizedTurns = normalizeStatusTurns(statusTurns)
@@ -1462,6 +1506,18 @@ const resolvePokemonForm = (pokemon, formId) => {
     }
 
     return { form: resolvedForm, formId: resolvedFormId }
+}
+
+const hasOwnedPokemonForm = async (userId, pokemonId, formId = 'normal') => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) return false
+
+    const ownedEntries = await UserPokemon.find(withActiveUserPokemonFilter({ userId, pokemonId: normalizedPokemonId }))
+        .select('formId')
+        .lean()
+
+    const normalizedTargetFormId = normalizeFormId(formId)
+    return ownedEntries.some((entry) => normalizeFormId(entry?.formId || 'normal') === normalizedTargetFormId)
 }
 
 const resolvePokemonImageForForm = (pokemon, formId, isShiny = false) => {
@@ -2860,6 +2916,7 @@ router.post('/search', authMiddleware, searchActionGuard, async (req, res, next)
         const maxHp = calcMaxHp(baseStats?.hp, level, pokemon.rarity)
         const hp = maxHp
         const playerBattleSnapshot = await resolveWildPlayerBattleSnapshot(userId)
+        const isNewPokedexEntry = !(await hasOwnedPokemonForm(userId, pokemon._id, formId))
 
         const encounter = await Encounter.create({
             userId,
@@ -2892,6 +2949,7 @@ router.post('/search', authMiddleware, searchActionGuard, async (req, res, next)
             pokemon: {
                 ...pokemon,
                 formId,
+                isNewPokedexEntry,
                 stats: scaledStats,
                 form: resolvedForm || null,
                 resolvedSprites: formSprites || pokemon.sprites,
@@ -4233,12 +4291,234 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             )
         }
 
+        const battleExtraLogs = []
+        const defaultOpponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
+        let selectedOpponentMove = selectedCounterMoveInput
+        let selectedOpponentMoveName = String(selectedOpponentMove?.name || '').trim()
+        let selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
+        let opponentMoveDoc = null
+
+        if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle') {
+            opponentMoveDoc = await Move.findOne({ nameLower: selectedOpponentMoveKey }).lean()
+        }
+
+        if (!selectedOpponentMoveName) {
+            selectedOpponentMoveName = normalizedTrainerId ? 'Struggle' : 'Counter Strike'
+            selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
+        }
+
+        let opponentMovePower = Number(opponentMoveDoc?.power)
+        if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
+            opponentMovePower = Number(selectedOpponentMove?.power)
+        }
+        if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
+            opponentMovePower = selectedOpponentMoveKey === 'struggle' ? 35 : defaultOpponentMovePower
+        }
+        opponentMovePower = clamp(Math.floor(opponentMovePower), 1, 250)
+
+        let opponentMoveType = normalizeTypeToken(opponentMoveDoc?.type || selectedOpponentMove?.type || inferMoveType(selectedOpponentMoveName)) || (targetTypes[0] || 'normal')
+        if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && opponentMoveType === 'normal') {
+            opponentMoveType = 'electric'
+        }
+
+        let opponentMoveCategory = resolveMoveCategory(opponentMoveDoc, selectedOpponentMove, opponentMovePower)
+        if (opponentMoveCategory === 'status') {
+            opponentMovePower = 0
+        }
+
+        let opponentMoveAccuracy = resolveMoveAccuracy(opponentMoveDoc, selectedOpponentMove)
+        let opponentMovePriority = resolveMovePriority(opponentMoveDoc, selectedOpponentMove)
+        let opponentMoveCriticalChance = resolveMoveCriticalChance(opponentMoveDoc, selectedOpponentMove)
+
+        const selectedOpponentCurrentPp = Number(selectedOpponentMove?.currentPp ?? selectedOpponentMove?.pp)
+        if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle' && Number.isFinite(selectedOpponentCurrentPp) && selectedOpponentCurrentPp <= 0) {
+            selectedOpponentMove = {
+                name: 'Struggle',
+                type: 'normal',
+                power: 35,
+                category: 'physical',
+                accuracy: 100,
+                priority: 0,
+            }
+            selectedOpponentMoveName = 'Struggle'
+            selectedOpponentMoveKey = 'struggle'
+            opponentMovePower = 35
+            opponentMoveType = 'normal'
+            opponentMoveCategory = 'physical'
+            opponentMoveAccuracy = 100
+            opponentMovePriority = 0
+            opponentMoveCriticalChance = 0.0625
+            selectedCounterMoveIndex = -1
+        }
+
+        const playerEffectiveSpeed = applyStatStageToValue(
+            Math.max(1, Number(attackerScaledStats?.spd) || 1),
+            playerStatStages?.spd
+        )
+        const opponentEffectiveSpeed = applyStatStageToValue(
+            Math.max(1, Number(activeTrainerOpponent?.baseStats?.spd) || Number(opponent?.baseStats?.spd) || 1),
+            opponentStatStages?.spd
+        )
+
+        const turnOrder = resolveBattleTurnOrder({
+            playerPriority: movePriority,
+            opponentPriority: opponentMovePriority,
+            playerSpeed: playerEffectiveSpeed,
+            opponentSpeed: opponentEffectiveSpeed,
+            random: randomFn,
+        })
+        const playerActsFirst = turnOrder.playerActsFirst
+        const turnOrderReason = turnOrder.reason
+        const battleTurnOrder = playerActsFirst ? 'player-first' : 'opponent-first'
+        const playerTurnStartHp = playerCurrentHp
+        const opponentTurnStartHp = targetCurrentHp
+        let counterAttack = null
+        let resultingPlayerHp = playerCurrentHp
+
+        const executeOpponentTurn = (currentOpponentHp = targetCurrentHp) => {
+            if (currentOpponentHp <= 0 || playerCurrentHp <= 0) {
+                resultingPlayerHp = playerCurrentHp
+                return
+            }
+
+            const opponentTurnStatusCheck = resolveActionAvailabilityByStatus({
+                status: opponentStatus,
+                statusTurns: opponentStatusTurns,
+                random: randomFn,
+            })
+            opponentStatus = normalizeBattleStatus(opponentTurnStatusCheck.statusAfterCheck)
+            opponentStatusTurns = normalizeStatusTurns(opponentTurnStatusCheck.statusTurnsAfterCheck)
+            let canOpponentActByVolatile = true
+            const opponentRechargeTurns = normalizeStatusTurns(opponentVolatileState?.rechargeTurns)
+            if (opponentRechargeTurns > 0) {
+                canOpponentActByVolatile = false
+                opponentVolatileState = {
+                    ...opponentVolatileState,
+                    rechargeTurns: Math.max(0, opponentRechargeTurns - 1),
+                }
+                if (!opponentVolatileState.rechargeTurns) {
+                    delete opponentVolatileState.rechargeTurns
+                }
+                battleExtraLogs.push(`${targetName} cần hồi sức nên không thể hành động.`)
+            }
+            const opponentStatusMoveBlockTurns = normalizeStatusTurns(opponentVolatileState?.statusMoveBlockTurns)
+            if (opponentStatusMoveBlockTurns > 0) {
+                opponentVolatileState = {
+                    ...opponentVolatileState,
+                    statusMoveBlockTurns: Math.max(0, opponentStatusMoveBlockTurns - 1),
+                }
+                if (!opponentVolatileState.statusMoveBlockTurns) {
+                    delete opponentVolatileState.statusMoveBlockTurns
+                }
+            }
+            const canOpponentAct = Boolean(opponentTurnStatusCheck.canAct) && canOpponentActByVolatile
+            if (opponentTurnStatusCheck.log) {
+                battleExtraLogs.push(`${targetName}: ${opponentTurnStatusCheck.log}`)
+            }
+
+            const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
+            const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
+            const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
+            const playerCritBlockTurns = normalizeStatusTurns(playerVolatileState?.critBlockTurns)
+            const didOpponentCritical = canOpponentAct
+                && didOpponentMoveHit
+                && playerCritBlockTurns <= 0
+                && Math.random() < opponentMoveCriticalChance
+            if (canOpponentAct && didOpponentMoveHit && playerCritBlockTurns > 0) {
+                battleExtraLogs.push('Pokemon của bạn được bảo vệ khỏi đòn chí mạng.')
+            }
+            const opponentCriticalMultiplier = didOpponentCritical ? 1.5 : 1
+            const opponentAttackStage = opponentMoveCategory === 'special' ? opponentStatStages?.spatk : opponentStatStages?.atk
+            const playerDefenseStage = opponentMoveCategory === 'special' ? playerStatStages?.spdef : playerStatStages?.def
+            const opponentAttackStat = applyStatStageToValue(
+                opponentMoveCategory === 'special' ? targetSpAtk : targetAtk,
+                opponentAttackStage
+            )
+            const opponentDefenseStat = applyStatStageToValue(
+                opponentMoveCategory === 'special' ? playerSpDef : playerDef,
+                playerDefenseStage
+            )
+            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentMoveCategory === 'status' || opponentTypeEffectiveness.multiplier <= 0)
+                ? 0
+                : calcBattleDamage({
+                    attackerLevel: targetLevel,
+                    movePower: opponentMovePower,
+                    attackStat: opponentAttackStat,
+                    defenseStat: opponentDefenseStat,
+                    modifier: opponentStabMultiplier * opponentTypeEffectiveness.multiplier * opponentCriticalMultiplier,
+                })
+            const scaledCounterDamage = rawCounterDamage > 0
+                ? Math.max(0, Math.floor(rawCounterDamage * (trainerPokemonDamagePercent / 100)))
+                : 0
+            const normalizedCounterDamage = rawCounterDamage > 0 && trainerPokemonDamagePercent > 0
+                ? Math.max(1, scaledCounterDamage)
+                : scaledCounterDamage
+            const counterDamage = applyDamageGuardsToDamage(normalizedCounterDamage, opponentMoveCategory, playerDamageGuards)
+            if (counterDamage < normalizedCounterDamage) {
+                battleExtraLogs.push('Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.')
+            }
+            const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
+            resultingPlayerHp = nextPlayerHp
+
+            if (trainerSession) {
+                trainerSession.playerCurrentHp = nextPlayerHp
+                trainerSession.expiresAt = getBattleSessionExpiryDate()
+                trainerSessionDirty = true
+            }
+
+            const shouldConsumeCounterMovePp = canOpponentAct && selectedCounterMoveIndex >= 0 && selectedOpponentMoveKey !== 'struggle'
+            counterMovePpCost = shouldConsumeCounterMovePp ? 1 : 0
+            if (hasCounterMoveList && canOpponentAct) {
+                nextCounterMoveCursor = counterMoveSelection.nextCursor
+            }
+            if (usingTrainerCounterMoves && activeTrainerOpponent && canOpponentAct) {
+                activeTrainerOpponent.counterMoveCursor = nextCounterMoveCursor
+            }
+            counterMoveState = applyCounterMovePpConsumption({
+                moves: counterMoveState,
+                selectedIndex: selectedCounterMoveIndex,
+                shouldConsume: shouldConsumeCounterMovePp,
+            })
+            if (usingTrainerCounterMoves && activeTrainerOpponent) {
+                activeTrainerOpponent.counterMoves = counterMoveState
+            }
+
+            counterAttack = {
+                damage: counterDamage,
+                currentHp: nextPlayerHp,
+                maxHp: playerMaxHp,
+                defeatedPlayer: nextPlayerHp <= 0,
+                hit: didOpponentMoveHit,
+                effectiveness: opponentTypeEffectiveness.multiplier,
+                critical: didOpponentCritical,
+                move: {
+                    name: selectedOpponentMoveName,
+                    type: opponentMoveType,
+                    category: opponentMoveCategory,
+                    accuracy: opponentMoveAccuracy,
+                    priority: opponentMovePriority,
+                    power: opponentMovePower,
+                    ppCost: counterMovePpCost,
+                    canAct: canOpponentAct,
+                },
+                damagePercent: trainerPokemonDamagePercent,
+                log: !canOpponentAct
+                    ? `${targetName} không thể hành động.`
+                    : (didOpponentMoveHit
+                    ? `${targetName} dùng ${selectedOpponentMoveName}! Gây ${counterDamage} sát thương. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
+                    : `${targetName} dùng ${selectedOpponentMoveName} nhưng trượt.`),
+            }
+        }
+
+        if (!playerActsFirst) {
+            executeOpponentTurn(targetCurrentHp)
+            playerCurrentHp = resultingPlayerHp
+        }
+
         if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && moveType === 'normal') {
             moveType = 'electric'
         }
 
-        const playerTurnStartHp = playerCurrentHp
-        const opponentTurnStartHp = targetCurrentHp
         const precomputedTypeEffectiveness = resolveTypeEffectiveness(moveType, targetTypes)
 
         damageCalcEffects = applyEffectSpecs({
@@ -4250,7 +4530,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 targetWasDamagedLastTurn: opponentWasDamagedLastTurn,
                 userHasNoHeldItem: true,
                 targetIsDynamaxed: Boolean(opponent?.isDynamaxed),
-                userActsFirst: true,
+                userActsFirst: playerActsFirst,
                 isSuperEffective: precomputedTypeEffectiveness.multiplier > 1,
                 userMaxHp: playerMaxHp,
                 userCurrentHp: playerCurrentHp,
@@ -4307,7 +4587,6 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const playerAttackStat = stagedPlayerAttack
         const playerDefenseStat = stagedTargetDefense
         const isStatusMove = moveCategory === 'status'
-        const battleExtraLogs = []
         const playerTurnStatusCheck = resolveActionAvailabilityByStatus({
             status: playerStatus,
             statusTurns: playerStatusTurns,
@@ -4357,7 +4636,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         const moveBlockedByTerrainRequirement = requireTerrain && !battleFieldState.terrain
-        const canPlayerAct = Boolean(playerTurnStatusCheck.canAct) && canPlayerActByVolatile
+        const canPlayerAct = playerCurrentHp > 0 && Boolean(playerTurnStatusCheck.canAct) && canPlayerActByVolatile
 
         if (moveBlockedByTerrainRequirement) {
             battleExtraLogs.push('Chiêu này thất bại vì sân đấu không có địa hình phù hợp.')
@@ -4679,195 +4958,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             }
         }
 
-        let counterAttack = null
-        let resultingPlayerHp = playerCurrentHp
-        if (currentHp > 0 && playerCurrentHp > 0) {
-            const opponentTurnStatusCheck = resolveActionAvailabilityByStatus({
-                status: opponentStatus,
-                statusTurns: opponentStatusTurns,
-                random: randomFn,
-            })
-            opponentStatus = normalizeBattleStatus(opponentTurnStatusCheck.statusAfterCheck)
-            opponentStatusTurns = normalizeStatusTurns(opponentTurnStatusCheck.statusTurnsAfterCheck)
-            let canOpponentActByVolatile = true
-            const opponentRechargeTurns = normalizeStatusTurns(opponentVolatileState?.rechargeTurns)
-            if (opponentRechargeTurns > 0) {
-                canOpponentActByVolatile = false
-                opponentVolatileState = {
-                    ...opponentVolatileState,
-                    rechargeTurns: Math.max(0, opponentRechargeTurns - 1),
-                }
-                if (!opponentVolatileState.rechargeTurns) {
-                    delete opponentVolatileState.rechargeTurns
-                }
-                battleExtraLogs.push(`${targetName} cần hồi sức nên không thể hành động.`)
-            }
-            const opponentStatusMoveBlockTurns = normalizeStatusTurns(opponentVolatileState?.statusMoveBlockTurns)
-            if (opponentStatusMoveBlockTurns > 0) {
-                opponentVolatileState = {
-                    ...opponentVolatileState,
-                    statusMoveBlockTurns: Math.max(0, opponentStatusMoveBlockTurns - 1),
-                }
-                if (!opponentVolatileState.statusMoveBlockTurns) {
-                    delete opponentVolatileState.statusMoveBlockTurns
-                }
-            }
-            const canOpponentAct = Boolean(opponentTurnStatusCheck.canAct) && canOpponentActByVolatile
-            if (opponentTurnStatusCheck.log) {
-                battleExtraLogs.push(`${targetName}: ${opponentTurnStatusCheck.log}`)
-            }
-
-            const defaultOpponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
-            let selectedOpponentMove = selectedCounterMoveInput
-            let selectedOpponentMoveName = String(selectedOpponentMove?.name || '').trim()
-            let selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
-            let opponentMoveDoc = null
-
-            if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle') {
-                opponentMoveDoc = await Move.findOne({ nameLower: selectedOpponentMoveKey }).lean()
-            }
-
-            if (!selectedOpponentMoveName) {
-                selectedOpponentMoveName = normalizedTrainerId ? 'Struggle' : 'Counter Strike'
-                selectedOpponentMoveKey = normalizeMoveName(selectedOpponentMoveName)
-            }
-
-            let opponentMovePower = Number(opponentMoveDoc?.power)
-            if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
-                opponentMovePower = Number(selectedOpponentMove?.power)
-            }
-            if (!Number.isFinite(opponentMovePower) || opponentMovePower <= 0) {
-                opponentMovePower = selectedOpponentMoveKey === 'struggle' ? 35 : defaultOpponentMovePower
-            }
-            opponentMovePower = clamp(Math.floor(opponentMovePower), 1, 250)
-
-            let opponentMoveType = normalizeTypeToken(opponentMoveDoc?.type || selectedOpponentMove?.type || inferMoveType(selectedOpponentMoveName)) || (targetTypes[0] || 'normal')
-            if (normalizeStatusTurns(battleFieldState?.normalMovesBecomeElectricTurns) > 0 && opponentMoveType === 'normal') {
-                opponentMoveType = 'electric'
-            }
-
-            let opponentMoveCategory = resolveMoveCategory(opponentMoveDoc, selectedOpponentMove, opponentMovePower)
-            if (opponentMoveCategory === 'status') {
-                opponentMovePower = 0
-            }
-
-            let opponentMoveAccuracy = resolveMoveAccuracy(opponentMoveDoc, selectedOpponentMove)
-            let opponentMovePriority = resolveMovePriority(opponentMoveDoc, selectedOpponentMove)
-            let opponentMoveCriticalChance = resolveMoveCriticalChance(opponentMoveDoc, selectedOpponentMove)
-
-            const selectedOpponentCurrentPp = Number(selectedOpponentMove?.currentPp ?? selectedOpponentMove?.pp)
-            if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle' && Number.isFinite(selectedOpponentCurrentPp) && selectedOpponentCurrentPp <= 0) {
-                selectedOpponentMove = {
-                    name: 'Struggle',
-                    type: 'normal',
-                    power: 35,
-                    category: 'physical',
-                    accuracy: 100,
-                    priority: 0,
-                }
-                selectedOpponentMoveName = 'Struggle'
-                selectedOpponentMoveKey = 'struggle'
-                opponentMovePower = 35
-                opponentMoveType = 'normal'
-                opponentMoveCategory = 'physical'
-                opponentMoveAccuracy = 100
-                opponentMovePriority = 0
-                opponentMoveCriticalChance = 0.0625
-                selectedCounterMoveIndex = -1
-            }
-
-            const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
-            const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
-            const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
-            const playerCritBlockTurns = normalizeStatusTurns(playerVolatileState?.critBlockTurns)
-            const didOpponentCritical = canOpponentAct
-                && didOpponentMoveHit
-                && playerCritBlockTurns <= 0
-                && Math.random() < opponentMoveCriticalChance
-            if (canOpponentAct && didOpponentMoveHit && playerCritBlockTurns > 0) {
-                battleExtraLogs.push('Pokemon của bạn được bảo vệ khỏi đòn chí mạng.')
-            }
-            const opponentCriticalMultiplier = didOpponentCritical ? 1.5 : 1
-            const opponentAttackStage = opponentMoveCategory === 'special' ? opponentStatStages?.spatk : opponentStatStages?.atk
-            const playerDefenseStage = opponentMoveCategory === 'special' ? playerStatStages?.spdef : playerStatStages?.def
-            const opponentAttackStat = applyStatStageToValue(
-                opponentMoveCategory === 'special' ? targetSpAtk : targetAtk,
-                opponentAttackStage
-            )
-            const opponentDefenseStat = applyStatStageToValue(
-                opponentMoveCategory === 'special' ? playerSpDef : playerDef,
-                playerDefenseStage
-            )
-            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentMoveCategory === 'status' || opponentTypeEffectiveness.multiplier <= 0)
-                ? 0
-                : calcBattleDamage({
-                    attackerLevel: targetLevel,
-                    movePower: opponentMovePower,
-                    attackStat: opponentAttackStat,
-                    defenseStat: opponentDefenseStat,
-                    modifier: opponentStabMultiplier * opponentTypeEffectiveness.multiplier * opponentCriticalMultiplier,
-                })
-            const scaledCounterDamage = rawCounterDamage > 0
-                ? Math.max(0, Math.floor(rawCounterDamage * (trainerPokemonDamagePercent / 100)))
-                : 0
-            const normalizedCounterDamage = rawCounterDamage > 0 && trainerPokemonDamagePercent > 0
-                ? Math.max(1, scaledCounterDamage)
-                : scaledCounterDamage
-            const counterDamage = applyDamageGuardsToDamage(normalizedCounterDamage, opponentMoveCategory, playerDamageGuards)
-            if (counterDamage < normalizedCounterDamage) {
-                battleExtraLogs.push('Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.')
-            }
-            const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
-            resultingPlayerHp = nextPlayerHp
-
-            if (trainerSession) {
-                trainerSession.playerCurrentHp = nextPlayerHp
-                trainerSession.expiresAt = getBattleSessionExpiryDate()
-                trainerSessionDirty = true
-            }
-
-            const shouldConsumeCounterMovePp = canOpponentAct && selectedCounterMoveIndex >= 0 && selectedOpponentMoveKey !== 'struggle'
-            counterMovePpCost = shouldConsumeCounterMovePp ? 1 : 0
-            if (hasCounterMoveList && canOpponentAct) {
-                nextCounterMoveCursor = counterMoveSelection.nextCursor
-            }
-            if (usingTrainerCounterMoves && activeTrainerOpponent && canOpponentAct) {
-                activeTrainerOpponent.counterMoveCursor = nextCounterMoveCursor
-            }
-            counterMoveState = applyCounterMovePpConsumption({
-                moves: counterMoveState,
-                selectedIndex: selectedCounterMoveIndex,
-                shouldConsume: shouldConsumeCounterMovePp,
-            })
-            if (usingTrainerCounterMoves && activeTrainerOpponent) {
-                activeTrainerOpponent.counterMoves = counterMoveState
-            }
-
-            counterAttack = {
-                damage: counterDamage,
-                currentHp: nextPlayerHp,
-                maxHp: playerMaxHp,
-                defeatedPlayer: nextPlayerHp <= 0,
-                hit: didOpponentMoveHit,
-                effectiveness: opponentTypeEffectiveness.multiplier,
-                critical: didOpponentCritical,
-                move: {
-                    name: selectedOpponentMoveName,
-                    type: opponentMoveType,
-                    category: opponentMoveCategory,
-                    accuracy: opponentMoveAccuracy,
-                    priority: opponentMovePriority,
-                    power: opponentMovePower,
-                    ppCost: counterMovePpCost,
-                    canAct: canOpponentAct,
-                },
-                damagePercent: trainerPokemonDamagePercent,
-                log: !canOpponentAct
-                    ? `${targetName} không thể hành động.`
-                    : (didOpponentMoveHit
-                    ? `${targetName} dùng ${selectedOpponentMoveName}! Gây ${counterDamage} sát thương. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
-                    : `${targetName} dùng ${selectedOpponentMoveName} nhưng trượt.`),
-            }
+        resultingPlayerHp = playerCurrentHp
+        if (playerActsFirst && currentHp > 0 && playerCurrentHp > 0) {
+            executeOpponentTurn(currentHp)
         }
 
         const playerResidualDamage = resultingPlayerHp > 0
@@ -5123,6 +5216,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         res.json({
             ok: true,
             battle: {
+                turnOrder: battleTurnOrder,
+                turnOrderReason,
+                playerActsFirst,
+                playerSpeed: playerEffectiveSpeed,
+                opponentSpeed: opponentEffectiveSpeed,
                 damage,
                 currentHp,
                 maxHp: targetMaxHp,
@@ -5179,13 +5277,15 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     statePatches: combinedEffectResult.statePatches,
                 },
                 fieldState: battleFieldState,
-                log: !canPlayerAct
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} không thể hành động.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
+                log: (!playerActsFirst && playerTurnStartHp > 0 && playerCurrentHp <= 0)
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} đã ngã xuống trước khi kịp ra đòn.`
+                    : !canPlayerAct
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} không thể hành động.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
                     : (didPlayerMoveHit
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName}! ${damage} damage${hitCount > 1 ? ` (${hitCount} hits)` : ''}. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
+                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName}! Gây ${damage} sát thương${hitCount > 1 ? ` (${hitCount} đòn)` : ''}. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
                     : (moveBlockedByTerrainRequirement
-                        ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but it failed because there is no active terrain.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
-                        : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Your Pokemon'} used ${selectedMoveName} but missed.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
+                        ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại vì sân đấu không có địa hình phù hợp.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
+                        : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
             },
         })
     } catch (error) {
@@ -5701,6 +5801,7 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
         const { form: resolvedForm, formId } = resolvePokemonForm(pokemon, encounter.formId)
         const formSprites = resolvedForm?.sprites || null
         const formImageUrl = resolvedForm?.imageUrl || ''
+        const isNewPokedexEntry = !(await hasOwnedPokemonForm(userId, pokemon._id, formId))
         const baseStats = resolveEffectivePokemonBaseStats({
             pokemonLike: pokemon,
             formId,
@@ -5721,6 +5822,7 @@ router.get('/encounter/active', authMiddleware, async (req, res, next) => {
                 pokemon: {
                     ...pokemon,
                     formId,
+                    isNewPokedexEntry,
                     stats: scaledStats,
                     form: resolvedForm || null,
                     resolvedSprites: formSprites || pokemon.sprites,
@@ -5743,6 +5845,8 @@ export const __battleEffectInternals = {
     calcResidualStatusDamage,
     applyDamageGuardsToDamage,
     decrementDamageGuards,
+    applyStatStageToValue,
+    resolveBattleTurnOrder,
 }
 
 export default router

@@ -2,6 +2,7 @@ import express from 'express'
 import mongoose from 'mongoose'
 import { authMiddleware } from '../middleware/auth.js'
 import MarketListing from '../models/MarketListing.js'
+import ItemMarketListing from '../models/ItemMarketListing.js'
 import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import User from '../models/User.js'
@@ -33,6 +34,13 @@ const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const ITEM_MARKET_EFFECT_LABELS = Object.freeze({
+    none: 'Khác',
+    catchMultiplier: 'Bắt Pokemon',
+    heal: 'Hồi phục',
+    healAmount: 'Hồi phục',
+    grantVipTier: 'VIP',
+})
 
 const resolveVipLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
 
@@ -105,6 +113,38 @@ const resolvePokemonSpriteByForm = (pokemon = null, formId = null) => {
         || pokemon?.sprites?.front_default
         || ''
 }
+
+const buildItemEffectCategory = (itemLike = {}) => {
+    const effectType = String(itemLike?.effectType || 'none').trim()
+    if (effectType && effectType !== 'none') return effectType
+    const itemType = String(itemLike?.type || itemLike?.itemType || 'misc').trim()
+    return itemType || 'misc'
+}
+
+const mapItemMarketListing = (row = {}) => ({
+    id: row._id,
+    itemId: row.itemId,
+    itemName: row.itemName || 'Vật phẩm',
+    itemType: row.itemType || 'misc',
+    itemRarity: row.itemRarity || 'common',
+    itemImageUrl: row.itemImageUrl || '',
+    effectType: row.effectType || 'none',
+    effectCategory: buildItemEffectCategory(row),
+    effectCategoryLabel: ITEM_MARKET_EFFECT_LABELS[String(row.effectType || 'none').trim()] || 'Công dụng khác',
+    quantity: Math.max(1, Number(row.quantity || 1)),
+    price: Math.max(0, Number(row.price || 0)),
+    listedAt: row.listedAt || null,
+    soldAt: row.soldAt || null,
+    status: row.status || 'active',
+    seller: row?.seller ? {
+        id: row.seller._id || null,
+        username: row.seller.username || 'Không rõ',
+    } : null,
+    buyer: row?.buyer ? {
+        id: row.buyer._id || null,
+        username: row.buyer.username || 'Không rõ',
+    } : null,
+})
 
 router.use(authMiddleware)
 
@@ -1501,6 +1541,329 @@ router.post('/buy/:listingId', async (req, res) => {
     } catch (error) {
         console.error('POST /api/shop/buy/:listingId error:', error)
         res.status(500).json({ ok: false, message: 'Hoàn tất mua thất bại' })
+    }
+})
+
+// GET /api/shop/item-market/sell
+router.get('/item-market/sell', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const userIdObject = new mongoose.Types.ObjectId(userId)
+        const activePage = toSafePage(req.query.activePage)
+        const soldPage = toSafePage(req.query.soldPage)
+        const limit = toSafeLimit(req.query.limit)
+        const includeAvailable = String(req.query.includeAvailable || '1') !== '0'
+
+        const availableItemsPromise = includeAvailable
+            ? UserInventory.aggregate([
+                { $match: { userId: userIdObject, quantity: { $gt: 0 } } },
+                {
+                    $lookup: {
+                        from: 'items',
+                        localField: 'itemId',
+                        foreignField: '_id',
+                        as: 'item',
+                    },
+                },
+                { $unwind: '$item' },
+                { $match: { 'item.isTradable': true } },
+                { $sort: { updatedAt: -1, _id: -1 } },
+                { $limit: 300 },
+                {
+                    $project: {
+                        _id: 1,
+                        itemId: 1,
+                        quantity: 1,
+                        item: {
+                            name: '$item.name',
+                            type: '$item.type',
+                            rarity: '$item.rarity',
+                            imageUrl: '$item.imageUrl',
+                            effectType: '$item.effectType',
+                            isTradable: '$item.isTradable',
+                        },
+                    },
+                },
+            ]).allowDiskUse(true)
+            : Promise.resolve([])
+
+        const [playerState, listingFacet, availableRows] = await Promise.all([
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+            ItemMarketListing.aggregate([
+                { $match: { sellerId: userIdObject } },
+                {
+                    $facet: {
+                        activeRows: [
+                            { $match: { status: 'active' } },
+                            { $sort: { listedAt: -1, _id: -1 } },
+                            { $skip: (activePage - 1) * limit },
+                            { $limit: limit },
+                            { $lookup: { from: 'users', localField: 'buyerId', foreignField: '_id', as: 'buyer' } },
+                            { $unwind: { path: '$buyer', preserveNullAndEmptyArrays: true } },
+                        ],
+                        soldRows: [
+                            { $match: { status: 'sold' } },
+                            { $sort: { soldAt: -1, _id: -1 } },
+                            { $skip: (soldPage - 1) * limit },
+                            { $limit: limit },
+                            { $lookup: { from: 'users', localField: 'buyerId', foreignField: '_id', as: 'buyer' } },
+                            { $unwind: { path: '$buyer', preserveNullAndEmptyArrays: true } },
+                        ],
+                        activeTotal: [{ $match: { status: 'active' } }, { $count: 'count' }],
+                        soldTotal: [{ $match: { status: 'sold' } }, { $count: 'count' }],
+                    },
+                },
+            ]).allowDiskUse(true),
+            availableItemsPromise,
+        ])
+
+        const listingData = listingFacet?.[0] || {}
+        res.json({
+            ok: true,
+            wallet: serializeWallet(playerState),
+            availableItems: includeAvailable ? availableRows.map((entry) => ({
+                inventoryEntryId: entry._id,
+                itemId: entry.itemId,
+                quantity: Math.max(0, Number(entry.quantity || 0)),
+                itemName: entry?.item?.name || 'Vật phẩm',
+                itemType: entry?.item?.type || 'misc',
+                itemRarity: entry?.item?.rarity || 'common',
+                itemImageUrl: entry?.item?.imageUrl || '',
+                effectType: entry?.item?.effectType || 'none',
+                effectCategory: buildItemEffectCategory(entry?.item),
+            })) : null,
+            activeListings: (listingData.activeRows || []).map(mapItemMarketListing),
+            soldListings: (listingData.soldRows || []).map(mapItemMarketListing),
+            pagination: {
+                limit,
+                active: {
+                    page: activePage,
+                    total: listingData.activeTotal?.[0]?.count || 0,
+                    totalPages: Math.max(1, Math.ceil((listingData.activeTotal?.[0]?.count || 0) / limit)),
+                },
+                sold: {
+                    page: soldPage,
+                    total: listingData.soldTotal?.[0]?.count || 0,
+                    totalPages: Math.max(1, Math.ceil((listingData.soldTotal?.[0]?.count || 0) / limit)),
+                },
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/item-market/sell error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu chợ vật phẩm' })
+    }
+})
+
+// POST /api/shop/item-market/sell/list
+router.post('/item-market/sell/list', async (req, res) => {
+    try {
+        const sellerId = req.user.userId
+        const itemId = String(req.body?.itemId || '').trim()
+        const quantity = toSafeQuantity(req.body?.quantity)
+        const price = toSafePrice(req.body?.price)
+
+        if (!mongoose.Types.ObjectId.isValid(itemId)) {
+            return res.status(400).json({ ok: false, message: 'itemId không hợp lệ' })
+        }
+
+        const item = await Item.findOne({ _id: itemId, isTradable: true })
+            .select('name type rarity imageUrl effectType isTradable')
+            .lean()
+        if (!item) {
+            return res.status(404).json({ ok: false, message: 'Vật phẩm không tồn tại hoặc không cho phép giao dịch' })
+        }
+
+        const inventoryEntry = await UserInventory.findOneAndUpdate(
+            { userId: sellerId, itemId, quantity: { $gte: quantity } },
+            { $inc: { quantity: -quantity } },
+            { new: true }
+        )
+        if (!inventoryEntry) {
+            return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm để đăng bán' })
+        }
+        if (inventoryEntry.quantity <= 0) {
+            await UserInventory.deleteOne({ _id: inventoryEntry._id, quantity: { $lte: 0 } })
+        }
+
+        const seller = await User.findById(sellerId).select('username').lean()
+        await ItemMarketListing.create({
+            sellerId,
+            itemId,
+            itemName: item.name || '',
+            itemType: item.type || 'misc',
+            itemRarity: item.rarity || 'common',
+            itemImageUrl: item.imageUrl || '',
+            effectType: item.effectType || 'none',
+            quantity,
+            price,
+            otName: seller?.username || 'Không rõ',
+            status: 'active',
+            listedAt: new Date(),
+        })
+
+        res.status(201).json({ ok: true, message: 'Đăng bán vật phẩm thành công!' })
+    } catch (error) {
+        console.error('POST /api/shop/item-market/sell/list error:', error)
+        res.status(500).json({ ok: false, message: 'Tạo tin đăng vật phẩm thất bại' })
+    }
+})
+
+// POST /api/shop/item-market/sell/:listingId/cancel
+router.post('/item-market/sell/:listingId/cancel', async (req, res) => {
+    try {
+        const sellerId = req.user.userId
+        const listingId = String(req.params.listingId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(listingId)) {
+            return res.status(400).json({ ok: false, message: 'listingId không hợp lệ' })
+        }
+
+        const listing = await ItemMarketListing.findOneAndUpdate(
+            { _id: listingId, sellerId, status: 'active' },
+            { $set: { status: 'cancelled' } },
+            { new: true }
+        ).lean()
+        if (!listing) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tin đăng vật phẩm đang hoạt động' })
+        }
+
+        await UserInventory.findOneAndUpdate(
+            { userId: sellerId, itemId: listing.itemId },
+            { $setOnInsert: { userId: sellerId, itemId: listing.itemId }, $inc: { quantity: Math.max(1, Number(listing.quantity || 1)) } },
+            { upsert: true, new: true }
+        )
+
+        res.json({ ok: true, message: 'Đã hủy đăng bán vật phẩm' })
+    } catch (error) {
+        console.error('POST /api/shop/item-market/sell/:listingId/cancel error:', error)
+        res.status(500).json({ ok: false, message: 'Hủy tin đăng vật phẩm thất bại' })
+    }
+})
+
+// GET /api/shop/item-market/buy
+router.get('/item-market/buy', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const page = toSafePage(req.query.page)
+        const limit = toSafeLimit(req.query.limit)
+        const skip = (page - 1) * limit
+        const utility = String(req.query.utility || 'all').trim().toLowerCase()
+        const itemType = String(req.query.itemType || 'all').trim().toLowerCase()
+        const itemName = String(req.query.itemName || '').trim()
+        const display = String(req.query.display || 'all').trim().toLowerCase()
+        const direction = String(req.query.direction || 'desc').trim().toLowerCase() === 'asc' ? 1 : -1
+        const orderBy = String(req.query.orderBy || 'date').trim().toLowerCase()
+        const orderField = orderBy === 'price' ? 'price' : 'listedAt'
+
+        const baseMatch = display === 'sold_by_you'
+            ? { sellerId: new mongoose.Types.ObjectId(userId), status: 'sold' }
+            : (display === 'bought_by_you'
+                ? { buyerId: new mongoose.Types.ObjectId(userId), status: 'sold' }
+                : { status: 'active' })
+
+        const query = [...Object.keys(baseMatch).length ? [{ $match: baseMatch }] : []]
+        if (utility !== 'all') query.push({ $match: { effectType: utility } })
+        if (itemType !== 'all') query.push({ $match: { itemType } })
+        if (itemName) query.push({ $match: { itemName: { $regex: escapeRegExp(itemName), $options: 'i' } } })
+        query.push(
+            { $lookup: { from: 'users', localField: 'sellerId', foreignField: '_id', as: 'seller' } },
+            { $unwind: { path: '$seller', preserveNullAndEmptyArrays: true } },
+            { $lookup: { from: 'users', localField: 'buyerId', foreignField: '_id', as: 'buyer' } },
+            { $unwind: { path: '$buyer', preserveNullAndEmptyArrays: true } },
+            {
+                $facet: {
+                    rows: [
+                        { $sort: { [orderField]: direction, _id: -1 } },
+                        { $skip: skip },
+                        { $limit: limit },
+                    ],
+                    total: [{ $count: 'count' }],
+                    options: [
+                        {
+                            $group: {
+                                _id: null,
+                                itemTypes: { $addToSet: '$itemType' },
+                                utilities: { $addToSet: '$effectType' },
+                            },
+                        },
+                    ],
+                },
+            }
+        )
+
+        const [marketRows, playerState] = await Promise.all([
+            ItemMarketListing.aggregate(query).allowDiskUse(true),
+            PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
+        ])
+
+        const result = marketRows?.[0] || {}
+        res.json({
+            ok: true,
+            wallet: serializeWallet(playerState),
+            listings: (result.rows || []).map(mapItemMarketListing),
+            filters: {
+                itemTypeOptions: ['all', ...new Set((result?.options?.[0]?.itemTypes || []).filter(Boolean).map((entry) => String(entry).trim().toLowerCase()))],
+                utilityOptions: ['all', ...new Set((result?.options?.[0]?.utilities || []).filter(Boolean).map((entry) => String(entry).trim()))],
+                displayOptions: ['all', 'sold_by_you', 'bought_by_you'],
+            },
+            pagination: {
+                page,
+                limit,
+                total: result?.total?.[0]?.count || 0,
+                totalPages: Math.max(1, Math.ceil((result?.total?.[0]?.count || 0) / limit)),
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/shop/item-market/buy error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải chợ vật phẩm' })
+    }
+})
+
+// POST /api/shop/item-market/buy/:listingId
+router.post('/item-market/buy/:listingId', async (req, res) => {
+    try {
+        const buyerId = req.user.userId
+        const listingId = String(req.params.listingId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(listingId)) {
+            return res.status(400).json({ ok: false, message: 'listingId không hợp lệ' })
+        }
+
+        const preview = await ItemMarketListing.findById(listingId).select('status sellerId price itemId quantity').lean()
+        if (!preview) return res.status(404).json({ ok: false, message: 'Không tìm thấy tin đăng vật phẩm' })
+        if (preview.status !== 'active') return res.status(409).json({ ok: false, message: 'Tin đăng không còn khả dụng' })
+        if (String(preview.sellerId) === String(buyerId)) return res.status(400).json({ ok: false, message: 'Bạn không thể mua tin đăng của chính mình' })
+
+        const claimed = await ItemMarketListing.findOneAndUpdate(
+            { _id: listingId, status: 'active', sellerId: { $ne: buyerId } },
+            { $set: { status: 'sold', buyerId, soldAt: new Date() } },
+            { new: true }
+        )
+        if (!claimed) return res.status(409).json({ ok: false, message: 'Tin đăng đã được mua' })
+
+        const buyerState = await PlayerState.findOneAndUpdate(
+            { userId: buyerId, gold: { $gte: claimed.price } },
+            { $inc: { gold: -claimed.price } },
+            { new: true }
+        )
+        if (!buyerState) {
+            await ItemMarketListing.updateOne({ _id: claimed._id, status: 'sold', buyerId }, { $set: { status: 'active', buyerId: null, soldAt: null } })
+            return res.status(400).json({ ok: false, message: 'Không đủ Xu Bạch Kim để mua vật phẩm này' })
+        }
+
+        await PlayerState.findOneAndUpdate(
+            { userId: claimed.sellerId },
+            { $setOnInsert: { userId: claimed.sellerId }, $inc: { gold: claimed.price } },
+            { new: true, upsert: true }
+        )
+        await UserInventory.findOneAndUpdate(
+            { userId: buyerId, itemId: claimed.itemId },
+            { $setOnInsert: { userId: buyerId, itemId: claimed.itemId }, $inc: { quantity: Math.max(1, Number(claimed.quantity || 1)) } },
+            { upsert: true, new: true }
+        )
+
+        res.json({ ok: true, message: 'Mua vật phẩm thành công!' })
+    } catch (error) {
+        console.error('POST /api/shop/item-market/buy/:listingId error:', error)
+        res.status(500).json({ ok: false, message: 'Hoàn tất mua vật phẩm thất bại' })
     }
 })
 

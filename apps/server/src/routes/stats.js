@@ -6,6 +6,7 @@ import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
+import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const router = express.Router()
@@ -151,10 +152,46 @@ const calcPartyCombatPower = (entry, species) => {
     return toSafePositiveInt(rawPower * shinyBonus, Math.max(1, level * 10))
 }
 
-const serializePartyPokemon = (entry) => {
+const serializePartyPokemon = (entry, moveLookupMap = new Map()) => {
     if (!entry?._id || !entry?.pokemonId) return null
     const species = entry.pokemonId
     const combatPower = calcPartyCombatPower(entry, species)
+    const moves = mergeKnownMovesWithFallback(entry?.moves)
+    const movePpState = buildMovePpStateFromMoves({
+        moveNames: moves,
+        movePpState: entry?.movePpState,
+        moveLookupMap,
+    })
+    const movePpMap = new Map(
+        movePpState.map((item) => [
+            normalizeMoveName(item?.moveName),
+            {
+                currentPp: Math.max(0, Number(item?.currentPp || 0)),
+                maxPp: Math.max(1, Number(item?.maxPp || 1)),
+            },
+        ])
+    )
+
+    const moveDetails = moves.map((moveName) => {
+        const moveKey = normalizeMoveName(moveName)
+        const moveMeta = moveLookupMap.get(moveKey) || {}
+        const ppState = movePpMap.get(moveKey) || {
+            currentPp: Math.max(1, Number(moveMeta?.pp) || 1),
+            maxPp: Math.max(1, Number(moveMeta?.pp) || 1),
+        }
+
+        return {
+            name: String(moveMeta?.name || moveName || '').trim(),
+            type: String(moveMeta?.type || '').trim().toLowerCase(),
+            category: String(moveMeta?.category || '').trim().toLowerCase(),
+            power: Number.isFinite(Number(moveMeta?.power)) ? Number(moveMeta.power) : null,
+            accuracy: Number.isFinite(Number(moveMeta?.accuracy)) ? Number(moveMeta.accuracy) : null,
+            priority: Number.isFinite(Number(moveMeta?.priority)) ? Number(moveMeta.priority) : 0,
+            currentPp: ppState.currentPp,
+            maxPp: ppState.maxPp,
+        }
+    })
+
     return {
         _id: String(entry._id),
         nickname: String(entry?.nickname || '').trim(),
@@ -163,6 +200,9 @@ const serializePartyPokemon = (entry) => {
         isShiny: Boolean(entry?.isShiny),
         combatPower,
         power: combatPower,
+        moves,
+        moveDetails,
+        movePpState,
         partyIndex: Number.isFinite(Number(entry?.partyIndex)) ? Number(entry.partyIndex) : null,
         pokemonId: {
             _id: String(species?._id || ''),
@@ -346,7 +386,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 userId: targetUserId,
                 location: 'party',
             })
-                .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs')
+                .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs moves movePpState')
                 .populate({
                     path: 'pokemonId',
                     select: 'name types rarity baseStats imageUrl sprites defaultFormId forms',
@@ -363,9 +403,13 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Huấn luyện viên này hiện không còn trực tuyến' })
         }
 
+        const moveLookupMap = await buildMoveLookupByName(
+            partyRows.flatMap((entry) => mergeKnownMovesWithFallback(entry?.moves))
+        )
+
         const slots = createEmptyPartySlots()
         partyRows.forEach((entry) => {
-            const snapshot = serializePartyPokemon(entry)
+            const snapshot = serializePartyPokemon(entry, moveLookupMap)
             if (!snapshot) return
 
             const slotIndex = Number(entry?.partyIndex)
@@ -506,5 +550,10 @@ router.get('/online', authMiddleware, async (req, res) => {
         })
     }
 })
+
+export const __onlineChallengeInternals = {
+    createEmptyPartySlots,
+    serializePartyPokemon,
+}
 
 export default router

@@ -21,6 +21,31 @@ const DISPLAY_OPTIONS = [
     { key: 'to_you', label: '[Đang bán cho bạn]' },
     { key: 'sold_by_you', label: '[Pokemon bạn đã bán]' },
 ]
+const ITEM_TYPE_LABELS = {
+    all: 'Tất cả loại',
+    healing: 'Hồi phục',
+    pokeball: 'Bóng',
+    evolution: 'Tiến hóa',
+    battle: 'Chiến đấu',
+    key: 'Chìa khóa',
+    misc: 'Khác',
+}
+const ITEM_UTILITY_LABELS = {
+    all: 'Tất cả công dụng',
+    catchMultiplier: 'Bắt Pokemon',
+    heal: 'Hồi phục',
+    healAmount: 'Hồi phục',
+    grantVipTier: 'VIP',
+    misc: 'Khác',
+    battle: 'Chiến đấu',
+    evolution: 'Tiến hóa',
+    key: 'Chìa khóa',
+}
+const ITEM_DISPLAY_OPTIONS = [
+    { key: 'all', label: '[Vật phẩm đang bán]' },
+    { key: 'sold_by_you', label: '[Vật phẩm bạn đã bán]' },
+    { key: 'bought_by_you', label: '[Vật phẩm bạn đã mua]' },
+]
 
 const TYPE_LABEL_MAP = {
     all: 'Tất cả hệ',
@@ -61,6 +86,7 @@ const formatDate = (value) => {
 }
 
 export default function TradesPage() {
+    const [marketTab, setMarketTab] = useState('pokemon')
     const [listings, setListings] = useState([])
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const toast = useToast()
@@ -86,10 +112,23 @@ export default function TradesPage() {
         direction: 'desc',
         display: 'all',
     })
+    const [itemListings, setItemListings] = useState([])
+    const [itemPagination, setItemPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 20 })
+    const [itemTypeOptions, setItemTypeOptions] = useState(['all'])
+    const [itemUtilityOptions, setItemUtilityOptions] = useState(['all'])
+    const [itemFilters, setItemFilters] = useState({ itemType: 'all', utility: 'all', orderBy: 'date', direction: 'desc', itemName: '', display: 'all' })
+    const [draftItemType, setDraftItemType] = useState('all')
+    const [draftItemUtility, setDraftItemUtility] = useState('all')
+    const [draftItemName, setDraftItemName] = useState('')
+    const [draftItemDisplay, setDraftItemDisplay] = useState('all')
 
     useEffect(() => {
         loadListings(1, filters)
     }, [filters])
+
+    useEffect(() => {
+        loadItemListings(1, itemFilters)
+    }, [itemFilters])
 
     const pageButtons = useMemo(() => {
         const pages = pagination.totalPages || 1
@@ -171,6 +210,41 @@ export default function TradesPage() {
         setDetailPokemon(listing || null)
     }
 
+    const loadItemListings = async (page, activeFilters) => {
+        try {
+            setLoading(true)
+            setError('')
+            const data = await gameApi.getItemMarketListings({ page, limit: itemPagination.limit, itemType: activeFilters.itemType, utility: activeFilters.utility, itemName: activeFilters.itemName, orderBy: activeFilters.orderBy, direction: activeFilters.direction, display: activeFilters.display })
+            setItemListings(data.listings || [])
+            setWallet({ platinumCoins: Number(data?.wallet?.platinumCoins ?? 0), moonPoints: Number(data?.wallet?.moonPoints || 0) })
+            setItemPagination((prev) => ({ ...prev, ...(data.pagination || {}) }))
+            setItemTypeOptions(data?.filters?.itemTypeOptions || ['all'])
+            setItemUtilityOptions(data?.filters?.utilityOptions || ['all'])
+        } catch (err) {
+            setError(err.message || 'Không thể tải chợ vật phẩm')
+            setItemListings([])
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleItemSearch = () => {
+        setItemFilters({ itemType: draftItemType, utility: draftItemUtility, itemName: draftItemName, orderBy: 'date', direction: 'desc', display: draftItemDisplay })
+    }
+
+    const handleBuyItem = async (listing) => {
+        try {
+            setBuyingId(listing.id)
+            await gameApi.buyItemMarketListing(listing.id)
+            await loadItemListings(itemPagination.page || 1, itemFilters)
+            toast.showSuccess('Mua vật phẩm thành công!')
+        } catch (err) {
+            toast.showError(err.message || 'Mua vật phẩm thất bại')
+        } finally {
+            setBuyingId('')
+        }
+    }
+
     return (
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
@@ -181,7 +255,12 @@ export default function TradesPage() {
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Mua Pokemon</h1>
             </div>
 
-            <div className="space-y-4">
+            <div className="mb-4 grid grid-cols-2 gap-2 text-sm font-bold">
+                <button type="button" onClick={() => setMarketTab('pokemon')} className={`rounded border px-3 py-2 ${marketTab === 'pokemon' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200'}`}>Pokemon</button>
+                <button type="button" onClick={() => setMarketTab('item')} className={`rounded border px-3 py-2 ${marketTab === 'item' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200'}`}>Vật phẩm</button>
+            </div>
+
+            {marketTab === 'pokemon' ? <div className="space-y-4">
                 <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                     <SectionHeader title="Tìm Kiếm" />
 
@@ -371,7 +450,35 @@ export default function TradesPage() {
                         </table>
                     </div>
                 </section>
-            </div>
+            </div> : <div className="space-y-4">
+                <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                    <SectionHeader title="Tìm Kiếm Vật Phẩm" />
+                    <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <select value={draftItemType} onChange={(e) => setDraftItemType(e.target.value)} className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700">{itemTypeOptions.map((type) => <option key={type} value={type}>{ITEM_TYPE_LABELS[type] || type}</option>)}</select>
+                            <select value={draftItemUtility} onChange={(e) => setDraftItemUtility(e.target.value)} className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700">{itemUtilityOptions.map((utility) => <option key={utility} value={utility}>{ITEM_UTILITY_LABELS[utility] || utility}</option>)}</select>
+                            <input type="text" value={draftItemName} onChange={(e) => setDraftItemName(e.target.value)} placeholder="Tìm theo tên vật phẩm" className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-bold">
+                            {ITEM_DISPLAY_OPTIONS.map((option) => (
+                                <button
+                                    key={option.key}
+                                    type="button"
+                                    onClick={() => setDraftItemDisplay(option.key)}
+                                    className={`px-2 py-2 rounded border ${draftItemDisplay === option.key ? 'bg-blue-600 text-white border-blue-700' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="text-center"><button type="button" onClick={handleItemSearch} className="px-4 py-2 rounded border border-blue-300 bg-white text-blue-700 font-bold text-sm hover:bg-blue-50">[ Tìm vật phẩm ]</button></div>
+                    </div>
+                </section>
+                <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                    <SectionHeader title={itemFilters.display === 'sold_by_you' ? 'Vật Phẩm Bạn Đã Bán' : (itemFilters.display === 'bought_by_you' ? 'Vật Phẩm Bạn Đã Mua' : 'Khu Giao Dịch Vật Phẩm')} />
+                    <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-xs sm:text-sm font-bold"><th className="px-3 py-2 text-left">Vật phẩm</th><th className="px-3 py-2 text-center">Công dụng</th><th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-center">Giá</th><th className="px-3 py-2 text-center">{itemFilters.display === 'bought_by_you' ? 'Người bán' : (itemFilters.display === 'sold_by_you' ? 'Người mua' : 'Người bán')}</th><th className="px-3 py-2 text-center">{itemFilters.display === 'all' ? 'Mua' : 'Trạng thái'}</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500 font-bold">Đang tải chợ vật phẩm...</td></tr> : itemListings.length === 0 ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">Chưa có lịch sử/phiên giao dịch vật phẩm phù hợp.</td></tr> : itemListings.map((listing) => <tr key={listing.id} className="border-b border-blue-100 hover:bg-blue-50/40"><td className="px-3 py-3"><div className="flex items-center gap-3"><img src={listing.itemImageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={listing.itemName} className="w-10 h-10 object-contain" /><div><div className="font-bold text-slate-800">{listing.itemName}</div><div className="text-xs text-slate-500">{ITEM_TYPE_LABELS[listing.itemType] || listing.itemType}</div></div></div></td><td className="px-3 py-3 text-center text-sm font-semibold text-slate-700">{ITEM_UTILITY_LABELS[listing.effectCategory] || listing.effectCategoryLabel || listing.effectCategory}</td><td className="px-3 py-3 text-center font-bold">x{listing.quantity}</td><td className="px-3 py-3 text-center font-bold">{Number(listing.price || 0).toLocaleString('vi-VN')} xu</td><td className="px-3 py-3 text-center font-bold text-slate-700">{itemFilters.display === 'sold_by_you' ? (listing.buyer?.username || 'Không rõ') : (listing.seller?.username || 'Không rõ')}</td><td className="px-3 py-3 text-center">{itemFilters.display === 'all' ? <button type="button" onClick={() => handleBuyItem(listing)} disabled={buyingId === listing.id} className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 font-bold text-xs hover:bg-blue-50 disabled:opacity-50">{buyingId === listing.id ? 'Đang mua...' : 'Mua'}</button> : <span className="inline-flex rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">Đã giao dịch</span>}</td></tr>)}</tbody></table></div>
+                </section>
+            </div>}
 
             <PokemonTradeDetailModal
                 open={Boolean(detailPokemon)}

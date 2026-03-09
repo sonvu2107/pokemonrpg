@@ -929,6 +929,91 @@ export const leaderboardRewardApi = {
     },
 }
 
+export const auctionAdminApi = {
+    async list(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/auctions${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách đấu giá admin')
+        return res.json()
+    },
+
+    async getById(id) {
+        const res = await fetch(`${API_URL}/admin/auctions/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải chi tiết đấu giá')
+        return res.json()
+    },
+
+    async create(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/auctions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Tạo phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async update(id, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/auctions/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async publish(id) {
+        const res = await fetch(`${API_URL}/admin/auctions/${id}/publish`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Publish phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async cancel(id, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/auctions/${id}/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Hủy phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async settle(id) {
+        const res = await fetch(`${API_URL}/admin/auctions/${id}/settle`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Chốt phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async getBids(id, params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/auctions/${id}/bids${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải lịch sử đấu giá admin')
+        return res.json()
+    },
+}
+
 // Promo code endpoints
 export const promoCodeApi = {
     // GET /api/admin/promo-codes

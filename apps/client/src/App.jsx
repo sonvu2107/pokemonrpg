@@ -34,6 +34,7 @@ const PromoCodePage = lazy(() => import('./pages/PromoCodePage'))
 const FriendsPage = lazy(() => import('./pages/FriendsPage'))
 const NewsDetailPage = lazy(() => import('./pages/NewsDetailPage'))
 const ValleyPage = lazy(() => import('./pages/ValleyPage'))
+const AuctionsPage = lazy(() => import('./pages/AuctionsPage'))
 const GlobalRateLimitModal = lazy(() => import('./components/GlobalRateLimitModal'))
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
@@ -54,6 +55,7 @@ const BattleTrainerPage = lazy(() => import('./pages/admin/BattleTrainerPage'))
 const DailyRewardManagerPage = lazy(() => import('./pages/admin/DailyRewardManagerPage'))
 const PromoCodeManagerPage = lazy(() => import('./pages/admin/PromoCodeManagerPage'))
 const WeeklyLeaderboardRewardPage = lazy(() => import('./pages/admin/WeeklyLeaderboardRewardPage'))
+const AuctionManagementPage = lazy(() => import('./pages/admin/AuctionManagementPage'))
 
 const RouteLoadingFallback = () => (
     <div className="mx-auto max-w-3xl py-10 text-center text-sm font-bold text-slate-500">
@@ -106,6 +108,7 @@ export default function App() {
                     <Route path="/friends" element={<FriendsPage />} />
                     <Route path="/news/:id" element={<NewsDetailPage />} />
                     <Route path="/valley" element={<ValleyPage />} />
+                    <Route path="/auctions" element={<AuctionsPage />} />
 
                     {/* Admin Routes */}
                     <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
@@ -130,6 +133,7 @@ export default function App() {
                     <Route path="/admin/battle" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BATTLE}><BattleTrainerPage /></AdminRouteGuard>} />
                     <Route path="/admin/daily-rewards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><DailyRewardManagerPage /></AdminRouteGuard>} />
                     <Route path="/admin/weekly-leaderboards" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.REWARDS}><WeeklyLeaderboardRewardPage /></AdminRouteGuard>} />
+                    <Route path="/admin/auctions" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.AUCTIONS}><AuctionManagementPage /></AdminRouteGuard>} />
                     <Route path="/admin/promo-codes" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.CODES}><PromoCodeManagerPage /></AdminRouteGuard>} />
                 </Route>
             </Routes>

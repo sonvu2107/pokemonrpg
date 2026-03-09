@@ -13,6 +13,7 @@ const ICONS = {
     rewards: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/lucky-egg.png",
     codes: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/mystery-egg.png",
     leaderboard: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/contest-pass.png",
+    auction: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/coin-case.png",
     add: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"
 }
 
@@ -118,7 +119,7 @@ export default function AdminDashboard() {
         },
         {
             title: 'Vận Hành & Cộng Đồng',
-            permissions: [ADMIN_PERMISSIONS.USERS, ADMIN_PERMISSIONS.NEWS, ADMIN_PERMISSIONS.CODES],
+            permissions: [ADMIN_PERMISSIONS.USERS, ADMIN_PERMISSIONS.NEWS, ADMIN_PERMISSIONS.CODES, ADMIN_PERMISSIONS.AUCTIONS],
             cards: [
                 {
                     permission: ADMIN_PERMISSIONS.USERS,
@@ -151,6 +152,14 @@ export default function AdminDashboard() {
                     to: '/admin/events',
                     icon: ICONS.news,
                     color: 'cyan',
+                },
+                {
+                    permission: ADMIN_PERMISSIONS.AUCTIONS,
+                    title: 'Khu Đấu Giá',
+                    description: 'Tạo phiên đấu giá item, theo dõi bid và chốt kết quả',
+                    to: '/admin/auctions',
+                    icon: ICONS.auction,
+                    color: 'fuchsia',
                 },
                 {
                     permission: ADMIN_PERMISSIONS.CODES,

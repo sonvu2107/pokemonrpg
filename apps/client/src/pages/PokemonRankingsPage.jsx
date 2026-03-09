@@ -161,17 +161,17 @@ export default function PokemonRankingsPage() {
         <div className="max-w-4xl mx-auto pb-12 font-sans">
             <div className="text-center mb-6">
                 <h1 className="text-4xl font-bold text-blue-900 mb-2 drop-shadow-sm">{pageTitle}</h1>
-                <div className="flex items-center justify-center gap-2 text-sm font-bold">
-                    <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Chung</Link>
-                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-600 text-white">Pokémon</Link>
-                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Độ Hiếm</Link>
-                    <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Hàng Ngày</Link>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-bold">
+                    <Link to="/rankings/overall" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Chung</Link>
+                    <Link to="/rankings/pokemon" className="px-3 py-1 rounded bg-blue-600 text-white whitespace-nowrap">Pokémon</Link>
+                    <Link to="/rankings/rarity" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Độ Hiếm</Link>
+                    <Link to="/rankings/daily" className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 whitespace-nowrap">Hàng Ngày</Link>
                 </div>
-                <div className="mt-3 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold">
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm font-bold">
                     <button
                         type="button"
                         onClick={() => setRankingMode('collection')}
-                        className={`px-3 py-1 rounded border ${!isPowerMode
+                        className={`whitespace-nowrap px-3 py-1 rounded border ${!isPowerMode
                             ? 'bg-cyan-600 border-cyan-700 text-white'
                             : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
                             }`}
@@ -181,7 +181,7 @@ export default function PokemonRankingsPage() {
                     <button
                         type="button"
                         onClick={() => setRankingMode('power')}
-                        className={`px-3 py-1 rounded border ${isPowerMode
+                        className={`whitespace-nowrap px-3 py-1 rounded border ${isPowerMode
                             ? 'bg-cyan-600 border-cyan-700 text-white'
                             : 'bg-white border-cyan-200 text-cyan-700 hover:bg-cyan-50'
                             }`}
@@ -273,6 +273,14 @@ export default function PokemonRankingsPage() {
                                                                 {displayName}
                                                             </Link>
                                                             <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
+                                                            {detailId && (
+                                                                <Link
+                                                                    to={`/battle?challengePokemonId=${encodeURIComponent(detailId)}&returnTo=${encodeURIComponent('rankings/pokemon')}`}
+                                                                    className="mt-1 inline-flex rounded border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-50"
+                                                                >
+                                                                    Khiêu chiến
+                                                                </Link>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </td>

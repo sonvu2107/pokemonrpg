@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { itemApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
@@ -55,42 +55,28 @@ const EFFECT_TYPE_OPTIONS = [
     { value: 'catchMultiplier', label: 'Đặt tỉ lệ bắt (%)' },
     { value: 'heal', label: 'Hồi HP/PP' },
     { value: 'healAmount', label: 'Hồi HP/PP (Legacy)' },
+    { value: 'grantVipTier', label: 'Kích hoạt VIP theo tháng' },
 ]
 
-const SectionHeader = ({ title }) => (
-    <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
-        {title}
-    </div>
-)
+const VIP_DURATION_UNIT_OPTIONS = [
+    { value: 'month', label: 'Tháng' },
+    { value: 'week', label: 'Tuần' },
+]
 
-const InfoRow = ({ label, value }) => (
-    <div className="flex border-b border-blue-200 last:border-b-0 text-xs">
-        <div className="w-1/3 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
-            {label}:
-        </div>
-        <div className="w-2/3 p-2 font-bold text-slate-700 flex items-center break-words">
-            {value}
-        </div>
-    </div>
-)
-
-const formatCurrency = (value) => Number(value || 0).toLocaleString('vi-VN')
-
-const formatCatchPercent = (value) => {
-    const safeValue = Number(value)
-    if (!Number.isFinite(safeValue)) return '0%'
-    const clampedValue = Math.min(100, Math.max(0, safeValue))
-    return `${clampedValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
-}
-
-const buildEffectSummary = (effectType, effectValue, effectValueMp) => {
+const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurationUnit = 'month') => {
     if (effectType === 'catchMultiplier') {
-        return `Tỉ lệ bắt cố định ${formatCatchPercent(effectValue)}`
+        return `Tỉ lệ bắt cố định ${Math.min(100, Math.max(0, Number(effectValue) || 0)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
     }
     if (effectType === 'heal' || effectType === 'healAmount') {
         const hp = Number(effectValue || 0)
         const pp = Number(effectValueMp || 0)
         return `Hồi ${hp} HP, ${pp} PP`
+    }
+    if (effectType === 'grantVipTier') {
+        const vipLevel = Math.max(0, Number(effectValue) || 0)
+        const durationValue = Math.max(1, Number(effectValueMp) || 1)
+        const durationUnit = String(effectDurationUnit || 'month') === 'week' ? 'tuần' : 'tháng'
+        return `Kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
     }
     return 'Không có hiệu ứng'
 }
@@ -111,6 +97,7 @@ export default function ItemFormPage() {
         moonShopPrice: 0,
         isShopEnabled: false,
         isMoonShopEnabled: false,
+        isTradable: false,
         purchaseLimit: 0,
         vipPurchaseLimitBonusPerLevel: 0,
         isEvolutionMaterial: false,
@@ -121,6 +108,7 @@ export default function ItemFormPage() {
         effectType: 'none',
         effectValue: 0,
         effectValueMp: 0,
+        effectDurationUnit: 'month',
     })
 
     useEffect(() => {
@@ -141,6 +129,7 @@ export default function ItemFormPage() {
                 moonShopPrice: data.item.moonShopPrice ?? 0,
                 isShopEnabled: Boolean(data.item.isShopEnabled),
                 isMoonShopEnabled: Boolean(data.item.isMoonShopEnabled),
+                isTradable: Boolean(data.item.isTradable),
                 purchaseLimit: Math.max(0, Number(data.item.purchaseLimit) || 0),
                 vipPurchaseLimitBonusPerLevel: Math.max(0, Number(data.item.vipPurchaseLimitBonusPerLevel) || 0),
                 isEvolutionMaterial: Boolean(data.item.isEvolutionMaterial),
@@ -151,6 +140,7 @@ export default function ItemFormPage() {
                 effectType: data.item.effectType || 'none',
                 effectValue: data.item.effectValue ?? 0,
                 effectValueMp: data.item.effectValueMp ?? 0,
+                effectDurationUnit: data.item.effectDurationUnit || 'month',
             })
         } catch (err) {
             setError(err.message)
@@ -190,6 +180,7 @@ export default function ItemFormPage() {
                 vipPurchaseLimitBonusPerLevel: Math.max(0, Number(formData.vipPurchaseLimitBonusPerLevel) || 0),
                 effectValue: Math.max(0, Number(formData.effectValue) || 0),
                 effectValueMp: Math.max(0, Number(formData.effectValueMp) || 0),
+                effectDurationUnit: String(formData.effectDurationUnit || 'month').trim().toLowerCase() === 'week' ? 'week' : 'month',
             }
 
             if (payload.effectType === 'none') {
@@ -201,7 +192,12 @@ export default function ItemFormPage() {
                 payload.effectValue = Math.min(100, Math.max(0, Number(payload.effectValue) || 0))
             }
 
-            if (!['heal', 'healAmount'].includes(payload.effectType)) {
+            if (payload.effectType === 'grantVipTier') {
+                payload.effectValue = Math.max(1, Number(payload.effectValue) || 1)
+                payload.effectValueMp = Math.max(1, Number(payload.effectValueMp) || 1)
+            }
+
+            if (!['heal', 'healAmount', 'grantVipTier'].includes(payload.effectType)) {
                 payload.effectValueMp = 0
             }
 
@@ -218,21 +214,8 @@ export default function ItemFormPage() {
         }
     }
 
-    const selectedTypeMeta = ITEM_TYPE_META[formData.type] || ITEM_TYPE_META.misc
-    const selectedRarityMeta = ITEM_RARITY_META[formData.rarity] || ITEM_RARITY_META.common
-    const previewName = formData.name.trim() || 'Vật phẩm chưa đặt tên'
-    const previewDescription = formData.description.trim() || 'Chưa có mô tả cho vật phẩm này.'
     const isHealEffect = formData.effectType === 'heal' || formData.effectType === 'healAmount'
-
-    const effectSummary = useMemo(
-        () => buildEffectSummary(formData.effectType, formData.effectValue, formData.effectValueMp),
-        [formData.effectType, formData.effectValue, formData.effectValueMp]
-    )
-    const evolutionRangeLabel = useMemo(() => {
-        const fromLabel = POKEMON_RARITY_TIERS.find((entry) => entry.value === formData.evolutionRarityFrom)?.label || 'D'
-        const toLabel = POKEMON_RARITY_TIERS.find((entry) => entry.value === formData.evolutionRarityTo)?.label || 'SSS'
-        return `${fromLabel} - ${toLabel}`
-    }, [formData.evolutionRarityFrom, formData.evolutionRarityTo])
+    const isVipGrantEffect = formData.effectType === 'grantVipTier'
 
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm max-w-5xl mx-auto mb-10">
@@ -246,8 +229,7 @@ export default function ItemFormPage() {
                 {error && <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded text-sm">{error}</div>}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
-                        <div className="space-y-6">
+                    <div className="space-y-6">
                             <div>
                                 <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 border-b border-blue-100 pb-2">1. Thông Tin Cơ Bản</h3>
                                 <div className="space-y-4">
@@ -348,6 +330,17 @@ export default function ItemFormPage() {
                                             Hiển thị trong Cửa hàng Nguyệt Các
                                         </label>
                                     </div>
+                                    <div className="md:col-span-2 flex items-end">
+                                        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(formData.isTradable)}
+                                                onChange={(e) => setFormData({ ...formData, isTradable: e.target.checked })}
+                                                className="accent-blue-600"
+                                            />
+                                            Vật phẩm này có thể giao dịch
+                                        </label>
+                                    </div>
                                     <div>
                                         <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giới Hạn Mua (0 = Không giới hạn)</label>
                                         <input
@@ -429,43 +422,66 @@ export default function ItemFormPage() {
                                     </div>
                                     <div>
                                         <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
-                                            {formData.effectType === 'catchMultiplier' ? 'Tỉ lệ bắt (%)' : 'Giá trị HP'}
+                                            {formData.effectType === 'catchMultiplier'
+                                                ? 'Tỉ lệ bắt (%)'
+                                                : (isVipGrantEffect ? 'Cấp VIP nhận được' : 'Giá trị HP')}
                                         </label>
                                         <input
                                             type="number"
-                                            min="0"
+                                            min={isVipGrantEffect ? '1' : '0'}
                                             max={formData.effectType === 'catchMultiplier' ? 100 : undefined}
-                                            step={formData.effectType === 'catchMultiplier' ? '0.1' : '0.01'}
+                                            step={formData.effectType === 'catchMultiplier' ? '0.1' : '1'}
                                             value={formData.effectValue}
                                             onChange={(e) => {
-                                                const nextValue = parseFloat(e.target.value) || 0
+                                                const nextValue = Number(e.target.value) || 0
                                                 const normalizedValue = formData.effectType === 'catchMultiplier'
                                                     ? Math.min(100, Math.max(0, nextValue))
-                                                    : nextValue
+                                                    : (isVipGrantEffect ? Math.max(1, Math.floor(nextValue || 0)) : nextValue)
                                                 setFormData({ ...formData, effectValue: normalizedValue })
                                             }}
                                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                         />
                                     </div>
                                 </div>
-                                {isHealEffect && (
+                                {(isHealEffect || isVipGrantEffect) && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                         <div>
-                                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giá trị PP</label>
+                                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
+                                                {isVipGrantEffect ? 'Thời lượng' : 'Giá trị PP'}
+                                            </label>
                                             <input
                                                 type="number"
-                                                min="0"
-                                                step="0.01"
+                                                min={isVipGrantEffect ? '1' : '0'}
+                                                step="1"
                                                 value={formData.effectValueMp}
-                                                onChange={(e) => setFormData({ ...formData, effectValueMp: parseFloat(e.target.value) || 0 })}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    effectValueMp: isVipGrantEffect
+                                                        ? Math.max(1, parseInt(e.target.value, 10) || 1)
+                                                        : (parseFloat(e.target.value) || 0),
+                                                })}
                                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                             />
                                         </div>
+                                        {isVipGrantEffect && (
+                                            <div>
+                                                <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Đơn vị thời hạn</label>
+                                                <select
+                                                    value={formData.effectDurationUnit}
+                                                    onChange={(e) => setFormData({ ...formData, effectDurationUnit: e.target.value })}
+                                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                                >
+                                                    {VIP_DURATION_UNIT_OPTIONS.map((option) => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
 
-                            <div className="bg-white rounded border border-blue-100 p-4 shadow-sm">
+                                <div className="bg-white rounded border border-blue-100 p-4 shadow-sm">
                                 <div className="flex justify-between items-center border-b border-blue-100 pb-3 mb-4">
                                     <div>
                                         <h3 className="text-sm font-bold text-blue-900 uppercase">Ảnh Vật Phẩm</h3>
@@ -483,68 +499,6 @@ export default function ItemFormPage() {
                                     />
                                 </div>
                             </div>
-                        </div>
-
-                        <aside className="xl:sticky xl:top-4 space-y-4">
-                            <div className="border border-blue-400 rounded-lg overflow-hidden shadow-sm bg-white">
-                                <SectionHeader title="Chi Tiết Vật Phẩm" />
-                                <div className="bg-slate-50 border-b border-blue-200 p-1 text-center font-bold text-blue-800 text-xs uppercase">
-                                    Xem Trước
-                                </div>
-
-                                <div className="p-4">
-                                    <div className="flex flex-col items-center mb-4">
-                                        <div className="w-28 h-28 rounded-lg bg-blue-50 border border-blue-100 shadow-inner flex items-center justify-center mb-3 overflow-hidden">
-                                            <img
-                                                src={formData.imageUrl || ITEM_FALLBACK_IMAGE}
-                                                alt={previewName}
-                                                className="w-20 h-20 object-contain pixelated"
-                                                onError={(event) => {
-                                                    event.currentTarget.onerror = null
-                                                    event.currentTarget.src = ITEM_FALLBACK_IMAGE
-                                                }}
-                                            />
-                                        </div>
-
-                                        <h2 className="text-lg font-bold text-blue-900 text-center leading-tight">
-                                            {previewName}
-                                        </h2>
-
-                                        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${selectedTypeMeta.badge}`}>
-                                                {selectedTypeMeta.label}
-                                            </span>
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${selectedRarityMeta.badge}`}>
-                                                {selectedRarityMeta.label}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div className="border border-blue-300 rounded overflow-hidden">
-                                        <InfoRow label="Loại" value={selectedTypeMeta.label} />
-                                        <InfoRow label="Độ hiếm" value={selectedRarityMeta.label} />
-                                        <InfoRow label="Giá shop" value={`${formatCurrency(formData.shopPrice)} xu`} />
-                                        <InfoRow label="Giá Nguyệt Các" value={`${formatCurrency(formData.moonShopPrice)} điểm`} />
-                                        <InfoRow label="Shop vật phẩm" value={formData.isShopEnabled ? 'Đang bán' : 'Ẩn'} />
-                                        <InfoRow label="Shop Nguyệt Các" value={formData.isMoonShopEnabled ? 'Đang bán' : 'Ẩn'} />
-                                        <InfoRow label="Giới hạn mua" value={Number(formData.purchaseLimit || 0) > 0 ? `${formatCurrency(formData.purchaseLimit)} lần` : 'Không giới hạn'} />
-                                        <InfoRow label="Bonus VIP" value={`${formatCurrency(formData.vipPurchaseLimitBonusPerLevel)} / cấp`} />
-                                        <InfoRow label="Vật phẩm tiến hóa" value={formData.isEvolutionMaterial ? 'Có' : 'Không'} />
-                                        {formData.isEvolutionMaterial && (
-                                            <InfoRow label="Khoảng rank" value={evolutionRangeLabel} />
-                                        )}
-                                        <InfoRow label="Hiệu ứng" value={effectSummary} />
-                                    </div>
-
-                                    <div className="mt-3 border border-blue-200 rounded bg-blue-50/40 p-3">
-                                        <div className="text-[10px] font-bold uppercase tracking-wide text-blue-700 mb-1">Mô tả</div>
-                                        <p className="text-xs text-slate-700 leading-relaxed">
-                                            {previewDescription}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </aside>
                     </div>
 
                     <div className="flex gap-3 pt-4 border-t border-slate-200">

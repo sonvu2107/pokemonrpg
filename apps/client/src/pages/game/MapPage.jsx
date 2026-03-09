@@ -105,6 +105,17 @@ const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
 const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
+const MAP_DETAIL_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+const POKEMON_RARITY_ORDER = Object.freeze({ d: 0, c: 1, b: 2, a: 3, s: 4, ss: 5, sss: 6 })
+const ITEM_RARITY_ORDER = Object.freeze({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 })
+const ITEM_TYPE_LABELS = Object.freeze({
+    healing: 'Hồi phục',
+    pokeball: 'Pokeball',
+    evolution: 'Tiến hóa',
+    battle: 'Chiến đấu',
+    key: 'Nhiệm vụ',
+    misc: 'Khác',
+})
 
 const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     const source = value && typeof value === 'object' ? value : {}
@@ -195,6 +206,30 @@ const isSearchDebugModeEnabled = () => {
     return Boolean(import.meta.env.DEV)
 }
 
+const formatPercent = (value) => `${Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 4 })}%`
+const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), 'vi', { sensitivity: 'base' })
+const capitalizeWords = (value = '') => String(value || '')
+    .split(/[-\s_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+
+const buildPokemonEncounterFallback = (mapLike = null, dropRateEntries = []) => {
+    const encounterRate = Math.max(0, Math.min(1, Number(mapLike?.encounterRate) || 0))
+    const totalWeight = dropRateEntries.reduce((sum, entry) => sum + (Number(entry?.weight) > 0 ? Number(entry.weight) : 0), 0)
+
+    return dropRateEntries.map((entry) => {
+        const weight = Number(entry?.weight) > 0 ? Number(entry.weight) : 0
+        const poolPercent = totalWeight > 0 ? (weight / totalWeight) * 100 : 0
+        return {
+            ...entry,
+            source: entry?.source || 'normal',
+            poolPercent,
+            encounterPercent: encounterRate * poolPercent,
+        }
+    })
+}
+
 const getLastEncounterStorageKey = (slug = '') => `${LAST_ENCOUNTER_STORAGE_PREFIX}${String(slug || '').trim().toLowerCase()}`
 
 const buildEncounterSummary = (result = {}) => {
@@ -230,6 +265,8 @@ export default function MapPage() {
     const isSearchDebugMode = isSearchDebugModeEnabled()
     const [map, setMap] = useState(null)
     const [dropRates, setDropRates] = useState([])
+    const [pokemonEncounters, setPokemonEncounters] = useState([])
+    const [itemDropRates, setItemDropRates] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [unlockInfo, setUnlockInfo] = useState(null)
@@ -274,6 +311,23 @@ export default function MapPage() {
     const [searchChallengeInput, setSearchChallengeInput] = useState('')
     const [searchChallengeError, setSearchChallengeError] = useState('')
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
+    const [isEncounterDetailExpanded, setIsEncounterDetailExpanded] = useState(true)
+    const [detailTab, setDetailTab] = useState('pokemon')
+    const [pokemonSortKey, setPokemonSortKey] = useState('encounterPercent')
+    const [pokemonSortDirection, setPokemonSortDirection] = useState('desc')
+    const [pokemonPage, setPokemonPage] = useState(1)
+    const [pokemonPageSize, setPokemonPageSize] = useState(MAP_DETAIL_PAGE_SIZE_OPTIONS[0])
+    const [pokemonSearch, setPokemonSearch] = useState('')
+    const [pokemonRarityFilter, setPokemonRarityFilter] = useState('')
+    const [pokemonTypeFilter, setPokemonTypeFilter] = useState('')
+    const [pokemonSourceFilter, setPokemonSourceFilter] = useState('')
+    const [itemSortKey, setItemSortKey] = useState('dropPercent')
+    const [itemSortDirection, setItemSortDirection] = useState('desc')
+    const [itemPage, setItemPage] = useState(1)
+    const [itemPageSize, setItemPageSize] = useState(MAP_DETAIL_PAGE_SIZE_OPTIONS[0])
+    const [itemSearch, setItemSearch] = useState('')
+    const [itemRarityFilter, setItemRarityFilter] = useState('')
+    const [itemTypeFilter, setItemTypeFilter] = useState('')
     const searchScrollYRef = useRef(0)
     const shouldRestoreSearchScrollRef = useRef(false)
     const searchSpamCountRef = useRef(0)
@@ -390,7 +444,26 @@ export default function MapPage() {
         setSearchChallengeInput('')
         setSearchChallengeError('')
         lastSearchChallengeAtRef.current = Date.now()
+        setIsEncounterDetailExpanded(true)
+        setDetailTab('pokemon')
+        setPokemonPage(1)
+        setItemPage(1)
+        setPokemonSearch('')
+        setPokemonRarityFilter('')
+        setPokemonTypeFilter('')
+        setPokemonSourceFilter('')
+        setItemSearch('')
+        setItemRarityFilter('')
+        setItemTypeFilter('')
     }, [slug])
+
+    useEffect(() => {
+        setPokemonPage(1)
+    }, [pokemonSortKey, pokemonSortDirection, pokemonPageSize, pokemonEncounters.length, dropRates.length, pokemonSearch, pokemonRarityFilter, pokemonTypeFilter, pokemonSourceFilter])
+
+    useEffect(() => {
+        setItemPage(1)
+    }, [itemSortKey, itemSortDirection, itemPageSize, itemDropRates.length, itemSearch, itemRarityFilter, itemTypeFilter])
 
     useEffect(() => {
         if (availablePokeballs.length === 0) {
@@ -430,6 +503,8 @@ export default function MapPage() {
             ])
             setMap(mapData.map)
             setDropRates(mapData.dropRates)
+            setPokemonEncounters(Array.isArray(mapData.pokemonEncounters) ? mapData.pokemonEncounters : [])
+            setItemDropRates(Array.isArray(mapData.itemDropRates) ? mapData.itemDropRates : [])
             if (stateData?.mapProgress) {
                 setMapStats(stateData.mapProgress)
             }
@@ -1026,6 +1101,101 @@ export default function MapPage() {
     if (!map) return null
 
     const specialPokemons = Array.isArray(map.specialPokemons) ? map.specialPokemons : []
+    const basePokemonEncounterEntries = (() => {
+        const source = pokemonEncounters.length > 0 ? pokemonEncounters : buildPokemonEncounterFallback(map, dropRates)
+        return [...source].sort((left, right) => {
+            const leftPokemon = left?.pokemonId || {}
+            const rightPokemon = right?.pokemonId || {}
+            const leftValueByKey = {
+                encounterPercent: Number(left?.encounterPercent || 0),
+                name: String(leftPokemon?.name || ''),
+                pokedexNumber: Number(leftPokemon?.pokedexNumber || 0),
+                rarity: POKEMON_RARITY_ORDER[String(leftPokemon?.rarity || '').trim().toLowerCase()] ?? -1,
+                source: String(left?.source || ''),
+                form: String(left?.form?.formName || left?.formId || ''),
+                type: String(Array.isArray(leftPokemon?.types) ? leftPokemon.types[0] : ''),
+            }
+            const rightValueByKey = {
+                encounterPercent: Number(right?.encounterPercent || 0),
+                name: String(rightPokemon?.name || ''),
+                pokedexNumber: Number(rightPokemon?.pokedexNumber || 0),
+                rarity: POKEMON_RARITY_ORDER[String(rightPokemon?.rarity || '').trim().toLowerCase()] ?? -1,
+                source: String(right?.source || ''),
+                form: String(right?.form?.formName || right?.formId || ''),
+                type: String(Array.isArray(rightPokemon?.types) ? rightPokemon.types[0] : ''),
+            }
+            const direction = pokemonSortDirection === 'asc' ? 1 : -1
+            const leftValue = leftValueByKey[pokemonSortKey]
+            const rightValue = rightValueByKey[pokemonSortKey]
+            const comparison = (typeof leftValue === 'string' || typeof rightValue === 'string')
+                ? compareText(leftValue, rightValue)
+                : ((Number(leftValue) || 0) - (Number(rightValue) || 0))
+            if (comparison !== 0) return comparison * direction
+            return compareText(leftPokemon?.name, rightPokemon?.name)
+        })
+    })()
+    const pokemonTypeOptions = [...new Set(basePokemonEncounterEntries.flatMap((entry) => {
+        const pokemon = entry?.pokemonId || {}
+        return Array.isArray(pokemon?.types) ? pokemon.types.map((type) => String(type || '').trim().toLowerCase()).filter(Boolean) : []
+    }))].sort((left, right) => compareText(left, right))
+    const pokemonEncounterEntries = basePokemonEncounterEntries.filter((entry) => {
+        const pokemon = entry?.pokemonId || {}
+        const normalizedSearch = String(pokemonSearch || '').trim().toLowerCase()
+        const normalizedRarity = String(pokemonRarityFilter || '').trim().toLowerCase()
+        const normalizedType = String(pokemonTypeFilter || '').trim().toLowerCase()
+        const normalizedSource = String(pokemonSourceFilter || '').trim().toLowerCase()
+        const types = Array.isArray(pokemon?.types) ? pokemon.types.map((type) => String(type || '').trim().toLowerCase()) : []
+        const formName = String(entry?.form?.formName || entry?.formId || '').trim().toLowerCase()
+
+        if (normalizedSearch && !String(pokemon?.name || '').toLowerCase().includes(normalizedSearch) && !formName.includes(normalizedSearch)) return false
+        if (normalizedRarity && String(pokemon?.rarity || '').trim().toLowerCase() !== normalizedRarity) return false
+        if (normalizedType && !types.includes(normalizedType)) return false
+        if (normalizedSource && String(entry?.source || '').trim().toLowerCase() !== normalizedSource) return false
+        return true
+    })
+    const baseItemDropEntries = (() => {
+        return [...itemDropRates].sort((left, right) => {
+            const leftItem = left?.itemId || {}
+            const rightItem = right?.itemId || {}
+            const leftValueByKey = {
+                dropPercent: Number(left?.dropPercent || 0),
+                name: String(leftItem?.name || ''),
+                type: String(leftItem?.type || ''),
+                rarity: ITEM_RARITY_ORDER[String(leftItem?.rarity || '').trim().toLowerCase()] ?? -1,
+            }
+            const rightValueByKey = {
+                dropPercent: Number(right?.dropPercent || 0),
+                name: String(rightItem?.name || ''),
+                type: String(rightItem?.type || ''),
+                rarity: ITEM_RARITY_ORDER[String(rightItem?.rarity || '').trim().toLowerCase()] ?? -1,
+            }
+            const direction = itemSortDirection === 'asc' ? 1 : -1
+            const leftValue = leftValueByKey[itemSortKey]
+            const rightValue = rightValueByKey[itemSortKey]
+            const comparison = (typeof leftValue === 'string' || typeof rightValue === 'string')
+                ? compareText(leftValue, rightValue)
+                : ((Number(leftValue) || 0) - (Number(rightValue) || 0))
+            if (comparison !== 0) return comparison * direction
+            return compareText(leftItem?.name, rightItem?.name)
+        })
+    })()
+    const itemDropEntries = baseItemDropEntries.filter((entry) => {
+        const item = entry?.itemId || {}
+        const normalizedSearch = String(itemSearch || '').trim().toLowerCase()
+        const normalizedRarity = String(itemRarityFilter || '').trim().toLowerCase()
+        const normalizedType = String(itemTypeFilter || '').trim().toLowerCase()
+
+        if (normalizedSearch && !String(item?.name || '').toLowerCase().includes(normalizedSearch) && !String(item?.description || '').toLowerCase().includes(normalizedSearch)) return false
+        if (normalizedRarity && String(item?.rarity || '').trim().toLowerCase() !== normalizedRarity) return false
+        if (normalizedType && String(item?.type || '').trim().toLowerCase() !== normalizedType) return false
+        return true
+    })
+    const pokemonTotalPages = Math.max(1, Math.ceil(pokemonEncounterEntries.length / pokemonPageSize))
+    const itemTotalPages = Math.max(1, Math.ceil(itemDropEntries.length / itemPageSize))
+    const normalizedPokemonPage = Math.min(pokemonPage, pokemonTotalPages)
+    const normalizedItemPage = Math.min(itemPage, itemTotalPages)
+    const paginatedPokemonEncounters = pokemonEncounterEntries.slice((normalizedPokemonPage - 1) * pokemonPageSize, normalizedPokemonPage * pokemonPageSize)
+    const paginatedItemDrops = itemDropEntries.slice((normalizedItemPage - 1) * itemPageSize, normalizedItemPage * itemPageSize)
     const enemyHpPercent = encounter
         ? Math.max(5, Math.round((encounter.hp / Math.max(1, encounter.maxHp)) * 100))
         : 0
@@ -1198,6 +1368,213 @@ export default function MapPage() {
                         </div>
                     </div> 
                     */}
+
+                    <div className="border-t border-blue-200 bg-slate-50">
+                        <div className="bg-sky-100/60 py-1 px-3 text-blue-900 font-bold text-xs border-y border-blue-200 flex items-center justify-between gap-3">
+                            <span>Chi Tiết Tỷ Lệ Xuất Hiện</span>
+                            <button
+                                type="button"
+                                onClick={() => setIsEncounterDetailExpanded((prev) => !prev)}
+                                className="rounded border border-blue-300 bg-white px-2 py-1 text-[11px] font-bold text-blue-800 hover:bg-blue-50"
+                            >
+                                {isEncounterDetailExpanded ? 'Thu gọn' : 'Mở rộng'}
+                            </button>
+                        </div>
+                        {isEncounterDetailExpanded && <div className="p-3 sm:p-4 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setDetailTab('pokemon')}
+                                    className={`px-3 py-1.5 rounded border text-xs font-bold ${detailTab === 'pokemon' ? 'border-blue-600 bg-blue-600 text-white' : 'border-blue-200 bg-white text-blue-800 hover:bg-blue-50'}`}
+                                >
+                                    Pokemon ({pokemonEncounterEntries.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDetailTab('item')}
+                                    className={`px-3 py-1.5 rounded border text-xs font-bold ${detailTab === 'item' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'}`}
+                                >
+                                    Vật phẩm ({itemDropEntries.length})
+                                </button>
+                            </div>
+
+                            {detailTab === 'pokemon' ? (
+                                <>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                        <div className="text-xs font-semibold text-slate-600">
+                                            Tỷ lệ gặp Pokemon tổng: <span className="text-blue-700">{formatPercent((Number(map.encounterRate) || 0) * 100)}</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                            <input value={pokemonSearch} onChange={(e) => setPokemonSearch(e.target.value)} placeholder="Tìm Pokemon hoặc form" className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700" />
+                                            <select value={pokemonRarityFilter} onChange={(e) => setPokemonRarityFilter(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="">Tất cả độ hiếm</option>
+                                                {Object.keys(POKEMON_RARITY_ORDER).map((rarityKey) => <option key={rarityKey} value={rarityKey}>{rarityKey.toUpperCase()}</option>)}
+                                            </select>
+                                            <select value={pokemonTypeFilter} onChange={(e) => setPokemonTypeFilter(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="">Tất cả hệ</option>
+                                                {pokemonTypeOptions.map((type) => <option key={type} value={type}>{capitalizeWords(type)}</option>)}
+                                            </select>
+                                            <select value={pokemonSourceFilter} onChange={(e) => setPokemonSourceFilter(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="">Tất cả loại</option>
+                                                <option value="normal">Thường</option>
+                                                <option value="special">Đặc biệt</option>
+                                            </select>
+                                            <select value={pokemonSortKey} onChange={(e) => setPokemonSortKey(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="encounterPercent">Tỷ lệ xuất hiện</option>
+                                                <option value="name">Tên</option>
+                                                <option value="pokedexNumber">Pokedex</option>
+                                                <option value="rarity">Độ hiếm</option>
+                                                <option value="source">Loại</option>
+                                                <option value="form">Dạng</option>
+                                                <option value="type">Hệ</option>
+                                            </select>
+                                            <select value={pokemonSortDirection} onChange={(e) => setPokemonSortDirection(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="desc">Giảm dần</option>
+                                                <option value="asc">Tăng dần</option>
+                                            </select>
+                                            <select value={pokemonPageSize} onChange={(e) => setPokemonPageSize(Number(e.target.value) || MAP_DETAIL_PAGE_SIZE_OPTIONS[0])} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                {MAP_DETAIL_PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}/trang</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                        <table className="w-full min-w-[760px] text-xs">
+                                            <thead>
+                                                <tr className="bg-blue-50 text-blue-900">
+                                                    <th className="px-3 py-2 text-left font-bold">Pokemon</th>
+                                                    <th className="px-3 py-2 text-center font-bold">Loại</th>
+                                                    <th className="px-3 py-2 text-center font-bold">Độ hiếm</th>
+                                                    <th className="px-3 py-2 text-center font-bold">Hệ</th>
+                                                    <th className="px-3 py-2 text-right font-bold">Tỷ lệ xuất hiện</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {paginatedPokemonEncounters.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-8 text-center text-slate-500">Không tìm thấy Pokemon phù hợp bộ lọc.</td>
+                                                    </tr>
+                                                ) : paginatedPokemonEncounters.map((entry) => {
+                                                    const pokemon = entry?.pokemonId || {}
+                                                    const rarityMeta = getRarityStyle(pokemon?.rarity)
+                                                    const formName = String(entry?.form?.formName || entry?.formId || '').trim().toLowerCase() !== 'normal'
+                                                        ? (entry?.form?.formName || entry?.formId)
+                                                        : ''
+                                                    const types = Array.isArray(pokemon?.types) ? pokemon.types : []
+
+                                                    return (
+                                                        <tr key={entry?._id || `${pokemon?._id || pokemon?.name}-${entry?.formId || 'normal'}-${entry?.source || 'normal'}`} className="border-t border-slate-100 hover:bg-slate-50">
+                                                            <td className="px-3 py-2">
+                                                                <div className="flex items-center gap-3">
+                                                                    <img src={entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || ''} alt={pokemon?.name || 'Pokemon'} className="h-12 w-12 object-contain pixelated" />
+                                                                    <div>
+                                                                        <div className="font-bold text-slate-800">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
+                                                                        <div className="text-[11px] text-slate-500">#{pokemon?.pokedexNumber || '-'}</div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-1 font-bold ${entry?.source === 'special' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{entry?.source === 'special' ? 'Đặc biệt' : 'Thường'}</span></td>
+                                                            <td className="px-3 py-2 text-center"><span className={`font-bold ${rarityMeta.text}`}>{rarityMeta.label}</span></td>
+                                                            <td className="px-3 py-2 text-center text-slate-700">{types.length > 0 ? types.map((type) => capitalizeWords(type)).join(', ') : '-'}</td>
+                                                            <td className="px-3 py-2 text-right font-bold text-blue-700">{formatPercent(entry?.encounterPercent)}</td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs">
+                                        <div className="text-slate-600">
+                                            Hiển thị {pokemonEncounterEntries.length === 0 ? 0 : ((normalizedPokemonPage - 1) * pokemonPageSize) + 1}-{Math.min(pokemonEncounterEntries.length, normalizedPokemonPage * pokemonPageSize)} / {pokemonEncounterEntries.length} Pokemon
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => setPokemonPage((prev) => Math.max(1, prev - 1))} disabled={normalizedPokemonPage <= 1} className="rounded border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Trang trước</button>
+                                            <span className="font-semibold text-slate-700">Trang {normalizedPokemonPage}/{pokemonTotalPages}</span>
+                                            <button type="button" onClick={() => setPokemonPage((prev) => Math.min(pokemonTotalPages, prev + 1))} disabled={normalizedPokemonPage >= pokemonTotalPages} className="rounded border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Trang sau</button>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                        <div className="text-xs font-semibold text-slate-600">
+                                            Tỷ lệ rơi vật phẩm tổng: <span className="text-emerald-700">{formatPercent((Number(map.itemDropRate) || 0) * 100)}</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                            <input value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Tìm vật phẩm" className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700" />
+                                            <select value={itemRarityFilter} onChange={(e) => setItemRarityFilter(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="">Tất cả độ hiếm</option>
+                                                {Object.keys(ITEM_RARITY_ORDER).map((rarityKey) => <option key={rarityKey} value={rarityKey}>{capitalizeWords(rarityKey)}</option>)}
+                                            </select>
+                                            <select value={itemTypeFilter} onChange={(e) => setItemTypeFilter(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="">Tất cả loại</option>
+                                                {Object.keys(ITEM_TYPE_LABELS).map((type) => <option key={type} value={type}>{ITEM_TYPE_LABELS[type]}</option>)}
+                                            </select>
+                                            <select value={itemSortKey} onChange={(e) => setItemSortKey(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="dropPercent">Tỷ lệ rơi</option>
+                                                <option value="name">Tên</option>
+                                                <option value="type">Loại</option>
+                                                <option value="rarity">Độ hiếm</option>
+                                            </select>
+                                            <select value={itemSortDirection} onChange={(e) => setItemSortDirection(e.target.value)} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                <option value="desc">Giảm dần</option>
+                                                <option value="asc">Tăng dần</option>
+                                            </select>
+                                            <select value={itemPageSize} onChange={(e) => setItemPageSize(Number(e.target.value) || MAP_DETAIL_PAGE_SIZE_OPTIONS[0])} className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700">
+                                                {MAP_DETAIL_PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}/trang</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+                                        <table className="w-full min-w-[720px] text-xs">
+                                            <thead>
+                                                <tr className="bg-emerald-50 text-emerald-900">
+                                                    <th className="px-3 py-2 text-left font-bold">Vật phẩm</th>
+                                                    <th className="px-3 py-2 text-center font-bold">Loại</th>
+                                                    <th className="px-3 py-2 text-center font-bold">Độ hiếm</th>
+                                                    <th className="px-3 py-2 text-right font-bold">Tỷ lệ rơi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {paginatedItemDrops.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={4} className="px-3 py-8 text-center text-slate-500">Không tìm thấy vật phẩm phù hợp bộ lọc.</td>
+                                                    </tr>
+                                                ) : paginatedItemDrops.map((entry) => {
+                                                    const item = entry?.itemId || {}
+                                                    return (
+                                                        <tr key={entry?._id || item?._id || item?.name} className="border-t border-slate-100 hover:bg-slate-50">
+                                                            <td className="px-3 py-2">
+                                                                <div className="flex items-center gap-3">
+                                                                    <img src={item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={item?.name || 'Vật phẩm'} className="h-10 w-10 object-contain" />
+                                                                    <div>
+                                                                        <div className="font-bold text-slate-800">{item?.name || 'Vật phẩm'}</div>
+                                                                        <div className="text-[11px] text-slate-500">{item?.description || 'Không có mô tả.'}</div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-3 py-2 text-center text-slate-700">{ITEM_TYPE_LABELS[item?.type] || item?.type || '-'}</td>
+                                                            <td className="px-3 py-2 text-center font-bold uppercase text-emerald-700">{item?.rarity || '-'}</td>
+                                                            <td className="px-3 py-2 text-right font-bold text-emerald-700">{formatPercent(entry?.dropPercent)}</td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs">
+                                        <div className="text-slate-600">
+                                            Hiển thị {itemDropEntries.length === 0 ? 0 : ((normalizedItemPage - 1) * itemPageSize) + 1}-{Math.min(itemDropEntries.length, normalizedItemPage * itemPageSize)} / {itemDropEntries.length} vật phẩm
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => setItemPage((prev) => Math.max(1, prev - 1))} disabled={normalizedItemPage <= 1} className="rounded border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Trang trước</button>
+                                            <span className="font-semibold text-slate-700">Trang {normalizedItemPage}/{itemTotalPages}</span>
+                                            <button type="button" onClick={() => setItemPage((prev) => Math.min(itemTotalPages, prev + 1))} disabled={normalizedItemPage >= itemTotalPages} className="rounded border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Trang sau</button>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>}
+                    </div>
                 </div>
 
                 {/* Stats Table */}
@@ -1205,8 +1582,12 @@ export default function MapPage() {
                     <table className="w-full text-xs font-bold text-slate-800 min-w-[300px]">
                         <tbody>
                             <tr className="border-b border-slate-300">
-                                <td className="w-1/3 bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Tỷ lệ hiện tại:</td>
-                                <td className="px-3 py-1 bg-white">1 trong {Math.floor(1000 / (dropRates[0]?.weight || 1))}</td>
+                                <td className="w-1/3 bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Tỷ lệ gặp Pokemon:</td>
+                                <td className="px-3 py-1 bg-white">{formatPercent((Number(map.encounterRate) || 0) * 100)}</td>
+                            </tr>
+                            <tr className="border-b border-slate-300">
+                                <td className="w-1/3 bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Tỷ lệ rơi vật phẩm:</td>
+                                <td className="px-3 py-1 bg-white">{formatPercent((Number(map.itemDropRate) || 0) * 100)}</td>
                             </tr>
                             <tr className="border-b border-slate-300">
                                 <td className="bg-sky-100 px-3 py-1 text-right border-r border-slate-300">Cấp độ bản đồ:</td>
@@ -1594,6 +1975,11 @@ export default function MapPage() {
                     {encounter ? (
                         <div className="text-green-700 font-bold">
                             Một <span className="uppercase">{encounter.pokemon.name}</span> (Lvl {encounter.level}) <span className={`font-bold ${getRarityStyle(encounter.pokemon.rarity).text}`}>[{getRarityStyle(encounter.pokemon.rarity).label}]</span> hoang dã xuất hiện!
+                            {encounter?.pokemon?.isNewPokedexEntry && (
+                                <div className="mt-1 text-xs font-bold text-rose-600 uppercase tracking-wide">
+                                    New - chưa có trong Pokedex
+                                </div>
+                            )}
                             <div className="mt-2 text-xs font-normal text-slate-600">
                                 [ <button
                                     onClick={handleAttack}

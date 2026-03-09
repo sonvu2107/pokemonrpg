@@ -234,6 +234,7 @@ router.post('/', async (req, res) => {
             isShopEnabled,
             moonShopPrice,
             isMoonShopEnabled,
+            isTradable,
             purchaseLimit,
             vipPurchaseLimitBonusPerLevel,
             isEvolutionMaterial,
@@ -242,6 +243,7 @@ router.post('/', async (req, res) => {
             effectType,
             effectValue,
             effectValueMp,
+            effectDurationUnit,
         } = req.body
 
         if (!name) {
@@ -277,11 +279,25 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá trị PP không hợp lệ' })
         }
 
+        if (effectDurationUnit !== undefined && !['month', 'week'].includes(String(effectDurationUnit || '').trim().toLowerCase())) {
+            return res.status(400).json({ ok: false, message: 'Đơn vị thời hạn không hợp lệ' })
+        }
+
         const resolvedEffectType = effectType || 'none'
         if (resolvedEffectType === 'catchMultiplier') {
             const catchChancePercent = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
             if (catchChancePercent < 0 || catchChancePercent > 100) {
                 return res.status(400).json({ ok: false, message: 'Tỉ lệ bắt phải nằm trong khoảng 0-100%' })
+            }
+        }
+        if (resolvedEffectType === 'grantVipTier') {
+            const vipTierLevel = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
+            const vipDurationMonths = Number.isFinite(Number(effectValueMp)) ? Number(effectValueMp) : 0
+            if (vipTierLevel < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có cấp VIP từ 1 trở lên' })
+            }
+            if (vipDurationMonths < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có thời hạn tối thiểu 1 tháng' })
             }
         }
 
@@ -308,6 +324,7 @@ router.post('/', async (req, res) => {
             isShopEnabled: toBoolean(isShopEnabled, false),
             moonShopPrice: Number.isFinite(Number(moonShopPrice)) ? Number(moonShopPrice) : 0,
             isMoonShopEnabled: toBoolean(isMoonShopEnabled, false),
+            isTradable: toBoolean(isTradable, false),
             purchaseLimit: Number.isFinite(Number(purchaseLimit)) ? Math.max(0, Number(purchaseLimit)) : 0,
             vipPurchaseLimitBonusPerLevel: Number.isFinite(Number(vipPurchaseLimitBonusPerLevel))
                 ? Math.max(0, Number(vipPurchaseLimitBonusPerLevel))
@@ -320,6 +337,9 @@ router.post('/', async (req, res) => {
                 ? Math.min(100, Math.max(0, Number(effectValue) || 0))
                 : (effectValue !== undefined ? Number(effectValue) : 0),
             effectValueMp: effectValueMp !== undefined ? Number(effectValueMp) : 0,
+            effectDurationUnit: ['month', 'week'].includes(String(effectDurationUnit || '').trim().toLowerCase())
+                ? String(effectDurationUnit).trim().toLowerCase()
+                : 'month',
         })
 
         await item.save()
@@ -344,6 +364,7 @@ router.put('/:id', async (req, res) => {
             isShopEnabled,
             moonShopPrice,
             isMoonShopEnabled,
+            isTradable,
             purchaseLimit,
             vipPurchaseLimitBonusPerLevel,
             isEvolutionMaterial,
@@ -352,6 +373,7 @@ router.put('/:id', async (req, res) => {
             effectType,
             effectValue,
             effectValueMp,
+            effectDurationUnit,
         } = req.body
 
         const item = await Item.findById(req.params.id)
@@ -389,11 +411,25 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Giá trị PP không hợp lệ' })
         }
 
+        if (effectDurationUnit !== undefined && !['month', 'week'].includes(String(effectDurationUnit || '').trim().toLowerCase())) {
+            return res.status(400).json({ ok: false, message: 'Đơn vị thời hạn không hợp lệ' })
+        }
+
         const nextEffectType = effectType !== undefined ? effectType : item.effectType
         if (nextEffectType === 'catchMultiplier' && effectValue !== undefined) {
             const catchChancePercent = Number(effectValue)
             if (catchChancePercent < 0 || catchChancePercent > 100) {
                 return res.status(400).json({ ok: false, message: 'Tỉ lệ bắt phải nằm trong khoảng 0-100%' })
+            }
+        }
+        if (nextEffectType === 'grantVipTier') {
+            const vipTierLevel = effectValue !== undefined ? Number(effectValue) : Number(item.effectValue)
+            const vipDurationMonths = effectValueMp !== undefined ? Number(effectValueMp) : Number(item.effectValueMp)
+            if (!Number.isFinite(vipTierLevel) || vipTierLevel < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có cấp VIP từ 1 trở lên' })
+            }
+            if (!Number.isFinite(vipDurationMonths) || vipDurationMonths < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có thời hạn tối thiểu 1 tháng' })
             }
         }
 
@@ -426,6 +462,7 @@ router.put('/:id', async (req, res) => {
         if (isShopEnabled !== undefined) item.isShopEnabled = toBoolean(isShopEnabled, item.isShopEnabled)
         if (moonShopPrice !== undefined) item.moonShopPrice = Math.max(0, Number(moonShopPrice) || 0)
         if (isMoonShopEnabled !== undefined) item.isMoonShopEnabled = toBoolean(isMoonShopEnabled, item.isMoonShopEnabled)
+        if (isTradable !== undefined) item.isTradable = toBoolean(isTradable, item.isTradable)
         if (purchaseLimit !== undefined) item.purchaseLimit = Math.max(0, Number(purchaseLimit) || 0)
         if (vipPurchaseLimitBonusPerLevel !== undefined) {
             item.vipPurchaseLimitBonusPerLevel = Math.max(0, Number(vipPurchaseLimitBonusPerLevel) || 0)
@@ -444,6 +481,7 @@ router.put('/:id', async (req, res) => {
             item.effectValue = Math.min(100, Math.max(0, Number(item.effectValue) || 0))
         }
         if (effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
+        if (effectDurationUnit !== undefined) item.effectDurationUnit = String(effectDurationUnit || '').trim().toLowerCase() || 'month'
 
         await item.save()
 

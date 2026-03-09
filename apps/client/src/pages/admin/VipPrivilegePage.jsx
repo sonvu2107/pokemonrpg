@@ -142,6 +142,7 @@ export default function VipPrivilegePage() {
     const [error, setError] = useState('')
     const [search, setSearch] = useState('')
     const [vipUserSearch, setVipUserSearch] = useState('')
+    const [vipUserPage, setVipUserPage] = useState(1)
     const [showInactive, setShowInactive] = useState(true)
     const [saving, setSaving] = useState(false)
     const [deletingId, setDeletingId] = useState('')
@@ -150,7 +151,6 @@ export default function VipPrivilegePage() {
     const [rangeForm, setRangeForm] = useState({ fromLevel: '1', toLevel: '10' })
     const [rangeSubmitting, setRangeSubmitting] = useState(false)
     const [uploadingAsset, setUploadingAsset] = useState({ title: false, frame: false })
-
     const loadTiers = async () => {
         try {
             setLoading(true)
@@ -263,6 +263,16 @@ export default function VipPrivilegePage() {
             return text.includes(keyword)
         })
     }, [vipUsers, vipUserSearch])
+
+    useEffect(() => {
+        setVipUserPage(1)
+    }, [vipUserSearch])
+
+    const VIP_USERS_PER_PAGE = 8
+    const vipUserTotalPages = Math.max(1, Math.ceil(visibleVipUsers.length / VIP_USERS_PER_PAGE))
+    const paginatedVipUsers = useMemo(() => {
+        return visibleVipUsers.slice((vipUserPage - 1) * VIP_USERS_PER_PAGE, vipUserPage * VIP_USERS_PER_PAGE)
+    }, [visibleVipUsers, vipUserPage])
 
     const handleEdit = (tier) => {
         setEditingId(String(tier?._id || ''))
@@ -388,6 +398,27 @@ export default function VipPrivilegePage() {
         }
     }
 
+    const ghostBtnBase =
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1";
+
+    const editBtn =
+        `${ghostBtnBase} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white focus:ring-blue-300`;
+
+    const deleteBtn =
+        `${ghostBtnBase} border-red-200 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white focus:ring-red-300`;
+
+    const saveBtn =
+        `${ghostBtnBase} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white focus:ring-emerald-300`;
+
+    const neutralBtn =
+        `${ghostBtnBase} border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-700 hover:text-white focus:ring-slate-300`;
+
+    const inputClass =
+        "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+
+    const sectionClass =
+        "rounded-xl border border-slate-200 bg-white p-4 shadow-sm";
+
     const formTitle = editingId ? 'Cập nhật đặc quyền VIP' : 'Tạo đặc quyền VIP mới'
 
     return (
@@ -437,7 +468,7 @@ export default function VipPrivilegePage() {
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-blue-200 shadow-sm p-4 space-y-3">
+                    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-blue-200 shadow-sm p-4 space-y-5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="text-sm font-bold text-slate-800 uppercase tracking-wide">{formTitle}</div>
                             {editingId && (
@@ -451,266 +482,293 @@ export default function VipPrivilegePage() {
                             )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <input
-                                type="text"
-                                value={form.code}
-                                onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                                placeholder="Mã (VD: VIP1)"
-                                className="px-3 py-2 border border-slate-300 rounded text-sm w-full"
-                            />
-                            <input
-                                type="number"
-                                min="1"
-                                max="9999"
-                                value={form.level}
-                                onChange={(e) => setForm((prev) => ({ ...prev, level: e.target.value }))}
-                                placeholder="Cấp"
-                                className="px-3 py-2 border border-slate-300 rounded text-sm"
-                            />
-                        </div>
-
-                        <input
-                            type="text"
-                            value={form.name}
-                            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                            placeholder="Tên cấp VIP"
-                            className="w-full px-3 py-2 border border-slate-300 rounded text-sm"
-                        />
-
-                        <textarea
-                            value={form.description}
-                            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                            placeholder="Mô tả ngắn"
-                            rows={2}
-                            className="w-full px-3 py-2 border border-slate-300 rounded text-sm"
-                        />
-
-                        <div className="rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-3">
-                            <div className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ảnh thưởng hiển thị (Upload)</div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div className="space-y-2">
-                                    <div className="text-[11px] font-semibold text-slate-700">Ảnh thưởng danh hiệu VIP</div>
-                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                                        {form.titleImageUrl ? (
-                                            <img
-                                                src={form.titleImageUrl}
-                                                alt="Danh hiệu VIP"
-                                                className="max-h-full max-w-full object-contain"
-                                                onError={(event) => {
-                                                    event.currentTarget.style.display = 'none'
-                                                }}
-                                            />
-                                        ) : (
-                                            <span className="text-[11px] text-slate-400">Chưa có ảnh danh hiệu</span>
-                                        )}
+                        <div className="space-y-5">
+                            <section className={sectionClass}>
+                                <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                                    Thông tin cơ bản
+                                </h3>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Mã (VD: VIP1)</label>
+                                        <input
+                                            type="text"
+                                            value={form.code}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                                            placeholder="Mã (VD: VIP1)"
+                                            className={inputClass}
+                                        />
                                     </div>
-                                    <input
-                                        id="vip-title-image-upload"
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            e.target.value = ''
-                                            handleUploadAsset('title', file)
-                                        }}
-                                    />
-                                    <label
-                                        htmlFor="vip-title-image-upload"
-                                        className="inline-flex items-center justify-center w-full px-2 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs font-bold text-slate-700 cursor-pointer"
-                                    >
-                                        {uploadingAsset.title ? 'Đang tải ảnh...' : 'Tải ảnh danh hiệu'}
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Cấp</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="9999"
+                                            value={form.level}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, level: e.target.value }))}
+                                            placeholder="Cấp"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Tên hiển thị</label>
+                                        <input
+                                            type="text"
+                                            value={form.name}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                                            placeholder="Tên cấp VIP"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1 md:col-span-2 xl:col-span-3">
+                                        <label className="block text-xs font-medium text-slate-600">Mô tả ngắn</label>
+                                        <textarea
+                                            value={form.description}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                                            placeholder="Mô tả ngắn"
+                                            rows={2}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 md:col-span-2 xl:col-span-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={form.isActive}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                                            className="h-4 w-4 rounded border-slate-300"
+                                        />
+                                        <span className="font-semibold">Kích hoạt cấp VIP này</span>
                                     </label>
                                 </div>
+                            </section>
 
-                                <div className="space-y-2">
-                                    <div className="text-[11px] font-semibold text-slate-700">Ảnh thưởng khung avatar VIP</div>
-                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
-                                        {form.avatarFrameUrl ? (
-                                            <img
-                                                src={form.avatarFrameUrl}
-                                                alt="Khung VIP"
-                                                className="max-h-full max-w-full object-contain"
-                                                onError={(event) => {
-                                                    event.currentTarget.style.display = 'none'
-                                                }}
-                                            />
-                                        ) : (
-                                            <span className="text-[11px] text-slate-400">Chưa có ảnh khung</span>
-                                        )}
+                            <section className={sectionClass}>
+                                <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                                    Ảnh thưởng hiển thị
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh thưởng danh hiệu VIP</div>
+                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                                            {form.titleImageUrl ? (
+                                                <img
+                                                    src={form.titleImageUrl}
+                                                    alt="Danh hiệu VIP"
+                                                    className="max-h-full max-w-full object-contain"
+                                                    onError={(event) => {
+                                                        event.currentTarget.style.display = 'none'
+                                                    }}
+                                                />
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400">Chưa có ảnh danh hiệu</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            id="vip-title-image-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0]
+                                                e.target.value = ''
+                                                handleUploadAsset('title', file)
+                                            }}
+                                        />
+                                        <label
+                                            htmlFor="vip-title-image-upload"
+                                            className="inline-flex items-center justify-center w-full px-2 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs font-bold text-slate-700 cursor-pointer"
+                                        >
+                                            {uploadingAsset.title ? 'Đang tải ảnh...' : 'Tải ảnh danh hiệu'}
+                                        </label>
                                     </div>
-                                    <input
-                                        id="vip-frame-image-upload"
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            e.target.value = ''
-                                            handleUploadAsset('frame', file)
-                                        }}
-                                    />
-                                    <label
-                                        htmlFor="vip-frame-image-upload"
-                                        className="inline-flex items-center justify-center w-full px-2 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs font-bold text-slate-700 cursor-pointer"
-                                    >
-                                        {uploadingAsset.frame ? 'Đang tải ảnh...' : 'Tải ảnh khung'}
-                                    </label>
+
+                                    <div className="space-y-2">
+                                        <div className="text-[11px] font-semibold text-slate-700">Ảnh thưởng khung avatar VIP</div>
+                                        <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
+                                            {form.avatarFrameUrl ? (
+                                                <img
+                                                    src={form.avatarFrameUrl}
+                                                    alt="Khung VIP"
+                                                    className="max-h-full max-w-full object-contain"
+                                                    onError={(event) => {
+                                                        event.currentTarget.style.display = 'none'
+                                                    }}
+                                                />
+                                            ) : (
+                                                <span className="text-[11px] text-slate-400">Chưa có ảnh khung</span>
+                                            )}
+                                        </div>
+                                        <input
+                                            id="vip-frame-image-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0]
+                                                e.target.value = ''
+                                                handleUploadAsset('frame', file)
+                                            }}
+                                        />
+                                        <label
+                                            htmlFor="vip-frame-image-upload"
+                                            className="inline-flex items-center justify-center w-full px-2 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs font-bold text-slate-700 cursor-pointer"
+                                        >
+                                            {uploadingAsset.frame ? 'Đang tải ảnh...' : 'Tải ảnh khung'}
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
+                            </section>
+
+                            <section className={sectionClass}>
+                                <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                                    Auto tìm kiếm / Auto battle
+                                </h3>
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div className="space-y-4">
+                                        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={form.autoSearchEnabled}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, autoSearchEnabled: e.target.checked }))}
+                                                className="h-4 w-4 rounded border-slate-300"
+                                            />
+                                            <span className="font-semibold">Auto tìm kiếm bản đồ</span>
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="block text-[11px] font-medium text-slate-600">Thời gian (phút)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={form.autoSearchDurationMinutes}
+                                                    onChange={(e) => setForm((prev) => ({ ...prev, autoSearchDurationMinutes: e.target.value }))}
+                                                    className={inputClass}
+                                                    placeholder="0 = không hạn"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="block text-[11px] font-medium text-slate-600">Số lượt/ngày</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={form.autoSearchUsesPerDay}
+                                                    onChange={(e) => setForm((prev) => ({ ...prev, autoSearchUsesPerDay: e.target.value }))}
+                                                    className={inputClass}
+                                                    placeholder="0 = không hạn"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={form.autoBattleTrainerEnabled}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerEnabled: e.target.checked }))}
+                                                className="h-4 w-4 rounded border-slate-300"
+                                            />
+                                            <span className="font-semibold">Auto battle trainer</span>
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="block text-[11px] font-medium text-slate-600">Thời gian (phút)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={form.autoBattleTrainerDurationMinutes}
+                                                    onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerDurationMinutes: e.target.value }))}
+                                                    className={inputClass}
+                                                    placeholder="0 = không hạn"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="block text-[11px] font-medium text-slate-600">Số lượt/ngày</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={form.autoBattleTrainerUsesPerDay}
+                                                    onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerUsesPerDay: e.target.value }))}
+                                                    className={inputClass}
+                                                    placeholder="0 = không hạn"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section className={sectionClass}>
+                                <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                                    Chỉ số bonus
+                                </h3>
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Kinh nghiệm %</label>
+                                        <input
+                                            type="number" min="0" step="0.1"
+                                            value={form.expBonusPercent}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, expBonusPercent: e.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Xu Bạch Kim %</label>
+                                        <input
+                                            type="number" min="0" step="0.1"
+                                            value={form.platinumCoinBonusPercent}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, platinumCoinBonusPercent: e.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Bắt SS %</label>
+                                        <input
+                                            type="number" min="0" step="0.1"
+                                            value={form.ssCatchRateBonusPercent}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, ssCatchRateBonusPercent: e.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Rơi đồ %</label>
+                                        <input
+                                            type="number" min="0" step="0.1"
+                                            value={form.itemDropBonusPercent}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, itemDropBonusPercent: e.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1 col-span-1 sm:col-span-2">
+                                        <label className="block text-xs font-medium text-slate-600">Quà hàng ngày %</label>
+                                        <input
+                                            type="number" min="0" step="0.1"
+                                            value={form.dailyRewardBonusPercent}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, dailyRewardBonusPercent: e.target.value }))}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div className="space-y-1 col-span-1 sm:col-span-2 xl:col-span-4">
+                                        <label className="block text-xs font-medium text-slate-600">Quyền lợi khác (mỗi dòng một mục)</label>
+                                        <textarea
+                                            value={form.customBenefitsText}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, customBenefitsText: e.target.value }))}
+                                            placeholder="Quyền lợi khác..."
+                                            rows={3}
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <button
+                                type="submit"
+                                disabled={saving}
+                                className="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold disabled:opacity-60 transition-colors shadow"
+                            >
+                                {saving ? 'Đang lưu...' : (editingId ? 'Cập nhật cấp VIP' : 'Tạo cấp VIP')}
+                            </button>
                         </div>
-
-                        <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
-                            <div className="text-xs font-bold text-emerald-900 uppercase tracking-wide">Tinh chỉnh các loại Auto</div>
-                            <AutoOptionRow
-                                label="Auto tìm kiếm bản đồ"
-                                description="Cho phép VIP bật/tắt tự động tìm Pokémon trong map (kèm rule auto)."
-                                checked={form.autoSearchEnabled}
-                                onChange={(e) => setForm((prev) => ({ ...prev, autoSearchEnabled: e.target.checked }))}
-                            />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
-                                    <div className="font-semibold text-slate-700 mb-1">Thời gian dùng Auto tìm (phút)</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.autoSearchDurationMinutes}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, autoSearchDurationMinutes: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                        placeholder="0 = không giới hạn"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
-                                    <div className="font-semibold text-slate-700 mb-1">Số lượt Auto tìm mỗi ngày</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.autoSearchUsesPerDay}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, autoSearchUsesPerDay: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                        placeholder="0 = không giới hạn"
-                                    />
-                                </label>
-                            </div>
-                            <AutoOptionRow
-                                label="Auto battle trainer"
-                                description="Cho phép VIP bật/tắt tự động đánh trong chế độ battle trainer."
-                                checked={form.autoBattleTrainerEnabled}
-                                onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerEnabled: e.target.checked }))}
-                            />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
-                                    <div className="font-semibold text-slate-700 mb-1">Thời gian dùng Auto battle (phút)</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.autoBattleTrainerDurationMinutes}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerDurationMinutes: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                        placeholder="0 = không giới hạn"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 flex flex-col justify-between">
-                                    <div className="font-semibold text-slate-700 mb-1">Số lượt Auto battle mỗi ngày</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.autoBattleTrainerUsesPerDay}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, autoBattleTrainerUsesPerDay: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                        placeholder="0 = không giới hạn"
-                                    />
-                                </label>
-                            </div>
-                        </div>
-
-                        <label className="flex items-center gap-2 px-2 py-1.5 border border-slate-200 rounded text-sm">
-                            <input
-                                type="checkbox"
-                                checked={form.isActive}
-                                onChange={(e) => setForm((prev) => ({ ...prev, isActive: e.target.checked }))}
-                            />
-                            Kích hoạt cấp VIP này
-                        </label>
-
-                        <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-                            <div className="text-xs font-bold text-amber-900 uppercase tracking-wide">Thưởng chỉ số</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng kinh nghiệm (EXP) %</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={form.expBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, expBonusPercent: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng Xu Bạch Kim %</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={form.platinumCoinBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, platinumCoinBonusPercent: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng tỉ lệ bắt SS %</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={form.ssCatchRateBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, ssCatchRateBonusPercent: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng tỉ lệ rơi vật phẩm %</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={form.itemDropBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, itemDropBonusPercent: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                    />
-                                </label>
-                                <label className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs col-span-1 sm:col-span-2">
-                                    <div className="font-semibold text-slate-700 mb-1">Thưởng quà đăng nhập hằng ngày %</div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={form.dailyRewardBonusPercent}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, dailyRewardBonusPercent: e.target.value }))}
-                                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                                    />
-                                </label>
-                            </div>
-                        </div>
-
-                        <textarea
-                            value={form.customBenefitsText}
-                            onChange={(e) => setForm((prev) => ({ ...prev, customBenefitsText: e.target.value }))}
-                            placeholder="Quyền lợi khác, mỗi dòng một mục"
-                            rows={4}
-                            className="w-full px-3 py-2 border border-slate-300 rounded text-sm"
-                        />
-
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-sm font-bold disabled:opacity-60"
-                        >
-                            {saving ? 'Đang lưu...' : (editingId ? 'Cập nhật cấp VIP' : 'Tạo cấp VIP')}
-                        </button>
                     </form>
                 </div>
 
@@ -740,43 +798,76 @@ export default function VipPrivilegePage() {
                     ) : visibleVipUsers.length === 0 ? (
                         <div className="p-6 text-center text-slate-400 italic">Hiện chưa có user nào đang sở hữu VIP.</div>
                     ) : (
-                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 bg-amber-50/20">
-                            {visibleVipUsers.map((user) => (
-                                <div key={user._id} className="rounded-lg border border-amber-200 bg-white p-3 shadow-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <div className="font-bold text-slate-800 truncate">{user.username || user.email}</div>
-                                            <div className="text-xs text-slate-500 break-all">{user.email}</div>
+                        <>
+                            <div className="p-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 bg-slate-50">
+                                {paginatedVipUsers.map((user) => (
+                                    <div key={user._id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col h-full">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-semibold text-slate-900 truncate">
+                                                {user.username}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-500 truncate">
+                                                {user.email || "Không có email"}
+                                            </div>
+                                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 border border-amber-200">
+                                                    VIP {Math.max(1, Number(user?.vipTierLevel || 1))}
+                                                </span>
+                                                <span className="font-semibold text-slate-600 text-[10px] bg-slate-100 rounded px-1.5 py-0.5">{user?.vipTierCode || '--'}</span>
+                                            </div>
                                         </div>
-                                        <span className="shrink-0 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-200">
-                                            VIP {Math.max(1, Number(user?.vipTierLevel || 1))}
-                                        </span>
+
+                                        <div className="mt-4 pt-3 border-t border-slate-100 flex-none">
+                                            <label className="mb-1.5 block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                                                Thời gian hết hạn
+                                            </label>
+                                            <div className="flex flex-col sm:flex-row gap-2 max-w-full">
+                                                <input
+                                                    type="datetime-local"
+                                                    value={vipExpiryDraftByUserId?.[user._id] || ''}
+                                                    onChange={(e) => handleVipExpiryDraftChange(user._id, e.target.value)}
+                                                    className={`${inputClass} flex-1 min-w-0`}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className={`${saveBtn} h-[38px] w-full sm:w-auto shrink-0`}
+                                                    onClick={() => handleUpdateVipExpiry(user)}
+                                                    disabled={updatingVipExpiryUserId === user._id}
+                                                >
+                                                    {updatingVipExpiryUserId === user._id ? 'Đang lưu...' : 'Lưu'}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="mt-3 space-y-1 text-xs text-slate-600">
-                                        <div>Mã VIP: <span className="font-semibold text-slate-800">{user?.vipTierCode || '--'}</span></div>
-                                        <div>Hết hạn: <span className="font-semibold text-amber-700">{user?.vipExpiresAt ? new Date(user.vipExpiresAt).toLocaleString('vi-VN') : '--'}</span></div>
-                                        <div>Vai trò: <span className="font-semibold text-slate-800 uppercase">{user?.role || 'user'}</span></div>
+                                ))}
+                            </div>
+
+                            {vipUserTotalPages > 1 && (
+                                <div className="px-4 py-3 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+                                    <div className="text-sm text-slate-500">
+                                        Trang <span className="font-bold text-slate-800">{vipUserPage}</span> / {vipUserTotalPages}
                                     </div>
-                                    <div className="mt-3 pt-3 border-t border-amber-100 space-y-2">
-                                        <label className="block text-[11px] font-bold text-slate-700">Chọn thời gian hết hạn</label>
-                                        <input
-                                            type="datetime-local"
-                                            value={vipExpiryDraftByUserId?.[user._id] || ''}
-                                            onChange={(e) => handleVipExpiryDraftChange(user._id, e.target.value)}
-                                            className="w-full px-2.5 py-2 border border-slate-300 rounded text-xs"
-                                        />
+                                    <div className="flex gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => handleUpdateVipExpiry(user)}
-                                            disabled={updatingVipExpiryUserId === user._id}
-                                            className="w-full px-3 py-2 rounded bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-60"
+                                            onClick={() => setVipUserPage((p) => Math.max(1, p - 1))}
+                                            disabled={vipUserPage === 1}
+                                            className="px-3 py-1.5 border border-slate-300 rounded text-sm font-medium bg-white hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white text-slate-700 transition-colors"
                                         >
-                                            {updatingVipExpiryUserId === user._id ? 'Đang lưu...' : 'Lưu thời gian hết hạn'}
+                                            Trang trước
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setVipUserPage((p) => Math.min(vipUserTotalPages, p + 1))}
+                                            disabled={vipUserPage === vipUserTotalPages}
+                                            className="px-3 py-1.5 border border-slate-300 rounded text-sm font-medium bg-white hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white text-slate-700 transition-colors"
+                                        >
+                                            Trang tiếp
                                         </button>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -822,100 +913,108 @@ export default function VipPrivilegePage() {
                     ) : (
                         <>
                             {/* Desktop View */}
-                            <div className="hidden lg:block overflow-x-auto">
-                                <table className="w-full text-sm min-w-[860px]">
-                                    <thead className="bg-slate-50 text-slate-700 text-xs uppercase">
-                                        <tr>
-                                            <th className="px-3 py-2 text-left">Cấp</th>
-                                            <th className="px-3 py-2 text-left">Mã / Tên</th>
-                                            <th className="px-3 py-2 text-left">Quyền lợi chính</th>
-                                            <th className="px-3 py-2 text-left">Bonus</th>
-                                            <th className="px-3 py-2 text-center">Trạng thái</th>
-                                            <th className="px-3 py-2 text-center">Thao tác</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {visibleTiers.map((tier) => {
-                                            const benefits = tier?.benefits || {}
-                                            return (
-                                                <tr key={tier._id} className="hover:bg-blue-50/30">
-                                                    <td className="px-3 py-2 font-bold text-blue-700">VIP {tier.level}</td>
-                                                    <td className="px-3 py-2">
-                                                        <div className="font-bold text-slate-800">{tier.code} - {tier.name}</div>
-                                                        <div className="text-xs text-slate-500 break-all">{tier.description || '--'}</div>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-xs text-slate-700">
-                                                        <div className="flex items-center gap-2">
-                                                            <span>Danh hiệu:</span>
-                                                            <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
-                                                                {benefits.titleImageUrl ? (
-                                                                    <img
-                                                                        src={benefits.titleImageUrl}
-                                                                        alt="Danh hiệu"
-                                                                        className="max-h-full max-w-full object-contain"
-                                                                    />
-                                                                ) : (
-                                                                    <span className="text-[10px] text-slate-400">--</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span></div>
-                                                        <div>Thời gian Auto tìm: <span className="font-semibold">{Number(benefits.autoSearchDurationMinutes || 0) > 0 ? `${benefits.autoSearchDurationMinutes} phút` : 'Không giới hạn'}</span></div>
-                                                        <div>Số lượt Auto tìm/ngày: <span className="font-semibold">{Number(benefits.autoSearchUsesPerDay || 0) > 0 ? benefits.autoSearchUsesPerDay : 'Không giới hạn'}</span></div>
-                                                        <div>Auto battle: <span className="font-semibold">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span></div>
-                                                        <div>Thời gian Auto battle: <span className="font-semibold">{Number(benefits.autoBattleTrainerDurationMinutes || 0) > 0 ? `${benefits.autoBattleTrainerDurationMinutes} phút` : 'Không giới hạn'}</span></div>
-                                                        <div>Số lượt Auto battle/ngày: <span className="font-semibold">{Number(benefits.autoBattleTrainerUsesPerDay || 0) > 0 ? benefits.autoBattleTrainerUsesPerDay : 'Không giới hạn'}</span></div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span>Khung:</span>
-                                                            <div className="h-7 w-16 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
-                                                                {benefits.avatarFrameUrl ? (
-                                                                    <img
-                                                                        src={benefits.avatarFrameUrl}
-                                                                        alt="Khung"
-                                                                        className="max-h-full max-w-full object-contain"
-                                                                    />
-                                                                ) : (
-                                                                    <span className="text-[10px] text-slate-400">--</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-xs text-slate-700">
-                                                        <div>EXP: <span className="font-semibold">+{benefits.expBonusPercent || 0}%</span></div>
-                                                        <div>Xu Bạch Kim: <span className="font-semibold">+{benefits.platinumCoinBonusPercent ?? benefits.moonPointBonusPercent ?? 0}%</span></div>
-                                                        <div>Bắt SS: <span className="font-semibold">+{benefits.ssCatchRateBonusPercent ?? benefits.catchRateBonusPercent ?? 0}%</span></div>
-                                                        <div>Drop: <span className="font-semibold">+{benefits.itemDropBonusPercent || 0}%</span></div>
-                                                        <div>Daily: <span className="font-semibold">+{benefits.dailyRewardBonusPercent || 0}%</span></div>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tier.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                                            {tier.isActive ? 'Kích hoạt' : 'Đã tắt'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center">
-                                                        <div className="inline-flex gap-1.5">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleEdit(tier)}
-                                                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold"
+                            <div className="hidden lg:block overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm mt-4 lg:mx-4 lg:mb-4">
+                                <div className="overflow-x-auto" style={{ transform: 'rotateX(180deg)' }}>
+                                    <table className="w-full min-w-[860px] text-sm text-slate-700" style={{ transform: 'rotateX(180deg)' }}>
+                                        <thead className="bg-slate-50 text-slate-800">
+                                            <tr className="border-b border-slate-200">
+                                                <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Cấp VIP</th>
+                                                <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Mã</th>
+                                                <th className="px-4 py-3 text-left font-semibold">Tên hiển thị</th>
+                                                <th className="px-4 py-3 text-left font-semibold whitespace-nowrap">Trạng thái</th>
+                                                <th className="px-4 py-3 text-left font-semibold">Quyền lợi chính</th>
+                                                <th className="px-4 py-3 text-left font-semibold min-w-[200px]">Bonus</th>
+                                                <th className="px-4 py-3 text-center font-semibold whitespace-nowrap min-w-[180px]">
+                                                    Thao tác
+                                                </th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody className="divide-y divide-slate-100">
+                                            {visibleTiers.map((tier) => {
+                                                const benefits = tier?.benefits || {}
+                                                return (
+                                                    <tr
+                                                        key={tier._id}
+                                                        className="align-middle transition-colors hover:bg-slate-50"
+                                                    >
+                                                        <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900">
+                                                            VIP {tier.level}
+                                                        </td>
+
+                                                        <td className="px-4 py-3 whitespace-nowrap font-bold text-blue-700">
+                                                            {tier.code}
+                                                        </td>
+
+                                                        <td className="px-4 py-3 text-slate-700">
+                                                            <div className="font-bold">{tier.name}</div>
+                                                            <div className="text-xs text-slate-500 line-clamp-2">{tier.description || '--'}</div>
+                                                        </td>
+
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span
+                                                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap ${tier.isActive
+                                                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                                    : "bg-slate-100 text-slate-500 border border-slate-200"
+                                                                    }`}
                                                             >
-                                                                Sửa
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDelete(tier)}
-                                                                disabled={deletingId === tier._id}
-                                                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold disabled:opacity-60"
-                                                            >
-                                                                {deletingId === tier._id ? 'Xóa...' : 'Xóa'}
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
+                                                                {tier.isActive ? "Đang bật" : "Đã tắt"}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs text-slate-600">
+                                                            <div className="space-y-1">
+                                                                <div className="flex gap-2">
+                                                                    <div className="h-6 w-14 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                                        {benefits.titleImageUrl ? (
+                                                                            <img src={benefits.titleImageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
+                                                                        ) : <span className="text-[9px] text-slate-400">Danh hiệu</span>}
+                                                                    </div>
+                                                                    <div className="h-6 w-14 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
+                                                                        {benefits.avatarFrameUrl ? (
+                                                                            <img src={benefits.avatarFrameUrl} alt="Khung" className="max-h-full max-w-full object-contain" />
+                                                                        ) : <span className="text-[9px] text-slate-400">Khung</span>}
+                                                                    </div>
+                                                                </div>
+                                                                <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span> ({benefits.autoSearchDurationMinutes ? `${benefits.autoSearchDurationMinutes}p` : 'Vô hạn'} - {benefits.autoSearchUsesPerDay ? `${benefits.autoSearchUsesPerDay}lần/ngày` : 'Vô hạn'})</div>
+                                                                <div>Auto battle: <span className="font-semibold">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span> ({benefits.autoBattleTrainerDurationMinutes ? `${benefits.autoBattleTrainerDurationMinutes}p` : 'Vô hạn'} - {benefits.autoBattleTrainerUsesPerDay ? `${benefits.autoBattleTrainerUsesPerDay}lần/ngày` : 'Vô hạn'})</div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs text-slate-600">
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                <span className="inline-flex bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">EXP +{benefits.expBonusPercent || 0}%</span>
+                                                                <span className="inline-flex bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">Xu BK +{benefits.platinumCoinBonusPercent ?? benefits.moonPointBonusPercent ?? 0}%</span>
+                                                                <span className="inline-flex bg-purple-50 text-purple-700 border border-purple-100 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">SS +{benefits.ssCatchRateBonusPercent ?? benefits.catchRateBonusPercent ?? 0}%</span>
+                                                                <span className="inline-flex bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">Drop +{benefits.itemDropBonusPercent || 0}%</span>
+                                                                <span className="inline-flex bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">Daily +{benefits.dailyRewardBonusPercent || 0}%</span>
+                                                            </div>
+                                                        </td>
+
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex flex-wrap justify-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    className={editBtn}
+                                                                    onClick={() => handleEdit(tier)}
+                                                                >
+                                                                    Sửa
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    className={deleteBtn}
+                                                                    onClick={() => handleDelete(tier)}
+                                                                    disabled={deletingId === tier._id}
+                                                                >
+                                                                    {deletingId === tier._id ? 'Xóa...' : 'Xóa'}
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
 
                             {/* Mobile View */}
@@ -1009,11 +1108,11 @@ export default function VipPrivilegePage() {
                                                 </div>
                                             </div>
 
-                                            <div className="flex gap-2 justify-end pt-2 border-t border-slate-200/50">
+                                            <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-slate-200/50">
                                                 <button
                                                     type="button"
                                                     onClick={() => handleEdit(tier)}
-                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded flex-1 text-sm font-bold"
+                                                    className={editBtn}
                                                 >
                                                     Sửa
                                                 </button>
@@ -1021,7 +1120,7 @@ export default function VipPrivilegePage() {
                                                     type="button"
                                                     onClick={() => handleDelete(tier)}
                                                     disabled={deletingId === tier._id}
-                                                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white flex-1 rounded text-sm font-bold disabled:opacity-60"
+                                                    className={deleteBtn}
                                                 >
                                                     {deletingId === tier._id ? 'Đang xóa...' : 'Xóa'}
                                                 </button>

@@ -21,8 +21,17 @@ const formatDate = (value) => {
 }
 
 const SELL_POKEMON_MODAL_PAGE_SIZE = 24
+const ITEM_TYPE_LABELS = {
+    healing: 'Hồi phục',
+    pokeball: 'Bóng',
+    evolution: 'Tiến hóa',
+    battle: 'Chiến đấu',
+    key: 'Chìa khóa',
+    misc: 'Khác',
+}
 
 export default function ShopSellPage() {
+    const [marketTab, setMarketTab] = useState('pokemon')
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [availablePokemon, setAvailablePokemon] = useState([])
     const toast = useToast()
@@ -46,6 +55,15 @@ export default function ShopSellPage() {
     const [pokemonPickerPage, setPokemonPickerPage] = useState(1)
     const [detailPokemon, setDetailPokemon] = useState(null)
     const [detailTitle, setDetailTitle] = useState('Chi tiết Pokémon')
+    const [availableItems, setAvailableItems] = useState([])
+    const [itemActiveListings, setItemActiveListings] = useState([])
+    const [itemSoldListings, setItemSoldListings] = useState([])
+    const [itemPagination, setItemPagination] = useState({ limit: 20, active: { page: 1, totalPages: 1 }, sold: { page: 1, totalPages: 1 } })
+    const [selectedItemId, setSelectedItemId] = useState('')
+    const [itemQuantity, setItemQuantity] = useState('1')
+    const [itemPrice, setItemPrice] = useState('')
+    const [itemSubmitting, setItemSubmitting] = useState(false)
+    const [itemCancellingId, setItemCancellingId] = useState('')
 
     const activePage = pagination?.active?.page || 1
     const soldPage = pagination?.sold?.page || 1
@@ -53,6 +71,10 @@ export default function ShopSellPage() {
     useEffect(() => {
         loadSellData(activePage, soldPage, { includeAvailable: !loadedAvailable })
     }, [activePage, soldPage])
+
+    useEffect(() => {
+        loadItemSellData(itemPagination?.active?.page || 1, itemPagination?.sold?.page || 1, { includeAvailable: true })
+    }, [marketTab])
 
     const selectedPokemon = useMemo(
         () => availablePokemon.find((entry) => entry.id === selectedPokemonId) || null,
@@ -74,6 +96,7 @@ export default function ShopSellPage() {
                 || formId.includes(normalizedSearch)
         })
     }, [availablePokemon, pokemonPickerSearchTerm])
+    const selectedItem = useMemo(() => availableItems.find((entry) => String(entry.itemId) === String(selectedItemId)) || null, [availableItems, selectedItemId])
 
     const pokemonPickerTotal = pokemonPickerRows.length
     const pokemonPickerTotalPages = Math.max(1, Math.ceil(pokemonPickerTotal / SELL_POKEMON_MODAL_PAGE_SIZE))
@@ -127,6 +150,18 @@ export default function ShopSellPage() {
         }
     }
 
+    const loadItemSellData = async (nextActivePage = 1, nextSoldPage = 1, options = {}) => {
+        try {
+            const data = await gameApi.getItemMarketSellData({ activePage: nextActivePage, soldPage: nextSoldPage, limit: itemPagination.limit, includeAvailable: options.includeAvailable ? 1 : 0 })
+            if (Array.isArray(data.availableItems)) setAvailableItems(data.availableItems)
+            setItemActiveListings(data.activeListings || [])
+            setItemSoldListings(data.soldListings || [])
+            setItemPagination((prev) => ({ ...prev, ...(data.pagination || {}) }))
+        } catch (err) {
+            toast.showError(err.message || 'Không thể tải khu bán vật phẩm')
+        }
+    }
+
     const handleCreateListing = async () => {
         const numericPrice = parseInt(price, 10)
         if (!selectedPokemonId) {
@@ -165,6 +200,39 @@ export default function ShopSellPage() {
             toast.showError(err.message || 'Hủy tin đăng thất bại')
         } finally {
             setCancellingId('')
+        }
+    }
+
+    const handleCreateItemListing = async () => {
+        const numericPrice = parseInt(itemPrice, 10)
+        const numericQuantity = Math.max(1, parseInt(itemQuantity, 10) || 1)
+        if (!selectedItemId) return toast.showWarning('Vui lòng chọn vật phẩm để đăng bán.')
+        if (!Number.isFinite(numericPrice) || numericPrice <= 0) return toast.showWarning('Giá bán không hợp lệ.')
+        try {
+            setItemSubmitting(true)
+            await gameApi.createItemMarketListing({ itemId: selectedItemId, quantity: numericQuantity, price: numericPrice })
+            setSelectedItemId('')
+            setItemQuantity('1')
+            setItemPrice('')
+            await loadItemSellData(1, itemPagination?.sold?.page || 1, { includeAvailable: true })
+            toast.showSuccess('Đăng bán vật phẩm thành công')
+        } catch (err) {
+            toast.showError(err.message || 'Đăng bán vật phẩm thất bại')
+        } finally {
+            setItemSubmitting(false)
+        }
+    }
+
+    const handleCancelItemListing = async (listingId) => {
+        try {
+            setItemCancellingId(listingId)
+            await gameApi.cancelItemMarketListing(listingId)
+            await loadItemSellData(itemPagination?.active?.page || 1, itemPagination?.sold?.page || 1, { includeAvailable: true })
+            toast.showSuccess('Hủy tin đăng vật phẩm thành công')
+        } catch (err) {
+            toast.showError(err.message || 'Hủy tin đăng vật phẩm thất bại')
+        } finally {
+            setItemCancellingId('')
         }
     }
 
@@ -226,7 +294,12 @@ export default function ShopSellPage() {
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Bán Pokemon</h1>
             </div>
 
-            <div className="space-y-4">
+            <div className="mb-4 grid grid-cols-2 gap-2 text-sm font-bold">
+                <button type="button" onClick={() => setMarketTab('pokemon')} className={`rounded border px-3 py-2 ${marketTab === 'pokemon' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200'}`}>Pokemon</button>
+                <button type="button" onClick={() => setMarketTab('item')} className={`rounded border px-3 py-2 ${marketTab === 'item' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200'}`}>Vật phẩm</button>
+            </div>
+
+            {marketTab === 'pokemon' ? <div className="space-y-4">
                 <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                     <SectionHeader title="Đăng Bán Pokemon" />
                     <div className="bg-blue-100/50 border-b border-blue-200 p-1 text-center font-bold text-blue-800 text-xs uppercase">
@@ -427,7 +500,31 @@ export default function ShopSellPage() {
                     </div>
                     {renderPageButtons('sold')}
                 </section>
-            </div>
+            </div> : <div className="space-y-4">
+                <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                    <SectionHeader title="Đăng Bán Vật Phẩm" />
+                    <div className="p-4 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <select value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)} className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700">
+                                <option value="">Chọn vật phẩm có thể giao dịch</option>
+                                {availableItems.map((entry) => <option key={entry.inventoryEntryId} value={entry.itemId}>{entry.itemName} (x{entry.quantity})</option>)}
+                            </select>
+                            <input type="number" min="1" value={itemQuantity} onChange={(e) => setItemQuantity(e.target.value)} placeholder="Số lượng" className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700" />
+                            <input type="number" min="1" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} placeholder="Giá bán (xu)" className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-700" />
+                        </div>
+                        {selectedItem && <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-slate-700">{selectedItem.itemName} - {ITEM_TYPE_LABELS[selectedItem.itemType] || selectedItem.itemType} - Kho: x{selectedItem.quantity}</div>}
+                        <div className="text-center"><button onClick={handleCreateItemListing} disabled={itemSubmitting || !selectedItemId} className="px-4 py-2 rounded border border-blue-300 bg-white text-blue-700 font-bold text-sm hover:bg-blue-50 disabled:opacity-50">{itemSubmitting ? 'Đang đăng bán...' : '[ Đăng bán vật phẩm ]'}</button></div>
+                    </div>
+                </section>
+                <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                    <SectionHeader title="Tin Đăng Vật Phẩm Đang Hoạt Động" />
+                    <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-xs sm:text-sm font-bold"><th className="px-3 py-2 text-left">Vật phẩm</th><th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-center">Giá</th><th className="px-3 py-2 text-center">Tác vụ</th></tr></thead><tbody>{itemActiveListings.length === 0 ? <tr><td colSpan={4} className="px-3 py-8 text-center text-slate-500">Bạn chưa có tin đăng vật phẩm.</td></tr> : itemActiveListings.map((listing) => <tr key={listing.id} className="border-b border-blue-100"><td className="px-3 py-3"><div className="flex items-center gap-3"><img src={listing.itemImageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={listing.itemName} className="w-10 h-10 object-contain" /><div><div className="font-bold text-slate-800">{listing.itemName}</div><div className="text-xs text-slate-500">{ITEM_TYPE_LABELS[listing.itemType] || listing.itemType}</div></div></div></td><td className="px-3 py-3 text-center font-bold">x{listing.quantity}</td><td className="px-3 py-3 text-center font-bold">{Number(listing.price || 0).toLocaleString('vi-VN')} xu</td><td className="px-3 py-3 text-center"><button onClick={() => handleCancelItemListing(listing.id)} disabled={itemCancellingId === listing.id} className="px-3 py-1.5 bg-white border border-red-300 text-red-700 font-bold text-xs hover:bg-red-50 disabled:opacity-50">{itemCancellingId === listing.id ? 'Hủy...' : 'Hủy'}</button></td></tr>)}</tbody></table></div>
+                </section>
+                <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                    <SectionHeader title="Vật Phẩm Đã Bán" />
+                    <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-xs sm:text-sm font-bold"><th className="px-3 py-2 text-left">Vật phẩm</th><th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-center">Giá</th><th className="px-3 py-2 text-center">Người mua</th></tr></thead><tbody>{itemSoldListings.length === 0 ? <tr><td colSpan={4} className="px-3 py-8 text-center text-slate-500">Bạn chưa bán vật phẩm nào.</td></tr> : itemSoldListings.map((listing) => <tr key={listing.id} className="border-b border-blue-100"><td className="px-3 py-3"><div className="flex items-center gap-3"><img src={listing.itemImageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={listing.itemName} className="w-10 h-10 object-contain" /><div><div className="font-bold text-slate-800">{listing.itemName}</div><div className="text-xs text-slate-500">{ITEM_TYPE_LABELS[listing.itemType] || listing.itemType}</div></div></div></td><td className="px-3 py-3 text-center font-bold">x{listing.quantity}</td><td className="px-3 py-3 text-center font-bold">{Number(listing.price || 0).toLocaleString('vi-VN')} xu</td><td className="px-3 py-3 text-center font-bold text-slate-700">{listing.buyer?.username || 'Không rõ'}</td></tr>)}</tbody></table></div>
+                </section>
+            </div>}
 
             {showPokemonPickerModal && (
                 <div

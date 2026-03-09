@@ -425,6 +425,26 @@ const buildRefilledBattleMoves = (pokemonSlot = null) => {
         movePpState,
     }
 }
+const buildOpponentBattleMoves = (entry = null, prefix = 'op') => {
+    const sourceMoves = Array.isArray(entry?.moveDetails) && entry.moveDetails.length > 0
+        ? entry.moveDetails
+        : (Array.isArray(entry?.moves) ? entry.moves : [])
+
+    return normalizeMoveList(sourceMoves)
+        .filter((item) => normalizeMoveNameKey(item?.name) !== 'struggle')
+        .slice(0, 4)
+        .map((item, index) => ({
+            ...item,
+            id: `${prefix}-${index}-${String(item?.name || '').trim() || 'move'}`,
+        }))
+}
+const resolveTurnOrderReasonLabel = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'priority') return 'do độ ưu tiên chiêu'
+    if (normalized === 'speed') return 'do tốc độ'
+    if (normalized === 'speed-tie') return 'do hòa tốc độ, ngẫu nhiên'
+    return 'đang chờ lượt đầu tiên'
+}
 const ProgressBar = ({ current, max, colorClass, label }) => {
     const safeMax = max > 0 ? max : 1
     const percent = Math.min(100, Math.max(0, (current / safeMax) * 100))
@@ -2101,11 +2121,48 @@ export function BattlePage() {
 
             setBattleOpponent(nextBattleState)
 
-            const logLines = [
-                moveHit
+            if ((activeBattleMode === 'duel' || activeBattleMode === 'online')) {
+                const nextOpponentIndex = Number.isInteger(nextBattleState?.currentIndex)
+                    ? nextBattleState.currentIndex
+                    : currentBattleIndex
+                const nextOpponentEntry = nextBattleState?.team?.[nextOpponentIndex] || null
+                const opponentSwitched = nextOpponentIndex !== currentBattleIndex
+                const shouldLoadNextOpponentMoves = Number(nextOpponentEntry?.currentHp || 0) > 0
+                if (shouldLoadNextOpponentMoves && (opponentSwitched || !opponentMoveState)) {
+                    setDuelOpponentMoves(buildOpponentBattleMoves(nextOpponentEntry, `duel-op-${nextOpponentIndex}`))
+                    setDuelOpponentMoveCursor(0)
+                } else if (defeatedAll) {
+                    setDuelOpponentMoves([])
+                    setDuelOpponentMoveCursor(0)
+                }
+            }
+
+            const turnOrder = String(battle?.turnOrder || 'player-first').trim().toLowerCase()
+            const turnOrderReason = String(battle?.turnOrderReason || '').trim().toLowerCase()
+            const playerTurnLog = String(
+                battle?.log
+                || (moveHit
                     ? `${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`
-                    : `${activeName} của bạn dùng ${moveName} nhưng trượt.`,
-            ]
+                    : `${activeName} của bạn dùng ${moveName} nhưng trượt.`)
+            ).trim()
+            const logLines = []
+            if (turnOrderReason === 'speed') {
+                const playerSpeed = Math.max(1, Number(battle?.playerSpeed || 1))
+                const opponentSpeed = Math.max(1, Number(battle?.opponentSpeed || 1))
+                logLines.push(
+                    turnOrder === 'player-first'
+                        ? `Bạn có tốc độ cao hơn (${playerSpeed} > ${opponentSpeed}) nên được ra đòn trước.`
+                        : `Đối thủ có tốc độ cao hơn (${opponentSpeed} > ${playerSpeed}) nên được ra đòn trước.`
+                )
+            } else if (turnOrderReason === 'priority') {
+                const playerPriority = Number.isFinite(Number(battle?.move?.priority)) ? Number(battle.move.priority) : 0
+                const opponentPriority = Number.isFinite(Number(counterAttack?.move?.priority)) ? Number(counterAttack.move.priority) : 0
+                logLines.push(
+                    turnOrder === 'player-first'
+                        ? `Chiêu của bạn có ưu tiên cao hơn (${playerPriority} > ${opponentPriority}) nên được ra đòn trước.`
+                        : `Chiêu của đối thủ có ưu tiên cao hơn (${opponentPriority} > ${playerPriority}) nên đối thủ ra đòn trước.`
+                )
+            }
             if (moveFallbackReason === 'OUT_OF_PP') {
                 logLines.unshift(`Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`)
             }
@@ -2128,7 +2185,19 @@ export function BattlePage() {
                     authoritativePlayerMaxHp = Math.max(1, Number(counterAttack?.maxHp) || authoritativePlayerMaxHp || activeMaxHp)
                     authoritativePlayerHp = clampValue(nextPlayerHpFromCounter, 0, authoritativePlayerMaxHp)
                 }
-                logLines.push(`${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
+                const counterTurnLog = String(
+                    counterAttack?.log
+                    || `${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`
+                ).trim()
+                if (turnOrder === 'opponent-first') {
+                    if (counterTurnLog) logLines.push(counterTurnLog)
+                    if (playerTurnLog) logLines.push(playerTurnLog)
+                } else {
+                    if (playerTurnLog) logLines.push(playerTurnLog)
+                    if (counterTurnLog) logLines.push(counterTurnLog)
+                }
+            } else if (playerTurnLog) {
+                logLines.push(playerTurnLog)
             }
 
             if (Number.isFinite(authoritativePlayerHp)) {
@@ -2978,6 +3047,7 @@ export function BattlePage() {
                     damageGuards: {},
                     wasDamagedLastTurn: false,
                     volatileState: {},
+                    moves: defenderMoves,
                 }],
                 fieldState: {},
             }
@@ -3096,6 +3166,7 @@ export function BattlePage() {
                     damageGuards: {},
                     wasDamagedLastTurn: false,
                     volatileState: {},
+                    moves: buildOpponentBattleMoves(entry, `online-${index}`),
                 }
             })
 
@@ -3161,7 +3232,7 @@ export function BattlePage() {
             setBattleOpponent(onlineOpponent)
             setBattlePlayerIndex(Math.max(0, initialIndex))
             setBattlePartyHpState(initialPartyState)
-            setDuelOpponentMoves([])
+            setDuelOpponentMoves(buildOpponentBattleMoves(leadPokemon, 'online-lead'))
             setDuelOpponentMoveCursor(0)
             setView('battle')
         } catch (error) {
@@ -3349,7 +3420,7 @@ export function BattlePage() {
                     <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
                         {activeBattleMode === 'duel'
                             ? 'Chế độ: Khiêu chiến BXH'
-                            : (activeBattleMode === 'online' ? 'Chế độ: Khiêu chiến online theo đội hình' : 'Chế độ: Battle Trainer')}
+                            : (activeBattleMode === 'online' ? 'Chế độ: Khiêu chiến online theo đội hình' : 'Chế độ: Đấu Huấn Luyện Viên')}
                     </div>
                 </div>
 

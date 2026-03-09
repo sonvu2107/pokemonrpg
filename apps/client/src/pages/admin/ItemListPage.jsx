@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { itemApi } from '../../services/adminApi'
 
@@ -27,6 +27,21 @@ const RARITY_STYLES = {
     legendary: 'bg-red-50 text-red-700 border-red-200',
 }
 
+const buildEffectSummary = (item = {}) => {
+    const effectType = String(item?.effectType || 'none').trim()
+    if (effectType === 'catchMultiplier') {
+        return `Bat ${Number(item?.effectValue || 0).toLocaleString('vi-VN')}%`
+    }
+    if (effectType === 'heal' || effectType === 'healAmount') {
+        return `Hoi ${Number(item?.effectValue || 0).toLocaleString('vi-VN')} HP / ${Number(item?.effectValueMp || 0).toLocaleString('vi-VN')} PP`
+    }
+    if (effectType === 'grantVipTier') {
+        const durationUnit = String(item?.effectDurationUnit || 'month') === 'week' ? 'tuan' : 'thang'
+        return `VIP ${Math.max(1, Number(item?.effectValue || 1))} / ${Math.max(1, Number(item?.effectValueMp || 1))} ${durationUnit}`
+    }
+    return '--'
+}
+
 export default function ItemListPage() {
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
@@ -46,6 +61,11 @@ export default function ItemListPage() {
     const [historyPage, setHistoryPage] = useState(1)
     const [historyPagination, setHistoryPagination] = useState({ total: 0, pages: 0 })
     const [historyShopItems, setHistoryShopItems] = useState([])
+    const [topScrollWidth, setTopScrollWidth] = useState(0)
+    const [showTopScrollbar, setShowTopScrollbar] = useState(false)
+    const topScrollbarRef = useRef(null)
+    const tableScrollRef = useRef(null)
+    const syncScrollLockRef = useRef(false)
 
     useEffect(() => {
         loadItems()
@@ -107,6 +127,41 @@ export default function ItemListPage() {
         }
     }
 
+    useEffect(() => {
+        const syncScrollMetrics = () => {
+            const scrollContainer = tableScrollRef.current
+            if (!scrollContainer) return
+            setTopScrollWidth(scrollContainer.scrollWidth)
+            setShowTopScrollbar(scrollContainer.scrollWidth > scrollContainer.clientWidth)
+        }
+
+        syncScrollMetrics()
+        window.addEventListener('resize', syncScrollMetrics)
+        return () => window.removeEventListener('resize', syncScrollMetrics)
+    }, [items, loading])
+
+    const handleTopScrollbarScroll = (event) => {
+        if (syncScrollLockRef.current) return
+        const scrollContainer = tableScrollRef.current
+        if (!scrollContainer) return
+        syncScrollLockRef.current = true
+        scrollContainer.scrollLeft = event.currentTarget.scrollLeft
+        requestAnimationFrame(() => {
+            syncScrollLockRef.current = false
+        })
+    }
+
+    const handleTableScroll = (event) => {
+        if (syncScrollLockRef.current) return
+        const topScrollbar = topScrollbarRef.current
+        if (!topScrollbar) return
+        syncScrollLockRef.current = true
+        topScrollbar.scrollLeft = event.currentTarget.scrollLeft
+        requestAnimationFrame(() => {
+            syncScrollLockRef.current = false
+        })
+    }
+
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm">
             <div className="border-b border-blue-400 bg-gradient-to-t from-blue-600 to-cyan-500 px-3 py-2 flex justify-between items-center">
@@ -155,9 +210,22 @@ export default function ItemListPage() {
                 {loading ? (
                     <div className="text-center py-8 text-blue-800 font-medium">Đang tải dữ liệu...</div>
                 ) : (
-                    <>
+                     <>
                         <div className="bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col w-full max-w-full overflow-x-auto overscroll-x-contain">
-                            <div className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] w-full">
+                            {showTopScrollbar && (
+                                <div
+                                    ref={topScrollbarRef}
+                                    onScroll={handleTopScrollbarScroll}
+                                    className="overflow-x-auto overflow-y-hidden custom-scrollbar border-b border-slate-200"
+                                >
+                                    <div style={{ width: `${topScrollWidth}px`, height: '14px' }} />
+                                </div>
+                            )}
+                            <div
+                                ref={tableScrollRef}
+                                onScroll={handleTableScroll}
+                                className="overflow-auto custom-scrollbar max-h-[60vh] sm:max-h-[500px] w-full"
+                            >
                                 <table className="w-full text-sm whitespace-nowrap min-w-[800px] lg:min-w-[1200px]">
                                     <thead className="bg-blue-50 border-b border-blue-100 sticky top-0 z-10 shadow-sm">
                                         <tr>
@@ -168,6 +236,8 @@ export default function ItemListPage() {
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Shop</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[130px]">Shop Nguyệt</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[140px]">Tiến hóa</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[180px]">Hiệu ứng</th>
+                                            <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giao dịch</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">Giới hạn mua</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">+VIP / cấp</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Shop</th>
@@ -236,6 +306,12 @@ export default function ItemListPage() {
                                                         </span>
                                                     )}
                                                 </td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold">{buildEffectSummary(item)}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${item.isTradable ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                        {item.isTradable ? 'Cho phép' : 'Khóa'}
+                                                    </span>
+                                                </td>
                                                 <td className="px-4 py-3 text-right text-slate-700 font-bold">
                                                     {Number(item.purchaseLimit || 0) > 0 ? Number(item.purchaseLimit || 0).toLocaleString('vi-VN') : '∞'}
                                                 </td>
@@ -266,7 +342,7 @@ export default function ItemListPage() {
                                         ))}
                                         {items.length === 0 && (
                                             <tr>
-                                                <td colSpan="12" className="px-4 py-8 text-center text-slate-500 italic">
+                                                <td colSpan="14" className="px-4 py-8 text-center text-slate-500 italic">
                                                     Chưa có vật phẩm nào.
                                                 </td>
                                             </tr>

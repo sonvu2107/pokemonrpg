@@ -5,6 +5,7 @@ import { connectDB } from './config/db.js'
 import { initSocket } from './socket/index.js'
 import { startAutoTrainerWorker } from './workers/autoTrainerWorker.js'
 import { startAutoSearchWorker } from './workers/autoSearchWorker.js'
+import { startAuctionWorker } from './workers/auctionWorker.js'
 import { enforcePartyUniqueSpeciesGlobally } from './utils/partyDuplicateUtils.js'
 
 // Create HTTP server
@@ -34,4 +35,5 @@ server.listen(PORT, () => {
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
     startAutoTrainerWorker({ baseUrl: `http://127.0.0.1:${PORT}` })
     startAutoSearchWorker({ baseUrl: `http://127.0.0.1:${PORT}` })
+    startAuctionWorker()
 })

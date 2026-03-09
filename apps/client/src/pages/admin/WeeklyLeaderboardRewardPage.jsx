@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../../services/gameApi'
 import { leaderboardRewardApi, userApi } from '../../services/adminApi'
@@ -217,6 +217,10 @@ export default function WeeklyLeaderboardRewardPage() {
     const [cosmeticConfigs, setCosmeticConfigs] = useState(createDefaultCosmeticConfigs('wealth'))
     const [savingCosmeticConfigKey, setSavingCosmeticConfigKey] = useState('')
     const [uploadingRewardAsset, setUploadingRewardAsset] = useState({})
+
+    const topScrollbarRef = useRef(null)
+    const tableScrollRef = useRef(null)
+    const isSyncingRef = useRef(false)
 
     const primaryLabel = useMemo(() => getPrimaryLabelByMode(mode), [mode])
     const selectedRewardTypeValues = useMemo(() => {
@@ -752,6 +756,84 @@ export default function WeeklyLeaderboardRewardPage() {
         ? `${period.weekStart} - ${period.weekEnd}`
         : '--'
 
+    const handleTopScroll = () => {
+        if (!topScrollbarRef.current || !tableScrollRef.current || isSyncingRef.current) return
+        isSyncingRef.current = true
+        tableScrollRef.current.scrollLeft = topScrollbarRef.current.scrollLeft
+        requestAnimationFrame(() => {
+            isSyncingRef.current = false
+        })
+    }
+
+    const handleTableScroll = () => {
+        if (!topScrollbarRef.current || !tableScrollRef.current || isSyncingRef.current) return
+        isSyncingRef.current = true
+        topScrollbarRef.current.scrollLeft = tableScrollRef.current.scrollLeft
+        requestAnimationFrame(() => {
+            isSyncingRef.current = false
+        })
+    }
+
+    const renderPagination = () => {
+        if (!pagination) return null
+
+        const safeCurrentPage = page
+        const safeTotalPages = Number(pagination.totalPages || 1)
+        if (!safeTotalPages || safeTotalPages <= 1) return null
+
+        const pages = []
+        pages.push(1)
+
+        const start = Math.max(2, safeCurrentPage - 2)
+        const end = Math.min(safeTotalPages - 1, safeCurrentPage + 2)
+
+        if (start > 2) pages.push('...')
+        for (let i = start; i <= end; i++) {
+            pages.push(i)
+        }
+        if (end < safeTotalPages - 1) pages.push('...')
+
+        if (safeTotalPages > 1) pages.push(safeTotalPages)
+
+        return (
+            <div className="flex justify-center gap-1 flex-wrap px-4 py-3">
+                <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safeCurrentPage <= 1}
+                    className="px-3 py-1 font-bold transition-colors bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded shadow-sm"
+                >
+                    Trước
+                </button>
+                {pages.map((p, index) => {
+                    if (p === '...') {
+                        return <span key={`ellipsis-${index}`} className="px-2 py-1 text-slate-400">...</span>
+                    }
+                    return (
+                        <button
+                            key={p}
+                            onClick={() => setPage(p)}
+                            className={`px-3 py-1 font-bold transition-colors border ${p === safeCurrentPage
+                                ? 'bg-blue-600 border-blue-700 text-white'
+                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                                } rounded shadow-sm`}
+                        >
+                            {p}
+                        </button>
+                    )
+                })}
+                <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.min(safeTotalPages, prev + 1))}
+                    disabled={safeCurrentPage >= safeTotalPages}
+                    className="px-3 py-1 font-bold transition-colors bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed rounded shadow-sm"
+                >
+                    Sau
+                </button>
+            </div>
+        )
+    }
+
     if (loading && rankings.length === 0 && displayedRankings.length === 0) {
         return <div className="text-center py-8 text-blue-800 font-medium">Đang tải leaderboard quản trị...</div>
     }
@@ -770,16 +852,19 @@ export default function WeeklyLeaderboardRewardPage() {
                 </Link>
             </div>
 
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-blue-100 space-y-3">
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-blue-100 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Chế độ xếp hạng</div>
+                </div>
                 <div className="flex flex-wrap gap-2">
                     {MODE_OPTIONS.map((option) => (
                         <button
                             key={option.value}
                             type="button"
                             onClick={() => setMode(option.value)}
-                            className={`px-3 py-1.5 rounded-md text-sm font-bold border transition-colors ${mode === option.value
-                                ? 'bg-blue-600 border-blue-700 text-white'
-                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                            className={`px-4 py-1.5 rounded-full text-sm font-bold border transition-colors whitespace-nowrap shadow-sm ${mode === option.value
+                                ? 'bg-blue-600 border-blue-700 text-white shadow-blue-200'
+                                : 'bg-white border-slate-300 text-slate-600 hover:bg-blue-50 hover:border-blue-200'
                                 }`}
                         >
                             {option.label}
@@ -788,22 +873,22 @@ export default function WeeklyLeaderboardRewardPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="text-xs font-bold text-slate-500 uppercase">Tuần đang theo dõi</div>
-                        <div className="font-semibold text-slate-800 mt-1">{periodText}</div>
+                    <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50/60 px-4 py-3">
+                        <div className="text-[11px] font-bold text-blue-500 uppercase tracking-wide">Tuần đang theo dõi</div>
+                        <div className="font-semibold text-slate-800 mt-1 text-base">{periodText}</div>
                     </div>
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="text-xs font-bold text-slate-500 uppercase">Tổng người chơi</div>
-                        <div className="font-semibold text-slate-800 mt-1">{numberFormat(totalUsers)}</div>
+                    <div className="rounded-lg border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100/60 px-4 py-3">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Tổng người chơi</div>
+                        <div className="font-bold text-slate-800 mt-1 text-lg">{numberFormat(totalUsers)}</div>
                     </div>
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="text-xs font-bold text-slate-500 uppercase">Tổng lượt đã trao</div>
-                        <div className="font-semibold text-emerald-700 mt-1">{numberFormat(rewardedTotal)}</div>
+                    <div className="rounded-lg border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/60 px-4 py-3">
+                        <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide">Tổng lượt đã trao</div>
+                        <div className="font-bold text-emerald-700 mt-1 text-lg">{numberFormat(rewardedTotal)}</div>
                     </div>
                 </div>
 
-                <div className="rounded border border-slate-200 bg-slate-50 p-3 space-y-2">
-                    <div className="text-xs font-bold text-slate-500 uppercase">Tìm người chơi trong BXH tuần</div>
+                <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+                    <div className="text-xs font-bold text-blue-900 uppercase">Tìm người chơi trong BXH tuần</div>
                     <div className="flex flex-col md:flex-row gap-2">
                         <input
                             type="text"
@@ -845,8 +930,8 @@ export default function WeeklyLeaderboardRewardPage() {
                     )}
                 </div>
 
-                <div className="rounded border border-slate-200 bg-slate-50 p-3 space-y-3">
-                    <div className="text-xs font-bold text-slate-500 uppercase">Cấu hình loại thưởng</div>
+                <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-3">
+                    <div className="text-xs font-bold text-blue-900 uppercase">Cấu hình loại thưởng</div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {REWARD_TYPE_OPTIONS.map((entry) => (
                             <label key={entry.value} className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 rounded border border-slate-300 bg-white px-2 py-1.5">
@@ -1193,21 +1278,36 @@ export default function WeeklyLeaderboardRewardPage() {
                 </div>
             )}
 
-            <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                Trên điện thoại, phần Trao thưởng hiển thị ở từng thẻ bên dưới. Trên desktop, nút nằm ở cột cuối bảng. Có thể chọn nhiều loại thưởng cùng lúc.
+            <div className="rounded border border-blue-100 bg-blue-50/60 px-4 py-2.5 flex items-start gap-2 text-xs font-medium text-blue-800">
+                <span className="mt-0.5">ℹ️</span>
+                <span>Trên <b>điện thoại</b>, phần Trao thưởng hiển thị ở từng thẻ bên dưới. Trên <b>desktop</b>, nút nằm ở cột cuối bảng. Có thể chọn <b>nhiều loại thưởng</b> cùng lúc.</span>
             </div>
 
-            <div className="bg-white border border-blue-100 rounded-lg shadow-sm overflow-hidden">
-                <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full min-w-[980px]">
+            <div className="bg-white border border-blue-100 rounded-lg shadow-sm overflow-hidden space-y-1">
+                <div className="hidden md:block">
+                    <div
+                        ref={topScrollbarRef}
+                        onScroll={handleTopScroll}
+                        className="overflow-x-auto overflow-y-hidden"
+                    >
+                        <div className="h-3 min-w-[1400px]" />
+                    </div>
+                </div>
+
+                <div
+                    ref={tableScrollRef}
+                    onScroll={handleTableScroll}
+                    className="hidden md:block overflow-x-auto"
+                >
+                    <table className="w-full min-w-[1400px]">
                         <thead>
-                            <tr className="bg-slate-100 border-b border-slate-200 text-slate-700">
-                                <th className="px-3 py-2 text-left text-xs font-bold uppercase">Hạng</th>
-                                <th className="px-3 py-2 text-left text-xs font-bold uppercase">Người chơi</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold uppercase">{primaryLabel}</th>
-                                <th className="px-3 py-2 text-right text-xs font-bold uppercase">Cấp độ</th>
-                                <th className="px-3 py-2 text-left text-xs font-bold uppercase">Trạng thái thưởng</th>
-                                <th className="px-3 py-2 text-left text-xs font-bold uppercase">Trao thưởng</th>
+                            <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 whitespace-nowrap sticky top-0 z-10">
+                                <th className="px-3 py-2 text-left text-xs font-bold uppercase w-20">Hạng</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold uppercase min-w-[200px]">Người chơi</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold uppercase w-32">{primaryLabel}</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold uppercase w-24">Cấp độ</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold uppercase min-w-[200px]">Trạng thái thưởng</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold uppercase min-w-[400px]">Trao thưởng</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1229,16 +1329,16 @@ export default function WeeklyLeaderboardRewardPage() {
                                 return (
                                     <tr
                                         key={`${userId || 'row'}-${entry?.rank || index}`}
-                                        className={`border-b border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                                        className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
                                     >
-                                        <td className="px-3 py-2 font-bold text-blue-700">#{numberFormat(entry?.rank || 0)}</td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 font-bold text-blue-700 whitespace-nowrap">#{numberFormat(entry?.rank || 0)}</td>
+                                        <td className="px-3 py-2 whitespace-nowrap lg:whitespace-normal break-words max-w-[200px]">
                                             <div className="font-semibold text-slate-800">{entry?.username || 'Unknown'}</div>
                                             <div className="text-xs text-slate-500">ID: {userId || '--'}</div>
                                         </td>
-                                        <td className="px-3 py-2 text-right font-semibold text-slate-700">{numberFormat(scoreValue)}</td>
-                                        <td className="px-3 py-2 text-right font-semibold text-slate-700">{numberFormat(entry?.level || 1)}</td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">{numberFormat(scoreValue)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">{numberFormat(entry?.level || 1)}</td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
                                             {rewardStatus.entries.length > 0 ? (
                                                 <div className="space-y-0.5">
                                                     {rewardStatus.entries.map((rewardLog) => (
@@ -1258,7 +1358,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 whitespace-nowrap min-w-[400px]">
                                             <div className="space-y-2">
                                                 {selectedRewardTypeValues.map((type) => {
                                                     const typeAwarded = Boolean(rewardStatus.byType?.[type])
@@ -1455,26 +1555,8 @@ export default function WeeklyLeaderboardRewardPage() {
             </div>
 
             {pagination && pagination.totalPages > 1 && (
-                <div className="flex flex-wrap justify-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                        disabled={page <= 1}
-                        className="px-3 py-1.5 rounded border border-slate-300 text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Trước
-                    </button>
-                    <span className="px-3 py-1.5 text-sm font-semibold text-slate-600">
-                        Trang {numberFormat(page)} / {numberFormat(pagination.totalPages)}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => setPage((prev) => Math.min(Number(pagination.totalPages || prev), prev + 1))}
-                        disabled={page >= Number(pagination.totalPages || 1)}
-                        className="px-3 py-1.5 rounded border border-slate-300 text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Sau
-                    </button>
+                <div className="bg-slate-50 border-t border-blue-100 p-2 mt-4 rounded-b-lg">
+                    {renderPagination()}
                 </div>
             )}
         </div>

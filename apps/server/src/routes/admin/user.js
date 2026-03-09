@@ -835,7 +835,7 @@ router.put('/:id/vip-tier', async (req, res) => {
         })
     } catch (error) {
         console.error('PUT /api/admin/users/:id/vip-tier error:', error)
-        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+        res.status(500).json({ ok: false, message: error?.message || 'Lỗi máy chủ' })
     }
 })
 
