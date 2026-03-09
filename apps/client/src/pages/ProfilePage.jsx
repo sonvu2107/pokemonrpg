@@ -45,7 +45,7 @@ const formatBadgeBonuses = (activeBonuses = {}) => {
     Object.entries(activeBonuses?.typeDamagePercentByType || {}).forEach(([type, percent]) => {
         if (Number(percent || 0) > 0) parts.push(`+${percent}% sát thương hệ ${String(type).toUpperCase()}`)
     })
-    return parts.length > 0 ? parts.join(' | ') : 'Chưa kích hoạt bonus huy hiệu'
+    return parts.length > 0 ? parts.join(' | ') : 'Chưa kích hoạt chỉ số của huy hiệu'
 }
 
 const badgeRankClassMap = {
