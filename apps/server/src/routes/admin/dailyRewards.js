@@ -179,7 +179,7 @@ router.put('/:day', async (req, res) => {
 
             pokemonId = pokemonIdRaw
             formId = matchedForm?.formId || 'normal'
-            pokemonLevel = clamp(Number.isInteger(pokemonLevelRaw) ? pokemonLevelRaw : 5, 1, 1000)
+            pokemonLevel = clamp(Number.isInteger(pokemonLevelRaw) ? pokemonLevelRaw : 5, 1, 1500)
         }
 
         await DailyReward.findOneAndUpdate(

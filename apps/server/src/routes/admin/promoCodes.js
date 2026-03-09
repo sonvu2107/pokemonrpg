@@ -204,7 +204,7 @@ const serializePromoCode = (entry, now = new Date()) => {
         pokemon,
         pokemonConfig: {
             formId: normalizedFormId,
-            level: clamp(Number.parseInt(entry?.pokemonLevel, 10) || 5, 1, 1000),
+            level: clamp(Number.parseInt(entry?.pokemonLevel, 10) || 5, 1, 1500),
             isShiny: Boolean(entry?.isShiny),
         },
         rewardBundle: {
@@ -217,7 +217,7 @@ const serializePromoCode = (entry, now = new Date()) => {
                     quantity: rewardBundle.pokemonQuantity,
                     config: {
                         formId: normalizedFormId,
-                        level: clamp(Number.parseInt(entry?.pokemonLevel, 10) || 5, 1, 1000),
+                        level: clamp(Number.parseInt(entry?.pokemonLevel, 10) || 5, 1, 1500),
                         isShiny: Boolean(entry?.isShiny),
                     },
                 }
@@ -379,7 +379,7 @@ const parseAndValidatePayload = async (body = {}, { requireCode = true } = {}) =
 
         pokemonId = pokemonIdRaw
         formId = matchedForm?.formId || 'normal'
-        pokemonLevel = clamp(Number.isInteger(pokemonLevelRaw) ? pokemonLevelRaw : 5, 1, 1000)
+        pokemonLevel = clamp(Number.isInteger(pokemonLevelRaw) ? pokemonLevelRaw : 5, 1, 1500)
     }
 
     const hasCoinReward = platinumCoinsAmount > 0

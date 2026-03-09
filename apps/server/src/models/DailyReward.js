@@ -49,7 +49,7 @@ const dailyRewardSchema = new mongoose.Schema(
         pokemonLevel: {
             type: Number,
             min: 1,
-            max: 1000,
+            max: 1500,
             default: 5,
         },
         isShiny: {

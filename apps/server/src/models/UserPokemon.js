@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 
 const { Schema } = mongoose
-const USER_POKEMON_MAX_LEVEL = 1000
+const USER_POKEMON_MAX_LEVEL = 1500
 
 const MovePpStateSchema = new Schema(
     {
