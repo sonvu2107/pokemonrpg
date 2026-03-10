@@ -1340,7 +1340,7 @@ export function BattlePage() {
                 scheduleNext(false)
             } catch (error) {
                 if (!cancelled) {
-                    setAutoTrainerServerStatus(formatFriendlyAutoTrainerMessage(String(error?.message || 'Không thể tải trạng thái auto trainer.')))
+                    setAutoTrainerServerStatus(formatFriendlyAutoTrainerMessage(String(error?.message || 'Không thể tải trạng thái auto.')))
                 }
                 scheduleNext(true)
             }
@@ -2717,9 +2717,6 @@ export function BattlePage() {
     }
 
     const handleRun = async () => {
-        if (autoTrainerAttackEnabled) {
-            setAutoTrainerAttackEnabled(false)
-        }
         if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
             navigateBackToRankingsAfterDuel()
             return
@@ -3272,18 +3269,18 @@ export function BattlePage() {
                     attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
                 })
                 applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
-                setActionMessage('Đã tắt auto battle trainer.')
+                setActionMessage('Đã tắt auto.')
                 return
             }
 
             if (!canUseVipAutoTrainer) {
-                setActionMessage('Chỉ tài khoản VIP mới có thể bật auto battle trainer.')
+                setActionMessage('Chỉ tài khoản VIP mới có thể bật auto.')
                 return
             }
 
             const normalizedTrainerId = normalizeEntityId(autoTrainerTargetId)
             if (!normalizedTrainerId) {
-                setActionMessage('Hãy chọn một trainer đã hoàn thành để bật auto battle.')
+                setActionMessage('Hãy chọn một trainer đã hoàn thành để bật auto.')
                 return
             }
 
@@ -3293,9 +3290,9 @@ export function BattlePage() {
                 attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
             })
             applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
-            setActionMessage(`Đã bật auto battle trainer với ${selectedAutoTrainerEntry?.name || 'trainer đã chọn'}. Auto sẽ chạy ngầm ở server.`)
+            setActionMessage(`Đã bật auto với ${selectedAutoTrainerEntry?.name || 'trainer đã chọn'}.`)
         } catch (error) {
-            setActionMessage(String(error?.message || 'Không thể cập nhật auto battle trainer.'))
+            setActionMessage(String(error?.message || 'Không thể cập nhật auto.'))
         }
     }
 
@@ -3305,8 +3302,8 @@ export function BattlePage() {
         <div className="border border-slate-300 bg-slate-50 rounded p-3 text-xs text-slate-700 space-y-2 max-w-xl mx-auto w-full">
             <div className="flex items-center justify-between gap-2">
                 <div>
-                    <div className="font-bold text-slate-800">Auto battle trainer</div>
-                    <div className="text-[10px] text-slate-500">Tự vào trận và farm trainer đã hoàn thành theo lựa chọn của bạn.</div>
+                    <div className="font-bold text-slate-800">Auto</div>
+                    <div className="text-[10px] text-slate-500">Tự vào trận và farm theo lựa chọn của bạn.</div>
                 </div>
                 <button
                     type="button"
@@ -3316,7 +3313,7 @@ export function BattlePage() {
                         ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
                         : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
                 >
-                    {autoTrainerAttackEnabled ? 'Đang bật' : 'Bật auto'}
+                    {autoTrainerAttackEnabled ? 'Đang bật' : 'Bật'}
                 </button>
             </div>
 
@@ -3376,7 +3373,7 @@ export function BattlePage() {
 
             {autoTrainerServerStatus && (
                 <div className="text-[10px] font-semibold text-slate-600">
-                    Trạng thái auto ngầm: {autoTrainerServerStatus}
+                    Trạng thái auto: {autoTrainerServerStatus}
                 </div>
             )}
 
