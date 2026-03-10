@@ -865,10 +865,12 @@ router.put('/:id/vip-tier', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const previousRole = String(user?.role || '').trim().toLowerCase()
+        const keepAdminRole = previousRole === 'admin'
         const previousVipTierLevel = Math.max(0, parseInt(user?.vipTierLevel, 10) || 0)
         const nextVipTierLevel = Math.max(1, parseInt(tier.level, 10) || 1)
 
-        user.role = 'vip'
+        user.role = keepAdminRole ? 'admin' : 'vip'
         user.vipTierId = tier._id
         user.vipTierLevel = nextVipTierLevel
         user.vipTierCode = normalizeVipTierCode(tier.code)
@@ -1257,12 +1259,20 @@ router.put('/:id/role', async (req, res) => {
             }
         }
 
+        const previousRole = String(user.role || '').trim().toLowerCase()
         user.role = role
         if (role === 'admin' && (!Array.isArray(user.adminPermissions) || user.adminPermissions.length === 0)) {
             user.adminPermissions = [...ALL_ADMIN_PERMISSIONS]
         }
         if (role === 'vip') {
             user.vipExpiresAt = addOneMonth(new Date())
+        } else if (role === 'admin') {
+            if (previousRole !== 'vip') {
+                user.vipTierId = null
+                user.vipTierLevel = 0
+                user.vipTierCode = ''
+                user.vipExpiresAt = null
+            }
         } else {
             Object.assign(user, buildVipResetPayload(), {
                 role,
@@ -1359,10 +1369,10 @@ router.put('/:id/vip-benefits', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
-        if (user.role !== 'vip') {
+        if (!['vip', 'admin'].includes(String(user.role || '').trim().toLowerCase())) {
             return res.status(400).json({
                 ok: false,
-                message: 'Chỉ có thể cập nhật quyền lợi cho tài khoản VIP',
+                message: 'Chỉ có thể cập nhật quyền lợi cho tài khoản VIP hoặc admin',
             })
         }
 

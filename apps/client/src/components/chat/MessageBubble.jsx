@@ -96,7 +96,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
           >
             {message.sender.username}
           </button>
-          
+
           <VipTitleBadge userLike={message?.sender} />
           
           {/* Level badge - only show if level exists and is > 0 */}

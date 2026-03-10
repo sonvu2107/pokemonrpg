@@ -31,6 +31,13 @@ const formatBonusSummary = (activeBonuses = {}) => {
     return parts.length > 0 ? parts.join(' | ') : 'Chưa có chỉ số huy hiệu nào đang được kích hoạt.'
 }
 
+const formatMissionProgress = (badge) => {
+    if (badge?.missionType === 'admin_role') {
+        return badge?.isUnlocked ? 'Admin' : 'Khong mo khoa'
+    }
+    return `${badge?.progress?.currentValue || 0}/${badge?.progress?.targetValue || 0}`
+}
+
 export default function BadgesPage() {
     const [payload, setPayload] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -201,7 +208,7 @@ export default function BadgesPage() {
                                     <div className={`rounded-xl px-3 py-2 flex items-center justify-between gap-3 ${badge.isUnlocked ? 'bg-amber-50' : 'bg-slate-200/70'}`}>
                                         <div>
                                             <div className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Tiến độ</div>
-                                            <div className="mt-1 text-amber-900 font-bold">{badge.progress?.currentValue || 0}/{badge.progress?.targetValue || 0}</div>
+                                            <div className="mt-1 text-amber-900 font-bold">{formatMissionProgress(badge)}</div>
                                         </div>
                                         <button
                                             type="button"
@@ -259,7 +266,7 @@ export default function BadgesPage() {
                                         <td className="border-r border-slate-300 py-3 px-4 text-center text-slate-700 leading-6 w-[24%]">{badge.missionLabel}</td>
                                         <td className="border-r border-slate-300 py-3 px-3 text-center text-slate-700 leading-6">{badge.rewardLabel}</td>
                                         <td className="border-r border-slate-300 py-3 px-2 text-center font-bold text-slate-700 whitespace-nowrap w-24">
-                                            {badge.progress?.currentValue || 0}/{badge.progress?.targetValue || 0}
+                                            {formatMissionProgress(badge)}
                                         </td>
                                         <td className="py-3 px-2 text-center w-32">
                                             <div className={`text-xs font-bold mb-2 ${badge.isUnlocked ? 'text-emerald-700' : 'text-slate-500'}`}>

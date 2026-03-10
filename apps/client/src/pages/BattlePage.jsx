@@ -478,6 +478,41 @@ const ProgressBar = ({ current, max, colorClass, label }) => {
         </div>
     )
 }
+const normalizeBattleStats = (stats = {}) => {
+    const source = stats && typeof stats === 'object' ? stats : {}
+    return {
+        hp: Math.max(1, Math.floor(Number(source?.hp) || 1)),
+        atk: Math.max(1, Math.floor(Number(source?.atk) || 1)),
+        def: Math.max(1, Math.floor(Number(source?.def) || 1)),
+        spatk: Math.max(1, Math.floor(Number(source?.spatk) || 1)),
+        spdef: Math.max(1, Math.floor(Number(source?.spdef) || Number(source?.spldef) || 1)),
+        spd: Math.max(1, Math.floor(Number(source?.spd) || 1)),
+    }
+}
+const BattleStatPanel = ({ title, accentClass, stats = null }) => {
+    const statRows = [
+        { key: 'hp', label: 'HP' },
+        { key: 'atk', label: 'Attack' },
+        { key: 'def', label: 'Defense' },
+        { key: 'spatk', label: 'Sp. Atk' },
+        { key: 'spdef', label: 'Sp. Def' },
+        { key: 'spd', label: 'Speed' },
+    ]
+
+    return (
+        <div className="rounded border border-slate-200 bg-white p-3">
+            <div className={`mb-2 text-xs font-bold uppercase ${accentClass}`}>{title}</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {statRows.map((row) => (
+                    <div key={row.key} className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-center">
+                        <div className="text-[10px] font-bold text-slate-500">{row.label}</div>
+                        <div className="text-sm font-extrabold text-slate-800">{stats ? stats[row.key] : '--'}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
 const ActiveBattleView = ({
     party,
     encounter,
@@ -526,6 +561,7 @@ const ActiveBattleView = ({
         name: activePokemon.nickname || activePokemon.pokemonId?.name || 'Unknown',
         level: activePokemon.level,
         types: resolvePokemonTypes(activePokemon?.pokemonId?.types),
+        stats: normalizeBattleStats(activePokemon?.effectiveStats || activePokemon?.stats || activePokemon?.pokemonId?.baseStats || {}),
         maxHp: activeMaxHp,
         hp: Math.max(0, Math.min(activeMaxHp, activeCurrentHp)),
         exp: activePokemon.experience,
@@ -554,6 +590,7 @@ const ActiveBattleView = ({
         owner: opponent?.trainerName || 'Hoang Dã',
         level: activeOpponent.level,
         types: activeOpponentTypes,
+        stats: normalizeBattleStats(activeOpponent?.effectiveStats || activeOpponent?.baseStats || activeOpponent?.pokemon?.baseStats || {}),
         maxHp: activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1,
         hp: activeOpponent.currentHp ?? (activeOpponent.maxHp || activeOpponent.baseStats?.hp || 1),
         sprite: activeOpponent.sprite || '',
@@ -565,6 +602,7 @@ const ActiveBattleView = ({
         name: 'Pokemon Hoang Dã',
         owner: 'Hoang Dã',
         level: 1,
+        stats: null,
         maxHp: 1,
         hp: 1,
         sprite: '',
@@ -577,13 +615,6 @@ const ActiveBattleView = ({
 
     const moves = playerMon?.moves || normalizeMoveList([])
     const selectedMove = moves[selectedMoveIndex] || moves[0] || normalizeMoveList([])[0]
-    const playerTypes = playerMon?.types || []
-    const enemyTypes = enemyMon?.types || []
-    const planOptions = buildBattlePlans({
-        moves,
-        playerTypes,
-        targetTypes: enemyTypes,
-    })
     const partySwitchOptions = (Array.isArray(party) ? party : []).map((slot, index) => {
         if (!slot) return null
         const hpEntry = Array.isArray(partyHpState) ? partyHpState[index] : null
@@ -729,7 +760,7 @@ const ActiveBattleView = ({
                         onClick={() => onSelectTab('focus')}
                         className={`flex-1 py-1 px-2 ${activeTab === 'focus' ? 'text-blue-700 border-b-2 border-blue-500 bg-white' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        Lên Kế Hoạch
+                        Thông Số
                     </button>
                     <button
                         onClick={() => onSelectTab('party')}
@@ -801,48 +832,11 @@ const ActiveBattleView = ({
                 )}
 
                 {activeTab === 'focus' && (
-                    <div className="p-3 space-y-2">
-                        {planOptions.length === 0 ? (
-                            <div className="text-center text-xs text-slate-500">Không có chiêu còn PP để lên kế hoạch.</div>
-                        ) : (
-                            planOptions.map((plan) => {
-                                const move = plan.move
-                                const isSelectedPlan = selectedMoveIndex === move?.index
-                                return (
-                                    <div
-                                        key={plan.key}
-                                        className={`border rounded p-2 ${isSelectedPlan ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
-                                    >
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div>
-                                                <div className="text-xs font-bold text-slate-800">{plan.title}</div>
-                                                <div className="text-[10px] text-slate-500">{plan.description}</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-[10px] font-bold text-slate-500 uppercase">Chiêu</div>
-                                                <div className="text-xs font-bold text-slate-800">{move?.name || 'N/A'}</div>
-                                            </div>
-                                        </div>
-                                        <div className="mt-2 flex gap-2">
-                                            <button
-                                                onClick={() => onPlanMove?.(move?.index, `${plan.title}: ưu tiên ${move?.name || 'chiêu hiện tại'}.`)}
-                                                disabled={isAttacking || !Number.isInteger(move?.index)}
-                                                className="flex-1 px-2 py-1 border border-blue-300 rounded text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                                            >
-                                                Áp dụng kế hoạch
-                                            </button>
-                                            <button
-                                                onClick={() => move && onAttack?.(move)}
-                                                disabled={isAttacking || !move}
-                                                className="flex-1 px-2 py-1 border border-emerald-300 rounded text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                                            >
-                                                Đánh theo kế hoạch
-                                            </button>
-                                        </div>
-                                    </div>
-                                )
-                            })
-                        )}
+                    <div className="p-3 space-y-3">
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <BattleStatPanel title={playerMon ? `Pokemon của bạn - ${playerMon.name}` : 'Pokemon của bạn'} accentClass="text-blue-700" stats={playerMon?.stats || null} />
+                            <BattleStatPanel title={`${enemyMon.owner} - ${enemyMon.name}`} accentClass="text-rose-700" stats={enemyMon?.stats || null} />
+                        </div>
                     </div>
                 )}
 
@@ -908,13 +902,28 @@ const ActiveBattleView = ({
                     Kết Quả Trận Đấu
                 </div>
                 <div className="p-3 text-center text-sm text-slate-700 min-h-20">
-                    {actionMessage && <div className="font-semibold mb-1">{actionMessage}</div>}
                     {battleLog?.length > 0 ? (
-                        battleLog.map((line, idx) => (
-                            <div key={`${line}-${idx}`}>{line}</div>
-                        ))
+                        battleLog.map((entry, idx) => {
+                            const lines = Array.isArray(entry?.lines)
+                                ? entry.lines.filter((line) => Boolean(String(line || '').trim()))
+                                : [entry].filter((line) => Boolean(String(line || '').trim()))
+                            if (lines.length === 0) return null
+
+                            return (
+                                <div key={`turn-${idx}`} className="mb-2 last:mb-0">
+                                    <div className="font-semibold text-slate-800">Lượt {idx + 1}</div>
+                                    <div className="text-slate-700">
+                                        {lines.map((line, lineIdx) => (
+                                            <div key={`turn-${idx}-line-${lineIdx}`}>{line}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        })
                     ) : (
-                        <div className="text-slate-500">Chưa có hành động.</div>
+                        actionMessage
+                            ? <div className="font-semibold mb-1">{actionMessage}</div>
+                            : <div className="text-slate-500">Chưa có hành động.</div>
                     )}
                 </div>
             </div>
@@ -1623,7 +1632,20 @@ export function BattlePage() {
     const appendBattleLog = (lines) => {
         const normalized = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
         if (normalized.length === 0) return
-        setBattleLog((prev) => [...normalized, ...prev].slice(0, 8))
+        setBattleLog((prev) => [...prev, { lines: normalized }].slice(-8))
+    }
+
+    const appendBattleLogGroups = (groups) => {
+        const normalizedGroups = (Array.isArray(groups) ? groups : [])
+            .map((group) => {
+                const lines = Array.isArray(group?.lines)
+                    ? group.lines.filter(Boolean)
+                    : []
+                return lines.length > 0 ? { lines } : null
+            })
+            .filter(Boolean)
+        if (normalizedGroups.length === 0) return
+        setBattleLog((prev) => [...prev, ...normalizedGroups].slice(-8))
     }
 
     const navigateBackToRankingsAfterDuel = () => {
@@ -2008,6 +2030,9 @@ export function BattlePage() {
                     const nextStatusTurns = Number.isFinite(Number(battle.player?.statusTurns))
                         ? Math.max(0, Math.floor(Number(battle.player.statusTurns)))
                         : 0
+                    const nextEffectiveStats = battle.player?.effectiveStats && typeof battle.player.effectiveStats === 'object'
+                        ? battle.player.effectiveStats
+                        : null
                     const nextStatStages = battle.player?.statStages && typeof battle.player.statStages === 'object'
                         ? battle.player.statStages
                         : {}
@@ -2025,6 +2050,7 @@ export function BattlePage() {
                         movePpState: ppState || targetSlot.movePpState || [],
                         status: nextStatus,
                         statusTurns: nextStatusTurns,
+                        effectiveStats: nextEffectiveStats || targetSlot?.effectiveStats || null,
                         statStages: nextStatStages,
                         damageGuards: nextDamageGuards,
                         wasDamagedLastTurn: nextWasDamagedLastTurn,
@@ -2063,6 +2089,9 @@ export function BattlePage() {
                     statStages: targetStatePatch?.statStages && typeof targetStatePatch.statStages === 'object'
                         ? targetStatePatch.statStages
                         : (member?.statStages || {}),
+                    effectiveStats: targetStatePatch?.effectiveStats && typeof targetStatePatch.effectiveStats === 'object'
+                        ? targetStatePatch.effectiveStats
+                        : (member?.effectiveStats || null),
                     damageGuards: targetStatePatch?.damageGuards && typeof targetStatePatch.damageGuards === 'object'
                         ? targetStatePatch.damageGuards
                         : (member?.damageGuards || {}),
@@ -2091,6 +2120,9 @@ export function BattlePage() {
                         statStages: serverEntry.statStages && typeof serverEntry.statStages === 'object'
                             ? serverEntry.statStages
                             : (member?.statStages || {}),
+                        effectiveStats: serverEntry.effectiveStats && typeof serverEntry.effectiveStats === 'object'
+                            ? serverEntry.effectiveStats
+                            : (member?.effectiveStats || null),
                         damageGuards: serverEntry.damageGuards && typeof serverEntry.damageGuards === 'object'
                             ? serverEntry.damageGuards
                             : (member?.damageGuards || {}),
@@ -2182,11 +2214,12 @@ export function BattlePage() {
                     ? `${activeName} của bạn dùng ${moveName}! Gây ${damage} sát thương.`
                     : `${activeName} của bạn dùng ${moveName} nhưng trượt.`)
             ).trim()
-            const logLines = []
+            const preTurnLines = []
+            const turnLogGroups = []
             if (turnOrderReason === 'speed') {
                 const playerSpeed = Math.max(1, Number(battle?.playerSpeed || 1))
                 const opponentSpeed = Math.max(1, Number(battle?.opponentSpeed || 1))
-                logLines.push(
+                preTurnLines.push(
                     turnOrder === 'player-first'
                         ? `Bạn có tốc độ cao hơn (${playerSpeed} > ${opponentSpeed}) nên được ra đòn trước.`
                         : `Đối thủ có tốc độ cao hơn (${opponentSpeed} > ${playerSpeed}) nên được ra đòn trước.`
@@ -2194,14 +2227,14 @@ export function BattlePage() {
             } else if (turnOrderReason === 'priority') {
                 const playerPriority = Number.isFinite(Number(battle?.move?.priority)) ? Number(battle.move.priority) : 0
                 const opponentPriority = Number.isFinite(Number(counterAttack?.move?.priority)) ? Number(counterAttack.move.priority) : 0
-                logLines.push(
+                preTurnLines.push(
                     turnOrder === 'player-first'
                         ? `Chiêu của bạn có ưu tiên cao hơn (${playerPriority} > ${opponentPriority}) nên được ra đòn trước.`
                         : `Chiêu của đối thủ có ưu tiên cao hơn (${opponentPriority} > ${playerPriority}) nên đối thủ ra đòn trước.`
                 )
             }
             if (moveFallbackReason === 'OUT_OF_PP') {
-                logLines.unshift(`Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`)
+                preTurnLines.unshift(`Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`)
             }
             let nextPartyState = resolvedPartyState
             let authoritativePlayerHp = null
@@ -2227,14 +2260,14 @@ export function BattlePage() {
                     || `${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`
                 ).trim()
                 if (turnOrder === 'opponent-first') {
-                    if (counterTurnLog) logLines.push(counterTurnLog)
-                    if (playerTurnLog) logLines.push(playerTurnLog)
+                    if (counterTurnLog) turnLogGroups.push({ lines: [...preTurnLines, counterTurnLog] })
+                    if (playerTurnLog) turnLogGroups.push({ lines: [playerTurnLog] })
                 } else {
-                    if (playerTurnLog) logLines.push(playerTurnLog)
-                    if (counterTurnLog) logLines.push(counterTurnLog)
+                    if (playerTurnLog) turnLogGroups.push({ lines: [...preTurnLines, playerTurnLog] })
+                    if (counterTurnLog) turnLogGroups.push({ lines: [counterTurnLog] })
                 }
             } else if (playerTurnLog) {
-                logLines.push(playerTurnLog)
+                turnLogGroups.push({ lines: [...preTurnLines, playerTurnLog] })
             }
 
             if (Number.isFinite(authoritativePlayerHp)) {
@@ -2248,7 +2281,11 @@ export function BattlePage() {
             }
 
             if (effectLogs.length > 0) {
-                logLines.push(...effectLogs)
+                if (turnLogGroups.length > 0) {
+                    turnLogGroups[turnLogGroups.length - 1].lines.push(...effectLogs)
+                } else {
+                    turnLogGroups.push({ lines: effectLogs })
+                }
             }
 
             setBattlePartyHpState(nextPartyState)
@@ -2259,21 +2296,33 @@ export function BattlePage() {
                 Number(nextPartyState?.[resolvedActiveIndex]?.maxHp) || activeMaxHp
             )
             if (nextPlayerHp <= 0) {
-                logLines.push(`${activeName} đã bại trận.`)
+                if (turnLogGroups.length > 0) {
+                    turnLogGroups[turnLogGroups.length - 1].lines.push(`${activeName} đã bại trận.`)
+                } else {
+                    turnLogGroups.push({ lines: [`${activeName} đã bại trận.`] })
+                }
 
                 const switchedIndex = getNextAlivePartyIndex(party, nextPartyState, resolvedActiveIndex)
                 if (switchedIndex !== -1) {
                     const switchedPokemon = party[switchedIndex]
                     setBattlePlayerIndex(switchedIndex)
                     switchedAfterDefeat = true
-                    logLines.push(`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`)
+                    if (turnLogGroups.length > 0) {
+                        turnLogGroups[turnLogGroups.length - 1].lines.push(`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`)
+                    } else {
+                        turnLogGroups.push({ lines: [`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`] })
+                    }
                     setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
                 }
             }
             if (nextHp <= 0) {
-                logLines.push(`${target.name || 'Đối thủ'} đã bại trận.`)
+                if (turnLogGroups.length > 0) {
+                    turnLogGroups[turnLogGroups.length - 1].lines.push(`${target.name || 'Đối thủ'} đã bại trận.`)
+                } else {
+                    turnLogGroups.push({ lines: [`${target.name || 'Đối thủ'} đã bại trận.`] })
+                }
             }
-            appendBattleLog(logLines)
+            appendBattleLogGroups(turnLogGroups)
 
             if (switchedAfterDefeat) {
                 return
@@ -2560,6 +2609,7 @@ export function BattlePage() {
                             ...nextParty[targetIndex],
                             battleCurrentHp: Math.max(0, Number(res.player.currentHp || 0)),
                             battleMaxHp: Math.max(1, Number(res.player.maxHp || targetMaxHp || 1)),
+                            effectiveStats: res?.player?.effectiveStats || nextParty[targetIndex]?.effectiveStats || null,
                             status: String(res?.counterAttack?.player?.status || nextParty[targetIndex]?.status || '').trim().toLowerCase(),
                             statusTurns: Number.isFinite(Number(res?.counterAttack?.player?.statusTurns))
                                 ? Math.max(0, Math.floor(Number(res.counterAttack.player.statusTurns)))
@@ -3845,25 +3895,14 @@ export function BattlePage() {
                                 <div>
                                     Đã hoàn thành: {completedEntries.length} HLV
                                     {normalizedCompletedTrainerNameFilter ? ` · Tên: ${completedTrainerNameFilter.trim()}` : ''}
-                                    {normalizedCompletedTrainerLevelFilter ? ` · Lọc lv: ${normalizedCompletedTrainerLevelFilter}` : ''}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={completedTrainerNameFilter}
-                                        onChange={(e) => setCompletedTrainerNameFilter(e.target.value)}
-                                        placeholder="Tìm tên HLV"
-                                        className="px-2 py-1 border border-blue-200 rounded bg-white text-xs w-[160px]"
-                                    />
-                                    <input
-                                        type="text"
-                                        inputMode="text"
-                                        value={completedTrainerLevelFilter}
-                                        onChange={(e) => setCompletedTrainerLevelFilter(e.target.value.replace(/[^\d]/g, ''))}
-                                        placeholder="Tìm lv HLV"
-                                        className="px-2 py-1 border border-blue-200 rounded bg-white text-xs w-[120px]"
-                                    />
-                                </div>
+                                <input
+                                    type="text"
+                                    value={completedTrainerNameFilter}
+                                    onChange={(e) => setCompletedTrainerNameFilter(e.target.value)}
+                                    placeholder="Tìm tên HLV"
+                                    className="px-2 py-1 border border-blue-200 rounded bg-white text-xs w-[160px]"
+                                />
                             </div>
 
                             {filteredCompletedEntries.length === 0 ? (

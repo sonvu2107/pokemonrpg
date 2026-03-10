@@ -39,7 +39,7 @@ export const buildItemRewardSnapshot = (itemLike = {}, quantity = 1) => ({
     itemId: itemLike?._id,
     pokemonId: null,
     formId: 'normal',
-    level: 0,
+    level: 1,
     isShiny: false,
     name: String(itemLike?.name || 'Vật phẩm').trim() || 'Vật phẩm',
     imageUrl: String(itemLike?.imageUrl || '').trim(),

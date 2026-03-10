@@ -5,6 +5,7 @@ import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUti
 const BADGE_IMAGE_TRANSFORMATION = 'e_trim/c_pad,w_512,h_512,b_transparent/f_auto/q_auto:good'
 
 const MISSION_OPTIONS = [
+    { value: 'admin_role', label: 'Chỉ dành cho Admin' },
     { value: 'collect_type_count', label: 'Sở hữu theo hệ (tính trùng, tính form)' },
     { value: 'collect_type_distinct_count', label: 'Sở hữu theo hệ (không trùng, tính form)' },
     { value: 'collect_same_name_different_type_count', label: 'Cùng tên nhưng khác hệ (tính form)' },
@@ -278,6 +279,8 @@ export default function BadgeManagerPage() {
     const missionNeedsPokemonName = form.missionType === 'collect_same_name_different_type_count'
     const missionCountPlaceholder = form.missionType === 'online_hours_count'
         ? 'Mốc số giờ online cần đạt'
+        : form.missionType === 'admin_role'
+            ? 'Để mặc định là 1 cho tài khoản admin'
         : form.missionType === 'vip_tier_reached'
             ? 'Mốc VIP cần đạt (ví dụ: 3)'
             : form.missionType === 'platinum_coins_owned_count'

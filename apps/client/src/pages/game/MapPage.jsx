@@ -1629,6 +1629,7 @@ export default function MapPage() {
                                         <span>
                                             <span className="font-bold text-blue-800">{lastEncounterSummary.name}</span>
                                             {lastEncounterSummary.formName ? ` (${lastEncounterSummary.formName})` : ''}
+                                            {Array.isArray(lastEncounterSummary.types) && lastEncounterSummary.types.length > 0 ? ` - ${lastEncounterSummary.types.map((type) => capitalizeWords(type)).join(', ')}` : ''}
                                             {' '}
                                             <span className="text-slate-500">Lv {lastEncounterSummary.level}</span>
                                             {' '}
@@ -1969,7 +1970,9 @@ export default function MapPage() {
                 <div className="border-t-2 border-slate-200 p-2 text-center min-h-[40px] bg-slate-50">
                     {encounter ? (
                         <div className="text-green-700 font-bold">
-                            Một <span className="uppercase">{encounter.pokemon.name}</span> (Lvl {encounter.level}) <span className={`font-bold ${getRarityStyle(encounter.pokemon.rarity).text}`}>[{getRarityStyle(encounter.pokemon.rarity).label}]</span> hoang dã xuất hiện!
+                            Một <span className="uppercase">{encounter.pokemon.name}</span>
+                            {Array.isArray(encounter?.pokemon?.types) && encounter.pokemon.types.length > 0 ? ` - ${encounter.pokemon.types.map((type) => capitalizeWords(type)).join(', ')}` : ''}
+                            {' '}(Lvl {encounter.level}) <span className={`font-bold ${getRarityStyle(encounter.pokemon.rarity).text}`}>[{getRarityStyle(encounter.pokemon.rarity).label}]</span> hoang dã xuất hiện!
                             {encounter?.pokemon?.isNewPokedexEntry && (
                                 <div className="mt-1 text-xs font-bold text-rose-600 uppercase tracking-wide">
                                     New - chưa có trong Pokedex

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 export const BADGE_MISSION_TYPES = Object.freeze([
+    'admin_role',
     'collect_type_count',
     'collect_type_distinct_count',
     'collect_same_name_different_type_count',

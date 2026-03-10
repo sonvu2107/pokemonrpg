@@ -523,7 +523,8 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                         const username = String(currentUser?.username || '').trim() || 'Người chơi'
                         const rarityLabel = rarity ? rarity.toUpperCase() : 'UNKNOWN'
                         const effectiveVipVisualBenefits = await resolveEffectiveVipVisualBenefits(currentUser)
-                        const isVip = String(currentUser?.role || '').trim().toLowerCase() === 'vip'
+                        const normalizedRole = String(currentUser?.role || '').trim().toLowerCase()
+                        const isVip = normalizedRole === 'vip' || normalizedRole === 'admin'
                         const notificationImage = resolvePokemonImageForEncounter(
                             pokemon,
                             encounter.formId || pokemon.defaultFormId || 'normal',

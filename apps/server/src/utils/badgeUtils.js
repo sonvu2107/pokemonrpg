@@ -130,6 +130,10 @@ const describeMission = (badge) => {
         return `Sở hữu ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'} (tính trùng, tính form)`
     }
 
+    if (missionType === 'admin_role') {
+        return 'Chỉ dành cho tài khoản quản trị viên'
+    }
+
     if (missionType === 'collect_type_distinct_count') {
         return `Sở hữu ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'} (không trùng, tính form)`
     }
@@ -248,6 +252,8 @@ const computeMissionProgress = (badge, context = {}) => {
 
     if (missionType === 'collect_type_count') {
         currentValue = Math.max(0, Number(context?.ownedTypeCounts?.[missionConfig?.pokemonType] || 0))
+    } else if (missionType === 'admin_role') {
+        currentValue = context?.isAdmin ? requiredCount : 0
     } else if (missionType === 'collect_type_distinct_count') {
         currentValue = Math.max(0, Number(context?.ownedDistinctTypeCounts?.[missionConfig?.pokemonType] || 0))
     } else if (missionType === 'collect_same_name_different_type_count') {
@@ -291,7 +297,7 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         options?.userDoc
             ? Promise.resolve(options.userDoc)
             : User.findById(normalizedUserId)
-                .select('completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount')
+                .select('role completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount')
                 .lean(),
         UserPokemon.find(withActiveUserPokemonFilter({ userId: normalizedUserId }))
             .select('pokemonId formId')
@@ -349,6 +355,7 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
     )
 
     const context = {
+        isAdmin: String(userDoc?.role || '').trim().toLowerCase() === 'admin',
         ownedTypeCounts,
         ownedDistinctTypeCounts,
         ownedDifferentTypeCountByName,

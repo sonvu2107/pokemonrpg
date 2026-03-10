@@ -21,22 +21,30 @@ export const getVipBadgeLabel = (userLike) => {
     return level > 0 ? `VIP ${level}` : 'VIP'
 }
 
+export const isAdminRole = (userLike) => normalizeRole(userLike?.role) === 'admin'
 export const isVipRole = (userLike) => normalizeRole(userLike?.role) === 'vip'
 
-export const getPublicRoleLabel = (userLike) => (isVipRole(userLike) ? getVipBadgeLabel(userLike) : '--')
+export const hasVipVisualAccess = (userLike) => {
+    return isVipRole(userLike) || isAdminRole(userLike)
+}
+
+export const getPublicRoleLabel = (userLike) => {
+    if (isAdminRole(userLike)) return 'Admin'
+    return isVipRole(userLike) ? getVipBadgeLabel(userLike) : '--'
+}
 
 export const getVipTitle = (userLike) => {
-    if (!isVipRole(userLike)) return ''
+    if (!hasVipVisualAccess(userLike)) return ''
     return String(userLike?.vipBenefits?.title || '').trim().slice(0, 80)
 }
 
 export const getVipTitleImageUrl = (userLike) => {
-    if (!isVipRole(userLike)) return ''
+    if (!hasVipVisualAccess(userLike)) return ''
     return String(userLike?.vipBenefits?.titleImageUrl || '').trim()
 }
 
 export const getVipAvatarFrameUrl = (userLike) => {
-    if (!isVipRole(userLike)) return ''
+    if (!hasVipVisualAccess(userLike)) return ''
     return String(userLike?.vipBenefits?.avatarFrameUrl || '').trim()
 }
 

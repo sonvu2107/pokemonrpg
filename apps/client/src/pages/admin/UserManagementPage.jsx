@@ -363,7 +363,7 @@ export default function UserManagementPage() {
             const res = await userApi.updateRole(userId, newRole)
             if (res?.user) {
                 updateUserInState(res.user)
-                if (vipBenefitModal.open && vipBenefitModal.user?._id === userId && newRole !== 'vip') {
+                if (vipBenefitModal.open && vipBenefitModal.user?._id === userId && !['vip', 'admin'].includes(newRole)) {
                     closeVipBenefitModal(true)
                 }
             }

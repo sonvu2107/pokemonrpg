@@ -155,6 +155,35 @@ import { hasOwnedPokemonForm } from '../services/userPokemonOwnershipService.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const buildEffectiveBattleStats = ({
+    baseStats = {},
+    statStages = {},
+    badgeBonusState = null,
+} = {}) => {
+    const normalizedBaseHp = Math.max(1, Math.floor(Number(baseStats?.hp) || 1))
+    const normalizedBaseAtk = Math.max(1, Math.floor(Number(baseStats?.atk) || 1))
+    const normalizedBaseDef = Math.max(1, Math.floor(Number(baseStats?.def) || 1))
+    const normalizedBaseSpAtk = Math.max(1, Math.floor(Number(baseStats?.spatk) || 1))
+    const normalizedBaseSpDef = Math.max(1, Math.floor(Number(baseStats?.spdef) || Number(baseStats?.spldef) || 1))
+    const normalizedBaseSpd = Math.max(1, Math.floor(Number(baseStats?.spd) || 1))
+    const normalizedStages = normalizeStatStages(statStages)
+    const normalizedBadgeBonuses = badgeBonusState && typeof badgeBonusState === 'object'
+        ? badgeBonusState
+        : { hpBonusPercent: 0, speedBonusPercent: 0 }
+
+    return {
+        hp: Math.max(1, applyPercentBonus(normalizedBaseHp, normalizedBadgeBonuses?.hpBonusPercent || 0)),
+        atk: applyStatStageToValue(normalizedBaseAtk, normalizedStages?.atk),
+        def: applyStatStageToValue(normalizedBaseDef, normalizedStages?.def),
+        spatk: applyStatStageToValue(normalizedBaseSpAtk, normalizedStages?.spatk),
+        spdef: applyStatStageToValue(normalizedBaseSpDef, normalizedStages?.spdef),
+        spd: applyStatStageToValue(
+            Math.max(1, Math.floor(applyPercentMultiplier(normalizedBaseSpd, normalizedBadgeBonuses?.speedBonusPercent || 0))),
+            normalizedStages?.spd
+        ),
+    }
+}
+
 const WILD_POKEMON_EXP_SCALE = 0.8
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
 const USER_POKEMON_MAX_LEVEL = 2000
@@ -1508,7 +1537,8 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                         encounter.formId || pokemon.defaultFormId || 'normal',
                         encounter.isShiny
                     )
-                    const isVip = String(currentUser?.role || '').trim().toLowerCase() === 'vip'
+                    const normalizedRole = String(currentUser?.role || '').trim().toLowerCase()
+                    const isVip = normalizedRole === 'vip' || normalizedRole === 'admin'
                     globalNotificationPayload = {
                         notificationId: `${resolvedEncounter._id}-${Date.now()}`,
                         username,
@@ -3201,6 +3231,18 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     types: normalizePokemonTypes(entry.types),
                     currentHp: entry.currentHp,
                     maxHp: entry.maxHp,
+                    effectiveStats: buildEffectiveBattleStats({
+                        baseStats: {
+                            hp: entry.maxHp,
+                            atk: entry.baseStats?.atk,
+                            def: entry.baseStats?.def,
+                            spatk: entry.baseStats?.spatk,
+                            spdef: entry.baseStats?.spdef,
+                            spd: entry.baseStats?.spd,
+                        },
+                        statStages: entry.statStages,
+                        badgeBonusState: null,
+                    }),
                     status: normalizeBattleStatus(entry.status),
                     statusTurns: normalizeStatusTurns(entry.statusTurns),
                     statStages: normalizeStatStages(entry.statStages),
@@ -3210,6 +3252,24 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 })),
             }
             : null
+
+        const playerEffectiveStats = buildEffectiveBattleStats({
+            baseStats: attackerScaledStats,
+            statStages: playerStatStages,
+            badgeBonusState,
+        })
+        const opponentEffectiveStats = buildEffectiveBattleStats({
+            baseStats: {
+                hp: targetMaxHp,
+                atk: targetAtk,
+                def: targetDef,
+                spatk: targetSpAtk,
+                spdef: targetSpDef,
+                spd: Math.max(1, Number(activeTrainerOpponent?.baseStats?.spd) || Number(opponent?.baseStats?.spd) || 1),
+            },
+            statStages: opponentStatStages,
+            badgeBonusState: null,
+        })
 
         const opponentMoveStatePayload = hasCounterMoveList
             ? {
@@ -3264,6 +3324,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     name: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon',
                     currentHp: resultingPlayerHp,
                     maxHp: playerMaxHp,
+                    effectiveStats: playerEffectiveStats,
                     status: playerStatus,
                     statusTurns: playerStatusTurns,
                     statStages: playerStatStages,
@@ -3277,6 +3338,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     name: targetName,
                     currentHp,
                     maxHp: targetMaxHp,
+                    effectiveStats: opponentEffectiveStats,
                     status: opponentStatus,
                     statusTurns: opponentStatusTurns,
                     statStages: opponentStatStages,
@@ -3407,6 +3469,7 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
                 pokemonId: targetPokemon._id,
                 currentHp: Math.max(0, Number(trainerSession.playerCurrentHp || 0)),
                 maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
+                effectiveStats: res?.counterAttack?.player?.effectiveStats || null,
             },
             counterAttack,
             opponent: serializeTrainerBattleState(trainerSession),

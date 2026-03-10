@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import VipAvatar from "../components/VipAvatar"
-import { isVipRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
+import { isVipRole, isAdminRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
 import GlobalChatPopup from "../components/GlobalChatPopup"
@@ -87,6 +87,10 @@ export default function AppShell() {
                                             {isVipRole(user) ? (
                                                 <span className="px-1.5 py-0.5 bg-amber-500 rounded text-[10px] text-white font-bold uppercase tracking-wider">
                                                     {vipBadgeLabel}
+                                                </span>
+                                            ) : isAdminRole(user) ? (
+                                                <span className="px-1.5 py-0.5 bg-rose-500 rounded text-[10px] text-white font-bold uppercase tracking-wider">
+                                                    Admin
                                                 </span>
                                             ) : null}
                                         </div>
@@ -183,9 +187,11 @@ export default function AppShell() {
                                         <div>
                                             <div className="font-bold text-slate-800 text-base">{user.username}</div>
                                             <div className="flex gap-2 text-xs">
-                                                {isVipRole(user) && (
+                                                {isVipRole(user) ? (
                                                     <span className="px-1.5 py-0.5 bg-amber-500 rounded text-white font-bold uppercase">{vipBadgeLabel}</span>
-                                                )}
+                                                ) : isAdminRole(user) ? (
+                                                    <span className="px-1.5 py-0.5 bg-rose-500 rounded text-white font-bold uppercase">Admin</span>
+                                                ) : null}
                                                 <span className="text-slate-500">Level {mobileProfile.level}</span>
                                             </div>
                                             {vipTitle && (

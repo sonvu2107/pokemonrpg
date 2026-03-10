@@ -3,6 +3,13 @@ import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+const clampStatStage = (value) => clamp(Math.floor(Number(value) || 0), -6, 6)
+const applyStatStageToValue = (value, stage = 0) => {
+    const numericValue = Math.max(1, Number(value) || 1)
+    const normalizedStage = clampStatStage(stage)
+    const multiplier = normalizedStage >= 0 ? (2 + normalizedStage) / 2 : 2 / (2 - normalizedStage)
+    return Math.max(1, Math.floor(numericValue * multiplier))
+}
 const normalizeTypeToken = (value = '') => String(value || '').trim().toLowerCase()
 const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
 const normalizeBattleStatus = (value = '') => {
@@ -139,6 +146,17 @@ const buildPlayerBattleStats = (targetPokemon, fallbackMaxHp = 1) => {
         maxHp,
         name: String(targetPokemon?.nickname || species?.name || 'Pokemon').trim() || 'Pokemon',
         types: normalizeTrainerTypes(species?.types),
+    }
+}
+
+const buildEffectiveBattleStats = ({ stats = {}, statStages = {} } = {}) => {
+    return {
+        hp: Math.max(1, Math.floor(Number(stats?.hp) || 1)),
+        atk: applyStatStageToValue(Number(stats?.atk) || 1, statStages?.atk),
+        def: applyStatStageToValue(Number(stats?.def) || 1, statStages?.def),
+        spatk: applyStatStageToValue(Number(stats?.spatk) || 1, statStages?.spatk),
+        spdef: applyStatStageToValue(Number(stats?.spdef) || Number(stats?.spldef) || 1, statStages?.spdef),
+        spd: applyStatStageToValue(Number(stats?.spd) || 1, statStages?.spd),
     }
 }
 
@@ -345,6 +363,10 @@ export const applyTrainerPenaltyTurn = async ({
         player: {
             status: nextStatus,
             statusTurns: nextStatusTurns,
+            effectiveStats: buildEffectiveBattleStats({
+                stats: playerBattleStats.stats,
+                statStages: activeBattleSession.playerStatStages || {},
+            }),
         },
     }
 }
