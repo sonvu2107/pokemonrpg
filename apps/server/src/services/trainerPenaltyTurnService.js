@@ -323,7 +323,15 @@ export const applyTrainerPenaltyTurn = async ({
     }
 
     const playerBattleStats = buildPlayerBattleStats(targetPokemon, normalizedPlayerMaxHp)
-    if (!opponentStatusCheck.canAct) {
+    const preActionLogs = (opponentStatusCheck.reason === 'wakeup' || opponentStatusCheck.reason === 'thaw' || opponentStatusCheck.reason === 'confuse_end')
+        ? [opponentStatusCheck.log].filter(Boolean)
+        : []
+    const shouldSkipPenaltyTurnAction = (
+        !opponentStatusCheck.canAct
+        || opponentStatusCheck.reason === 'wakeup'
+        || opponentStatusCheck.reason === 'thaw'
+    )
+    if (shouldSkipPenaltyTurnAction) {
         await activeBattleSession.save()
         return {
             damage: 0,
@@ -333,7 +341,7 @@ export const applyTrainerPenaltyTurn = async ({
             move: { name: '', type: 'normal', category: 'status', accuracy: 100, effectiveness: 1, stabMultiplier: 1, hit: false },
             log: `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'}: ${opponentStatusCheck.log || 'Không thể hành động.'}`,
             reason,
-            effects: { logs: [] },
+            effects: { logs: preActionLogs },
             player: {
                 status: normalizeBattleStatus(activeBattleSession.playerStatus),
                 statusTurns: normalizeStatusTurns(activeBattleSession.playerStatusTurns),
@@ -394,7 +402,7 @@ export const applyTrainerPenaltyTurn = async ({
         },
         log: baseLog,
         reason,
-        effects: { logs: effectLogs },
+        effects: { logs: [...preActionLogs, ...effectLogs] },
         player: {
             status: nextStatus,
             statusTurns: nextStatusTurns,

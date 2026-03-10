@@ -2634,6 +2634,24 @@ export function BattlePage() {
                             team: mergedTeam,
                         }
                     })
+                    if (res?.counterAttack?.opponent) {
+                        setBattleOpponent((prev) => {
+                            const previousState = prev && typeof prev === 'object' ? prev : {}
+                            const currentIndex = Number.isInteger(previousState?.currentIndex) ? previousState.currentIndex : 0
+                            const nextTeam = Array.isArray(previousState?.team) ? [...previousState.team] : []
+                            const currentEntry = nextTeam[currentIndex]
+                            if (!currentEntry) return previousState
+                            nextTeam[currentIndex] = {
+                                ...currentEntry,
+                                status: String(res.counterAttack.opponent.status || '').trim().toLowerCase(),
+                                statusTurns: Math.max(0, Number(res.counterAttack.opponent.statusTurns || 0)),
+                            }
+                            return {
+                                ...previousState,
+                                team: nextTeam,
+                            }
+                        })
+                    }
                 }
                 if (res?.player) {
                     setBattlePartyHpState((prev) => {
@@ -2667,7 +2685,9 @@ export function BattlePage() {
                 if (res?.counterAttack) {
                     logLines.push(res.counterAttack.log || `${battleOpponent?.team?.[battleOpponent?.currentIndex || 0]?.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`)
                     const effectLogs = Array.isArray(res?.counterAttack?.effects?.logs)
-                        ? res.counterAttack.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                        ? res.counterAttack.effects.logs
+                            .filter((entry) => Boolean(String(entry || '').trim()))
+                            .filter((entry) => String(entry || '').trim() !== String(res.counterAttack.log || '').trim())
                         : []
                     if (effectLogs.length > 0) {
                         logLines.push(...effectLogs)
@@ -2783,10 +2803,30 @@ export function BattlePage() {
                     currentHp: Math.max(0, Number(res.trainerCounterAttack.currentHp ?? currentEntry.currentHp ?? 0)),
                     maxHp: Math.max(1, Number(res.trainerCounterAttack.maxHp ?? currentEntry.maxHp ?? 1)),
                 }
+                if (res?.trainerCounterAttack?.opponent) {
+                    setBattleOpponent((prev) => {
+                        const previousState = prev && typeof prev === 'object' ? prev : {}
+                        const currentIndex = Number.isInteger(previousState?.currentIndex) ? previousState.currentIndex : 0
+                        const nextTeam = Array.isArray(previousState?.team) ? [...previousState.team] : []
+                        const currentOpponent = nextTeam[currentIndex]
+                        if (!currentOpponent) return previousState
+                        nextTeam[currentIndex] = {
+                            ...currentOpponent,
+                            status: String(res.trainerCounterAttack.opponent.status || '').trim().toLowerCase(),
+                            statusTurns: Math.max(0, Number(res.trainerCounterAttack.opponent.statusTurns || 0)),
+                        }
+                        return {
+                            ...previousState,
+                            team: nextTeam,
+                        }
+                    })
+                }
                 appendBattleLog([
                     res.trainerCounterAttack.log || `${battleOpponent?.team?.[battleOpponent?.currentIndex || 0]?.name || 'Đối thủ'} dùng ${res?.trainerCounterAttack?.move?.name || 'Phản công'}! Gây ${Number(res?.trainerCounterAttack?.damage || 0)} sát thương.`,
                     ...((Array.isArray(res?.trainerCounterAttack?.effects?.logs)
-                        ? res.trainerCounterAttack.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                        ? res.trainerCounterAttack.effects.logs
+                            .filter((entry) => Boolean(String(entry || '').trim()))
+                            .filter((entry) => String(entry || '').trim() !== String(res.trainerCounterAttack.log || '').trim())
                         : [])),
                 ])
                 setParty((prevParty) => {

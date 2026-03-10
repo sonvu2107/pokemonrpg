@@ -142,6 +142,12 @@ const evaluateCondition = (context = {}, condition = '') => {
         is_super_effective: Boolean(context?.isSuperEffective),
         user_has_status_ailment: Boolean(String(context?.userStatus || '').trim()),
         target_has_status_ailment: Boolean(String(context?.targetStatus || '').trim()),
+        user_is_poisoned: normalizeStatus(context?.userStatus) === 'poison',
+        target_is_poisoned: normalizeStatus(context?.targetStatus) === 'poison',
+        user_is_paralyzed: normalizeStatus(context?.userStatus) === 'paralyze',
+        target_is_paralyzed: normalizeStatus(context?.targetStatus) === 'paralyze',
+        user_is_burned: normalizeStatus(context?.userStatus) === 'burn',
+        target_is_burned: normalizeStatus(context?.targetStatus) === 'burn',
         user_has_stat_boost: hasPositiveStage(userStats),
         target_has_stat_boost: hasPositiveStage(targetStats),
         user_has_stat_drop: hasNegativeStage(userStats),
@@ -194,6 +200,27 @@ const handlers = {
         return result
     },
 
+    apply_status_random: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        const statuses = ensureArray(effect?.params?.statuses)
+            .map((status) => normalizeStatus(status))
+            .filter(Boolean)
+        if (statuses.length === 0) return result
+
+        const randomValue = typeof context?.random === 'function' ? context.random() : Math.random()
+        const clampedIndex = Math.min(statuses.length - 1, Math.max(0, Math.floor(randomValue * statuses.length)))
+        const chosenStatus = statuses[clampedIndex]
+        if (!chosenStatus) return result
+
+        result.applied = true
+        result.statePatches[target].status = chosenStatus
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${chosenStatus}.`)
+        return result
+    },
+
     clear_status: (context, effect) => {
         const result = createBaseResult()
         if (!shouldProc(effect?.chance, context?.random?.())) return result
@@ -204,6 +231,23 @@ const handlers = {
         result.statePatches[target].status = ''
         result.statePatches[target].statusTurns = 0
         appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được giải trạng thái bất lợi.`)
+        return result
+    },
+
+    clear_status_if: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const condition = String(effect?.params?.condition || '').trim().toLowerCase()
+        const target = effect?.target === 'opponent' ? 'opponent' : 'self'
+        if (!condition) return result
+        if (!evaluateCondition(context, condition)) return result
+
+        result.applied = true
+        result.statePatches[target].clearStatus = true
+        result.statePatches[target].status = ''
+        result.statePatches[target].statusTurns = 0
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} được giải trạng thái bởi điều kiện hiệu ứng.`)
         return result
     },
 
@@ -267,11 +311,7 @@ const handlers = {
         const delta = Number(effect?.params?.delta)
         if (!condition || !stat || !Number.isFinite(delta) || delta === 0) return result
 
-        const checks = {
-            target_was_ko: Boolean(context?.targetWasKo),
-            user_was_ko: Boolean(context?.userWasKo),
-        }
-        if (!checks[condition]) return result
+        if (!evaluateCondition(context, condition)) return result
 
         result.applied = true
         result.statePatches[target].statStages = {
@@ -388,6 +428,28 @@ const handlers = {
         return result
     },
 
+    average_def_spdef_stages_with_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const userStages = normalizeStageMap(context?.userStatStages)
+        const targetStages = normalizeStageMap(context?.targetStatStages)
+        const averageDef = clampStage(Math.trunc(((userStages?.def || 0) + (targetStages?.def || 0)) / 2), 0)
+        const averageSpDef = clampStage(Math.trunc(((userStages?.spdef || 0) + (targetStages?.spdef || 0)) / 2), 0)
+
+        result.applied = true
+        result.statePatches.self.setStatStages = {
+            def: averageDef,
+            spdef: averageSpDef,
+        }
+        result.statePatches.opponent.setStatStages = {
+            def: averageDef,
+            spdef: averageSpDef,
+        }
+        appendEffectLog(result, 'Defense và Special Defense của hai bên được cân bằng.')
+        return result
+    },
+
     swap_attack_spatk_stages_with_target: (context, effect) => {
         const result = createBaseResult()
         if (!shouldProc(effect?.chance, context?.random?.())) return result
@@ -405,6 +467,40 @@ const handlers = {
             spatk: clampStage(userStages?.spatk, 0),
         }
         appendEffectLog(result, 'Hai bên hoán đổi bậc Attack và Special Attack.')
+        return result
+    },
+
+    swap_def_spdef_stages_with_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const userStages = normalizeStageMap(context?.userStatStages)
+        const targetStages = normalizeStageMap(context?.targetStatStages)
+
+        result.applied = true
+        result.statePatches.self.setStatStages = {
+            def: clampStage(targetStages?.def, 0),
+            spdef: clampStage(targetStages?.spdef, 0),
+        }
+        result.statePatches.opponent.setStatStages = {
+            def: clampStage(userStages?.def, 0),
+            spdef: clampStage(userStages?.spdef, 0),
+        }
+        appendEffectLog(result, 'Hai bên hoán đổi bậc Defense và Special Defense.')
+        return result
+    },
+
+    swap_all_stat_stages_with_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const userStages = normalizeStageMap(context?.userStatStages)
+        const targetStages = normalizeStageMap(context?.targetStatStages)
+
+        result.applied = true
+        result.statePatches.self.replaceStatStages = targetStages
+        result.statePatches.opponent.replaceStatStages = userStages
+        appendEffectLog(result, 'Hai bên hoán đổi toàn bộ bậc chỉ số.')
         return result
     },
 

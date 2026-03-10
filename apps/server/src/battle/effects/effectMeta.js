@@ -78,11 +78,14 @@ const VI_WORD_OVERRIDES = {
 
 const OP_META_OVERRIDES = {
     apply_status: { nameEn: 'Apply Status', nameVi: 'Gay trang thai' },
+    apply_status_random: { nameVi: 'Gay mot trang thai ngau nhien' },
     apply_status_if: { nameVi: 'Gay trang thai theo dieu kien' },
     always_crit: { nameVi: 'Dam bao chi mang' },
     apply_bind: { nameVi: 'Gay troi buoc theo turn' },
     average_attack_spatk_stages_with_target: { nameVi: 'Can bang bac Tan cong va Tan cong dac biet voi muc tieu' },
+    average_def_spdef_stages_with_target: { nameVi: 'Can bang bac Phong thu va Phong thu dac biet voi muc tieu' },
     clear_status: { nameEn: 'Clear Status', nameVi: 'Xoa trang thai' },
+    clear_status_if: { nameVi: 'Xoa trang thai theo dieu kien' },
     clear_damage_guards: { nameVi: 'Xoa la chan giam sat thuong' },
     clear_stat_stages: { nameVi: 'Xoa toan bo bac chi so' },
     clear_terrain: { nameVi: 'Xoa dia hinh' },
@@ -130,6 +133,8 @@ const OP_META_OVERRIDES = {
     stat_stage_set: { nameVi: 'Dat truc tiep bac chi so' },
     steal_target_stat_boosts: { nameVi: 'Cuop cac bac chi so duong cua muc tieu' },
     swap_attack_spatk_stages_with_target: { nameVi: 'Hoan doi bac Tan cong va Tan cong dac biet voi muc tieu' },
+    swap_all_stat_stages_with_target: { nameVi: 'Hoan doi toan bo bac chi so voi muc tieu' },
+    swap_def_spdef_stages_with_target: { nameVi: 'Hoan doi bac Phong thu va Phong thu dac biet voi muc tieu' },
     swap_speed_stages_with_target: { nameVi: 'Hoan doi bac Toc do voi muc tieu' },
     swap_user_attack_defense_stages: { nameVi: 'Hoan doi bac Tan cong va Phong thu cua nguoi dung' },
     transfer_status_to_target: { nameVi: 'Chuyen trang thai cua nguoi dung sang muc tieu' },
@@ -208,7 +213,9 @@ const DEFAULT_TARGET_OPTIONS = ['self', 'opponent', 'field']
 
 const EFFECT_TEMPLATE_OVERRIDES = {
     apply_status: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { status: 'burn' } },
+    apply_status_random: { trigger: 'on_hit', target: 'opponent', chance: 0.3, params: { statuses: ['burn', 'poison'] } },
     clear_status: { trigger: 'on_hit', target: 'self', chance: 1, params: {} },
+    clear_status_if: { trigger: 'on_hit', target: 'self', chance: 1, params: { condition: 'user_is_burned' } },
     stat_stage: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { stat: 'atk', delta: -1 } },
     stat_stage_if: { trigger: 'on_hit', target: 'self', chance: 1, params: { condition: 'target_was_damaged_last_turn', stat: 'atk', delta: 1 } },
     power_modifier_if: { trigger: 'on_calculate_damage', target: 'self', chance: 1, params: { condition: 'weather_sunny', multiplier: 1.5 } },

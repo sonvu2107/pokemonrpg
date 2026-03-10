@@ -1810,15 +1810,39 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/stat changes are swapped with the opponent|user and opponent swap defense and special defense|averages defense and special defense with the target/.test(text)) {
+    if (/stat changes are swapped with the opponent/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'swap_all_stat_stages_with_target',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'stat_swap_or_average_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/user and opponent swap defense and special defense/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'swap_def_spdef_stages_with_target',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/averages defense and special defense with the target/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'average_def_spdef_stages_with_target',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -4123,13 +4147,25 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/power doubles if opponent is paralyzed, but cures it/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_if',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: {
+                condition: 'target_is_paralyzed',
+                multiplier: 2,
+            },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+        maybePush(effects, makeEffect({
+            op: 'clear_status_if',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'status_conditioned_power_and_cure_unsupported' },
+            params: { condition: 'target_is_paralyzed' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.75,
         }))
     }
 
@@ -4157,16 +4193,46 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/heals the burns of its target|may paralyze, burn or freeze opponent|lowers poisoned opponent's special attack and speed/.test(text)) {
+    if (/heals the burns of its target/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'clear_status_if',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'compound_status_logic_unsupported' },
+            params: { condition: 'target_is_burned' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
+    }
+
+    if (/may paralyze, burn or freeze opponent/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'apply_status_random',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: chanceFromProb ?? 0.2,
+            params: { statuses: ['paralyze', 'burn', 'freeze'] },
+            sourceText,
+            parserConfidence: 0.84,
+        }))
+    }
+
+    if (/lowers poisoned opponent's special attack and speed/.test(text)) {
+        ;['spatk', 'spd'].forEach((stat) => {
+            maybePush(effects, makeEffect({
+                op: 'stat_stage_if',
+                trigger: 'on_hit',
+                target: 'opponent',
+                chance: 1,
+                params: {
+                    condition: 'target_is_poisoned',
+                    stat,
+                    delta: -1,
+                },
+                sourceText,
+                parserConfidence: 0.84,
+            }))
+        })
     }
 
     if (/if the user's previous move has failed, the power of this move doubles/.test(text)) {
