@@ -131,7 +131,7 @@ export default function HomePage() {
         <div className="space-y-6 animate-fadeIn">
             <div className="text-center py-8">
                 <h1 className="text-3xl font-bold text-blue-900 mb-2 drop-shadow-sm">
-                    Chào mừng đến với Thú ảo VNPET
+                    Chào mừng đến với VNPET
                 </h1>
                 <p className="text-slate-600 max-w-lg mx-auto">
                     Một thế giới Pokemon trực tuyến nơi bạn có thể bắt, huấn luyện và chiến đấu với hàng ngàn người chơi khác.

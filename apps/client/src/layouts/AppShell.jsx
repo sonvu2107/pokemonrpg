@@ -65,7 +65,7 @@ export default function AppShell() {
                             </button>
 
                             <Link to="/" className="text-blue-700 font-bold tracking-wide text-lg drop-shadow-sm hover:text-blue-800 transition-colors">
-                                Thú Ảo VNPET
+                                <img src="/vnpet.png" alt="Thú Ảo VNPET" className="hidden sm:block h-8 w-auto scale-[3] origin-left" />
                             </Link>
                         </div>
 
