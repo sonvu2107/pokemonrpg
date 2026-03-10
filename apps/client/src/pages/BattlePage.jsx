@@ -25,6 +25,7 @@ const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 1400, label: 'Rất chậm (1.4s)' },
 ]
 const DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS = AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS[1].value
+const AUTO_TRAINER_CLIENT_INSTANCE_STORAGE_KEY = 'auto-trainer-client-instance-id'
 const DEFAULT_RANKED_RETURN_PATH = '/rankings/pokemon'
 const ALLOWED_RANKED_RETURN_PATHS = new Set(['/rankings/pokemon', '/rankings/overall', '/rankings/daily', '/stats/online', '/friends'])
 const createTrainerAttackChallenge = () => {
@@ -70,6 +71,16 @@ const buildAutoTrainerConfigSnapshot = ({ enabled, trainerId, attackIntervalMs }
         trainerId: normalizeEntityId(trainerId),
         attackIntervalMs: Math.max(450, Number(attackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
     })
+}
+const getOrCreateAutoTrainerClientInstanceId = () => {
+    if (typeof window === 'undefined') return ''
+    const existing = String(window.sessionStorage.getItem(AUTO_TRAINER_CLIENT_INSTANCE_STORAGE_KEY) || '').trim()
+    if (existing) return existing
+    const generated = (typeof window.crypto?.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `auto-trainer-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+    window.sessionStorage.setItem(AUTO_TRAINER_CLIENT_INSTANCE_STORAGE_KEY, generated)
+    return generated
 }
 const expToNextPokemonLevel = (level = 1) => 250 + Math.max(0, Number(level || 1) - 1) * 100
 const hydratePartyWithBattleHp = (partySlots = []) => {
@@ -1298,8 +1309,8 @@ export function BattlePage() {
         const timer = window.setTimeout(async () => {
             try {
                 const res = await gameApi.updateAutoTrainerSettings({
-                    enabled: autoTrainerAttackEnabled,
                     trainerId: normalizeEntityId(autoTrainerTargetId),
+                    clientInstanceId: getOrCreateAutoTrainerClientInstanceId(),
                     attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
                 })
                 applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
@@ -3266,6 +3277,7 @@ export function BattlePage() {
                 const res = await gameApi.updateAutoTrainerSettings({
                     enabled: false,
                     trainerId: normalizeEntityId(autoTrainerTargetId),
+                    clientInstanceId: getOrCreateAutoTrainerClientInstanceId(),
                     attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
                 })
                 applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
@@ -3287,6 +3299,7 @@ export function BattlePage() {
             const res = await gameApi.updateAutoTrainerSettings({
                 enabled: true,
                 trainerId: normalizedTrainerId,
+                clientInstanceId: getOrCreateAutoTrainerClientInstanceId(),
                 attackIntervalMs: Math.max(450, Number(autoTrainerAttackIntervalMs) || DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS),
             })
             applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
@@ -3318,7 +3331,7 @@ export function BattlePage() {
             </div>
 
             <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-slate-700">Trainer auto</span>
+                <span className="text-[11px] font-semibold text-slate-700">Mốc auto</span>
                 <select
                     value={autoTrainerTargetId}
                     onChange={(e) => {

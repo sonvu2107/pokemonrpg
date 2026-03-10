@@ -137,6 +137,7 @@ export const normalizeAutoTrainerState = (stateLike = {}) => {
     return {
         enabled: Boolean(stateLike?.enabled),
         trainerId: normalizeId(stateLike?.trainerId),
+        clientInstanceId: normalizeId(stateLike?.clientInstanceId),
         attackIntervalMs: Math.max(450, toSafeInt(stateLike?.attackIntervalMs, 700)),
         startedAt: stateLike?.startedAt ? new Date(stateLike.startedAt) : null,
         dayKey: String(stateLike?.dayKey || '').trim(),

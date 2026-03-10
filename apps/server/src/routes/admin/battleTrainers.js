@@ -551,6 +551,7 @@ router.post('/reset-history', async (req, res) => {
                     { completedBattleTrainerReachedAt: { $exists: true, $ne: {} } },
                     { 'autoTrainer.enabled': true },
                     { 'autoTrainer.trainerId': { $exists: true, $ne: '' } },
+                    { 'autoTrainer.clientInstanceId': { $exists: true, $ne: '' } },
                     { 'autoTrainer.startedAt': { $ne: null } },
                     { 'autoTrainer.lastRuntimeAt': { $ne: null } },
                     { 'autoTrainer.logs.0': { $exists: true } },
@@ -563,6 +564,7 @@ router.post('/reset-history', async (req, res) => {
                     completedBattleTrainerReachedAt: {},
                     'autoTrainer.enabled': false,
                     'autoTrainer.trainerId': '',
+                    'autoTrainer.clientInstanceId': '',
                     'autoTrainer.startedAt': null,
                     'autoTrainer.lastRuntimeAt': null,
                     'autoTrainer.lastAction': {

@@ -486,6 +486,7 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
         const incomingEnabled = req.body?.enabled
         const shouldUpdateEnabled = incomingEnabled === true || incomingEnabled === false
         const requestedTrainerId = normalizeAutoTrainerId(req.body?.trainerId)
+        const requestedClientInstanceId = normalizeAutoTrainerId(req.body?.clientInstanceId)
         const hasTrainerIdPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'trainerId')
         const requestedIntervalRaw = Number(req.body?.attackIntervalMs)
         const hasIntervalPatch = Number.isFinite(requestedIntervalRaw)
@@ -510,18 +511,30 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
         const nextEnabled = shouldUpdateEnabled
             ? Boolean(incomingEnabled)
             : Boolean(normalizedState.enabled)
+        const storedClientInstanceId = normalizeAutoTrainerId(normalizedState.clientInstanceId)
 
         if (shouldUpdateEnabled && !nextEnabled) {
             console.warn('[auto-trainer-settings] disable request received:', {
                 userId: req.user.userId,
                 requestedTrainerId,
                 targetTrainerId,
+                requestedClientInstanceId,
+                storedClientInstanceId,
                 incomingEnabled,
                 normalizedStateEnabled: Boolean(normalizedState.enabled),
                 body: req.body,
                 userAgent: req.get('user-agent') || '',
                 referer: req.get('referer') || '',
                 origin: req.get('origin') || '',
+            })
+        }
+
+        if (shouldUpdateEnabled && !nextEnabled && storedClientInstanceId && requestedClientInstanceId !== storedClientInstanceId) {
+            const payload = await buildAutoTrainerStatusPayload(user.toObject())
+            return res.status(409).json({
+                ok: false,
+                message: 'Phiên auto battle đang được điều khiển từ thiết bị/tab khác.',
+                autoTrainer: payload,
             })
         }
 
@@ -581,6 +594,9 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             $set: {
                 'autoTrainer.enabled': nextEnabled,
                 'autoTrainer.trainerId': targetTrainerId,
+                'autoTrainer.clientInstanceId': shouldUpdateEnabled
+                    ? (nextEnabled ? requestedClientInstanceId : '')
+                    : storedClientInstanceId,
                 'autoTrainer.attackIntervalMs': requestedInterval,
                 'autoTrainer.startedAt': nextEnabled ? (normalizedState.startedAt || now) : null,
                 'autoTrainer.dayKey': dailyState.dayKey,

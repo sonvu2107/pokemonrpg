@@ -379,6 +379,11 @@ const userSchema = new mongoose.Schema(
                 default: '',
                 trim: true,
             },
+            clientInstanceId: {
+                type: String,
+                default: '',
+                trim: true,
+            },
             attackIntervalMs: {
                 type: Number,
                 default: 200,
