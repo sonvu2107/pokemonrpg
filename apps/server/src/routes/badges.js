@@ -64,7 +64,7 @@ router.put('/equipped', authMiddleware, async (req, res) => {
         user.equippedBadgeIds = badgeIds
         await user.save()
 
-        const nextOverview = await buildBadgeOverviewForUser(req.user.userId, { userDoc: user.toObject() })
+        const nextOverview = await buildBadgeOverviewForUser(req.user.userId)
         res.json({
             ok: true,
             message: 'Đã cập nhật huy hiệu trưng bày',

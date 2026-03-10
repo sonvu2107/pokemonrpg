@@ -3,7 +3,11 @@ import mongoose from 'mongoose'
 export const BADGE_MISSION_TYPES = Object.freeze([
     'collect_type_count',
     'collect_type_distinct_count',
+    'collect_same_name_different_type_count',
     'collect_total_count',
+    'vip_tier_reached',
+    'platinum_coins_owned_count',
+    'catch_fail_count',
     'online_hours_count',
     'complete_trainer_count',
 ])
@@ -107,6 +111,13 @@ const badgeDefinitionSchema = new mongoose.Schema(
                 trim: true,
                 lowercase: true,
                 maxlength: 32,
+            },
+            pokemonName: {
+                type: String,
+                default: '',
+                trim: true,
+                lowercase: true,
+                maxlength: 120,
             },
             requiredCount: {
                 type: Number,

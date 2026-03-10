@@ -7,7 +7,11 @@ const BADGE_IMAGE_TRANSFORMATION = 'e_trim/c_pad,w_512,h_512,b_transparent/f_aut
 const MISSION_OPTIONS = [
     { value: 'collect_type_count', label: 'Sở hữu theo hệ (tính trùng, tính form)' },
     { value: 'collect_type_distinct_count', label: 'Sở hữu theo hệ (không trùng, tính form)' },
+    { value: 'collect_same_name_different_type_count', label: 'Cùng tên nhưng khác hệ (tính form)' },
     { value: 'collect_total_count', label: 'Tổng số Pokémon đã sở hữu (có trùng, tính form)' },
+    { value: 'vip_tier_reached', label: 'Đạt mốc VIP' },
+    { value: 'platinum_coins_owned_count', label: 'Sở hữu Xu Bạch Kim' },
+    { value: 'catch_fail_count', label: 'Bắt trượt Pokémon' },
     { value: 'online_hours_count', label: 'Tổng số giờ online' },
     { value: 'complete_trainer_count', label: 'Hoàn thành huấn luyện viên' },
 ]
@@ -45,6 +49,7 @@ const createDefaultForm = () => ({
     missionType: 'collect_type_count',
     missionConfig: {
         pokemonType: 'fire',
+        pokemonName: '',
         requiredCount: '100',
     },
     rewardEffects: [{ effectType: 'party_type_damage_percent', percent: '5', pokemonType: 'fire' }],
@@ -63,6 +68,7 @@ const normalizeBadgeToForm = (badge = null) => {
         missionType: String(badge.missionType || base.missionType),
         missionConfig: {
             pokemonType: String(badge?.missionConfig?.pokemonType || base.missionConfig.pokemonType),
+            pokemonName: String(badge?.missionConfig?.pokemonName || base.missionConfig.pokemonName),
             requiredCount: String(badge?.missionConfig?.requiredCount ?? base.missionConfig.requiredCount),
         },
         rewardEffects: Array.isArray(badge.rewardEffects) && badge.rewardEffects.length > 0
@@ -85,6 +91,7 @@ const buildPayload = (form) => ({
     missionType: String(form.missionType || '').trim(),
     missionConfig: {
         pokemonType: String(form?.missionConfig?.pokemonType || '').trim(),
+        pokemonName: String(form?.missionConfig?.pokemonName || '').trim(),
         requiredCount: Math.max(1, parseInt(form?.missionConfig?.requiredCount, 10) || 1),
     },
     rewardEffects: (Array.isArray(form.rewardEffects) ? form.rewardEffects : []).map((entry) => ({
@@ -268,9 +275,16 @@ export default function BadgeManagerPage() {
     }
 
     const missionNeedsType = form.missionType === 'collect_type_count' || form.missionType === 'collect_type_distinct_count'
+    const missionNeedsPokemonName = form.missionType === 'collect_same_name_different_type_count'
     const missionCountPlaceholder = form.missionType === 'online_hours_count'
         ? 'Mốc số giờ online cần đạt'
-        : 'Mốc số lượng cần đạt'
+        : form.missionType === 'vip_tier_reached'
+            ? 'Mốc VIP cần đạt (ví dụ: 3)'
+            : form.missionType === 'platinum_coins_owned_count'
+                ? 'Số Xu Bạch Kim cần sở hữu'
+                : form.missionType === 'catch_fail_count'
+                    ? 'Số lần bắt trượt cần đạt'
+                    : 'Mốc số lượng cần đạt'
 
     return (
         <div className="rounded-2xl border border-blue-300 bg-white shadow-sm overflow-hidden">
@@ -353,6 +367,14 @@ export default function BadgeManagerPage() {
                             <select value={form.missionConfig.pokemonType} onChange={(e) => setForm((prev) => ({ ...prev, missionConfig: { ...prev.missionConfig, pokemonType: e.target.value } }))} className="w-full mt-3 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
                                 {POKEMON_TYPES.map((type) => <option key={type} value={type}>{type.toUpperCase()}</option>)}
                             </select>
+                        )}
+                        {missionNeedsPokemonName && (
+                            <input
+                                value={form.missionConfig.pokemonName}
+                                onChange={(e) => setForm((prev) => ({ ...prev, missionConfig: { ...prev.missionConfig, pokemonName: e.target.value } }))}
+                                placeholder="Tên Pokémon (ví dụ: pikachu)"
+                                className="w-full mt-3 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
+                            />
                         )}
                     </FieldBlock>
 

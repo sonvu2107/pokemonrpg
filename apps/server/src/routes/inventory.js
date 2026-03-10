@@ -1008,11 +1008,22 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 : addMonthsFromBase(baseDate, vipDurationValue)
             const durationLabel = `${vipDurationValue} ${vipDurationUnit === 'week' ? 'tuần' : 'tháng'}`
 
-            entry.quantity -= qty
-            if (entry.quantity <= 0) {
-                await entry.deleteOne()
-            } else {
-                await entry.save()
+            const consumedVipItem = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: normalizedItemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedVipItem) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+
+            if (consumedVipItem.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedVipItem._id, quantity: { $lte: 0 } })
             }
 
             userDoc.role = 'vip'

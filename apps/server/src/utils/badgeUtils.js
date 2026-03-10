@@ -1,6 +1,7 @@
 import BadgeDefinition, { BADGE_EFFECT_TYPES, BADGE_MISSION_TYPES, BADGE_RANKS } from '../models/BadgeDefinition.js'
 import User from '../models/User.js'
 import UserPokemon from '../models/UserPokemon.js'
+import PlayerState from '../models/PlayerState.js'
 import { withActiveUserPokemonFilter } from './userPokemonQuery.js'
 import { getTotalOnlineHours } from './onlineTime.js'
 
@@ -13,6 +14,7 @@ const clampPercent = (value, min = 0, max = 1000) => {
 }
 
 const normalizePokemonType = (value = '') => String(value || '').trim().toLowerCase()
+const normalizePokemonName = (value = '') => String(value || '').trim().toLowerCase()
 
 const slugify = (value = '') => String(value || '')
     .trim()
@@ -30,12 +32,22 @@ export const normalizeBadgeMissionConfig = (missionType = '', missionConfigLike 
     if (missionType === 'collect_type_count' || missionType === 'collect_type_distinct_count') {
         return {
             pokemonType: normalizePokemonType(source?.pokemonType),
+            pokemonName: '',
+            requiredCount,
+        }
+    }
+
+    if (missionType === 'collect_same_name_different_type_count') {
+        return {
+            pokemonType: '',
+            pokemonName: normalizePokemonName(source?.pokemonName),
             requiredCount,
         }
     }
 
     return {
         pokemonType: '',
+        pokemonName: '',
         requiredCount,
     }
 }
@@ -122,8 +134,25 @@ const describeMission = (badge) => {
         return `Sở hữu ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'} (không trùng, tính form)`
     }
 
+    if (missionType === 'collect_same_name_different_type_count') {
+        const pokemonName = String(missionConfig?.pokemonName || '').trim() || 'pokemon'
+        return `Sưu tập ${requiredCount} biến thể hệ khác nhau của Pokémon tên ${pokemonName.toUpperCase()}`
+    }
+
     if (missionType === 'collect_total_count') {
         return `Sở hữu tổng cộng ${requiredCount} Pokémon (bao gồm trùng, tính form)`
+    }
+
+    if (missionType === 'vip_tier_reached') {
+        return `Đạt mốc VIP ${requiredCount}`
+    }
+
+    if (missionType === 'platinum_coins_owned_count') {
+        return `Sở hữu ${requiredCount.toLocaleString('vi-VN')} Xu Bạch Kim`
+    }
+
+    if (missionType === 'catch_fail_count') {
+        return `Bắt trượt Pokémon ${requiredCount.toLocaleString('vi-VN')} lần`
     }
 
     if (missionType === 'online_hours_count') {
@@ -221,8 +250,16 @@ const computeMissionProgress = (badge, context = {}) => {
         currentValue = Math.max(0, Number(context?.ownedTypeCounts?.[missionConfig?.pokemonType] || 0))
     } else if (missionType === 'collect_type_distinct_count') {
         currentValue = Math.max(0, Number(context?.ownedDistinctTypeCounts?.[missionConfig?.pokemonType] || 0))
+    } else if (missionType === 'collect_same_name_different_type_count') {
+        currentValue = Math.max(0, Number(context?.ownedDifferentTypeCountByName?.[missionConfig?.pokemonName] || 0))
     } else if (missionType === 'collect_total_count') {
         currentValue = Math.max(0, Number(context?.ownedTotalCount || 0))
+    } else if (missionType === 'vip_tier_reached') {
+        currentValue = Math.max(0, Number(context?.vipTierLevel || 0))
+    } else if (missionType === 'platinum_coins_owned_count') {
+        currentValue = Math.max(0, Number(context?.platinumCoinsOwned || 0))
+    } else if (missionType === 'catch_fail_count') {
+        currentValue = Math.max(0, Number(context?.catchFailCount || 0))
     } else if (missionType === 'online_hours_count') {
         currentValue = Math.max(0, Number(context?.onlineHoursCount || 0))
     } else if (missionType === 'complete_trainer_count') {
@@ -247,27 +284,41 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         }
     }
 
-    const [definitions, userDoc, ownedPokemonRows] = await Promise.all([
+    const [definitions, userDoc, ownedPokemonRows, playerStateDoc] = await Promise.all([
         Array.isArray(options?.definitions)
             ? options.definitions
             : BadgeDefinition.find({}).sort({ orderIndex: 1, createdAt: -1, _id: -1 }).lean(),
         options?.userDoc
             ? Promise.resolve(options.userDoc)
             : User.findById(normalizedUserId)
-                .select('completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive')
+                .select('completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount')
                 .lean(),
         UserPokemon.find(withActiveUserPokemonFilter({ userId: normalizedUserId }))
             .select('pokemonId formId')
-            .populate('pokemonId', 'types defaultFormId')
+            .populate('pokemonId', 'name types defaultFormId')
             .lean(),
+        PlayerState.findOne({ userId: normalizedUserId }).select('gold').lean(),
     ])
 
     const ownedTypeCounts = {}
     const ownedDistinctTypeCounts = {}
+    const ownedDifferentTypeSetByName = {}
     const uniqueSpeciesFormKeys = new Set()
     for (const row of ownedPokemonRows) {
         const speciesId = String(row?.pokemonId?._id || '').trim()
+        const speciesName = normalizePokemonName(row?.pokemonId?.name)
         const types = Array.isArray(row?.pokemonId?.types) ? row.pokemonId.types : []
+        const normalizedTypeSignature = [...new Set(types.map((type) => normalizePokemonType(type)).filter(Boolean))]
+            .sort()
+            .join('/')
+
+        if (speciesName && normalizedTypeSignature) {
+            if (!ownedDifferentTypeSetByName[speciesName]) {
+                ownedDifferentTypeSetByName[speciesName] = new Set()
+            }
+            ownedDifferentTypeSetByName[speciesName].add(normalizedTypeSignature)
+        }
+
         for (const type of types) {
             const normalizedType = normalizePokemonType(type)
             if (!normalizedType) continue
@@ -293,11 +344,18 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         .map((entry) => String(entry || '').trim())
         .filter(Boolean))
     const onlineHoursCount = getTotalOnlineHours(userDoc)
+    const ownedDifferentTypeCountByName = Object.fromEntries(
+        Object.entries(ownedDifferentTypeSetByName).map(([name, typeSet]) => [name, typeSet.size])
+    )
 
     const context = {
         ownedTypeCounts,
         ownedDistinctTypeCounts,
+        ownedDifferentTypeCountByName,
         ownedTotalCount: ownedPokemonRows.length,
+        vipTierLevel: Math.max(0, Number.parseInt(userDoc?.vipTierLevel, 10) || 0),
+        platinumCoinsOwned: Math.max(0, Number(playerStateDoc?.gold || 0)),
+        catchFailCount: Math.max(0, Number(userDoc?.catchFailCount || 0)),
         completedTrainerCount,
         onlineHoursCount,
     }
@@ -357,6 +415,9 @@ export const validateBadgeUpsertPayload = (payload = {}) => {
     const missionConfig = normalizeBadgeMissionConfig(missionType, payload?.missionConfig)
     if ((missionType === 'collect_type_count' || missionType === 'collect_type_distinct_count') && !missionConfig.pokemonType) {
         throw new Error('Nhiệm vụ sưu tầm theo hệ cần chọn hệ Pokémon')
+    }
+    if (missionType === 'collect_same_name_different_type_count' && !missionConfig.pokemonName) {
+        throw new Error('Nhiệm vụ cùng tên khác hệ cần nhập tên Pokémon')
     }
 
     const rewardEffects = normalizeBadgeRewardEffects(payload?.rewardEffects)

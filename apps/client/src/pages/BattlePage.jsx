@@ -44,6 +44,10 @@ const createTrainerAttackChallenge = () => {
 }
 const normalizeEntityId = (value = '') => String(value || '').trim()
 const clampValue = (value, min, max) => Math.max(min, Math.min(max, value))
+const normalizeSearchKeyword = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
 const formatFriendlyAutoTrainerMessage = (value = '') => {
     const raw = String(value || '').trim()
     if (!raw) return ''
@@ -978,6 +982,8 @@ export function BattlePage() {
     const [autoTrainerStartedAtMs, setAutoTrainerStartedAtMs] = useState(0)
     const [autoTrainerAttackIntervalMs, setAutoTrainerAttackIntervalMs] = useState(DEFAULT_AUTO_TRAINER_ATTACK_INTERVAL_MS)
     const [autoTrainerTargetId, setAutoTrainerTargetId] = useState('')
+    const [completedTrainerNameFilter, setCompletedTrainerNameFilter] = useState('')
+    const [completedTrainerLevelFilter, setCompletedTrainerLevelFilter] = useState('')
     const [autoTrainerServerStatus, setAutoTrainerServerStatus] = useState('')
     const [autoTrainerServerLogs, setAutoTrainerServerLogs] = useState([])
     const [isAutoTrainerConfigDirty, setIsAutoTrainerConfigDirty] = useState(false)
@@ -1035,9 +1041,25 @@ export function BattlePage() {
         setTrainerAttackChallengeError('')
     }, [activeBattleMode])
 
+    const normalizedCompletedTrainerLevelFilter = String(completedTrainerLevelFilter || '').trim()
+    const normalizedCompletedTrainerNameFilter = normalizeSearchKeyword(completedTrainerNameFilter)
+    const levelExactValue = Number.parseInt(normalizedCompletedTrainerLevelFilter, 10)
+    const filteredCompletedEntries = completedEntries.filter((entry) => {
+        const entryLevel = Math.max(0, Number(entry?.level) || 0)
+        const entryName = normalizeSearchKeyword(entry?.name || '')
+
+        const matchesName = !normalizedCompletedTrainerNameFilter || entryName.includes(normalizedCompletedTrainerNameFilter)
+        let matchesLevel = true
+        if (normalizedCompletedTrainerLevelFilter && Number.isFinite(levelExactValue)) {
+            matchesLevel = String(entryLevel).includes(normalizedCompletedTrainerLevelFilter)
+        }
+
+        return matchesName && matchesLevel
+    })
+
     const completedSlides = []
-    for (let index = 0; index < completedEntries.length; index += completedEntriesPerView) {
-        completedSlides.push(completedEntries.slice(index, index + completedEntriesPerView))
+    for (let index = 0; index < filteredCompletedEntries.length; index += completedEntriesPerView) {
+        completedSlides.push(filteredCompletedEntries.slice(index, index + completedEntriesPerView))
     }
     if (completedSlides.length === 0) {
         completedSlides.push([])
@@ -1240,6 +1262,10 @@ export function BattlePage() {
         const lastSlide = Math.max(0, completedSlideCount - 1)
         setCompletedCarouselIndex((prev) => Math.min(prev, lastSlide))
     }, [completedSlideCount])
+
+    useEffect(() => {
+        setCompletedCarouselIndex(0)
+    }, [normalizedCompletedTrainerLevelFilter, normalizedCompletedTrainerNameFilter])
 
     useEffect(() => {
         if (!autoTrainerAttackEnabled || canUseVipAutoTrainer) return
@@ -3266,7 +3292,7 @@ export function BattlePage() {
     const selectedAutoTrainerEntry = completedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(autoTrainerTargetId)
     ) || null
-    const hoveredCompletedEntry = completedEntries.find(
+    const hoveredCompletedEntry = filteredCompletedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(hoveredCompletedId)
     ) || null
     const hasMissingAutoTrainerSelection = Boolean(normalizeEntityId(autoTrainerTargetId)) && !selectedAutoTrainerEntry
@@ -3309,7 +3335,7 @@ export function BattlePage() {
         }
     }
 
-    const autoTrainerSelectableEntries = completedEntries
+    const autoTrainerSelectableEntries = filteredCompletedEntries
     const hasAutoTrainerTargets = autoTrainerSelectableEntries.length > 0
     const autoTrainerControlPanel = canUseVipAutoTrainer && activeBattleMode === 'trainer' && (
         <div className="border border-slate-300 bg-slate-50 rounded p-3 text-xs text-slate-700 space-y-2 max-w-xl mx-auto w-full">
@@ -3352,6 +3378,29 @@ export function BattlePage() {
                         </option>
                     ))}
                 </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-700">Tìm tên HLV</span>
+                <input
+                    type="text"
+                    value={completedTrainerNameFilter}
+                    onChange={(e) => setCompletedTrainerNameFilter(e.target.value)}
+                    placeholder="Ví dụ: Mốc Lv 14"
+                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs w-[160px]"
+                />
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-700">Tìm lv HLV</span>
+                <input
+                    type="text"
+                    inputMode="text"
+                    value={completedTrainerLevelFilter}
+                    onChange={(e) => setCompletedTrainerLevelFilter(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder="Ví dụ: 14"
+                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs w-[120px]"
+                />
             </div>
 
             <div className="flex items-center justify-between gap-2">
@@ -3792,6 +3841,36 @@ export function BattlePage() {
                     <div className="rounded border border-blue-400 bg-white shadow-sm overflow-visible">
                         <SectionHeader title="Đã Hoàn Thành" />
                         <div className="p-4 sm:p-6 bg-white relative">
+                            <div className="mb-4 flex items-center justify-between gap-3 text-xs text-slate-600">
+                                <div>
+                                    Đã hoàn thành: {completedEntries.length} HLV
+                                    {normalizedCompletedTrainerNameFilter ? ` · Tên: ${completedTrainerNameFilter.trim()}` : ''}
+                                    {normalizedCompletedTrainerLevelFilter ? ` · Lọc lv: ${normalizedCompletedTrainerLevelFilter}` : ''}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={completedTrainerNameFilter}
+                                        onChange={(e) => setCompletedTrainerNameFilter(e.target.value)}
+                                        placeholder="Tìm tên HLV"
+                                        className="px-2 py-1 border border-blue-200 rounded bg-white text-xs w-[160px]"
+                                    />
+                                    <input
+                                        type="text"
+                                        inputMode="text"
+                                        value={completedTrainerLevelFilter}
+                                        onChange={(e) => setCompletedTrainerLevelFilter(e.target.value.replace(/[^\d]/g, ''))}
+                                        placeholder="Tìm lv HLV"
+                                        className="px-2 py-1 border border-blue-200 rounded bg-white text-xs w-[120px]"
+                                    />
+                                </div>
+                            </div>
+
+                            {filteredCompletedEntries.length === 0 ? (
+                                <div className="text-center text-sm font-bold text-slate-400 py-6">
+                                    Không có HLV đã hoàn thành khớp level này.
+                                </div>
+                            ) : (
                             <div className="flex items-center justify-center gap-3">
                                 <button
                                     type="button"
@@ -3895,8 +3974,9 @@ export function BattlePage() {
                                     {'>'}
                                 </button>
                             </div>
+                            )}
 
-                            {completedEntries.length > completedEntriesPerView && (
+                            {filteredCompletedEntries.length > completedEntriesPerView && (
                                 <div className="mt-3 text-center text-xs font-bold text-slate-500">
                                     Trang {completedCarouselIndex + 1}/{completedSlideCount}
                                 </div>
