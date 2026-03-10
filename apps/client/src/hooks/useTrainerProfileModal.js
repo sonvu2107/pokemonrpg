@@ -55,6 +55,11 @@ const buildSeedTrainer = (userLike = {}) => {
             stamina: 100,
             maxStamina: 100,
         },
+        badges: {
+            equippedBadges: [],
+            activeBonuses: {},
+            maxEquipped: 5,
+        },
         party: Array.from({ length: PARTY_SLOT_TOTAL }, () => null),
     }
 }

@@ -30,15 +30,10 @@ const catchActionGuard = createActionGuard({
 
 const isValidId = (v) => /^[a-f\d]{24}$/i.test(String(v || '').trim())
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/valley  — browse available Pokémon
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/', authMiddleware, async (req, res) => {
     try {
         const { page, limit, rarity, search } = req.query
         const result = await listAvailable({ page, limit, rarity, search })
-
-        // Strip IV/EV from each item for public display
         const sanitized = result.items.map((item) => ({
             _id: item._id,
             pokemonId: item.pokemonId,
@@ -59,9 +54,6 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/valley/my-releases  — list user's own released Pokémon (history)
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/my-releases', authMiddleware, async (req, res) => {
     try {
         const { page = 1, limit = 20 } = req.query
@@ -94,9 +86,6 @@ router.get('/my-releases', authMiddleware, async (req, res) => {
     }
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/valley/my-box  — user's own box (for Release tab)
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/my-box', authMiddleware, async (req, res) => {
     try {
         const { page = 1, limit = 20, search = '' } = req.query
@@ -141,9 +130,6 @@ router.get('/my-box', authMiddleware, async (req, res) => {
     }
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/valley/:id/chance  — preview catch-chance label for a specific ball
-// ─────────────────────────────────────────────────────────────────────────────
 router.get('/:id/chance', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params
@@ -167,9 +153,6 @@ router.get('/:id/chance', authMiddleware, async (req, res) => {
     }
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/valley/release  — release a Pokémon into the Valley
-// ─────────────────────────────────────────────────────────────────────────────
 router.post('/release', authMiddleware, releaseActionGuard, async (req, res) => {
     try {
         const userId = req.user.userId
@@ -197,9 +180,6 @@ router.post('/release', authMiddleware, releaseActionGuard, async (req, res) => 
     }
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/valley/:id/catch  — attempt to catch a Valley Pokémon
-// ─────────────────────────────────────────────────────────────────────────────
 router.post('/:id/catch', authMiddleware, catchActionGuard, async (req, res) => {
     try {
         const userId = req.user.userId

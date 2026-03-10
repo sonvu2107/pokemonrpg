@@ -2,6 +2,7 @@ import BadgeDefinition, { BADGE_EFFECT_TYPES, BADGE_MISSION_TYPES, BADGE_RANKS }
 import User from '../models/User.js'
 import UserPokemon from '../models/UserPokemon.js'
 import { withActiveUserPokemonFilter } from './userPokemonQuery.js'
+import { getTotalOnlineHours } from './onlineTime.js'
 
 export const BADGE_MAX_EQUIPPED = 5
 
@@ -26,7 +27,7 @@ export const normalizeBadgeMissionConfig = (missionType = '', missionConfigLike 
     const source = missionConfigLike && typeof missionConfigLike === 'object' ? missionConfigLike : {}
     const requiredCount = Math.max(1, Math.floor(Number(source?.requiredCount) || 1))
 
-    if (missionType === 'collect_type_count') {
+    if (missionType === 'collect_type_count' || missionType === 'collect_type_distinct_count') {
         return {
             pokemonType: normalizePokemonType(source?.pokemonType),
             requiredCount,
@@ -114,11 +115,19 @@ const describeMission = (badge) => {
     const requiredCount = Math.max(1, Number(missionConfig?.requiredCount) || 1)
 
     if (missionType === 'collect_type_count') {
-        return `Sưu tầm ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'}`
+        return `Sở hữu ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'} (tính trùng, tính form)`
+    }
+
+    if (missionType === 'collect_type_distinct_count') {
+        return `Sở hữu ${requiredCount} Pokémon hệ ${String(missionConfig?.pokemonType || '').toUpperCase() || '???'} (không trùng, tính form)`
     }
 
     if (missionType === 'collect_total_count') {
-        return `Sưu tầm tổng cộng ${requiredCount} Pokémon`
+        return `Sở hữu tổng cộng ${requiredCount} Pokémon (bao gồm trùng, tính form)`
+    }
+
+    if (missionType === 'online_hours_count') {
+        return `Tổng thời gian online đạt ${requiredCount} giờ`
     }
 
     if (missionType === 'complete_trainer_count') {
@@ -209,9 +218,13 @@ const computeMissionProgress = (badge, context = {}) => {
     let currentValue = 0
 
     if (missionType === 'collect_type_count') {
-        currentValue = Math.max(0, Number(context?.ownedUniqueTypeCounts?.[missionConfig?.pokemonType] || 0))
+        currentValue = Math.max(0, Number(context?.ownedTypeCounts?.[missionConfig?.pokemonType] || 0))
+    } else if (missionType === 'collect_type_distinct_count') {
+        currentValue = Math.max(0, Number(context?.ownedDistinctTypeCounts?.[missionConfig?.pokemonType] || 0))
     } else if (missionType === 'collect_total_count') {
-        currentValue = Math.max(0, Number(context?.ownedUniqueTotalCount || 0))
+        currentValue = Math.max(0, Number(context?.ownedTotalCount || 0))
+    } else if (missionType === 'online_hours_count') {
+        currentValue = Math.max(0, Number(context?.onlineHoursCount || 0))
     } else if (missionType === 'complete_trainer_count') {
         currentValue = Math.max(0, Number(context?.completedTrainerCount || 0))
     }
@@ -241,17 +254,17 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         options?.userDoc
             ? Promise.resolve(options.userDoc)
             : User.findById(normalizedUserId)
-                .select('completedBattleTrainers equippedBadgeIds')
+                .select('completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive')
                 .lean(),
         UserPokemon.find(withActiveUserPokemonFilter({ userId: normalizedUserId }))
-            .select('pokemonId')
-            .populate('pokemonId', 'types')
+            .select('pokemonId formId')
+            .populate('pokemonId', 'types defaultFormId')
             .lean(),
     ])
 
     const ownedTypeCounts = {}
-    const ownedUniqueTypeCounts = {}
-    const uniqueSpeciesIds = new Set()
+    const ownedDistinctTypeCounts = {}
+    const uniqueSpeciesFormKeys = new Set()
     for (const row of ownedPokemonRows) {
         const speciesId = String(row?.pokemonId?._id || '').trim()
         const types = Array.isArray(row?.pokemonId?.types) ? row.pokemonId.types : []
@@ -261,13 +274,15 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
             ownedTypeCounts[normalizedType] = (ownedTypeCounts[normalizedType] || 0) + 1
         }
 
-        if (!speciesId || uniqueSpeciesIds.has(speciesId)) continue
-        uniqueSpeciesIds.add(speciesId)
+        const normalizedFormId = String(row?.formId || row?.pokemonId?.defaultFormId || 'default').trim() || 'default'
+        const uniqueSpeciesFormKey = speciesId ? `${speciesId}:${normalizedFormId}` : ''
+        if (!uniqueSpeciesFormKey || uniqueSpeciesFormKeys.has(uniqueSpeciesFormKey)) continue
+        uniqueSpeciesFormKeys.add(uniqueSpeciesFormKey)
 
         for (const type of types) {
             const normalizedType = normalizePokemonType(type)
             if (!normalizedType) continue
-            ownedUniqueTypeCounts[normalizedType] = (ownedUniqueTypeCounts[normalizedType] || 0) + 1
+            ownedDistinctTypeCounts[normalizedType] = (ownedDistinctTypeCounts[normalizedType] || 0) + 1
         }
     }
 
@@ -277,13 +292,14 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
     const equippedBadgeIdSet = new Set((Array.isArray(userDoc?.equippedBadgeIds) ? userDoc.equippedBadgeIds : [])
         .map((entry) => String(entry || '').trim())
         .filter(Boolean))
+    const onlineHoursCount = getTotalOnlineHours(userDoc)
 
     const context = {
         ownedTypeCounts,
-        ownedUniqueTypeCounts,
+        ownedDistinctTypeCounts,
         ownedTotalCount: ownedPokemonRows.length,
-        ownedUniqueTotalCount: uniqueSpeciesIds.size,
         completedTrainerCount,
+        onlineHoursCount,
     }
 
     const badges = definitions.map((entry) => {
@@ -339,7 +355,7 @@ export const validateBadgeUpsertPayload = (payload = {}) => {
     }
 
     const missionConfig = normalizeBadgeMissionConfig(missionType, payload?.missionConfig)
-    if (missionType === 'collect_type_count' && !missionConfig.pokemonType) {
+    if ((missionType === 'collect_type_count' || missionType === 'collect_type_distinct_count') && !missionConfig.pokemonType) {
         throw new Error('Nhiệm vụ sưu tầm theo hệ cần chọn hệ Pokémon')
     }
 

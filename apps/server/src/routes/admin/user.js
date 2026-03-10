@@ -176,8 +176,60 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
 const resetDailyAutoUsage = (userDoc) => {
     if (!userDoc || typeof userDoc !== 'object') return
 
+    const toPlainObject = (value) => {
+        if (!value || typeof value !== 'object') return {}
+        if (typeof value.toObject === 'function') {
+            return value.toObject()
+        }
+        return value
+    }
+    const isRecord = (value) => (
+        value
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+    )
+
+    const autoSearch = toPlainObject(userDoc.autoSearch)
+    const autoTrainer = toPlainObject(userDoc.autoTrainer)
+    const actionByRarity = toPlainObject(autoSearch.actionByRarity)
+    const history = toPlainObject(autoSearch.history)
+    const autoSearchLastAction = toPlainObject(autoSearch.lastAction)
+    const autoTrainerLastAction = toPlainObject(autoTrainer.lastAction)
+
     userDoc.autoSearch = {
-        ...userDoc.autoSearch,
+        ...autoSearch,
+        actionByRarity: isRecord(actionByRarity)
+            ? actionByRarity
+            : {
+                sss: 'catch',
+                ss: 'catch',
+                s: 'catch',
+                a: 'battle',
+                b: 'battle',
+                c: 'battle',
+                d: 'battle',
+            },
+        history: isRecord(history)
+            ? history
+            : {
+                foundPokemonCount: 0,
+                itemDropCount: 0,
+                itemDropQuantity: 0,
+                runCount: 0,
+                battleCount: 0,
+                catchAttemptCount: 0,
+                catchSuccessCount: 0,
+            },
+        lastAction: isRecord(autoSearchLastAction)
+            ? autoSearchLastAction
+            : {
+                action: '',
+                result: '',
+                reason: '',
+                targetId: '',
+                at: null,
+            },
         dayCount: 0,
         dayRuntimeMs: 0,
         lastRuntimeAt: null,
@@ -186,7 +238,16 @@ const resetDailyAutoUsage = (userDoc) => {
     }
 
     userDoc.autoTrainer = {
-        ...userDoc.autoTrainer,
+        ...autoTrainer,
+        lastAction: isRecord(autoTrainerLastAction)
+            ? autoTrainerLastAction
+            : {
+                action: '',
+                result: '',
+                reason: '',
+                targetId: '',
+                at: null,
+            },
         dayCount: 0,
         dayRuntimeMs: 0,
         lastRuntimeAt: null,
@@ -1066,7 +1127,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
 
-        const safeLevel = clamp(parseInt(level, 10) || 5, 1, 1500)
+        const safeLevel = clamp(parseInt(level, 10) || 5, 1, 2000)
         const safeQuantity = clamp(parseInt(quantity, 10) || 1, 1, 100)
 
         const normalizedRequestedFormId = normalizeFormId(formId)

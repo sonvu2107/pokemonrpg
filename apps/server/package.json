@@ -32,6 +32,7 @@
         "test:rate-limit": "node src/testGlobalRateLimit.js",
         "test:battle-attack-flow": "node src/scripts/testBattleAttackFlow.js",
         "test:battle-turn-order": "node src/scripts/testBattleTurnOrderAndOnlineChallenge.js",
+        "test:game-refactor-modules": "node src/scripts/testGameRefactorExtractedModules.js",
         "test:skill-shop-teach-flow": "node scripts/testSkillShopTeachFlow.js",
         "chat:setup": "node src/scripts/setupChatDatabase.js",
         "chat:seed": "node src/scripts/seedChatMessages.js",

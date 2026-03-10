@@ -8,6 +8,7 @@ import { authMiddleware } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -375,7 +376,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'userId không hợp lệ' })
         }
 
-        const [user, playerState, partyRows] = await Promise.all([
+        const [user, playerState, partyRows, badgeOverview] = await Promise.all([
             User.findById(targetUserId)
                 .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline showPartyInProfile')
                 .lean(),
@@ -393,6 +394,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 })
                 .sort({ partyIndex: 1, _id: 1 })
                 .lean(),
+            buildBadgeOverviewForUser(targetUserId),
         ])
 
         if (!user) {
@@ -474,6 +476,11 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 playTime: formatPlayTime(user?.createdAt, now),
                 profile,
                 party: canViewParty ? slots : createEmptyPartySlots(),
+                badges: {
+                    equippedBadges: badgeOverview?.equippedBadges || [],
+                    activeBonuses: badgeOverview?.activeBonuses || {},
+                    maxEquipped: BADGE_MAX_EQUIPPED,
+                },
             },
         })
     } catch (error) {

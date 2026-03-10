@@ -461,7 +461,7 @@ router.post('/award', async (req, res) => {
                 itemId: String(rawEntry?.itemId || '').trim(),
                 pokemonId: String(rawEntry?.pokemonId || '').trim(),
                 pokemonFormId: normalizeFormId(rawEntry?.pokemonFormId || rawEntry?.formId || 'normal'),
-                pokemonLevel: clamp(toSafeInt(rawEntry?.pokemonLevel, 5), 1, 1500),
+                pokemonLevel: clamp(toSafeInt(rawEntry?.pokemonLevel, 5), 1, 2000),
                 pokemonIsShiny: Boolean(rawEntry?.pokemonIsShiny || rawEntry?.isShiny),
                 titleImageUrl,
                 avatarFrameUrl,
@@ -646,7 +646,7 @@ router.post('/award', async (req, res) => {
                 rewardPokemonFormId = formIdSet.has(rewardEntry.pokemonFormId)
                     ? rewardEntry.pokemonFormId
                     : (formIdSet.has(defaultFormId) ? defaultFormId : 'normal')
-                rewardPokemonLevel = clamp(toSafeInt(rewardEntry.pokemonLevel, 5), 1, 1500)
+                rewardPokemonLevel = clamp(toSafeInt(rewardEntry.pokemonLevel, 5), 1, 2000)
                 rewardPokemonIsShiny = Boolean(rewardEntry.pokemonIsShiny)
 
                 const originToken = buildPokemonRewardOriginToken({ weekStart, mode, rewardedBy: req.user.userId })

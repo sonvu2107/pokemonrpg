@@ -17,9 +17,7 @@ const SectionHeader = ({ title }) => (
 
 const NEW_POKEMON_TAG_TTL_MS = 5 * 60 * 1000
 const NEW_POKEMON_BADGE_REFRESH_MS = 15 * 1000
-
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
-
 const getPokemonCaughtAtMs = (entry) => {
     const source = entry?.obtainedAt || entry?.createdAt
     const parsed = source ? new Date(source).getTime() : NaN

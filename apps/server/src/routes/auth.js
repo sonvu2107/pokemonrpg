@@ -11,6 +11,7 @@ import { expireVipUsersIfNeeded, resetExpiredVipUser } from '../utils/vipStatus.
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 import { extractClientIp } from '../utils/ipUtils.js'
+import { closeOnlineSession, getTotalOnlineHours, startOnlineSession } from '../utils/onlineTime.js'
 
 const router = express.Router()
 const RECOVERY_PIN_REGEX = /^\d{6}$/
@@ -260,6 +261,7 @@ const serializeAuthUser = (userLike, vipBenefitsLike = null) => {
         showPartyInProfile: userLike?.showPartyInProfile !== false,
         isOnline: userLike.isOnline,
         lastActive: userLike.lastActive,
+        totalOnlineHours: getTotalOnlineHours(userLike),
         role: userLike.role,
         vipTierId: userLike?.vipTierId ? String(userLike.vipTierId) : null,
         vipTierLevel: Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0),
@@ -435,9 +437,8 @@ router.post('/login', async (req, res, next) => {
             })
         }
 
-        // Set user as online
-        user.isOnline = true
-        user.lastActive = new Date()
+        // Set user as online and roll playtime session
+        startOnlineSession(user, new Date())
         user.lastLoginIp = loginIp
         await user.save()
 
@@ -637,8 +638,7 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
             })
         }
 
-        user.isOnline = false
-        user.lastActive = new Date()
+        closeOnlineSession(user, new Date())
         await user.save()
 
         res.json({
@@ -659,6 +659,24 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 ok: false,
                 message: 'Không tìm thấy người dùng',
             })
+        }
+
+        const now = new Date()
+        let shouldSaveUser = false
+        if (!user.isOnline) {
+            startOnlineSession(user, now)
+            shouldSaveUser = true
+        } else {
+            if (!user.onlineSessionStartedAt) {
+                user.onlineSessionStartedAt = now
+                shouldSaveUser = true
+            }
+
+            const lastActiveMs = new Date(user.lastActive || 0).getTime()
+            if (!Number.isFinite(lastActiveMs) || (now.getTime() - lastActiveMs) >= 60000) {
+                user.lastActive = now
+                shouldSaveUser = true
+            }
         }
 
         const [playerState, vipTier, rewardRows] = await Promise.all([
@@ -690,6 +708,10 @@ router.get('/me', authMiddleware, async (req, res, next) => {
                 ...user.vipBenefits,
                 ...sanitizedVipBenefits,
             }
+            shouldSaveUser = true
+        }
+
+        if (shouldSaveUser) {
             await user.save()
         }
 

@@ -49,6 +49,29 @@ const formatWinRate = (wins, losses) => {
     return `${((Number(wins || 0) / total) * 100).toFixed(1)}%`
 }
 
+const formatBadgeBonuses = (activeBonuses = {}) => {
+    const parts = []
+    if (Number(activeBonuses?.partyDamagePercent || 0) > 0) parts.push(`+${activeBonuses.partyDamagePercent}% sát thương toàn đội`)
+    if (Number(activeBonuses?.partySpeedPercent || 0) > 0) parts.push(`+${activeBonuses.partySpeedPercent}% tốc độ toàn đội`)
+    if (Number(activeBonuses?.partyHpPercent || 0) > 0) parts.push(`+${activeBonuses.partyHpPercent}% máu toàn đội`)
+    Object.entries(activeBonuses?.typeDamagePercentByType || {}).forEach(([type, percent]) => {
+        if (Number(percent || 0) > 0) parts.push(`+${percent}% sát thương hệ ${String(type).toUpperCase()}`)
+    })
+    return parts.length > 0 ? parts.join(' | ') : 'Chưa kích hoạt bonus huy hiệu'
+}
+
+const badgeRankClassMap = {
+    D: 'border-slate-300 bg-slate-100 text-slate-700',
+    C: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    B: 'border-sky-300 bg-sky-50 text-sky-700',
+    A: 'border-violet-300 bg-violet-50 text-violet-700',
+    S: 'border-orange-300 bg-orange-50 text-orange-700',
+    SS: 'border-yellow-300 bg-yellow-50 text-yellow-700',
+    SSS: 'border-rose-300 bg-gradient-to-r from-rose-50 to-amber-50 text-rose-700',
+}
+
+const getBadgeRankClasses = (rank = 'D') => badgeRankClassMap[String(rank || 'D').toUpperCase()] || badgeRankClassMap.D
+
 const expToNext = (level) => 250 + Math.max(0, Number(level || 1) - 1) * 100
 
 const normalizeUserId = (value = '') => String(value || '').trim()
@@ -112,6 +135,11 @@ const toSeedTrainer = (userLike = {}) => ({
         maxHp: 100,
         stamina: 100,
         maxStamina: 100,
+    },
+    badges: {
+        equippedBadges: [],
+        activeBonuses: {},
+        maxEquipped: 5,
     },
     party: Array.from({ length: PARTY_SLOT_TOTAL }, () => null),
 })
@@ -426,6 +454,10 @@ export default function FriendsPage() {
     const selectedWins = Number(selectedProfile.wins || 0)
     const selectedLosses = Number(selectedProfile.losses || 0)
     const selectedSignature = String(selectedTrainer?.signature || '').trim()
+    const selectedTrainerEquippedBadges = Array.isArray(selectedTrainer?.badges?.equippedBadges)
+        ? selectedTrainer.badges.equippedBadges
+        : []
+    const selectedTrainerBadgeBonuses = selectedTrainer?.badges?.activeBonuses || {}
     const selectedUserId = normalizeUserId(selectedTrainer?.userId)
     const canViewParty = selectedTrainer?.canViewParty !== false
     const selectedParty = Array.isArray(selectedTrainer?.party)
@@ -933,6 +965,44 @@ export default function FriendsPage() {
                                 <ProfileInfoRow label="Thời Gian Chơi" value={selectedTrainer.playTime || 'Không rõ'} isOdd={false} />
                                 <ProfileInfoRow label="Ngày Đăng Ký" value={formatProfileDate(selectedTrainer.createdAt)} isOdd={true} />
                                 <ProfileInfoRow label="Hoạt Động Gần Nhất" value={formatProfileDate(selectedTrainer.lastActive, true)} isOdd={false} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white border-t border-blue-200">
+                            <ProfileSectionHeader title="Huy Hiệu" />
+                            <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-slate-600">
+                                Tối đa 5 huy hiệu. Chỉ huy hiệu đang mặc mới kích hoạt chỉ số.
+                            </div>
+                            <div className="bg-white p-4 space-y-4">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                                    {Array.from({ length: 5 }, (_, index) => selectedTrainerEquippedBadges[index] || null).map((badge, index) => (
+                                        <div
+                                            key={badge?._id || `friend-badge-slot-${index}`}
+                                            className={`rounded border p-3 text-center ${badge ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50'}`}
+                                        >
+                                            <div className="h-16 flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-white mb-2">
+                                                {badge?.imageUrl ? (
+                                                    <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" />
+                                                ) : (
+                                                    <span className="text-xs font-bold text-slate-300">Slot {index + 1}</span>
+                                                )}
+                                            </div>
+                                            <div className={`text-xs font-bold ${badge ? 'text-blue-800' : 'text-slate-400'}`}>
+                                                {badge?.name || 'Trống'}
+                                            </div>
+                                            {badge ? (
+                                                <div className="mt-1">
+                                                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black tracking-wide ${getBadgeRankClasses(badge.rank)}`}>
+                                                        {badge.rank || 'D'}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="rounded border border-blue-200 bg-blue-50/50 px-3 py-2 text-sm font-bold text-blue-800 text-center">
+                                    {formatBadgeBonuses(selectedTrainerBadgeBonuses)}
+                                </div>
                             </div>
                         </div>
 

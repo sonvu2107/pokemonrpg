@@ -9,6 +9,7 @@ import Friendship, { FRIENDSHIP_STATUS, buildFriendPairKey } from '../models/Fri
 import { emitToUser } from '../socket/index.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -258,7 +259,7 @@ const serializeUser = (userLike, benefitsByUserId = null) => {
 }
 
 const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
-    const [user, playerState, partyRows] = await Promise.all([
+    const [user, playerState, partyRows, badgeOverview] = await Promise.all([
         User.findById(targetUserId)
             .select(USER_SELECT_FIELDS)
             .lean(),
@@ -276,6 +277,7 @@ const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
             })
             .sort({ partyIndex: 1, _id: 1 })
             .lean(),
+        buildBadgeOverviewForUser(targetUserId),
     ])
 
     if (!user) return null
@@ -347,6 +349,11 @@ const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
         playTime: formatPlayTime(user?.createdAt, now),
         profile,
         party: canViewParty ? slots : createEmptyPartySlots(),
+        badges: {
+            equippedBadges: badgeOverview?.equippedBadges || [],
+            activeBonuses: badgeOverview?.activeBonuses || {},
+            maxEquipped: BADGE_MAX_EQUIPPED,
+        },
     }
 }
 

@@ -9,14 +9,11 @@ const DROP_RATE_TABLE_PAGE_SIZE = 20
 
 export default function DropRateManagerPage() {
     const { mapId } = useParams()
-
     const [map, setMap] = useState(null)
     const [dropRates, setDropRates] = useState([])
     const [totalWeight, setTotalWeight] = useState(0)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
-
-    // Add Pokemon Modal State
     const [showAddModal, setShowAddModal] = useState(false)
     const [allPokemon, setAllPokemon] = useState([])
     const [selectedPokemonIds, setSelectedPokemonIds] = useState([])
@@ -31,8 +28,6 @@ export default function DropRateManagerPage() {
     const [pokemonLoading, setPokemonLoading] = useState(false)
     const [pokemonLoadError, setPokemonLoadError] = useState('')
     const [dropRatePage, setDropRatePage] = useState(1)
-
-    // Edit State
     const [editingId, setEditingId] = useState(null)
     const [editWeight, setEditWeight] = useState(0)
 

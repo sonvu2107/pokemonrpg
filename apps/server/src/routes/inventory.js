@@ -230,8 +230,60 @@ const addWeeksFromBase = (baseValue = new Date(), weeks = 1) => {
 const resetDailyAutoUsage = (userDoc) => {
     if (!userDoc || typeof userDoc !== 'object') return
 
+    const toPlainObject = (value) => {
+        if (!value || typeof value !== 'object') return {}
+        if (typeof value.toObject === 'function') {
+            return value.toObject()
+        }
+        return value
+    }
+    const isRecord = (value) => (
+        value
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+    )
+
+    const autoSearch = toPlainObject(userDoc.autoSearch)
+    const autoTrainer = toPlainObject(userDoc.autoTrainer)
+    const actionByRarity = toPlainObject(autoSearch.actionByRarity)
+    const history = toPlainObject(autoSearch.history)
+    const autoSearchLastAction = toPlainObject(autoSearch.lastAction)
+    const autoTrainerLastAction = toPlainObject(autoTrainer.lastAction)
+
     userDoc.autoSearch = {
-        ...userDoc.autoSearch,
+        ...autoSearch,
+        actionByRarity: isRecord(actionByRarity)
+            ? actionByRarity
+            : {
+                sss: 'catch',
+                ss: 'catch',
+                s: 'catch',
+                a: 'battle',
+                b: 'battle',
+                c: 'battle',
+                d: 'battle',
+            },
+        history: isRecord(history)
+            ? history
+            : {
+                foundPokemonCount: 0,
+                itemDropCount: 0,
+                itemDropQuantity: 0,
+                runCount: 0,
+                battleCount: 0,
+                catchAttemptCount: 0,
+                catchSuccessCount: 0,
+            },
+        lastAction: isRecord(autoSearchLastAction)
+            ? autoSearchLastAction
+            : {
+                action: '',
+                result: '',
+                reason: '',
+                targetId: '',
+                at: null,
+            },
         enabled: false,
         startedAt: null,
         dayCount: 0,
@@ -240,7 +292,16 @@ const resetDailyAutoUsage = (userDoc) => {
     }
 
     userDoc.autoTrainer = {
-        ...userDoc.autoTrainer,
+        ...autoTrainer,
+        lastAction: isRecord(autoTrainerLastAction)
+            ? autoTrainerLastAction
+            : {
+                action: '',
+                result: '',
+                reason: '',
+                targetId: '',
+                at: null,
+            },
         enabled: false,
         startedAt: null,
         dayCount: 0,
@@ -865,11 +926,22 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 await targetPokemon.save()
             }
 
-            entry.quantity -= qty
-            if (entry.quantity <= 0) {
-                await entry.deleteOne()
-            } else {
-                await entry.save()
+            const consumedVipItem = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: normalizedItemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedVipItem) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+
+            if (consumedVipItem.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedVipItem._id, quantity: { $lte: 0 } })
             }
 
             return res.json({
@@ -957,7 +1029,19 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 resetDailyAutoUsage(userDoc)
             }
 
-            await userDoc.save()
+            try {
+                await userDoc.save()
+            } catch (saveError) {
+                await UserInventory.findOneAndUpdate(
+                    { userId, itemId: normalizedItemId },
+                    {
+                        $setOnInsert: { userId, itemId: normalizedItemId },
+                        $inc: { quantity: qty },
+                    },
+                    { upsert: true, new: true }
+                )
+                throw saveError
+            }
 
             return res.json({
                 ok: true,

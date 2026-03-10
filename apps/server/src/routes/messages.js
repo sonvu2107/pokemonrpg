@@ -24,14 +24,9 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
   }
 }
 
-/**
- * GET /api/messages/global
- * Get global chat message history
- * Query params: limit (default 50), before (timestamp for pagination)
- */
 router.get('/global', auth, async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 50, 100) // Max 100
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100) 
     const before = req.query.before
 
     let messages
@@ -56,16 +51,9 @@ router.get('/global', auth, async (req, res) => {
   }
 })
 
-/**
- * POST /api/messages/global
- * Send a new message to global chat
- * Body: { content: string }
- */
 router.post('/global', auth, async (req, res) => {
   try {
     const { content } = req.body
-
-    // Validation
     if (!content || typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({
         ok: false,
@@ -100,10 +88,9 @@ router.post('/global', auth, async (req, res) => {
       })
     }
 
-    // Rate limiting check (basic - in production use Redis)
     const recentMessages = await Message.countDocuments({
       'sender._id': currentUserId,
-      timestamp: { $gte: new Date(Date.now() - 60000) } // Last 1 minute
+      timestamp: { $gte: new Date(Date.now() - 60000) }
     })
 
     if (recentMessages >= 10) {
@@ -113,7 +100,6 @@ router.post('/global', auth, async (req, res) => {
       })
     }
 
-    // Create message
     const message = new Message({
       room: 'global',
       sender: {
@@ -131,9 +117,6 @@ router.post('/global', auth, async (req, res) => {
     })
 
     await message.save()
-
-    // Broadcast via Socket.io (handled in socket handlers)
-    // The socket handler will listen to this event
     if (req.app.get('io')) {
       req.app.get('io').to('global').emit('chat:new_message', message)
     }
@@ -151,13 +134,8 @@ router.post('/global', auth, async (req, res) => {
   }
 })
 
-/**
- * DELETE /api/messages/:messageId
- * Delete a message (Admin only)
- */
 router.delete('/:messageId', auth, async (req, res) => {
   try {
-    // Check if user is admin
     if (req.user.role !== 'admin') {
       return res.status(403).json({
         ok: false,
@@ -173,10 +151,8 @@ router.delete('/:messageId', auth, async (req, res) => {
         error: 'Không tìm thấy tin nhắn'
       })
     }
-
     await message.softDelete(req.user.userId)
 
-    // Broadcast deletion
     if (req.app.get('io')) {
       req.app.get('io').to('global').emit('chat:message_deleted', {
         messageId: message._id
@@ -195,11 +171,6 @@ router.delete('/:messageId', auth, async (req, res) => {
     })
   }
 })
-
-/**
- * GET /api/messages/stats
- * Get chat statistics (Admin only)
- */
 router.get('/stats', auth, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {

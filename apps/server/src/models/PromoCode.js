@@ -92,7 +92,7 @@ const promoCodeSchema = new mongoose.Schema(
         pokemonLevel: {
             type: Number,
             min: 1,
-            max: 1500,
+            max: 2000,
             default: 5,
         },
         isShiny: {

@@ -164,6 +164,15 @@ const userSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        totalOnlineSeconds: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        onlineSessionStartedAt: {
+            type: Date,
+            default: null,
+        },
         lastActive: {
             type: Date,
             default: Date.now,

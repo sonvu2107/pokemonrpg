@@ -8,7 +8,6 @@ import { useAuth } from '../context/AuthContext'
 import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
-
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
         {title}
@@ -16,7 +15,6 @@ const SectionHeader = ({ title }) => (
 )
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
-
 const toOptionalNumber = (value) => {
     if (value === null || value === undefined || value === '') return null
     const parsed = Number(value)
@@ -36,7 +34,6 @@ const resolvePokemonCombatPower = (pokemonLike, statsLike = {}) => {
     const spatk = Math.max(1, Number(statsLike?.spatk || 1))
     const spdef = Math.max(1, Number(statsLike?.spdef || statsLike?.spldef || 1))
     const spd = Math.max(1, Number(statsLike?.spd || 1))
-
     const rawPower = (hp * 1.2)
         + (atk * 1.8)
         + (def * 1.45)
@@ -49,7 +46,6 @@ const resolvePokemonCombatPower = (pokemonLike, statsLike = {}) => {
 }
 
 const normalizeMoveKey = (value = '') => String(value || '').trim().toLowerCase()
-
 const InfoRow = ({ label, value, valueClass = '' }) => (
     <div className="flex border-b border-blue-200 last:border-0 text-xs">
         <div className="w-1/3 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
@@ -63,15 +59,12 @@ const InfoRow = ({ label, value, valueClass = '' }) => (
 
 const StatRow = ({ label, value, label2, value2 }) => (
     <div className="flex border-b border-blue-200 last:border-0 text-xs">
-        {/* Col 1 */}
         <div className="w-1/6 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
             {label}:
         </div>
         <div className="w-1/3 p-2 font-bold text-slate-700 border-r border-blue-200 flex items-center justify-center">
             {value}
         </div>
-
-        {/* Col 2 */}
         {label2 && (
             <>
                 <div className="w-1/6 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
@@ -525,7 +518,6 @@ export default function PokemonInfoPage() {
         fairy: 'bg-rose-100 text-rose-700 border-rose-200',
     }
 
-    // Format rarity
     const rarityColor = {
         d: 'text-slate-500',
         c: 'text-green-600',
@@ -538,20 +530,12 @@ export default function PokemonInfoPage() {
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12 pt-6">
-
-            {/* Main Card */}
             <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
-
-                {/* Header */}
                 <SectionHeader title={`Thông Tin Pokemon ${base.name} (ID #${base.pokedexNumber})`} />
                 <div className="bg-slate-50 border-b border-blue-200 p-1 text-center font-bold text-blue-800 text-xs uppercase bg-blue-100/50">
                     Tổng Quan
                 </div>
-
-                {/* Content Container */}
                 <div className="p-4">
-
-                    {/* Sprite & Basic Info */}
                     <div className="flex flex-col items-center mb-6">
                         <div className="relative w-32 h-32 flex items-center justify-center mb-2">
                             <img
@@ -574,9 +558,7 @@ export default function PokemonInfoPage() {
                                     }}
                                 />
                             )}
-                            {/* Small icon maybe? */}
                         </div>
-
                         <h2 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
                             {base.name}
                             {pokemon.isShiny && <span className="text-amber-500 text-sm">★</span>}
@@ -587,7 +569,6 @@ export default function PokemonInfoPage() {
                                 {nicknameDisplay}
                             </div>
                         )}
-
                         {resolvedFormId !== 'normal' && (
                             <div className="mt-1">
                                 <span className="text-[11px] uppercase bg-sky-100 text-sky-700 px-2 py-0.5 rounded border border-sky-200">
@@ -595,7 +576,6 @@ export default function PokemonInfoPage() {
                                 </span>
                             </div>
                         )}
-
                         <div className="text-xs font-bold mt-1 flex gap-2">
                             <span className="bg-slate-200 px-2 py-0.5 rounded text-slate-700">Lv. {pokemon.level}</span>
                             <span className="bg-rose-100 px-2 py-0.5 rounded text-rose-700">LC {combatPower.toLocaleString('vi-VN')}</span>
@@ -603,7 +583,6 @@ export default function PokemonInfoPage() {
                                 {base.rarity.toUpperCase()}
                             </span>
                         </div>
-
                         <div className="mt-2 flex flex-wrap justify-center gap-1.5">
                             {pokemonTypes.length > 0 ? pokemonTypes.map((type) => (
                                 <span
@@ -616,11 +595,7 @@ export default function PokemonInfoPage() {
                                 <span className="text-[10px] text-slate-400">Chưa có dữ liệu hệ</span>
                             )}
                         </div>
-
-                        {/* Experience Bar? Optional */}
                     </div>
-
-                    {/* Owner Section */}
                     <div className="border border-blue-300 rounded mb-4 overflow-hidden">
                         <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
                             Chủ Sở Hữu
@@ -643,8 +618,6 @@ export default function PokemonInfoPage() {
                             <span className="text-[10px] text-slate-400">ID: {ownerIdLabel ? ownerIdLabel.slice(-8).toUpperCase() : '--------'}</span>
                         </div>
                     </div>
-
-                    {/* Stats Table */}
                     <div className="border border-blue-300 rounded overflow-hidden mb-4">
                         <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
                             Chỉ Số Pokemon
@@ -666,8 +639,6 @@ export default function PokemonInfoPage() {
                             label="Lực Chiến" value={combatPower.toLocaleString('vi-VN')}
                             label2="Cấp" value2={`Lv. ${pokemon.level}`}
                         />
-
-                        {/* Extra info row */}
                         <div className="flex border-b border-blue-200 last:border-0 text-xs">
                             <div className="w-1/6 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
                                 Vật phẩm:
@@ -682,8 +653,6 @@ export default function PokemonInfoPage() {
                                 ? (0 thua)
                             </div>
                         </div>
-
-                        {/* Moves */}
                         <div className="flex border-b border-blue-200 last:border-0 text-xs text-center">
                             {moveDisplaySlots.map((slot, index) => {
                                 const isLast = index === moveDisplaySlots.length - 1
@@ -713,7 +682,6 @@ export default function PokemonInfoPage() {
                                 )
                             })}
                         </div>
-
                         {isOwnerViewing && (
                             <div className="p-2 bg-slate-50 border-t border-blue-200 text-center space-y-2">
                                 <button
@@ -761,8 +729,6 @@ export default function PokemonInfoPage() {
                             </div>
                         )}
                     </div>
-
-                    {/* Origin Section */}
                     <div className="border border-blue-300 rounded overflow-hidden">
                         <div className="flex text-xs text-center">
                             <div className="w-1/2 bg-blue-100/50 p-1 font-bold text-blue-800 border-r border-blue-200 border-b">
@@ -778,15 +744,12 @@ export default function PokemonInfoPage() {
                             </div>
                             <div className="w-1/2 p-2">
                                 {obtainedLabel}
-                                {/* logic for place obtained is vague in schema, using fallback */}
                             </div>
                         </div>
                     </div>
 
                 </div>
             </div>
-
-            {/* Footer Stats similar to screenshot */}
             <div className="mt-4 border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white text-center">
                 <div className="bg-blue-100/50 p-1 font-bold text-blue-800 text-xs border-b border-blue-200 uppercase">
                     Số Lượng Trong Server

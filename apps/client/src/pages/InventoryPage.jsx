@@ -136,7 +136,6 @@ export default function InventoryPage() {
                                                 </div>
                                             ))}
                                         </div>
-
                                         {filteredItems.length === 0 && (
                                             <div className="text-center text-slate-400 italic py-8">
                                                 Túi đồ trống
@@ -149,7 +148,6 @@ export default function InventoryPage() {
                     </div>
                 </div>
             </div>
-
         </div>
     )
 }

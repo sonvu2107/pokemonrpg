@@ -5,8 +5,10 @@ import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUti
 const BADGE_IMAGE_TRANSFORMATION = 'e_trim/c_pad,w_512,h_512,b_transparent/f_auto/q_auto:good'
 
 const MISSION_OPTIONS = [
-    { value: 'collect_type_count', label: 'Sở hữu theo hệ' },
-    { value: 'collect_total_count', label: 'Tổng số Pokemon' },
+    { value: 'collect_type_count', label: 'Sở hữu theo hệ (tính trùng, tính form)' },
+    { value: 'collect_type_distinct_count', label: 'Sở hữu theo hệ (không trùng, tính form)' },
+    { value: 'collect_total_count', label: 'Tổng số Pokémon đã sở hữu (có trùng, tính form)' },
+    { value: 'online_hours_count', label: 'Tổng số giờ online' },
     { value: 'complete_trainer_count', label: 'Hoàn thành huấn luyện viên' },
 ]
 
@@ -265,6 +267,11 @@ export default function BadgeManagerPage() {
         }
     }
 
+    const missionNeedsType = form.missionType === 'collect_type_count' || form.missionType === 'collect_type_distinct_count'
+    const missionCountPlaceholder = form.missionType === 'online_hours_count'
+        ? 'Mốc số giờ online cần đạt'
+        : 'Mốc số lượng cần đạt'
+
     return (
         <div className="rounded-2xl border border-blue-300 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-blue-300 bg-gradient-to-r from-blue-600 via-cyan-500 to-sky-400 px-4 py-4">
@@ -340,9 +347,9 @@ export default function BadgeManagerPage() {
                             <select value={form.missionType} onChange={(e) => setForm((prev) => ({ ...prev, missionType: e.target.value }))} className="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
                                 {MISSION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
-                            <input value={form.missionConfig.requiredCount} onChange={(e) => setForm((prev) => ({ ...prev, missionConfig: { ...prev.missionConfig, requiredCount: e.target.value } }))} placeholder="Mốc số lượng cần đạt" className="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white" />
+                            <input value={form.missionConfig.requiredCount} onChange={(e) => setForm((prev) => ({ ...prev, missionConfig: { ...prev.missionConfig, requiredCount: e.target.value } }))} placeholder={missionCountPlaceholder} className="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white" />
                         </div>
-                        {form.missionType === 'collect_type_count' && (
+                        {missionNeedsType && (
                             <select value={form.missionConfig.pokemonType} onChange={(e) => setForm((prev) => ({ ...prev, missionConfig: { ...prev.missionConfig, pokemonType: e.target.value } }))} className="w-full mt-3 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
                                 {POKEMON_TYPES.map((type) => <option key={type} value={type}>{type.toUpperCase()}</option>)}
                             </select>

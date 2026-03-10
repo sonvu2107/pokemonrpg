@@ -2,7 +2,9 @@ import mongoose from 'mongoose'
 
 export const BADGE_MISSION_TYPES = Object.freeze([
     'collect_type_count',
+    'collect_type_distinct_count',
     'collect_total_count',
+    'online_hours_count',
     'complete_trainer_count',
 ])
 
