@@ -59,8 +59,8 @@ const formatFriendlyAutoTrainerMessage = (value = '') => {
         .replace(/DURATION_EXPIRED/gi, 'đã hết thời lượng hôm nay')
 
     message = message
-        .replace(/Auto battle trainer lỗi tạm thời:/i, 'Auto battle trainer đang xử lý, sẽ tự thử lại:')
-        .replace(/Auto battle trainer dung do loi:/i, 'Auto battle trainer tạm dừng do lỗi:')
+        .replace(/Auto lỗi tạm thời:/i, 'Auto đang xử lý, sẽ tự thử lại:')
+        .replace(/Auto dung do loi:/i, 'Auto tạm dừng do lỗi:')
 
     return message
 }
@@ -1233,7 +1233,7 @@ export function BattlePage() {
     useEffect(() => {
         if (!autoTrainerAttackEnabled || canUseVipAutoTrainer) return
         setAutoTrainerAttackEnabled(false)
-        setActionMessage('Tài khoản hiện không có quyền lợi VIP để dùng auto battle trainer.')
+        setActionMessage('Tài khoản hiện không có quyền lợi VIP để dùng auto.')
     }, [autoTrainerAttackEnabled, canUseVipAutoTrainer])
 
     const applyAutoTrainerStatus = (status = {}, options = {}) => {
@@ -1304,7 +1304,7 @@ export function BattlePage() {
                 })
                 applyAutoTrainerStatus(res?.autoTrainer || {}, { forceConfig: true })
             } catch (error) {
-                setActionMessage(String(error?.message || 'Không thể đồng bộ cấu hình auto battle trainer.'))
+                setActionMessage(String(error?.message || 'Không thể đồng bộ cấu hình auto.'))
             }
         }, 500)
 
@@ -3364,7 +3364,7 @@ export function BattlePage() {
                     ? `Đang chọn: ${selectedAutoTrainerEntry.name}`
                     : 'Chưa chọn trainer auto'}
                 {' · '}
-                Giới hạn auto battle: {(autoTrainerRuntimeLimitMinutes > 0 ? `${autoTrainerRuntimeLimitMinutes} phút/ngày` : (autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/ngày` : 'không giới hạn'))}
+                Giới hạn auto: {(autoTrainerRuntimeLimitMinutes > 0 ? `${autoTrainerRuntimeLimitMinutes} phút/ngày` : (autoTrainerDurationLimitMinutes > 0 ? `${autoTrainerDurationLimitMinutes} phút/ngày` : 'không giới hạn'))}
                 {' · '}
                 Lượt chạy hôm nay: {autoTrainerUsageToday}/{autoTrainerUsesPerDayLimit > 0 ? autoTrainerUsesPerDayLimit : '∞'}
                 {' · '}
@@ -3373,7 +3373,7 @@ export function BattlePage() {
 
             {autoTrainerServerStatus && (
                 <div className="text-[10px] font-semibold text-slate-600">
-                    Trạng thái auto: {autoTrainerServerStatus}
+                    Trạng thái: {autoTrainerServerStatus}
                 </div>
             )}
 

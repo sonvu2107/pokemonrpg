@@ -511,6 +511,20 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             ? Boolean(incomingEnabled)
             : Boolean(normalizedState.enabled)
 
+        if (shouldUpdateEnabled && !nextEnabled) {
+            console.warn('[auto-trainer-settings] disable request received:', {
+                userId: req.user.userId,
+                requestedTrainerId,
+                targetTrainerId,
+                incomingEnabled,
+                normalizedStateEnabled: Boolean(normalizedState.enabled),
+                body: req.body,
+                userAgent: req.get('user-agent') || '',
+                referer: req.get('referer') || '',
+                origin: req.get('origin') || '',
+            })
+        }
+
         if (nextEnabled && !canUseVipAutoTrainer) {
             return res.status(403).json({
                 ok: false,
