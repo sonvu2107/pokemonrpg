@@ -1,6 +1,7 @@
 import Move from '../models/Move.js'
 import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
+import { resolveActionAvailabilityByStatus } from '../battle/battleState.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const clampStatStage = (value) => clamp(Math.floor(Number(value) || 0), -6, 6)
@@ -292,6 +293,14 @@ export const applyTrainerPenaltyTurn = async ({
 } = {}) => {
     if (!activeBattleSession || !activeTrainerOpponent || !targetPokemon) return null
 
+    const opponentStatusCheck = resolveActionAvailabilityByStatus({
+        status: activeTrainerOpponent?.status,
+        statusTurns: activeTrainerOpponent?.statusTurns,
+        random: Math.random,
+    })
+    activeTrainerOpponent.status = normalizeBattleStatus(opponentStatusCheck.statusAfterCheck)
+    activeTrainerOpponent.statusTurns = normalizeStatusTurns(opponentStatusCheck.statusTurnsAfterCheck)
+
     const normalizedPlayerMaxHp = Math.max(1, Number(playerMaxHp) || 1)
     const normalizedPlayerCurrentHp = clamp(Math.floor(Number(playerCurrentHp) || 0), 0, normalizedPlayerMaxHp)
     if (normalizedPlayerCurrentHp <= 0) {
@@ -314,6 +323,32 @@ export const applyTrainerPenaltyTurn = async ({
     }
 
     const playerBattleStats = buildPlayerBattleStats(targetPokemon, normalizedPlayerMaxHp)
+    if (!opponentStatusCheck.canAct) {
+        await activeBattleSession.save()
+        return {
+            damage: 0,
+            currentHp: normalizedPlayerCurrentHp,
+            maxHp: normalizedPlayerMaxHp,
+            defeatedPlayer: false,
+            move: { name: '', type: 'normal', category: 'status', accuracy: 100, effectiveness: 1, stabMultiplier: 1, hit: false },
+            log: `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'}: ${opponentStatusCheck.log || 'Không thể hành động.'}`,
+            reason,
+            effects: { logs: [] },
+            player: {
+                status: normalizeBattleStatus(activeBattleSession.playerStatus),
+                statusTurns: normalizeStatusTurns(activeBattleSession.playerStatusTurns),
+                effectiveStats: buildEffectiveBattleStats({
+                    stats: playerBattleStats.stats,
+                    statStages: activeBattleSession.playerStatStages || {},
+                }),
+            },
+            opponent: {
+                status: activeTrainerOpponent.status,
+                statusTurns: activeTrainerOpponent.statusTurns,
+            },
+        }
+    }
+
     const movePool = await buildTrainerMovePool({ trainerSpecies, activeTrainerOpponent })
     const selectedMove = chooseTrainerMove({ movePool, activeTrainerOpponent, playerBattleStats })
     const hitRoll = Math.random() * 100
@@ -367,6 +402,10 @@ export const applyTrainerPenaltyTurn = async ({
                 stats: playerBattleStats.stats,
                 statStages: activeBattleSession.playerStatStages || {},
             }),
+        },
+        opponent: {
+            status: activeTrainerOpponent.status,
+            statusTurns: activeTrainerOpponent.statusTurns,
         },
     }
 }

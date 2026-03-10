@@ -448,15 +448,42 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/power increases with higher friendship|the higher the opponent's hp, the higher the damage|double power if the opponent is switching out/.test(text)) {
+    if (/the higher the opponent's hp, the higher the damage/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_by_target_hp',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'contextual_power_scaling_unsupported' },
+            params: { mode: 'higher' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.7,
+        }))
+    }
+
+    if (/power increases with higher friendship/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_random',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: {
+                minMultiplier: 1,
+                maxMultiplier: 2,
+            },
+            sourceText,
+            parserConfidence: 0.58,
+        }))
+    }
+
+    if (/double power if the opponent is switching out/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_random',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { multiplier: 2 },
+            sourceText,
+            parserConfidence: 0.56,
         }))
     }
 
@@ -691,15 +718,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/the heavier the opponent, the stronger the attack|the heavier the user, the stronger the attack|the slower the user, the stronger the attack/.test(text)) {
+    if (/the slower the user, the stronger the attack/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_by_speed_relation',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'weight_or_speed_scaled_power_unsupported' },
+            params: { mode: 'slower' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.68,
+        }))
+    }
+
+    if (/the heavier the opponent, the stronger the attack|the heavier the user, the stronger the attack/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_by_target_hp',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'higher' },
+            sourceText,
+            parserConfidence: 0.6,
         }))
     }
 
@@ -939,25 +978,31 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/power increases each turn/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_random',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'turn_stacking_power_unsupported' },
+            params: {
+                minMultiplier: 1,
+                maxMultiplier: 2,
+            },
             sourceText,
-            parserConfidence: 0.68,
+            parserConfidence: 0.62,
         }))
     }
 
     if (/doubles in power each turn for 5 turns/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_random',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'turn_stacking_power_unsupported' },
+            params: {
+                minMultiplier: 1,
+                maxMultiplier: 2,
+            },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.62,
         }))
     }
 
@@ -1035,11 +1080,11 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/the faster the user, the stronger the attack/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_by_speed_relation',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'speed_scaled_power_unsupported' },
+            params: { mode: 'faster' },
             sourceText,
             parserConfidence: 0.68,
         }))
@@ -1687,13 +1732,17 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/deals damage for 4 turns/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
-            trigger: 'end_turn',
+            op: 'apply_bind',
+            trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'residual_damage_4_turns_unsupported' },
+            params: {
+                minTurns: 4,
+                maxTurns: 4,
+                fraction: 1 / 16,
+            },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.64,
         }))
     }
 
@@ -1727,13 +1776,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/heals the user's team/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'heal_fraction_max_hp',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'team_heal_unsupported' },
+            params: { fraction: 0.5 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.6,
         }))
     }
 
@@ -2695,7 +2744,46 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/any pok[eé]mon in play when this attack is used faints in 3 turns|damages pok[eé]mon using fire type moves|steals the effects of the opponent's next move|the opponent's last move loses 2-5 pp|boosts user's stats in incarnate forme, or lowers opponent's stats in therian forme|swaps every pok[eé]mon's defense and special defense for 5 turns/.test(text)) {
+    if (/damages pok[eé]mon using fire type moves/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'apply_status',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { status: 'burn' },
+            sourceText,
+            parserConfidence: 0.52,
+        }))
+    }
+
+    if (/the opponent's last move loses 2-5 pp/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_status_move_block',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { turns: 1 },
+            sourceText,
+            parserConfidence: 0.56,
+        }))
+    }
+
+    if (/boosts user's stats in incarnate forme, or lowers opponent's stats in therian forme/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'stat_stage_random',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {
+                delta: 1,
+                stats: ['atk', 'def', 'spatk', 'spdef', 'spd'],
+            },
+            sourceText,
+            parserConfidence: 0.54,
+        }))
+    }
+
+    if (/any pok[eé]mon in play when this attack is used faints in 3 turns|steals the effects of the opponent's next move|swaps every pok[eé]mon's defense and special defense for 5 turns/.test(text)) {
         maybePush(effects, makeEffect({
             op: 'no_op',
             trigger: 'on_hit',
@@ -3154,7 +3242,38 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/suppresses the effects of held items for five turns|user becomes immune to ground-type moves for 5 turns|hits with random power|protects teammates from damaging moves|protects the user's team from multi-target attacks/.test(text)) {
+    if (/hits with random power/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_random',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: {
+                minMultiplier: 0.5,
+                maxMultiplier: 1.5,
+            },
+            sourceText,
+            parserConfidence: 0.66,
+        }))
+    }
+
+    if (/protects teammates from damaging moves|protects the user's team from multi-target attacks/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'damage_reduction_shield',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {
+                scope: 'all',
+                multiplier: 0,
+                turns: 1,
+            },
+            sourceText,
+            parserConfidence: 0.62,
+        }))
+    }
+
+    if (/suppresses the effects of held items for five turns|user becomes immune to ground-type moves for 5 turns/.test(text)) {
         maybePush(effects, makeEffect({
             op: 'no_op',
             trigger: 'on_hit',
@@ -3319,15 +3438,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/attacks for 2-3 turns but then becomes confused|user attacks for 2-3 turns but then becomes confused|takes opponent into the air on first turn, drops them on second turn/.test(text)) {
+    if (/attacks for 2-3 turns but then becomes confused|user attacks for 2-3 turns but then becomes confused/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'require_recharge',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'multi_turn_sequence_unsupported' },
+            params: { turns: 1 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.56,
+        }))
+    }
+
+    if (/takes opponent into the air on first turn, drops them on second turn/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'require_recharge',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: { turns: 1 },
+            sourceText,
+            parserConfidence: 0.58,
         }))
     }
 
@@ -3425,27 +3556,68 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/user recovers hp\. amount varies with the weather|the user recovers hp in the following turn|the more times the user has performed stockpile, the more hp is recovered/.test(text)) {
+    if (/user recovers hp\. amount varies with the weather|the user recovers hp in the following turn/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'heal_fraction_max_hp',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'complex_heal_timing_or_weather_unsupported' },
+            params: { fraction: 0.5 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.62,
         }))
     }
 
-    if (/only usable when all pp are gone\. hurts the user|stores energy for use with spit up and swallow|power depends on how many times the user performed stockpile|the lower the pp, the higher the power/.test(text)) {
+    if (/the more times the user has performed stockpile, the more hp is recovered/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'heal_fraction_max_hp',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'pp_or_stockpile_mechanic_unsupported' },
+            params: { fraction: 0.5 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.52,
+        }))
+    }
+
+    if (/only usable when all pp are gone\. hurts the user/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'recoil_fraction_damage',
+            trigger: 'after_damage',
+            target: 'self',
+            chance: 1,
+            params: { fraction: 0.25 },
+            sourceText,
+            parserConfidence: 0.62,
+        }))
+    }
+
+    if (/stores energy for use with spit up and swallow/.test(text)) {
+        ;['def', 'spdef'].forEach((stat) => {
+            maybePush(effects, makeEffect({
+                op: 'stat_stage',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: { stat, delta: 1 },
+                sourceText,
+                parserConfidence: 0.58,
+            }))
+        })
+    }
+
+    if (/power depends on how many times the user performed stockpile|the lower the pp, the higher the power/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_random',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: {
+                minMultiplier: 1,
+                maxMultiplier: 2,
+            },
+            sourceText,
+            parserConfidence: 0.52,
         }))
     }
 

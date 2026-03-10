@@ -404,7 +404,7 @@ const handlers = {
             atk: clampStage(userStages?.atk, 0),
             spatk: clampStage(userStages?.spatk, 0),
         }
-        appendEffectLog(result, 'Hai ben hoan doi bac Attack va Special Attack.')
+        appendEffectLog(result, 'Hai bên hoán đổi bậc Attack và Special Attack.')
         return result
     },
 
@@ -422,7 +422,7 @@ const handlers = {
         result.statePatches.opponent.setStatStages = {
             spd: clampStage(userStages?.spd, 0),
         }
-        appendEffectLog(result, 'Hai ben hoan doi bac Speed.')
+        appendEffectLog(result, 'Hai bên hoán đổi bậc Speed.')
         return result
     },
 
@@ -441,7 +441,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].setStatStages = inverted
-        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Muc tieu'} bi dao nguoc bien doi chi so.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị đảo ngược biến đổi chỉ số.`)
         return result
     },
 
@@ -877,7 +877,7 @@ const handlers = {
         result.applied = true
         result.statePatches.self.setStatStages = nextUserStages
         result.statePatches.opponent.setStatStages = nextTargetStages
-        appendEffectLog(result, 'Pokemon của bạn cuop cac bac chi so duong cua muc tieu.')
+        appendEffectLog(result, 'Pokemon của bạn cướp các bậc chỉ số dương của mục tiêu.')
         return result
     },
 
@@ -940,7 +940,21 @@ const handlers = {
         const result = createBaseResult()
         if (!shouldProc(effect?.chance, context?.random?.())) return result
 
-        const multiplier = clampMultiplier(effect?.params?.multiplier, 1)
+        const hasRange = Number.isFinite(Number(effect?.params?.minMultiplier))
+            || Number.isFinite(Number(effect?.params?.maxMultiplier))
+        const minMultiplier = hasRange
+            ? clampMultiplier(effect?.params?.minMultiplier, 1)
+            : null
+        const maxMultiplier = hasRange
+            ? clampMultiplier(effect?.params?.maxMultiplier, minMultiplier ?? 1)
+            : null
+        const multiplier = hasRange
+            ? clampMultiplier(
+                (Math.min(minMultiplier, maxMultiplier)
+                    + (Math.abs(maxMultiplier - minMultiplier) * Math.max(0, Math.min(1, Number(context?.random?.()) || 0)))),
+                1
+            )
+            : clampMultiplier(effect?.params?.multiplier, 1)
         if (multiplier <= 0) return result
 
         result.applied = true
@@ -967,6 +981,46 @@ const handlers = {
         result.applied = true
         result.statePatches.self.powerMultiplier = normalizedMultiplier
         appendEffectLog(result, `Sức mạnh chiêu được điều chỉnh theo tỷ lệ HP hiện tại (${normalizedMultiplier.toFixed(2)}x).`)
+        return result
+    },
+
+    power_modifier_by_target_hp: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const maxHp = Math.max(1, clampPositiveInt(context?.targetMaxHp, 1))
+        const currentHp = Math.max(0, Math.min(maxHp, clampPositiveInt(context?.targetCurrentHp, maxHp)))
+        const hpRatio = maxHp > 0 ? (currentHp / maxHp) : 1
+        const mode = String(effect?.params?.mode || 'higher').trim().toLowerCase()
+
+        let multiplier = hpRatio
+        if (mode === 'lower') {
+            multiplier = 0.5 + ((1 - hpRatio) * 1.5)
+        }
+
+        const normalizedMultiplier = clampMultiplier(multiplier, 1)
+        result.applied = true
+        result.statePatches.self.powerMultiplier = normalizedMultiplier
+        appendEffectLog(result, `Sức mạnh chiêu được điều chỉnh theo HP hiện tại của mục tiêu (${normalizedMultiplier.toFixed(2)}x).`)
+        return result
+    },
+
+    power_modifier_by_speed_relation: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const userSpeed = Math.max(1, clampPositiveInt(context?.userSpeed, 1))
+        const targetSpeed = Math.max(1, clampPositiveInt(context?.targetSpeed, 1))
+        const mode = String(effect?.params?.mode || 'faster').trim().toLowerCase()
+
+        const ratio = mode === 'slower'
+            ? (targetSpeed / userSpeed)
+            : (userSpeed / targetSpeed)
+        const multiplier = clampMultiplier(Math.max(0.5, Math.min(2.5, ratio)), 1)
+
+        result.applied = true
+        result.statePatches.self.powerMultiplier = multiplier
+        appendEffectLog(result, `Sức mạnh chiêu được điều chỉnh theo tương quan tốc độ (${multiplier.toFixed(2)}x).`)
         return result
     },
 

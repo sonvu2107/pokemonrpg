@@ -2588,10 +2588,52 @@ export function BattlePage() {
                 setSelectedMoveIndex(0)
                 setActiveTab('fight')
                 if (res?.opponent) {
-                    setBattleOpponent((prev) => ({
-                        ...(prev || {}),
-                        ...res.opponent,
-                    }))
+                    setBattleOpponent((prev) => {
+                        const previousState = prev && typeof prev === 'object' ? prev : {}
+                        const previousTeam = Array.isArray(previousState.team) ? previousState.team : []
+                        const nextServerTeam = Array.isArray(res.opponent.team) ? res.opponent.team : []
+                        const mergedTeam = nextServerTeam.map((serverEntry, index) => {
+                            const previousEntry = previousTeam[index] || {}
+                            return {
+                                ...previousEntry,
+                                ...serverEntry,
+                                currentHp: serverEntry?.currentHp ?? previousEntry?.currentHp ?? previousEntry?.maxHp ?? 0,
+                                maxHp: serverEntry?.maxHp ?? previousEntry?.maxHp ?? 1,
+                                status: String(serverEntry?.status || previousEntry?.status || '').trim().toLowerCase(),
+                                statusTurns: Number.isFinite(Number(serverEntry?.statusTurns))
+                                    ? Math.max(0, Math.floor(Number(serverEntry.statusTurns)))
+                                    : Math.max(0, Math.floor(Number(previousEntry?.statusTurns) || 0)),
+                                statStages: serverEntry?.statStages && typeof serverEntry.statStages === 'object'
+                                    ? serverEntry.statStages
+                                    : (previousEntry?.statStages || {}),
+                                effectiveStats: serverEntry?.effectiveStats && typeof serverEntry.effectiveStats === 'object'
+                                    ? serverEntry.effectiveStats
+                                    : (previousEntry?.effectiveStats || null),
+                                damageGuards: serverEntry?.damageGuards && typeof serverEntry.damageGuards === 'object'
+                                    ? serverEntry.damageGuards
+                                    : (previousEntry?.damageGuards || {}),
+                                volatileState: serverEntry?.volatileState && typeof serverEntry.volatileState === 'object'
+                                    ? serverEntry.volatileState
+                                    : (previousEntry?.volatileState || {}),
+                                counterMoves: Array.isArray(serverEntry?.counterMoves)
+                                    ? serverEntry.counterMoves
+                                    : (Array.isArray(previousEntry?.counterMoves) ? previousEntry.counterMoves : []),
+                                counterMoveCursor: Number.isFinite(Number(serverEntry?.counterMoveCursor))
+                                    ? Math.max(0, Math.floor(Number(serverEntry.counterMoveCursor)))
+                                    : Math.max(0, Math.floor(Number(previousEntry?.counterMoveCursor) || 0)),
+                                counterMoveMode: String(serverEntry?.counterMoveMode || previousEntry?.counterMoveMode || '').trim(),
+                            }
+                        })
+
+                        return {
+                            ...previousState,
+                            ...res.opponent,
+                            fieldState: res.opponent?.fieldState && typeof res.opponent.fieldState === 'object'
+                                ? res.opponent.fieldState
+                                : (previousState?.fieldState || {}),
+                            team: mergedTeam,
+                        }
+                    })
                 }
                 if (res?.player) {
                     setBattlePartyHpState((prev) => {

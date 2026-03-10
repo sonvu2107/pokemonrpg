@@ -42,6 +42,9 @@ export const serializeTrainerBattleState = (trainerSession = null) => {
     return {
         currentIndex,
         defeatedAll: currentIndex >= trainerSession.team.length,
+        fieldState: trainerSession.fieldState && typeof trainerSession.fieldState === 'object'
+            ? trainerSession.fieldState
+            : {},
         team: trainerSession.team.map((entry) => ({
             slot: Math.max(0, Number(entry?.slot) || 0),
             pokemonId: entry?.pokemonId || null,
@@ -56,9 +59,13 @@ export const serializeTrainerBattleState = (trainerSession = null) => {
             damageGuards: normalizeDamageGuards(entry?.damageGuards),
             wasDamagedLastTurn: Boolean(entry?.wasDamagedLastTurn),
             volatileState: normalizeVolatileState(entry?.volatileState),
+            effectiveStats: entry?.effectiveStats && typeof entry.effectiveStats === 'object' ? entry.effectiveStats : null,
             baseStats: entry?.baseStats && typeof entry.baseStats === 'object' ? entry.baseStats : {},
             types: normalizePokemonTypes(entry?.types),
             damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
+            counterMoves: Array.isArray(entry?.counterMoves) ? entry.counterMoves : [],
+            counterMoveCursor: Math.max(0, Number(entry?.counterMoveCursor) || 0),
+            counterMoveMode: String(entry?.counterMoveMode || '').trim(),
         })),
     }
 }

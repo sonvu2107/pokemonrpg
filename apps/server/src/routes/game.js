@@ -2582,6 +2582,8 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 terrain: battleFieldState.terrain || '',
                 userStatStages: playerStatStages,
                 targetStatStages: opponentStatStages,
+                userSpeed: playerEffectiveSpeed,
+                targetSpeed: opponentEffectiveSpeed,
                 targetCurrentHp,
                 targetMaxHp,
             },
