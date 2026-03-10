@@ -9,6 +9,7 @@ import UserPokemon from '../models/UserPokemon.js'
 export const AUCTION_REWARD_TYPE_ITEM = 'item'
 export const AUCTION_REWARD_TYPE_POKEMON = 'pokemon'
 export const AUCTION_CURRENCY_WHITE_PLATINUM = 'white_platinum'
+export const AUCTION_REWARD_SOURCE_USER_POKEMON_ESCROW = 'user_pokemon_escrow'
 export const AUCTION_STATUS = Object.freeze({
     DRAFT: 'draft',
     SCHEDULED: 'scheduled',
@@ -34,6 +35,23 @@ const buildDateCodePart = (date = new Date()) => {
 const buildRandomCodeSuffix = () => Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0')
 
 export const buildAuctionCode = () => `AUC-${buildDateCodePart(new Date())}-${buildRandomCodeSuffix()}`
+
+const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
+
+const resolvePokemonSpriteByForm = (pokemonLike = {}, preferredFormId = 'normal', isShiny = false) => {
+    const forms = Array.isArray(pokemonLike?.forms) ? pokemonLike.forms : []
+    const defaultFormId = normalizeFormId(pokemonLike?.defaultFormId || 'normal')
+    const requestedFormId = normalizeFormId(preferredFormId || defaultFormId)
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId)
+        || forms.find((entry) => normalizeFormId(entry?.formId) === defaultFormId)
+        || forms[0]
+        || null
+
+    if (isShiny) {
+        return String(resolvedForm?.shinyImageUrl || pokemonLike?.shinyImageUrl || resolvedForm?.imageUrl || pokemonLike?.sprite || pokemonLike?.imageUrl || '').trim()
+    }
+    return String(resolvedForm?.imageUrl || pokemonLike?.sprite || pokemonLike?.imageUrl || '').trim()
+}
 
 export const buildItemRewardSnapshot = (itemLike = {}, quantity = 1) => ({
     itemId: itemLike?._id,
@@ -67,6 +85,121 @@ export const buildPokemonRewardSnapshot = (pokemonLike = {}, options = {}) => ({
         formName: String(options?.formName || options?.formId || 'normal').trim() || 'normal',
     },
 })
+
+export const buildUserPokemonRewardSnapshot = (userPokemonLike = {}, pokemonLike = {}) => {
+    const nickname = String(userPokemonLike?.nickname || '').trim()
+    const speciesName = String(pokemonLike?.name || 'Pokemon').trim() || 'Pokemon'
+    const formId = normalizeFormId(userPokemonLike?.formId || pokemonLike?.defaultFormId || 'normal')
+    const isShiny = Boolean(userPokemonLike?.isShiny)
+
+    return {
+        itemId: null,
+        pokemonId: pokemonLike?._id || userPokemonLike?.pokemonId?._id || userPokemonLike?.pokemonId || null,
+        formId,
+        level: Math.max(1, Number.parseInt(userPokemonLike?.level, 10) || 5),
+        isShiny,
+        name: nickname ? `${nickname} (${speciesName})` : speciesName,
+        imageUrl: resolvePokemonSpriteByForm(pokemonLike, formId, isShiny),
+        rarity: 'pokemon',
+        type: 'pokemon',
+        quantity: 1,
+        metadata: {
+            source: AUCTION_REWARD_SOURCE_USER_POKEMON_ESCROW,
+            pokemonName: speciesName,
+            formName: formId,
+            nickname,
+            sourceUserPokemonId: String(userPokemonLike?._id || '').trim(),
+            sellerUserId: String(userPokemonLike?.userId || '').trim(),
+            previousLocation: String(userPokemonLike?.location || 'box').trim() || 'box',
+            previousBoxNumber: Number.parseInt(userPokemonLike?.boxNumber, 10) || 1,
+            previousPartyIndex: userPokemonLike?.partyIndex === null || userPokemonLike?.partyIndex === undefined
+                ? null
+                : Number.parseInt(userPokemonLike?.partyIndex, 10),
+        },
+    }
+}
+
+export const isUserPokemonEscrowRewardSnapshot = (rewardSnapshot = {}) => (
+    String(rewardSnapshot?.metadata?.source || '').trim() === AUCTION_REWARD_SOURCE_USER_POKEMON_ESCROW
+        && mongoose.Types.ObjectId.isValid(String(rewardSnapshot?.metadata?.sourceUserPokemonId || '').trim())
+)
+
+export const restoreEscrowedAuctionPokemon = async (auctionLike = {}, options = {}) => {
+    if (!isUserPokemonEscrowRewardSnapshot(auctionLike?.rewardSnapshot)) {
+        return false
+    }
+
+    const sourceUserPokemonId = String(auctionLike?.rewardSnapshot?.metadata?.sourceUserPokemonId || '').trim()
+    const previousBoxNumber = Math.max(1, Number.parseInt(auctionLike?.rewardSnapshot?.metadata?.previousBoxNumber, 10) || 1)
+
+    const result = await UserPokemon.updateOne(
+        { _id: sourceUserPokemonId, status: 'active' },
+        {
+            $set: {
+                location: 'box',
+                boxNumber: previousBoxNumber,
+                partyIndex: null,
+            },
+        },
+        options?.session ? { session: options.session } : {}
+    )
+
+    return Number(result?.modifiedCount || 0) > 0
+}
+
+export const transferEscrowedAuctionPokemonToWinner = async (auctionLike = {}, winnerId, options = {}) => {
+    if (!isUserPokemonEscrowRewardSnapshot(auctionLike?.rewardSnapshot)) {
+        return false
+    }
+
+    const sourceUserPokemonId = String(auctionLike?.rewardSnapshot?.metadata?.sourceUserPokemonId || '').trim()
+    const now = options?.now instanceof Date ? options.now : new Date()
+    const result = await UserPokemon.updateOne(
+        { _id: sourceUserPokemonId, status: 'active' },
+        {
+            $set: {
+                userId: winnerId,
+                location: 'box',
+                boxNumber: 1,
+                partyIndex: null,
+                obtainedMapName: 'Khu Dau Gia',
+                obtainedAt: now,
+            },
+        },
+        options?.session ? { session: options.session } : {}
+    )
+
+    return Number(result?.modifiedCount || 0) > 0
+}
+
+export const releaseCompletedNoBidEscrowAuctionsForUser = async (userId, options = {}) => {
+    const normalizedUserId = String(userId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(normalizedUserId)) {
+        return 0
+    }
+
+    const rows = await Auction.find({
+        createdBy: normalizedUserId,
+        rewardType: AUCTION_REWARD_TYPE_POKEMON,
+        status: AUCTION_STATUS.COMPLETED,
+        settlementStatus: AUCTION_SETTLEMENT_STATUS.SUCCESS,
+        winnerId: null,
+        $or: [
+            { highestBid: { $exists: false } },
+            { highestBid: { $lte: 0 } },
+        ],
+        'rewardSnapshot.metadata.source': AUCTION_REWARD_SOURCE_USER_POKEMON_ESCROW,
+    })
+        .select('rewardSnapshot')
+        .lean()
+
+    let restoredCount = 0
+    for (const row of rows) {
+        const didRestore = await restoreEscrowedAuctionPokemon(row, options)
+        if (didRestore) restoredCount += 1
+    }
+    return restoredCount
+}
 
 export const computeAuctionMinNextBid = (auctionLike = {}) => {
     const startingBid = Math.max(1, Number(auctionLike?.startingBid || 0))
@@ -236,7 +369,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
         },
         { new: true }
     )
-        .select('rewardSnapshot highestBid highestBidderId status settlementStatus title endsAt')
+        .select('rewardType rewardSnapshot highestBid highestBidderId status settlementStatus title endsAt')
         .lean()
 
     if (!claimedAuction) {
@@ -255,6 +388,9 @@ export const settleAuctionById = async (auctionId, options = {}) => {
     })
 
     if (!claimedAuction?.highestBidderId || Number(claimedAuction?.highestBid || 0) <= 0) {
+        if (String(claimedAuction?.rewardType || AUCTION_REWARD_TYPE_ITEM) === AUCTION_REWARD_TYPE_POKEMON) {
+            await restoreEscrowedAuctionPokemon(claimedAuction)
+        }
         await Auction.findByIdAndUpdate(normalizedAuctionId, {
             $set: {
                 status: AUCTION_STATUS.COMPLETED,
@@ -290,6 +426,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
             const winnerId = auction.highestBidderId
             const finalBid = Math.max(0, Number(auction.highestBid || 0))
             const winnerState = await PlayerState.findOne({ userId: winnerId }).session(session)
+            const sellerUserId = String(auction?.rewardSnapshot?.metadata?.sellerUserId || auction?.createdBy || '').trim()
 
             if (!winnerState || Math.max(0, Number(winnerState.gold || 0)) < finalBid) {
                 auction.status = AUCTION_STATUS.SETTLEMENT_FAILED
@@ -323,21 +460,36 @@ export const settleAuctionById = async (auctionId, options = {}) => {
             winnerState.gold = Math.max(0, Number(winnerState.gold || 0) - finalBid)
             await winnerState.save({ session })
 
+            if (sellerUserId && mongoose.Types.ObjectId.isValid(sellerUserId) && sellerUserId !== String(winnerId || '').trim()) {
+                await PlayerState.findOneAndUpdate(
+                    { userId: sellerUserId },
+                    { $inc: { gold: finalBid } },
+                    { session }
+                )
+            }
+
             if (String(auction.rewardType || AUCTION_REWARD_TYPE_ITEM) === AUCTION_REWARD_TYPE_POKEMON) {
-                const rewardCount = Math.max(1, Number(auction.rewardSnapshot?.quantity || 1))
-                const pokemonDocs = Array.from({ length: rewardCount }, () => ({
-                    userId: winnerId,
-                    pokemonId: auction.rewardSnapshot.pokemonId,
-                    formId: String(auction.rewardSnapshot?.formId || 'normal').trim().toLowerCase() || 'normal',
-                    level: Math.max(1, Number.parseInt(auction.rewardSnapshot?.level, 10) || 5),
-                    isShiny: Boolean(auction.rewardSnapshot?.isShiny),
-                    location: 'box',
-                    boxNumber: 1,
-                    originalTrainer: `auction_reward:${String(auction.code || auction._id)}`,
-                    obtainedMapName: 'Khu Đấu Giá',
-                    obtainedAt: now,
-                }))
-                await UserPokemon.insertMany(pokemonDocs, { session })
+                if (isUserPokemonEscrowRewardSnapshot(auction.rewardSnapshot)) {
+                    const didTransferEscrow = await transferEscrowedAuctionPokemonToWinner(auction, winnerId, { session, now })
+                    if (!didTransferEscrow) {
+                        throw new Error('ESCROWED_POKEMON_TRANSFER_FAILED')
+                    }
+                } else {
+                    const rewardCount = Math.max(1, Number(auction.rewardSnapshot?.quantity || 1))
+                    const pokemonDocs = Array.from({ length: rewardCount }, () => ({
+                        userId: winnerId,
+                        pokemonId: auction.rewardSnapshot.pokemonId,
+                        formId: String(auction.rewardSnapshot?.formId || 'normal').trim().toLowerCase() || 'normal',
+                        level: Math.max(1, Number.parseInt(auction.rewardSnapshot?.level, 10) || 5),
+                        isShiny: Boolean(auction.rewardSnapshot?.isShiny),
+                        location: 'box',
+                        boxNumber: 1,
+                        originalTrainer: `auction_reward:${String(auction.code || auction._id)}`,
+                        obtainedMapName: 'Khu Dau Gia',
+                        obtainedAt: now,
+                    }))
+                    await UserPokemon.insertMany(pokemonDocs, { session })
+                }
             } else {
                 await UserInventory.findOneAndUpdate(
                     { userId: winnerId, itemId: auction.rewardSnapshot.itemId },
@@ -462,6 +614,9 @@ export const placeAuctionBid = async ({ auctionId, userId, amount }) => {
 
             if (auction.status !== AUCTION_STATUS.ACTIVE) {
                 throw new Error('Phiên đấu giá hiện không ở trạng thái nhận giá')
+            }
+            if (String(auction.createdBy || '').trim() === normalizedUserId) {
+                throw new Error('Bạn không thể tự trả giá phiên đấu giá của mình')
             }
             if (new Date(auction.startsAt).getTime() > now.getTime()) {
                 throw new Error('Phiên đấu giá chưa bắt đầu')

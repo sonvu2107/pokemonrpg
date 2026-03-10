@@ -79,7 +79,7 @@ const hasGigantamaxKeywordInStem = (stem = '') => {
     return compact.includes('gigantamax') || compact.includes('gmax')
 }
 
-const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 const normalizePokemonRarity = (value = '') => String(value || '').trim().toLowerCase()
 const isEvolutionItemAllowedForRarity = (item, rarity) => {
     const normalizedRarity = normalizePokemonRarity(rarity)
@@ -87,7 +87,7 @@ const isEvolutionItemAllowedForRarity = (item, rarity) => {
     if (rarityIndex < 0) return true
 
     const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityFrom || 'd'))
-    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss+'))
     if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
     return rarityIndex >= fromIndex && rarityIndex <= toIndex
 }
@@ -324,7 +324,7 @@ export default function PokemonListPage() {
                     <option value="">Không cần item</option>
                     {availableItems.map((item) => (
                         <option key={item._id} value={item._id}>
-                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss+').toUpperCase()})
                         </option>
                     ))}
                 </select>

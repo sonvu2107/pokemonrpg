@@ -7,6 +7,7 @@ import { loadBattleBadgeBonusStateForUser } from '../utils/badgeUtils.js'
 import { getSpecialDefenseStat } from './trainerBattleStateService.js'
 
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    'sss+': 10,
     d: 31,
     c: 29,
     b: 27,
@@ -16,7 +17,7 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     sss: 14,
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
-const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss', 'sss+'])
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 

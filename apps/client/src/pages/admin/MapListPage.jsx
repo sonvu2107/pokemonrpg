@@ -80,6 +80,11 @@ export default function MapListPage() {
                                                                 Event
                                                             </span>
                                                         )}
+                                                        {Number(map.vipVisibilityLevel || 0) > 0 && (
+                                                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded-[3px] text-[10px] font-bold uppercase border border-yellow-300">
+                                                                VIP {Number(map.vipVisibilityLevel || 0)}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <span className="text-slate-400 text-xs font-mono mt-0.5">{map.slug}</span>
                                                 </div>
@@ -107,6 +112,11 @@ export default function MapListPage() {
                                                     <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded whitespace-nowrap border border-blue-100">
                                                         Vào: Lv {Math.max(1, Number(map.requiredPlayerLevel) || 1)}
                                                     </span>
+                                                    {Number(map.vipVisibilityLevel || 0) > 0 && (
+                                                        <span className="text-[10px] text-yellow-800 font-bold bg-yellow-50 px-1.5 py-0.5 rounded whitespace-nowrap border border-yellow-200">
+                                                            Sidebar VIP {Number(map.vipVisibilityLevel || 0)}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-3 py-2 text-right">

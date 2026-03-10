@@ -22,7 +22,7 @@ const specialPokemonConfigSchema = new mongoose.Schema(
     { _id: false }
 )
 
-const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss', 'sss+'])
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
@@ -41,6 +41,12 @@ const rarityCatchBonusPercentSchema = new mongoose.Schema(
             max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
         },
         sss: {
+            type: Number,
+            default: 0,
+            min: MAP_RARITY_CATCH_BONUS_MIN_PERCENT,
+            max: MAP_RARITY_CATCH_BONUS_MAX_PERCENT,
+        },
+        'sss+': {
             type: Number,
             default: 0,
             min: MAP_RARITY_CATCH_BONUS_MIN_PERCENT,
@@ -168,6 +174,11 @@ const mapSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        vipVisibilityLevel: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         autoSearchRequiredVipLevel: {
             type: Number,
             default: 0,
@@ -187,7 +198,7 @@ const mapSchema = new mongoose.Schema(
         },
         rarityCatchBonusPercent: {
             type: rarityCatchBonusPercentSchema,
-            default: () => ({ s: 0, ss: 0, sss: 0 }),
+            default: () => ({ s: 0, ss: 0, sss: 0, 'sss+': 0 }),
         },
         orderIndex: {
             type: Number,

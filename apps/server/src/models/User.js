@@ -266,6 +266,7 @@ const userSchema = new mongoose.Schema(
                 max: 10000,
             },
             actionByRarity: {
+                'sss+': { type: String, default: 'catch', trim: true, lowercase: true },
                 sss: { type: String, default: 'catch', trim: true, lowercase: true },
                 ss: { type: String, default: 'catch', trim: true, lowercase: true },
                 s: { type: String, default: 'catch', trim: true, lowercase: true },

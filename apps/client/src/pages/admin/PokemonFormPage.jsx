@@ -11,7 +11,7 @@ const TYPES = [
     'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'
 ]
 
-const RARITIES = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+const RARITIES = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 const FORM_VARIANTS = [
     { id: 'normal', name: 'Normal' },
@@ -63,7 +63,7 @@ const BULK_UPLOAD_STATUS_META = {
 const BULK_UPLOAD_RETRY_ATTEMPTS = 3
 const BULK_UPLOAD_RETRY_BASE_DELAY_MS = 800
 const BULK_UPLOAD_MAX_CONCURRENCY = 3
-const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 
 const waitForMs = (ms = 0) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
 
@@ -106,7 +106,7 @@ const isEvolutionItemAllowedForRarity = (item, rarity) => {
     if (rarityIndex < 0) return true
 
     const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(item?.evolutionRarityFrom || 'd'))
-    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(item?.evolutionRarityTo || 'sss'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizeRarity(item?.evolutionRarityTo || 'sss+'))
     if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
     return rarityIndex >= fromIndex && rarityIndex <= toIndex
 }
@@ -1476,7 +1476,7 @@ export default function PokemonFormPage() {
                         <option value="">Không cần item</option>
                         {availableEvolutionItems.map((item) => (
                             <option key={`form-evo-item-${formIndex}-${item._id}`} value={item._id}>
-                                {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                                {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss+').toUpperCase()})
                             </option>
                         ))}
                     </select>
@@ -1736,7 +1736,7 @@ export default function PokemonFormPage() {
                                             type="number"
                                             required
                                             min="1"
-                                            max="255"
+                                            max="100000"
                                             value={formData.baseStats[stat]}
                                             onChange={(e) => updateStat(stat, e.target.value)}
                                             className="w-full px-1 py-1.5 bg-white border border-slate-300 rounded text-slate-800 text-sm text-center focus:border-blue-500 font-bold"
@@ -1909,7 +1909,7 @@ export default function PokemonFormPage() {
                                     <option value="">-- Không cần vật phẩm --</option>
                                     {availableEvolutionItems.map((item) => (
                                         <option key={item._id} value={item._id}>
-                                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss').toUpperCase()})
+                                            {item.name} ({String(item.evolutionRarityFrom || 'd').toUpperCase()}-{String(item.evolutionRarityTo || 'sss+').toUpperCase()})
                                         </option>
                                     ))}
                                 </select>

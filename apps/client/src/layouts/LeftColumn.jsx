@@ -5,23 +5,39 @@ import { gameApi } from "../services/gameApi"
 import newsApi from "../services/newsApi"
 import ComingSoonModal from "../components/ComingSoonModal"
 
-const SidebarSection = ({ title, iconId, children }) => (
-    <div className="rounded-md overflow-hidden shadow-sm mb-3">
-        <div className="bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600">
-            {iconId && (
-                <img
-                    src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${iconId}.png`}
-                    alt="icon"
-                    className="w-6 h-6 -my-2 pixelated"
-                />
+const SidebarSection = ({ title, iconId, children, defaultOpen = true }) => {
+    const [isOpen, setIsOpen] = useState(() => {
+        if (typeof window === 'undefined') return defaultOpen
+        return window.innerWidth < 1024 ? false : defaultOpen
+    })
+
+    return (
+        <div className="rounded-md overflow-hidden shadow-sm mb-3">
+            <button
+                type="button"
+                onClick={() => setIsOpen((prev) => !prev)}
+                className="w-full bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600 text-left"
+            >
+                {iconId && (
+                    <img
+                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${iconId}.png`}
+                        alt="icon"
+                        className="w-6 h-6 -my-2 pixelated"
+                    />
+                )}
+                <span className="text-sm font-bold text-white drop-shadow-md flex-1">{title}</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-white/40 bg-white/10 text-xs font-extrabold text-white">
+                    {isOpen ? '-' : '+'}
+                </span>
+            </button>
+            {isOpen && (
+                <div className="bg-cyan-400 p-2 space-y-0.5">
+                    {children}
+                </div>
             )}
-            <span className="text-sm font-bold text-white drop-shadow-md">{title}</span>
         </div>
-        <div className="bg-cyan-400 p-2 space-y-0.5">
-            {children}
-        </div>
-    </div>
-)
+    )
+}
 
 const SidebarLink = ({ to, children, isSpecial, onClick }) => {
     if (onClick) {
@@ -54,8 +70,8 @@ const SidebarLink = ({ to, children, isSpecial, onClick }) => {
 export default function LeftColumn() {
     const { user, logout } = useAuth()
     const [legendaryMaps, setLegendaryMaps] = useState([])
+    const [vipMaps, setVipMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
-    const [eventPosts, setEventPosts] = useState([])
     const [notificationPosts, setNotificationPosts] = useState([])
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
@@ -67,11 +83,6 @@ export default function LeftColumn() {
         e.preventDefault()
         setComingSoonFeature(featureName)
         setComingSoonModalOpen(true)
-    }
-
-    const resolveEventTarget = (post) => {
-        if (post?.mapId?.slug) return `/map/${post.mapId.slug}`
-        return '/'
     }
 
     const resolveNewsTarget = (post) => {
@@ -108,6 +119,7 @@ export default function LeftColumn() {
             if (!user) {
                 if (!isCancelled) {
                     setLegendaryMaps([])
+                    setVipMaps([])
                     setLoadingMaps(false)
                 }
                 return
@@ -118,14 +130,19 @@ export default function LeftColumn() {
                     setLoadingMaps(true)
                 }
                 const maps = await gameApi.getMaps()
-                const legendaryOnly = maps.filter((map) => map.isLegendary)
+                const vipOnly = maps.filter((map) => Number(map?.vipVisibilityLevel || 0) > 0)
+                const legendaryOnly = maps.filter((map) => map.isLegendary && Number(map?.vipVisibilityLevel || 0) <= 0)
                 if (!isCancelled) {
+                    setVipMaps(sortByDisplayOrder(vipOnly))
                     setLegendaryMaps(sortByDisplayOrder(legendaryOnly))
                 }
             } catch (err) {
                 const message = String(err?.message || '')
                 if (!/unauthorized|token expired|invalid token/i.test(message)) {
                     console.error('Không thể tải bản đồ huyền thoại:', err)
+                }
+                if (!isCancelled) {
+                    setVipMaps([])
                 }
             } finally {
                 if (!isCancelled) {
@@ -150,8 +167,7 @@ export default function LeftColumn() {
     useEffect(() => {
         const loadHighlights = async () => {
             try {
-                const [eventRes, notificationRes, newsRes, updateRes] = await Promise.all([
-                    newsApi.getNews({ limit: 5, type: 'event' }),
+                const [notificationRes, newsRes, updateRes] = await Promise.all([
                     newsApi.getNews({ limit: 5, type: 'notification' }),
                     newsApi.getNews({ limit: 10, type: 'news' }),
                     newsApi.getNews({ limit: 5, type: 'update' }),
@@ -162,12 +178,10 @@ export default function LeftColumn() {
                     ...(updateRes?.ok ? (updateRes.posts || []) : []),
                 ]).slice(0, 5)
 
-                setEventPosts(eventRes?.ok ? (eventRes.posts || []) : [])
                 setNotificationPosts(sortPostsByDate(notificationRes?.ok ? (notificationRes.posts || []) : []).slice(0, 5))
                 setUpdatePosts(mergedUpdates)
             } catch (err) {
                 console.error('Không thể tải điểm nhấn:', err)
-                setEventPosts([])
                 setNotificationPosts([])
                 setUpdatePosts([])
             } finally {
@@ -181,49 +195,25 @@ export default function LeftColumn() {
     return (
         <div className="flex flex-col w-full">
 
-            {/* EVENTS */}
-            <SidebarSection title="Sự Kiện" iconId={38}>
-                {loadingHighlights ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
-                ) : eventPosts.length === 0 ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Chưa có sự kiện mới.</div>
-                ) : (
-                    eventPosts.map((post) => (
-                        <SidebarLink key={post._id} to={resolveEventTarget(post)} isSpecial>
-                            {post.title}
-                        </SidebarLink>
-                    ))
-                )}
-            </SidebarSection>
+            {vipMaps.length > 0 && (
+                <SidebarSection title="Bản Đồ VIP" iconId={vipMaps[0]?.iconId || 145}>
+                    {loadingMaps ? (
+                        <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
+                    ) : (
+                        vipMaps.map((map) => (
+                            <SidebarLink key={map._id} to={`/map/${map.slug}`} isSpecial>
+                                {`VIP ${Math.max(0, Number(map.vipVisibilityLevel) || 0)} - ${map.name}`}
+                            </SidebarLink>
+                        ))
+                    )}
+                </SidebarSection>
+            )}
 
-            {/* NOTIFICATIONS */}
-            <SidebarSection title="Thông Báo" iconId={120}>
-                {loadingHighlights ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
-                ) : notificationPosts.length === 0 ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Chưa có thông báo mới.</div>
-                ) : (
-                    notificationPosts.map((post) => (
-                        <SidebarLink key={post._id} to={resolveNewsTarget(post)} isSpecial>
-                            {post.title}
-                        </SidebarLink>
-                    ))
-                )}
-            </SidebarSection>
-
-            {/* RECENT UPDATES */}
+            {/* NEWS HUB */}
             <SidebarSection title="Tin Tức" iconId={89}>
-                {loadingHighlights ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
-                ) : updatePosts.length === 0 ? (
-                    <div className="text-xs text-white/70 px-2 py-1">Chưa có tin tức mới.</div>
-                ) : (
-                    updatePosts.map((post) => (
-                        <SidebarLink key={post._id} to={resolveNewsTarget(post)} isSpecial>
-                            {post.title}
-                        </SidebarLink>
-                    ))
-                )}
+                <SidebarLink to="/event-maps" isSpecial>Danh sách bản đồ sự kiện</SidebarLink>
+                <SidebarLink to="/notifications" isSpecial>Danh sách thông báo</SidebarLink>
+                <SidebarLink to="/news-list" isSpecial>Danh sách tin tức</SidebarLink>
             </SidebarSection>
 
             {/* GENERAL */}

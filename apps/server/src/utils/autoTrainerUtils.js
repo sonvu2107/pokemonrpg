@@ -1,6 +1,7 @@
 export const AUTO_TRAINER_GAME_TIMEZONE = String(process.env.GAME_TIMEZONE || 'Asia/Ho_Chi_Minh').trim() || 'Asia/Ho_Chi_Minh'
-export const AUTO_SEARCH_RARITY_KEYS = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+export const AUTO_SEARCH_RARITY_KEYS = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 export const AUTO_SEARCH_DEFAULT_ACTION_BY_RARITY = {
+    'sss+': 'catch',
     sss: 'catch',
     ss: 'catch',
     s: 'catch',

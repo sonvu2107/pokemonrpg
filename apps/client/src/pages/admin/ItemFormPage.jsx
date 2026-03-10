@@ -47,6 +47,7 @@ const POKEMON_RARITY_TIERS = [
     { value: 's', label: 'S' },
     { value: 'ss', label: 'SS' },
     { value: 'sss', label: 'SSS' },
+    { value: 'sss+', label: 'SSS+' },
 ]
 const POKEMON_RARITY_ORDER = POKEMON_RARITY_TIERS.map((entry) => entry.value)
 
@@ -102,7 +103,7 @@ export default function ItemFormPage() {
         vipPurchaseLimitBonusPerLevel: 0,
         isEvolutionMaterial: false,
         evolutionRarityFrom: 'd',
-        evolutionRarityTo: 'sss',
+        evolutionRarityTo: 'sss+',
         imageUrl: '',
         description: '',
         effectType: 'none',
@@ -134,7 +135,7 @@ export default function ItemFormPage() {
                 vipPurchaseLimitBonusPerLevel: Math.max(0, Number(data.item.vipPurchaseLimitBonusPerLevel) || 0),
                 isEvolutionMaterial: Boolean(data.item.isEvolutionMaterial),
                 evolutionRarityFrom: data.item.evolutionRarityFrom || 'd',
-                evolutionRarityTo: data.item.evolutionRarityTo || 'sss',
+                evolutionRarityTo: data.item.evolutionRarityTo || 'sss+',
                 imageUrl: data.item.imageUrl || '',
                 description: data.item.description || '',
                 effectType: data.item.effectType || 'none',

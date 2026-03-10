@@ -5,23 +5,39 @@ import { gameApi } from "../services/gameApi"
 import { ADMIN_PERMISSIONS } from "../constants/adminPermissions"
 import ComingSoonModal from "../components/ComingSoonModal"
 
-const SidebarSection = ({ title, iconId, children }) => (
-    <div className="rounded-md overflow-hidden shadow-sm mb-3">
-        <div className="bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600">
-            {iconId && (
-                <img
-                    src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${iconId}.png`}
-                    alt="icon"
-                    className="w-6 h-6 -my-2 pixelated"
-                />
+const SidebarSection = ({ title, iconId, children, defaultOpen = true }) => {
+    const [isOpen, setIsOpen] = useState(() => {
+        if (typeof window === 'undefined') return defaultOpen
+        return window.innerWidth < 1024 ? false : defaultOpen
+    })
+
+    return (
+        <div className="rounded-md overflow-hidden shadow-sm mb-3">
+            <button
+                type="button"
+                onClick={() => setIsOpen((prev) => !prev)}
+                className="w-full bg-gradient-to-t from-blue-700 to-cyan-500 px-2 py-1.5 flex items-center gap-2 border-b border-blue-600 text-left"
+            >
+                {iconId && (
+                    <img
+                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${iconId}.png`}
+                        alt="icon"
+                        className="w-6 h-6 -my-2 pixelated"
+                    />
+                )}
+                <span className="text-sm font-bold text-white drop-shadow-md flex-1">{title}</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-white/40 bg-white/10 text-xs font-extrabold text-white">
+                    {isOpen ? '-' : '+'}
+                </span>
+            </button>
+            {isOpen && (
+                <div className="bg-cyan-400 p-2 space-y-0.5">
+                    {children}
+                </div>
             )}
-            <span className="text-sm font-bold text-white drop-shadow-md">{title}</span>
         </div>
-        <div className="bg-cyan-400 p-2 space-y-0.5">
-            {children}
-        </div>
-    </div>
-)
+    )
+}
 
 const SidebarLink = ({ to, children, isSpecial, onClick }) => {
     if (onClick) {
@@ -172,6 +188,7 @@ export default function RightColumn() {
                 <SidebarLink to="/shop/skills">Cửa hàng Kỹ Năng</SidebarLink>
                 <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>
                 <SidebarLink to="/auctions">Khu Đấu Giá</SidebarLink>
+                {Number(user?.vipTierLevel || 0) >= 4 && <SidebarLink to="/auctions/manage">Đấu Giá Của Tôi</SidebarLink>}
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Hầm Mỏ')}>Cửa hàng Hầm Mỏ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Cửa hàng Vẹt')} isSpecial>Cửa hàng Vẹt</SidebarLink>
             </SidebarSection>

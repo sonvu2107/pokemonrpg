@@ -32,6 +32,7 @@ const LEARN_SCOPE_OPTIONS = [
 ]
 
 const POKEMON_RARITIES = [
+    { value: 'sss+', label: 'SSS+ (Tối thượng)' },
     { value: 'sss', label: 'SSS (Thần thoại cực hiếm)' },
     { value: 'ss', label: 'SS (Thần thoại)' },
     { value: 's', label: 'S (Huyền thoại)' },

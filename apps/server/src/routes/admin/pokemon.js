@@ -31,7 +31,7 @@ const VALID_TYPES = new Set([
     'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
 ])
 
-const VALID_RARITIES = new Set(['sss', 'ss', 's', 'a', 'b', 'c', 'd'])
+const VALID_RARITIES = new Set(['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd'])
 const normalizeMoveName = (value = '') => String(value || '').trim().toLowerCase()
 const FORM_VARIANT_ID_REGEX = /^[a-z0-9][a-z0-9_-]{0,31}$/
 
@@ -135,14 +135,14 @@ const validateEvolutionMaterialItems = async (itemIds = []) => {
     return { ok: true, itemById }
 }
 
-const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 const normalizePokemonRarity = (value = '') => normalizeRarity(value)
 const isEvolutionItemAllowedForRarity = (item, rarity) => {
     const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
     if (rarityIndex < 0) return true
 
     const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityFrom || 'd'))
-    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(item?.evolutionRarityTo || 'sss+'))
     if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
     return rarityIndex >= fromIndex && rarityIndex <= toIndex
 }
@@ -294,7 +294,7 @@ const buildBulkImportEntry = (entry, index) => {
     const spd = Number.parseInt(baseStats?.spd, 10)
 
     const stats = { hp, atk, def, spatk, spldef, spd }
-    const invalidStat = Object.entries(stats).find(([, value]) => !Number.isFinite(value) || value < 1 || value > 255)
+    const invalidStat = Object.entries(stats).find(([, value]) => !Number.isFinite(value) || value < 1 || value > 100000)
     if (invalidStat) {
         return { error: `Chi so ${invalidStat[0]} khong hop le o vi tri ${index + 1}` }
     }

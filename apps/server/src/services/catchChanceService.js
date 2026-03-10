@@ -13,6 +13,7 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    'sss+': 5,
     d: 24,
     c: 22,
     b: 20,
@@ -72,7 +73,7 @@ const calcLowHpBonusPercent = ({ hp, maxHp, rarity }) => {
  * @param {number}  opts.catchRate         Pokémon species catchRate (1–255)
  * @param {number}  [opts.hp]              Current HP (only used in 'wild' mode)
  * @param {number}  [opts.maxHp]           Max HP    (only used in 'wild' mode)
- * @param {string}  [opts.rarity]          Pokémon rarity key (d/c/b/a/s/ss/sss)
+ * @param {string}  [opts.rarity]          Pokémon rarity key (d/c/b/a/s/ss/sss/sss+)
  * @param {object}  [opts.ballItem]        Item document with effectType / effectValue
  * @param {number}  [opts.vipSsBonusPct]   VIP SS catch-rate bonus percent (0 if not applicable)
  * @param {'wild'|'valley'} [opts.mode]    Defaults to 'wild'

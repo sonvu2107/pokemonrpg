@@ -73,6 +73,17 @@ export const gameApi = {
         return data.maps || []
     },
 
+    async getEventMaps() {
+        const res = await fetch(`${API_URL}/game/event-maps`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải danh sách bản đồ sự kiện')
+        }
+        const data = await res.json()
+        return data.maps || []
+    },
+
     // POST /api/game/encounter/:id/attack
     async attackEncounter(encounterId) {
         const res = await fetch(`${API_URL}/game/encounter/${encounterId}/attack`, {
@@ -360,6 +371,19 @@ export const gameApi = {
         }
         const data = await res.json()
         return data.pokemon
+    },
+
+    // GET /api/pokemon/species/:id
+    async getPokemonSpeciesDetail(id) {
+        const res = await fetch(`${API_URL}/pokemon/species/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải thông tin loài Pokemon')
+        }
+        const data = await res.json()
+        return data.species
     },
 
     // POST /api/pokemon/:id/evolve
@@ -996,6 +1020,115 @@ export const gameApi = {
             body: JSON.stringify({ amount }),
         })
         if (!res.ok) await throwApiError(res, 'Đặt giá đấu thất bại')
+        return res.json()
+    },
+
+    async getManagedAuctions(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions/manage${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải danh sách đấu giá của bạn')
+        return res.json()
+    },
+
+    async getEscrowedAuctionPokemon() {
+        const res = await fetch(`${API_URL}/auctions/me/escrowed-pokemon`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải Pokémon đang được giữ cho đấu giá')
+        return res.json()
+    },
+
+    async getManagedAuctionById(id) {
+        const res = await fetch(`${API_URL}/auctions/manage/${id}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải chi tiết đấu giá của bạn')
+        return res.json()
+    },
+
+    async createManagedAuction(payload = {}) {
+        const res = await fetch(`${API_URL}/auctions/manage`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Tạo phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async updateManagedAuction(id, payload = {}) {
+        const res = await fetch(`${API_URL}/auctions/manage/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Cập nhật phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async publishManagedAuction(id) {
+        const res = await fetch(`${API_URL}/auctions/manage/${id}/publish`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Xuất bản phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async cancelManagedAuction(id, payload = {}) {
+        const res = await fetch(`${API_URL}/auctions/manage/${id}/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) await throwApiError(res, 'Hủy phiên đấu giá thất bại')
+        return res.json()
+    },
+
+    async getManagedAuctionBids(id, params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions/manage/${id}/bids${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải lịch sử đấu giá của bạn')
+        return res.json()
+    },
+
+    async lookupManagedAuctionPokemon(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auctions/manage/lookup/pokemon${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể tải Pokémon có thể đem đấu giá')
         return res.json()
     },
 

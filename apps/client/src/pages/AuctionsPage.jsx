@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import UserAuctionManagementPage from './UserAuctionManagementPage'
 
 const STATUS_OPTIONS = [
     { value: 'active', label: 'Đang diễn ra' },
@@ -20,6 +23,9 @@ const formatCurrency = (value) => `${Math.max(0, Number(value || 0)).toLocaleStr
 
 export default function AuctionsPage() {
     const BID_HISTORY_PAGE_SIZE = 10
+    const { user } = useAuth()
+    const location = useLocation()
+    const navigate = useNavigate()
     const toast = useToast()
     const [status, setStatus] = useState('active')
     const [search, setSearch] = useState('')
@@ -37,6 +43,8 @@ export default function AuctionsPage() {
     const [bidHistoryPagination, setBidHistoryPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: BID_HISTORY_PAGE_SIZE })
     const [bidAmount, setBidAmount] = useState('')
     const [bidding, setBidding] = useState(false)
+    const canManageAuctions = Math.max(0, Number(user?.vipTierLevel || 0)) >= 4
+    const activeTab = location.pathname === '/auctions/manage' ? 'manage' : 'market'
 
     const selectedAuction = useMemo(() => {
         const fromList = auctions.find((entry) => entry.id === selectedAuctionId) || null
@@ -115,25 +123,29 @@ export default function AuctionsPage() {
     }
 
     useEffect(() => {
+        if (activeTab !== 'market') return
         loadAuctions()
-    }, [status, search])
+    }, [status, search, activeTab])
 
     useEffect(() => {
+        if (activeTab !== 'market') return
         if (selectedAuctionId) {
             loadAuctionDetail(selectedAuctionId)
         }
-    }, [selectedAuctionId])
+    }, [selectedAuctionId, activeTab])
 
     useEffect(() => {
+        if (activeTab !== 'market') return
         if (!selectedAuctionId) return
         loadBidHistory(selectedAuctionId, bidHistoryPage)
-    }, [selectedAuctionId, bidHistoryPage])
+    }, [selectedAuctionId, bidHistoryPage, activeTab])
 
     useEffect(() => {
         setBidHistoryPage(1)
     }, [selectedAuctionId])
 
     useEffect(() => {
+        if (activeTab !== 'market') return undefined
         if (!selectedAuctionId) return undefined
         const interval = setInterval(() => {
             loadAuctions()
@@ -141,7 +153,7 @@ export default function AuctionsPage() {
             loadBidHistory(selectedAuctionId, bidHistoryPage)
         }, 15000)
         return () => clearInterval(interval)
-    }, [selectedAuctionId, bidHistoryPage])
+    }, [selectedAuctionId, bidHistoryPage, activeTab])
 
     const handleSearch = () => {
         setSearch(searchInput.trim())
@@ -168,15 +180,53 @@ export default function AuctionsPage() {
         }
     }
 
+    const handleChangeTab = (nextTab) => {
+        if (nextTab === 'manage') {
+            navigate('/auctions/manage')
+            return
+        }
+        navigate('/auctions')
+    }
+
     return (
         <div className="max-w-6xl mx-auto pb-12 space-y-4">
             <div className="text-center space-y-2">
                 <h1 className="text-3xl font-bold text-blue-900 drop-shadow-sm">Khu Đấu Giá</h1>
-                <p className="text-sm text-slate-500">Đấu giá vật phẩm bằng Xu Bạch Kim. Giá cao nhất khi hết giờ sẽ thắng.</p>
+                <p className="text-sm text-slate-500">Đấu giá bằng Xu Bạch Kim. Giá cao nhất khi hết giờ sẽ thắng.</p>
                 <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-bold">
                     <span className="flex items-center gap-1 text-amber-700">🪙 {wallet.platinumCoins.toLocaleString('vi-VN')} Xu Bạch Kim</span>
                 </div>
             </div>
+
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm font-bold">
+                        <button
+                            type="button"
+                            onClick={() => handleChangeTab('market')}
+                            className={`rounded border px-3 py-2 ${activeTab === 'market' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'}`}
+                        >
+                            Khu đấu giá
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleChangeTab('manage')}
+                            disabled={!canManageAuctions}
+                            className={`rounded border px-3 py-2 ${activeTab === 'manage' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'} disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                            Đấu giá của tôi
+                        </button>
+                    </div>
+                    {!canManageAuctions && (
+                        <div className="mt-2 text-xs font-semibold text-slate-500">
+                            Tab Đấu giá của tôi yêu cầu tài khoản VIP 4 trở lên.
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {activeTab === 'manage' ? <UserAuctionManagementPage embedded /> : (
+                <>
 
             <section className="rounded-xl border border-blue-300 bg-white shadow-sm overflow-hidden">
                 <div className="bg-gradient-to-t from-blue-600 to-cyan-500 px-4 py-2 text-center text-white font-bold uppercase tracking-wide">Bộ lọc đấu giá</div>
@@ -333,6 +383,8 @@ export default function AuctionsPage() {
                     )}
                 </section>
             </div>
+                </>
+            )}
         </div>
     )
 }

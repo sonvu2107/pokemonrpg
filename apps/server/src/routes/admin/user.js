@@ -202,6 +202,7 @@ const resetDailyAutoUsage = (userDoc) => {
         actionByRarity: isRecord(actionByRarity)
             ? actionByRarity
             : {
+                'sss+': 'catch',
                 sss: 'catch',
                 ss: 'catch',
                 s: 'catch',

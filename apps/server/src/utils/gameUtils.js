@@ -3,6 +3,7 @@ export const EXP_PER_SEARCH = 1
 export const expToNext = (level) => 250 + Math.max(0, level - 1) * 100
 
 export const RARITY_STAT_GAIN = {
+    'sss+': 70,
     d: 1,
     c: 3,
     b: 6,
@@ -13,6 +14,7 @@ export const RARITY_STAT_GAIN = {
 }
 
 export const RARITY_STAT_MULTIPLIER = {
+    'sss+': 1.1,
     d: 1.0,
     c: 1.0,
     b: 1.0,
@@ -23,6 +25,7 @@ export const RARITY_STAT_MULTIPLIER = {
 }
 
 export const RARITY_EXP_MULTIPLIER = {
+    'sss+': 1.75,
     d: 1.0,
     c: 1.0,
     b: 1.0,

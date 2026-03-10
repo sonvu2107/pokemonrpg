@@ -13,7 +13,7 @@ const RARITY_ALIASES = {
     common: 'd',
 }
 
-const VALID_RARITIES = new Set(['sss', 'ss', 's', 'a', 'b', 'c', 'd'])
+const VALID_RARITIES = new Set(['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd'])
 
 const normalizeHeader = (value = '') => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '')
 

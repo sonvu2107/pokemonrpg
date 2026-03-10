@@ -210,7 +210,7 @@ const normalizeOverallMode = (value = '') => {
     return 'wealth'
 }
 
-const RARITY_KEYS = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+const RARITY_KEYS = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 const normalizeRarityKey = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
@@ -225,13 +225,17 @@ const normalizePokemonRarityFilter = (value = '') => {
 
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-const buildPokemonSpeciesQuery = ({ search = '', rarity = 'all' } = {}) => {
+const buildPokemonSpeciesQuery = ({ search = '', rarity = 'all', type = 'all' } = {}) => {
     const query = {}
     const rarityFilter = normalizePokemonRarityFilter(rarity)
+    const typeFilter = String(type || '').trim().toLowerCase()
     const keyword = String(search || '').trim()
 
     if (rarityFilter !== 'all') {
         query.rarity = rarityFilter
+    }
+    if (typeFilter && typeFilter !== 'all') {
+        query.types = typeFilter
     }
 
     if (!keyword) {
@@ -255,6 +259,7 @@ const buildPokemonSpeciesQuery = ({ search = '', rarity = 'all' } = {}) => {
 }
 
 const RARITY_VALUE_BASE_SCORE = {
+    'sss+': 100,
     d: 20,
     c: 35,
     b: 50,
@@ -697,7 +702,7 @@ const getPowerRankingSnapshot = async (adminUserIds = []) => {
     })
 
     if (cached?.snapshot) {
-        refreshPromise.catch(() => {})
+        refreshPromise.catch(() => { })
         return cached.snapshot
     }
 
@@ -1191,11 +1196,12 @@ router.get('/pokemon-rarity/options', authMiddleware, async (req, res, next) => 
     try {
         const search = String(req.query.search || '').trim()
         const rarity = normalizePokemonRarityFilter(req.query.rarity)
+        const type = String(req.query.type || '').trim().toLowerCase()
         const page = Math.max(1, parseInt(req.query.page, 10) || 1)
         const limit = Math.min(120, Math.max(12, parseInt(req.query.limit, 10) || 40))
         const skip = (page - 1) * limit
 
-        const query = buildPokemonSpeciesQuery({ search, rarity })
+        const query = buildPokemonSpeciesQuery({ search, rarity, type })
         const [total, rows] = await Promise.all([
             Pokemon.countDocuments(query),
             Pokemon.find(query)
@@ -1239,6 +1245,7 @@ router.get('/pokemon-rarity', authMiddleware, async (req, res, next) => {
         const skip = (page - 1) * limit
         const search = String(req.query.search || '').trim()
         const rarity = normalizePokemonRarityFilter(req.query.rarity)
+        const type = String(req.query.type || '').trim().toLowerCase()
         const requestedPokemonId = String(req.query.pokemonId || '').trim()
         const selectedPokemonId = isValidObjectIdString(requestedPokemonId) ? requestedPokemonId : ''
 
@@ -1248,7 +1255,7 @@ router.get('/pokemon-rarity', authMiddleware, async (req, res, next) => {
             baseMatch.userId = { $nin: adminUserIds }
         }
 
-        const query = buildPokemonSpeciesQuery({ search, rarity })
+        const query = buildPokemonSpeciesQuery({ search, rarity, type })
         const [totalSpecies, speciesRows, totalPokemonInPlayerHands] = await Promise.all([
             Pokemon.countDocuments(query),
             Pokemon.find(query)
@@ -1461,6 +1468,7 @@ router.get('/pokemon-rarity', authMiddleware, async (req, res, next) => {
             filters: {
                 search,
                 rarity,
+                type,
             },
             summary: {
                 totalPokemonInPlayerHands: Math.max(0, Number(totalPokemonInPlayerHands || 0)),

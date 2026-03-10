@@ -52,6 +52,62 @@ body {
 
 /* Rarity Frames */
 @layer components {
+  .rarity-frame-sssplus {
+    position: relative;
+    isolation: isolate;
+    background:
+      linear-gradient(#fffdf4, #fff8db) padding-box,
+      linear-gradient(135deg,
+        #7a4a00 0%,
+        #c88a12 14%,
+        #fff2a6 28%,
+        #d39b1c 42%,
+        #fff7c7 56%,
+        #b87900 70%,
+        #ffe082 84%,
+        #7a4a00 100%) border-box !important;
+    background-size: 100% 100%, 260% 260%;
+    background-position: 0 0, 0% 50%;
+    border: 3px solid transparent !important;
+    animation: sssplus-gold-shimmer 3.6s ease-in-out infinite, sssplus-border-glow 2.4s ease-in-out infinite;
+    overflow: hidden;
+  }
+
+  .rarity-frame-sssplus::before,
+  .rarity-frame-sssplus::after {
+    content: '';
+    position: absolute;
+    inset: -8%;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .rarity-frame-sssplus::before {
+    z-index: -1;
+    background: radial-gradient(circle, rgba(255, 243, 176, 0.7) 0%, rgba(255, 243, 176, 0) 62%);
+    filter: blur(10px);
+    opacity: 0.65;
+    animation: sssplus-aura-pulse 2.8s ease-in-out infinite;
+  }
+
+  .rarity-frame-sssplus::after {
+    inset: 0;
+    background:
+      linear-gradient(120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.12) 35%,
+        rgba(255, 248, 196, 0.9) 48%,
+        rgba(255, 255, 255, 0.12) 60%,
+        rgba(255, 255, 255, 0) 100%),
+      radial-gradient(circle at 18% 28%, rgba(255, 249, 196, 0.95) 0 2px, transparent 3px),
+      radial-gradient(circle at 82% 22%, rgba(255, 244, 160, 0.9) 0 1.5px, transparent 2.5px),
+      radial-gradient(circle at 24% 76%, rgba(255, 232, 128, 0.75) 0 1.5px, transparent 2.5px),
+      radial-gradient(circle at 72% 74%, rgba(255, 250, 210, 0.9) 0 2px, transparent 3px);
+    mix-blend-mode: screen;
+    opacity: 0.75;
+    animation: sssplus-sparkle-sweep 4.2s linear infinite;
+  }
+
   .rarity-frame-sss {
     position: relative;
     isolation: isolate;
@@ -106,6 +162,64 @@ body {
 
   100% {
     background-position: 0 0, 300% 50%;
+  }
+}
+
+@keyframes sssplus-gold-shimmer {
+  0%,
+  100% {
+    background-position: 0 0, 0% 50%;
+  }
+
+  50% {
+    background-position: 0 0, 100% 50%;
+  }
+}
+
+@keyframes sssplus-border-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 250, 220, 0.72) inset,
+      0 0 14px rgba(245, 158, 11, 0.34),
+      0 0 24px rgba(250, 204, 21, 0.24);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 252, 232, 0.95) inset,
+      0 0 18px rgba(251, 191, 36, 0.5),
+      0 0 32px rgba(253, 224, 71, 0.38);
+  }
+}
+
+@keyframes sssplus-aura-pulse {
+  0%,
+  100% {
+    transform: scale(0.98);
+    opacity: 0.45;
+  }
+
+  50% {
+    transform: scale(1.02);
+    opacity: 0.8;
+  }
+}
+
+@keyframes sssplus-sparkle-sweep {
+  0% {
+    transform: translateX(-24%) translateY(0);
+    opacity: 0.45;
+  }
+
+  50% {
+    transform: translateX(20%) translateY(-2%);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: translateX(28%) translateY(0);
+    opacity: 0.5;
   }
 }
 

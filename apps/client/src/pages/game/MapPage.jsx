@@ -72,7 +72,7 @@ const AUTO_SEARCH_INTERVAL_OPTIONS = [
     { value: 2500, label: 'Rất chậm (2.5s)' },
 ]
 const DEFAULT_AUTO_SEARCH_INTERVAL_MS = AUTO_SEARCH_INTERVAL_OPTIONS[1].value
-const AUTO_SEARCH_RARITY_KEYS = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+const AUTO_SEARCH_RARITY_KEYS = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 const AUTO_SEARCH_ACTION_OPTIONS = [
     { value: 'catch', label: 'Dùng bóng bắt' },
     { value: 'battle', label: 'Chiến đấu' },
@@ -84,6 +84,7 @@ const AUTO_CATCH_FORM_OPTIONS = [
     { value: 'variant', label: 'Chỉ form đặc biệt' },
 ]
 const DEFAULT_AUTO_ACTION_BY_RARITY = {
+    'sss+': 'catch',
     sss: 'catch',
     ss: 'catch',
     s: 'catch',
@@ -93,6 +94,7 @@ const DEFAULT_AUTO_ACTION_BY_RARITY = {
     d: 'battle',
 }
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    'sss+': 10,
     d: 31,
     c: 29,
     b: 27,
@@ -102,11 +104,11 @@ const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     sss: 14,
 })
 const LOW_HP_CATCH_BONUS_CAP_FALLBACK = 23
-const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_BONUS_KEYS = Object.freeze(['s', 'ss', 'sss', 'sss+'])
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 const MAP_DETAIL_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
-const POKEMON_RARITY_ORDER = Object.freeze({ d: 0, c: 1, b: 2, a: 3, s: 4, ss: 5, sss: 6 })
+const POKEMON_RARITY_ORDER = Object.freeze({ d: 0, c: 1, b: 2, a: 3, s: 4, ss: 5, sss: 6, 'sss+': 7 })
 const ITEM_RARITY_ORDER = Object.freeze({ common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 })
 const ITEM_TYPE_LABELS = Object.freeze({
     healing: 'Hồi phục',

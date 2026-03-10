@@ -6,6 +6,11 @@ const MARQUEE_DURATION_MS = 12000
 const DEFAULT_ICON = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png'
 
 const rarityThemeByKey = {
+    'sss+': {
+        label: 'SSS+',
+        rarityClass: 'text-yellow-100',
+        frameClass: 'border-yellow-200/90 bg-gradient-to-r from-amber-950/90 via-yellow-700/85 to-amber-950/90 shadow-[0_0_24px_rgba(250,204,21,0.55)]',
+    },
     s: {
         label: 'S',
         rarityClass: 'text-amber-200',

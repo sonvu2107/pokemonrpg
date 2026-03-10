@@ -525,6 +525,7 @@ export default function PokemonInfoPage() {
         a: 'text-purple-600',
         s: 'text-orange-500',
         ss: 'text-red-600',
+        'sss+': 'text-amber-500',
         sss: 'text-yellow-500'
     }[base.rarity] || 'text-slate-700'
 

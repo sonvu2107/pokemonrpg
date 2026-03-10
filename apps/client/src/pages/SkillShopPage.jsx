@@ -46,6 +46,7 @@ const RARITY_LABELS = {
 }
 
 const POKEMON_RARITY_LABELS = {
+    'sss+': 'SSS+',
     sss: 'SSS',
     ss: 'SS',
     s: 'S',

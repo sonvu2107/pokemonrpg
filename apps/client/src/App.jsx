@@ -5,6 +5,9 @@ import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
 const AppShell = lazy(() => import('./layouts/AppShell'))
 const HomePage = lazy(() => import('./pages/HomePage'))
+const EventMapsPage = lazy(() => import('./pages/EventMapsPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const NewsListPage = lazy(() => import('./pages/NewsListPage'))
 const StarterPage = lazy(() => import('./pages/StarterPage'))
 const InventoryPage = lazy(() => import('./pages/InventoryPage'))
 const BattlePage = lazy(() => import('./pages/BattlePage').then((module) => ({ default: module.BattlePage })))
@@ -79,6 +82,9 @@ export default function App() {
                 {/* Main app with AppShell */}
                 <Route element={<AppShell />}>
                     <Route path="/" element={<HomePage />} />
+                    <Route path="/event-maps" element={<EventMapsPage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
+                    <Route path="/news-list" element={<NewsListPage />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/profile/edit" element={<EditProfilePage />} />
                     <Route path="/starter" element={<StarterPage />} />
@@ -112,6 +118,7 @@ export default function App() {
                     <Route path="/news/:id" element={<NewsDetailPage />} />
                     <Route path="/valley" element={<ValleyPage />} />
                     <Route path="/auctions" element={<AuctionsPage />} />
+                    <Route path="/auctions/manage" element={<AuctionsPage />} />
 
                     {/* Admin Routes */}
                     <Route path="/admin" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />

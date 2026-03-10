@@ -64,6 +64,7 @@ export default function PokemonBoxPage() {
     const [debouncedSearch, setDebouncedSearch] = useState('')
     const [releaseConfirmId, setReleaseConfirmId] = useState(null)
     const [releasingId, setReleasingId] = useState(null)
+    const [escrowedPokemon, setEscrowedPokemon] = useState([])
     const wallet = {
         platinumCoins: Number(liveUser?.playerState?.platinumCoins ?? 0),
         moonPoints: Number(liveUser?.playerState?.moonPoints || 0),
@@ -98,6 +99,10 @@ export default function PokemonBoxPage() {
         loadBox()
     }, [page, filter, debouncedSearch, sort])
 
+    useEffect(() => {
+        loadEscrowedPokemon()
+    }, [])
+
     const loadBox = async () => {
         try {
             setLoading(true)
@@ -115,6 +120,16 @@ export default function PokemonBoxPage() {
             console.error(err)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadEscrowedPokemon = async () => {
+        try {
+            const data = await gameApi.getEscrowedAuctionPokemon()
+            setEscrowedPokemon(Array.isArray(data?.pokemon) ? data.pokemon : [])
+        } catch (err) {
+            console.error(err)
+            setEscrowedPokemon([])
         }
     }
 
@@ -185,19 +200,49 @@ export default function PokemonBoxPage() {
                     <span className="flex items-center gap-1">🪙 {Number(wallet.platinumCoins || 0).toLocaleString('vi-VN')} Xu Bạch Kim</span>
                     <span className="flex items-center gap-1 text-purple-700">🌑 {Number(wallet.moonPoints || 0).toLocaleString('vi-VN')} Điểm Nguyệt Các</span>
                 </div>
-                <h1 className="text-3xl font-bold text-center text-blue-900 drop-shadow-sm">Kho Pokemon Của Bạn</h1>
+                <h1 className="text-3xl font-bold text-center text-blue-900 drop-shadow-sm">Kho Pokémon Của Bạn</h1>
             </div>
 
             <div className="space-y-4">
                 <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
-                    <SectionHeader title="Pokemon Đang Sở Hữu" />
+                    <SectionHeader title="Pokémon Đang Sở Hữu" />
                     <div className="bg-slate-50 border-b border-blue-200 p-1 text-center font-bold text-blue-800 text-xs uppercase bg-blue-100/50">
-                        Pokemon Đang Sở Hữu
+                        Pokémon Đang Sở Hữu
                     </div>
                     <div className="p-4 text-center text-sm font-bold text-slate-700">
                         Bạn hiện đang có <span className="text-blue-600">{counts.total}</span> Pokémon (trong kho/đội hình).
                     </div>
                 </div>
+                {escrowedPokemon.length > 0 && (
+                    <div className="border border-amber-300 rounded-t-lg overflow-hidden shadow-sm bg-white">
+                        <SectionHeader title="Đang Giữ Cho Đấu Giá" />
+                        <div className="p-4 bg-amber-50/60 space-y-3">
+                            <div className="text-sm text-amber-900 font-semibold">
+                                Có <span className="font-bold">{escrowedPokemon.length}</span> Pokémon đang được giữ cho các phiên đấu giá nháp hoặc đang diễn ra.
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                {escrowedPokemon.map((entry) => (
+                                    <Link key={entry._id} to="/auctions/manage" className="rounded-xl border border-amber-200 bg-white p-3 hover:bg-amber-50 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 overflow-hidden shrink-0">
+                                                {entry?.sprite ? <img src={entry.sprite} alt={entry.name} className="h-12 w-12 object-contain pixelated rendering-pixelated" /> : <span className="text-slate-300">?</span>}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-1">
+                                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 border border-amber-200">Đang giữ cho đấu giá</span>
+                                                    {entry.isShiny && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">Shiny</span>}
+                                                </div>
+                                                <div className="mt-1 truncate font-bold text-slate-800">{entry.nickname ? `${entry.nickname} - ${entry.name}` : entry.name}</div>
+                                                <div className="text-xs text-slate-500">Lv.{Number(entry.level || 1).toLocaleString('vi-VN')} - {entry.formId || 'normal'}</div>
+                                                <div className="text-xs font-semibold text-amber-700">Mở Đấu giá của tôi để chỉnh sửa hoặc hủy phiên.</div>
+                                            </div>
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                     <SectionHeader title="Lọc / Sắp Xếp" />
                     <div className="bg-slate-50 border-b border-blue-200 p-1 text-center font-bold text-blue-800 text-xs uppercase bg-blue-100/50">
@@ -287,20 +332,20 @@ export default function PokemonBoxPage() {
 
                 {/* 4. Your Box Grid */}
                 <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-blue-50">
-                    <SectionHeader title="Kho Pokemon" />
+                    <SectionHeader title="Kho Pokémon" />
 
                     {/* Headers */}
                     <div className="flex text-xs font-bold text-blue-800 border-b border-blue-300 bg-white">
-                        <div className="flex-1 p-1 text-center">Thông Tin Pokemon</div>
+                        <div className="flex-1 p-1 text-center">Thông Tin Pokémon</div>
                     </div>
 
                     {/* Content */}
                     <div className="p-4 bg-white min-h-[300px]">
                         {loading ? (
-                            <div className="text-center py-12 text-slate-400 font-bold animate-pulse">Đang tải Pokemon...</div>
+                            <div className="text-center py-12 text-slate-400 font-bold animate-pulse">Đang tải Pokémon...</div>
                         ) : pokemon.length === 0 ? (
                             <div className="text-center py-12 text-slate-500 italic">
-                                Không tìm thấy Pokemon nào.
+                                Không tìm thấy Pokémon nào.
                             </div>
                         ) : (
                             <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">

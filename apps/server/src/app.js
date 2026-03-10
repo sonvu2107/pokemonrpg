@@ -140,7 +140,8 @@ const limiter = rateLimit({
         }
         const path = req.path
         return path === '/stats' || path === '/stats/' ||
-            path === '/game/maps' || path === '/game/maps/'
+            path === '/game/maps' || path === '/game/maps/' ||
+            path === '/game/event-maps' || path === '/game/event-maps/'
     },
 })
 app.use('/api/', limiter)

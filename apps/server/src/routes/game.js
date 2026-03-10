@@ -154,6 +154,66 @@ import {
 import { hasOwnedPokemonForm } from '../services/userPokemonOwnershipService.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+const canViewVipMap = (mapLike = {}, currentVipLevel = 0, isAdmin = false) => {
+    if (isAdmin) return true
+    const requiredVipLevel = Math.max(0, Number(mapLike?.vipVisibilityLevel) || 0)
+    return requiredVipLevel === 0 || currentVipLevel === requiredVipLevel
+}
+
+const buildVisibleMapsResponse = async ({ userId, isAdmin = false, currentVipLevel = 0, eventOnly = false } = {}) => {
+    const orderedMaps = await getOrderedMaps({ forceRefresh: eventOnly })
+    const filteredMaps = eventOnly
+        ? orderedMaps.filter((map) => Boolean(map?.isEventMap))
+        : orderedMaps
+    const mapIds = filteredMaps.map((map) => map._id)
+    const playerLevelState = await PlayerState.findOne({ userId })
+        .select('level')
+        .lean()
+    const currentPlayerLevel = Math.max(1, Number(playerLevelState?.level) || 1)
+    const progresses = await MapProgress.find({ userId, mapId: { $in: mapIds } })
+        .select('mapId totalSearches isUnlocked')
+        .lean()
+    const progressById = buildProgressIndex(progresses)
+
+    const mapsWithUnlockState = filteredMaps.map((map, index) => {
+        const unlockRequirement = buildUnlockRequirement(filteredMaps, index, progressById, currentPlayerLevel, currentVipLevel)
+        const isUnlocked = isAdmin || (
+            unlockRequirement.remainingSearches === 0
+            && unlockRequirement.remainingPlayerLevels === 0
+            && unlockRequirement.remainingVipLevels === 0
+        )
+        return { map, unlockRequirement, isUnlocked }
+    })
+
+    if (!isAdmin) {
+        const mapIdsToUnlock = mapsWithUnlockState
+            .filter(({ map, isUnlocked }) => {
+                if (!isUnlocked) return false
+                const existing = progressById.get(map._id.toString())
+                return !existing || !existing.isUnlocked
+            })
+            .map(({ map }) => map._id)
+
+        const unlockedProgressById = await unlockMapsInBulk(userId, mapIdsToUnlock)
+        unlockedProgressById.forEach((progress, key) => {
+            progressById.set(key, progress)
+        })
+    }
+
+    return mapsWithUnlockState
+        .filter(({ map }) => canViewVipMap(map, currentVipLevel, isAdmin))
+        .map(({ map, unlockRequirement, isUnlocked }) => {
+            const progress = progressById.get(map._id.toString())
+            return {
+                ...map,
+                isUnlocked,
+                unlockRequirement,
+                progress: {
+                    totalSearches: progress?.totalSearches || 0,
+                },
+            }
+        })
+}
 
 const buildEffectiveBattleStats = ({
     baseStats = {},
@@ -1012,55 +1072,22 @@ router.get('/maps', authMiddleware, async (req, res, next) => {
         const userId = req.user.userId
         const isAdmin = req.user?.role === 'admin'
         const currentVipLevel = Math.max(0, Number(req.user?.vipTierLevel) || 0)
-        const orderedMaps = await getOrderedMaps()
-        const mapIds = orderedMaps.map((map) => map._id)
-        const playerLevelState = await PlayerState.findOne({ userId })
-            .select('level')
-            .lean()
-        const currentPlayerLevel = Math.max(1, Number(playerLevelState?.level) || 1)
-        const progresses = await MapProgress.find({ userId, mapId: { $in: mapIds } })
-            .select('mapId totalSearches isUnlocked')
-            .lean()
-        const progressById = buildProgressIndex(progresses)
-
-        const mapsWithUnlockState = orderedMaps.map((map, index) => {
-            const unlockRequirement = buildUnlockRequirement(orderedMaps, index, progressById, currentPlayerLevel, currentVipLevel)
-            const isUnlocked = isAdmin || (
-                unlockRequirement.remainingSearches === 0
-                && unlockRequirement.remainingPlayerLevels === 0
-                && unlockRequirement.remainingVipLevels === 0
-            )
-            return { map, unlockRequirement, isUnlocked }
-        })
-
-        if (!isAdmin) {
-            const mapIdsToUnlock = mapsWithUnlockState
-                .filter(({ map, isUnlocked }) => {
-                    if (!isUnlocked) return false
-                    const existing = progressById.get(map._id.toString())
-                    return !existing || !existing.isUnlocked
-                })
-                .map(({ map }) => map._id)
-
-            const unlockedProgressById = await unlockMapsInBulk(userId, mapIdsToUnlock)
-            unlockedProgressById.forEach((progress, key) => {
-                progressById.set(key, progress)
-            })
-        }
-
-        const response = mapsWithUnlockState.map(({ map, unlockRequirement, isUnlocked }) => {
-            const progress = progressById.get(map._id.toString())
-            return {
-                ...map,
-                isUnlocked,
-                unlockRequirement,
-                progress: {
-                    totalSearches: progress?.totalSearches || 0,
-                },
-            }
-        })
+        const response = await buildVisibleMapsResponse({ userId, isAdmin, currentVipLevel })
 
         res.json({ ok: true, maps: response })
+    } catch (error) {
+        next(error)
+    }
+})
+
+// GET /api/game/event-maps (protected)
+router.get('/event-maps', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const isAdmin = req.user?.role === 'admin'
+        const currentVipLevel = Math.max(0, Number(req.user?.vipTierLevel) || 0)
+        const maps = await buildVisibleMapsResponse({ userId, isAdmin, currentVipLevel, eventOnly: true })
+        res.json({ ok: true, maps })
     } catch (error) {
         next(error)
     }
@@ -1084,6 +1111,13 @@ router.get('/map/:slug/state', authMiddleware, async (req, res, next) => {
 
         if (!map) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản đồ' })
+        }
+
+        if (!canViewVipMap(map, currentVipLevel, isAdmin)) {
+            return res.status(403).json({
+                ok: false,
+                message: `Map này chỉ hiển thị cho đúng VIP ${Math.max(0, Number(map?.vipVisibilityLevel) || 0)}`,
+            })
         }
 
         const orderedMaps = await getOrderedMaps()
@@ -1526,7 +1560,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             })
 
             const rarity = String(pokemon.rarity || '').trim().toLowerCase()
-            const shouldEmitGlobalNotification = ['s', 'ss', 'sss'].includes(rarity)
+            const shouldEmitGlobalNotification = ['s', 'ss', 'sss', 'sss+'].includes(rarity)
             let globalNotificationPayload = null
             if (shouldEmitGlobalNotification) {
                 try {

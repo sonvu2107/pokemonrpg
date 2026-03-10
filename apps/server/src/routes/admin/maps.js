@@ -41,7 +41,7 @@ const normalizeSpecialPokemonIds = (value) => {
     )]
 }
 
-const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss'])
+const MAP_RARITY_CATCH_KEYS = Object.freeze(['s', 'ss', 'sss', 'sss+'])
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
@@ -59,7 +59,7 @@ const normalizeMapRarityCatchBonusPercent = (value = {}) => {
 const validateMapRarityCatchBonusPercent = (value) => {
     if (value === undefined || value === null) return null
     if (typeof value !== 'object' || Array.isArray(value)) {
-        return 'rarityCatchBonusPercent phải là object gồm các key s/ss/sss'
+        return 'rarityCatchBonusPercent phải là object gồm các key s/ss/sss/sss+'
     }
 
     for (const key of MAP_RARITY_CATCH_KEYS) {
@@ -268,6 +268,7 @@ router.post('/', async (req, res) => {
             requiredSearches,
             requiredPlayerLevel,
             requiredVipLevel,
+            vipVisibilityLevel,
             autoSearchRequiredVipLevel,
             encounterRate,
             itemDropRate,
@@ -322,6 +323,10 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
         }
 
+        if (vipVisibilityLevel !== undefined && Number(vipVisibilityLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'vipVisibilityLevel phải >= 0' })
+        }
+
         if (autoSearchRequiredVipLevel !== undefined && Number(autoSearchRequiredVipLevel) < 0) {
             return res.status(400).json({ ok: false, message: 'autoSearchRequiredVipLevel phải >= 0' })
         }
@@ -364,6 +369,7 @@ router.post('/', async (req, res) => {
             requiredSearches: requiredSearches !== undefined ? requiredSearches : 0,
             requiredPlayerLevel: requiredPlayerLevel !== undefined ? Math.max(1, Number(requiredPlayerLevel) || 1) : 1,
             requiredVipLevel: requiredVipLevel !== undefined ? Math.max(0, Number(requiredVipLevel) || 0) : 0,
+            vipVisibilityLevel: vipVisibilityLevel !== undefined ? Math.max(0, Number(vipVisibilityLevel) || 0) : 0,
             autoSearchRequiredVipLevel: autoSearchRequiredVipLevel !== undefined ? Math.max(0, Number(autoSearchRequiredVipLevel) || 0) : 0,
             encounterRate: encounterRate !== undefined ? encounterRate : 1,
             itemDropRate: itemDropRate !== undefined ? itemDropRate : 0,
@@ -407,6 +413,7 @@ router.put('/:id', async (req, res) => {
             requiredSearches,
             requiredPlayerLevel,
             requiredVipLevel,
+            vipVisibilityLevel,
             autoSearchRequiredVipLevel,
             encounterRate,
             itemDropRate,
@@ -464,6 +471,10 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'requiredVipLevel phải >= 0' })
         }
 
+        if (vipVisibilityLevel !== undefined && Number(vipVisibilityLevel) < 0) {
+            return res.status(400).json({ ok: false, message: 'vipVisibilityLevel phải >= 0' })
+        }
+
         if (autoSearchRequiredVipLevel !== undefined && Number(autoSearchRequiredVipLevel) < 0) {
             return res.status(400).json({ ok: false, message: 'autoSearchRequiredVipLevel phải >= 0' })
         }
@@ -511,6 +522,9 @@ router.put('/:id', async (req, res) => {
         map.requiredVipLevel = requiredVipLevel !== undefined
             ? Math.max(0, Number(requiredVipLevel) || 0)
             : map.requiredVipLevel
+        map.vipVisibilityLevel = vipVisibilityLevel !== undefined
+            ? Math.max(0, Number(vipVisibilityLevel) || 0)
+            : map.vipVisibilityLevel
         map.autoSearchRequiredVipLevel = autoSearchRequiredVipLevel !== undefined
             ? Math.max(0, Number(autoSearchRequiredVipLevel) || 0)
             : map.autoSearchRequiredVipLevel

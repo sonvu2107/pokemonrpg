@@ -6,15 +6,16 @@ import ImageUpload from '../../components/ImageUpload'
 const MIN_SPECIAL_WEIGHT = 0.0001
 const SPECIAL_POKEMON_MODAL_PAGE_SIZE = 40
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
-const MAP_RARITY_CATCH_BONUS_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_BONUS_KEYS = ['s', 'ss', 'sss', 'sss+']
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
-const DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT = Object.freeze({ s: 0, ss: 0, sss: 0 })
+const DEFAULT_MAP_RARITY_CATCH_BONUS_PERCENT = Object.freeze({ s: 0, ss: 0, sss: 0, 'sss+': 0 })
 const PREVIEW_CATCH_RATE = 45
 const PREVIEW_MAX_HP = 100
 const PREVIEW_FULL_HP = PREVIEW_MAX_HP
 const PREVIEW_LOW_HP = 1
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
+    'sss+': 10,
     d: 31,
     c: 29,
     b: 27,
@@ -93,6 +94,7 @@ export default function MapFormPage() {
         requiredSearches: 0,
         requiredPlayerLevel: 1,
         requiredVipLevel: 0,
+        vipVisibilityLevel: 0,
         autoSearchRequiredVipLevel: 0,
         encounterRate: 1,
         itemDropRate: 0,
@@ -210,6 +212,7 @@ export default function MapFormPage() {
                 requiredSearches: map.requiredSearches || 0,
                 requiredPlayerLevel: Math.max(1, Number(map.requiredPlayerLevel) || 1),
                 requiredVipLevel: Math.max(0, Number(map.requiredVipLevel) || 0),
+                vipVisibilityLevel: Math.max(0, Number(map.vipVisibilityLevel) || 0),
                 autoSearchRequiredVipLevel: Math.max(0, Number(map.autoSearchRequiredVipLevel) || 0),
                 encounterRate: map.encounterRate ?? 1,
                 itemDropRate: map.itemDropRate ?? 0,
@@ -256,6 +259,11 @@ export default function MapFormPage() {
 
         if (Number(formData.requiredVipLevel) < 0) {
             setError('VIP yêu cầu vào map phải >= 0')
+            return
+        }
+
+        if (Number(formData.vipVisibilityLevel) < 0) {
+            setError('VIP hiển thị map phải >= 0')
             return
         }
 
@@ -657,6 +665,19 @@ export default function MapFormPage() {
                                         className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                     />
                                     <p className="text-xs text-slate-500 mt-1">0 = mọi người vào được, 1 = cần VIP 1 trở lên.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-2 h-10 flex items-end pb-1">
+                                        <span>VIP Hiển Thị</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={formData.vipVisibilityLevel}
+                                        onChange={(e) => setFormData({ ...formData, vipVisibilityLevel: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                        className="w-full px-4 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">0 = map hiện như bình thường. 1/2/3... = chỉ người chơi đúng VIP đó mới thấy map trong mục Bản Đồ VIP và mới mở được trực tiếp.</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">

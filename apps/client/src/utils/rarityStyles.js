@@ -1,4 +1,14 @@
 export const RARITY_STYLES = {
+    'sss+': {
+        border: 'border-[3px] border-transparent',
+        bg: 'bg-amber-50',
+        text: 'text-amber-700 font-extrabold',
+        shadow: 'shadow-[0_0_20px_rgba(245,158,11,0.45)]',
+        overlay: 'bg-gradient-to-t from-amber-500/20 to-transparent',
+        frameClass: 'rarity-frame-sssplus',
+        badge: 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600 text-amber-950',
+        label: 'SSS+'
+    },
     sss: {
         border: 'border-[3px] border-transparent', // Handled by CSS
         bg: 'bg-white',

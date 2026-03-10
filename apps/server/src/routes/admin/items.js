@@ -309,7 +309,7 @@ router.post('/', async (req, res) => {
 
         const resolvedIsEvolutionMaterial = toBoolean(isEvolutionMaterial, false)
         const resolvedEvolutionRarityFrom = normalizePokemonRarityTier(evolutionRarityFrom, 'd')
-        const resolvedEvolutionRarityTo = normalizePokemonRarityTier(evolutionRarityTo, 'sss')
+        const resolvedEvolutionRarityTo = normalizePokemonRarityTier(evolutionRarityTo, 'sss+')
         if (resolvedIsEvolutionMaterial && !validateEvolutionRarityRange(resolvedEvolutionRarityFrom, resolvedEvolutionRarityTo)) {
             return res.status(400).json({ ok: false, message: 'Khoảng rank tiến hóa không hợp lệ (From phải <= To)' })
         }
@@ -447,8 +447,8 @@ router.put('/:id', async (req, res) => {
             ? normalizePokemonRarityTier(evolutionRarityFrom, item.evolutionRarityFrom || 'd')
             : normalizePokemonRarityTier(item.evolutionRarityFrom, 'd')
         const nextEvolutionRarityTo = evolutionRarityTo !== undefined
-            ? normalizePokemonRarityTier(evolutionRarityTo, item.evolutionRarityTo || 'sss')
-            : normalizePokemonRarityTier(item.evolutionRarityTo, 'sss')
+            ? normalizePokemonRarityTier(evolutionRarityTo, item.evolutionRarityTo || 'sss+')
+            : normalizePokemonRarityTier(item.evolutionRarityTo, 'sss+')
         if (nextIsEvolutionMaterial && !validateEvolutionRarityRange(nextEvolutionRarityFrom, nextEvolutionRarityTo)) {
             return res.status(400).json({ ok: false, message: 'Khoảng rank tiến hóa không hợp lệ (From phải <= To)' })
         }

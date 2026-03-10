@@ -19,7 +19,7 @@ export const ITEM_RARITIES = [
     'legendary',
 ]
 
-export const POKEMON_RARITY_TIERS = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+export const POKEMON_RARITY_TIERS = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 
 const itemSchema = new Schema(
     {
@@ -97,7 +97,7 @@ const itemSchema = new Schema(
         evolutionRarityTo: {
             type: String,
             enum: POKEMON_RARITY_TIERS,
-            default: 'sss',
+            default: 'sss+',
         },
         effectType: {
             type: String,

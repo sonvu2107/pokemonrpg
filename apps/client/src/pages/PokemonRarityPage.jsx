@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { getRarityStyle } from '../utils/rarityStyles'
 import Modal from '../components/Modal'
+import PokemonSpeciesDetailModal from '../components/PokemonSpeciesDetailModal'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -12,6 +13,7 @@ const SectionHeader = ({ title }) => (
 
 const RARITY_FILTERS = [
     { value: 'all', label: 'Tất cả' },
+    { value: 'sss+', label: 'SSS+' },
     { value: 'sss', label: 'SSS' },
     { value: 'ss', label: 'SS' },
     { value: 's', label: 'S' },
@@ -19,6 +21,28 @@ const RARITY_FILTERS = [
     { value: 'b', label: 'B' },
     { value: 'c', label: 'C' },
     { value: 'd', label: 'D' },
+]
+
+const TYPE_FILTERS = [
+    { value: 'all', label: 'Tất cả hệ' },
+    { value: 'normal', label: 'Normal' },
+    { value: 'fire', label: 'Fire' },
+    { value: 'water', label: 'Water' },
+    { value: 'grass', label: 'Grass' },
+    { value: 'electric', label: 'Electric' },
+    { value: 'ice', label: 'Ice' },
+    { value: 'fighting', label: 'Fighting' },
+    { value: 'poison', label: 'Poison' },
+    { value: 'ground', label: 'Ground' },
+    { value: 'flying', label: 'Flying' },
+    { value: 'psychic', label: 'Psychic' },
+    { value: 'bug', label: 'Bug' },
+    { value: 'rock', label: 'Rock' },
+    { value: 'ghost', label: 'Ghost' },
+    { value: 'dragon', label: 'Dragon' },
+    { value: 'dark', label: 'Dark' },
+    { value: 'steel', label: 'Steel' },
+    { value: 'fairy', label: 'Fairy' },
 ]
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
@@ -37,8 +61,13 @@ export default function PokemonRarityPage() {
     const [searchInput, setSearchInput] = useState('')
     const [search, setSearch] = useState('')
     const [rarityFilter, setRarityFilter] = useState('all')
+    const [typeFilter, setTypeFilter] = useState('all')
     const [currentPage, setCurrentPage] = useState(1)
     const [selectedPokemonId, setSelectedPokemonId] = useState('')
+
+    const [detailPokemonId, setDetailPokemonId] = useState(null)
+    const [detailFormId, setDetailFormId] = useState(null)
+    const [showDetailModal, setShowDetailModal] = useState(false)
 
     const [options, setOptions] = useState([])
     const [optionSearchInput, setOptionSearchInput] = useState('')
@@ -76,7 +105,7 @@ export default function PokemonRarityPage() {
 
     useEffect(() => {
         setOptionPage(1)
-    }, [optionSearch, rarityFilter])
+    }, [optionSearch, rarityFilter, typeFilter])
 
     useEffect(() => {
         setCurrentPage(1)
@@ -85,15 +114,15 @@ export default function PokemonRarityPage() {
     useEffect(() => {
         setCurrentPage(1)
         setSelectedPokemonId('')
-    }, [rarityFilter])
+    }, [rarityFilter, typeFilter])
 
     useEffect(() => {
         loadOptions()
-    }, [optionSearch, rarityFilter, optionPage])
+    }, [optionSearch, rarityFilter, typeFilter, optionPage])
 
     useEffect(() => {
         loadRarityStats(currentPage)
-    }, [currentPage, search, rarityFilter, selectedPokemonId])
+    }, [currentPage, search, rarityFilter, typeFilter, selectedPokemonId])
 
     const loadOptions = async () => {
         try {
@@ -101,6 +130,7 @@ export default function PokemonRarityPage() {
             const data = await gameApi.getPokemonRarityOptions({
                 search: optionSearch,
                 rarity: rarityFilter,
+                type: typeFilter,
                 page: optionPage,
                 limit: 40,
             })
@@ -147,6 +177,7 @@ export default function PokemonRarityPage() {
                 limit: 25,
                 search,
                 rarity: rarityFilter,
+                type: typeFilter,
                 pokemonId: selectedPokemonId,
             })
 
@@ -169,6 +200,12 @@ export default function PokemonRarityPage() {
     const handleSearch = () => {
         setCurrentPage(1)
         setSearch(searchInput.trim())
+    }
+
+    const openPokemonDetail = (pokemonId, formId = null) => {
+        setDetailPokemonId(pokemonId)
+        setDetailFormId(formId)
+        setShowDetailModal(true)
     }
 
     const pageItems = useMemo(() => {
@@ -210,14 +247,19 @@ export default function PokemonRarityPage() {
         () => options.find((entry) => String(entry?._id || '') === String(selectedPokemonId || '')) || null,
         [options, selectedPokemonId]
     )
-    const selectedPreview = selectedOption || (selectedSpecies
-        ? {
-            _id: selectedSpecies.pokemonId,
-            name: selectedSpecies.name,
-            pokedexNumber: selectedSpecies.pokedexNumber,
-            rarity: selectedSpecies.rarity,
+    const selectedPreview = useMemo(() => {
+        if (selectedSpecies && String(selectedSpecies.pokemonId) === String(selectedPokemonId)) {
+            const defaultForm = (Array.isArray(selectedSpecies.forms) ? selectedSpecies.forms : []).find(f => f.isDefault) || selectedSpecies.forms?.[0]
+            return {
+                _id: selectedSpecies.pokemonId,
+                name: selectedSpecies.name,
+                pokedexNumber: selectedSpecies.pokedexNumber,
+                rarity: selectedSpecies.rarity,
+                sprite: defaultForm?.sprite
+            }
         }
-        : null)
+        return selectedOption || null
+    }, [selectedSpecies, selectedOption, selectedPokemonId])
 
     return (
         <div className="max-w-5xl mx-auto pb-12">
@@ -232,7 +274,7 @@ export default function PokemonRarityPage() {
             </div>
 
             <div className="border-2 border-slate-800 bg-white shadow-lg mb-5">
-                <SectionHeader title="Amount Viewer" />
+                <SectionHeader title="Thống kê số lượng" />
                 <div className="px-4 py-3 border-b border-slate-300 text-center text-slate-700 font-semibold">
                     Thống kê số lượng Pokémon theo loài, độ hiếm và mức giá trị đề xuất.
                 </div>
@@ -244,13 +286,17 @@ export default function PokemonRarityPage() {
                             {selectedPreview ? (
                                 <>
                                     <img
-                                        src={getPokedexSprite(selectedPreview.pokedexNumber)}
+                                        src={selectedPreview.sprite || getPokedexSprite(selectedPreview.pokedexNumber)}
                                         alt={selectedPreview.name}
                                         className="w-12 h-12 object-contain pixelated shrink-0"
+                                        onError={(e) => {
+                                            e.target.onerror = null
+                                            e.target.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+                                        }}
                                     />
                                     <div className="min-w-0 flex-1">
-                                        <div className="font-bold text-slate-800 truncate">{selectedPreview.name}</div>
-                                        <div className="text-xs text-slate-500">
+                                        <div className="font-bold text-slate-800 truncate" title={selectedPreview.name}>{selectedPreview.name}</div>
+                                        <div className="text-xs text-slate-500 truncate" title={`#${String(selectedPreview.pokedexNumber || 0).padStart(3, '0')} [${String(selectedPreview.rarity || 'd').toUpperCase()}]`}>
                                             #{String(selectedPreview.pokedexNumber || 0).padStart(3, '0')}
                                             {' '}[{String(selectedPreview.rarity || 'd').toUpperCase()}]
                                         </div>
@@ -296,11 +342,15 @@ export default function PokemonRarityPage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 border-t border-l border-slate-300">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 border-t border-l border-slate-300">
                             {(Array.isArray(selectedSpecies.forms) ? selectedSpecies.forms : []).map((form) => (
-                                <div key={`${selectedSpecies.pokemonId}-${form.formId}`} className="border-r border-b border-slate-300 bg-white p-3 text-center flex flex-col">
-                                    <div className="font-bold text-slate-900 text-lg leading-tight">{form.formName}</div>
-                                    <div className="text-xs text-slate-500 mb-2">
+                                <button
+                                    type="button"
+                                    onClick={() => openPokemonDetail(selectedSpecies.pokemonId, form.formId)}
+                                    key={`${selectedSpecies.pokemonId}-${form.formId}`} className="border-r border-b border-slate-300 bg-white p-3 text-center flex flex-col min-w-0 transition-colors hover:bg-slate-50 relative group"
+                                >
+                                    <div className="font-bold text-slate-900 text-base sm:text-lg leading-tight break-words group-hover:text-blue-700 transition-colors">{form.formName}</div>
+                                    <div className="text-xs text-slate-500 mb-2 break-words">
                                         {selectedSpecies.name}
                                         {form.isDefault ? ' (Mặc định)' : ''}
                                     </div>
@@ -322,7 +372,10 @@ export default function PokemonRarityPage() {
                                             Bạn có: <span className="text-emerald-700">{formatNumber(form.totalOwnedByMe)}</span>
                                         </div>
                                     </div>
-                                </div>
+                                    <div className="absolute inset-x-0 bottom-0 top-0 hidden group-hover:flex items-center justify-center bg-blue-900/10 pointer-events-none">
+                                        <div className="bg-white/90 px-2 py-1 rounded text-[10px] font-bold text-blue-800 border border-blue-200 shadow-sm">Xem chi tiết</div>
+                                    </div>
+                                </button>
                             ))}
                         </div>
                     </div>
@@ -337,7 +390,7 @@ export default function PokemonRarityPage() {
             <div className="border-2 border-slate-800 bg-white shadow-lg">
                 <SectionHeader title="Bảng Thống Kê Các Loài Pokémon" />
 
-                <div className="p-3 border-b border-slate-300 bg-slate-50 grid grid-cols-1 sm:grid-cols-[1fr_auto] md:grid-cols-[1fr_auto_auto] gap-2">
+                <div className="p-3 border-b border-slate-300 bg-slate-50 flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                     <input
                         value={searchInput}
                         onChange={(event) => setSearchInput(event.target.value)}
@@ -345,20 +398,31 @@ export default function PokemonRarityPage() {
                             if (event.key === 'Enter') handleSearch()
                         }}
                         placeholder="Tìm theo tên hoặc số Pokédex..."
-                        className="border border-slate-400 px-3 py-2 text-sm"
+                        className="border border-slate-400 px-3 py-2 text-sm max-w-none sm:max-w-[200px] md:max-w-xs shrink-0"
                     />
-                    <select
-                        value={rarityFilter}
-                        onChange={(event) => setRarityFilter(event.target.value)}
-                        className="border border-slate-400 px-3 py-2 text-sm bg-white"
-                    >
-                        {RARITY_FILTERS.map((entry) => (
-                            <option key={entry.value} value={entry.value}>{entry.label}</option>
-                        ))}
-                    </select>
+                    <div className="flex flex-1 gap-2">
+                        <select
+                            value={typeFilter}
+                            onChange={(event) => setTypeFilter(event.target.value)}
+                            className="flex-1 border border-slate-400 px-3 py-2 text-sm bg-white min-w-0"
+                        >
+                            {TYPE_FILTERS.map((entry) => (
+                                <option key={entry.value} value={entry.value}>{entry.label}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={rarityFilter}
+                            onChange={(event) => setRarityFilter(event.target.value)}
+                            className="flex-1 border border-slate-400 px-3 py-2 text-sm bg-white min-w-0"
+                        >
+                            {RARITY_FILTERS.map((entry) => (
+                                <option key={entry.value} value={entry.value}>{entry.label}</option>
+                            ))}
+                        </select>
+                    </div>
                     <button
                         onClick={handleSearch}
-                        className="px-5 py-2 border border-blue-700 bg-white font-bold text-blue-800 hover:bg-blue-50 sm:col-span-2 md:col-span-1"
+                        className="px-5 py-2 border border-blue-700 bg-white font-bold text-blue-800 hover:bg-blue-50 sm:ml-auto shrink-0"
                     >
                         Tìm
                     </button>
@@ -385,7 +449,7 @@ export default function PokemonRarityPage() {
                                             <img src={entry.sprite} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center justify-between gap-2">
-                                                    <div className={`font-bold truncate ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
+                                                    <div className={`font-bold truncate group-hover:text-blue-700 transition-colors ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
                                                         #{String(entry.pokedexNumber || 0).padStart(3, '0')} {entry.name}
                                                     </div>
                                                     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${style.badge}`}>
@@ -445,13 +509,17 @@ export default function PokemonRarityPage() {
                                             <td className="px-3 py-2 border-r border-slate-200 align-middle">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setSelectedPokemonId(String(entry.pokemonId || ''))}
-                                                    className="w-full text-left min-w-0"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        openPokemonDetail(entry.pokemonId || '')
+                                                    }}
+                                                    title="Xem chi tiết loài"
+                                                    className="w-full text-left min-w-0 group"
                                                 >
                                                     <div className="flex items-center gap-2 min-w-0">
                                                         <img src={entry.sprite} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
                                                         <div className="min-w-0">
-                                                            <div className={`font-bold truncate ${isSelected ? 'text-blue-700' : 'text-slate-800'} hover:underline`}>
+                                                            <div className={`font-bold truncate group-hover:text-blue-700 transition-colors ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
                                                                 {entry.name}
                                                             </div>
                                                         </div>
@@ -607,6 +675,14 @@ export default function PokemonRarityPage() {
                     )}
                 </div>
             </Modal>
+
+            <PokemonSpeciesDetailModal
+                open={showDetailModal}
+                onClose={() => setShowDetailModal(false)}
+                speciesId={detailPokemonId}
+                formId={detailFormId}
+                title="Thông tin loài Pokémon"
+            />
         </div>
     )
 }

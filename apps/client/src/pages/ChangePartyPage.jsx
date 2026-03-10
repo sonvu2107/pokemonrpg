@@ -12,6 +12,7 @@ const SectionHeader = ({ title }) => (
 
 export default function ChangePartyPage() {
     const [party, setParty] = useState(Array(6).fill(null))
+    const [escrowedPokemon, setEscrowedPokemon] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [swapSourceIndex, setSwapSourceIndex] = useState(null)
@@ -21,6 +22,7 @@ export default function ChangePartyPage() {
 
     useEffect(() => {
         loadParty()
+        loadEscrowedPokemon()
     }, [refreshKey])
 
     const loadParty = async () => {
@@ -55,6 +57,16 @@ export default function ChangePartyPage() {
         }
     }
 
+    const loadEscrowedPokemon = async () => {
+        try {
+            const data = await gameApi.getEscrowedAuctionPokemon()
+            setEscrowedPokemon(Array.isArray(data?.pokemon) ? data.pokemon : [])
+        } catch (err) {
+            console.error(err)
+            setEscrowedPokemon([])
+        }
+    }
+
     const handlePickSwap = async (targetIndex) => {
         if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 5) return
 
@@ -74,7 +86,7 @@ export default function ChangePartyPage() {
     }
 
     const handleRemove = async (pokemonId) => {
-        if (!window.confirm('Bạn có chắc muốn bỏ Pokemon này khỏi đội hình?')) return
+        if (!window.confirm('Bạn có chắc muốn bỏ Pokémon này khỏi đội hình?')) return
         try {
             await gameApi.removeFromParty(pokemonId)
             setRefreshKey(k => k + 1)
@@ -100,6 +112,24 @@ export default function ChangePartyPage() {
                     message="Tính năng dọn dẹp nhanh đội hình sẽ được bổ sung ở bản cập nhật tới."
                 />
             </div>
+
+            {escrowedPokemon.length > 0 && (
+                <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
+                    <div className="text-sm font-bold text-amber-900">Pokémon đang được giữ cho đấu giá</div>
+                    <div className="mt-1 text-xs text-amber-800">
+                        {escrowedPokemon.length} Pokémon của bạn đang bị khóa tạm thời để phục vụ đấu giá nên sẽ không thể thêm vào đội hình.
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {escrowedPokemon.map((entry) => (
+                            <Link key={entry._id} to="/auctions/manage" className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100">
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide border border-amber-200">Đang giữ cho đấu giá</span>
+                                <span>{entry.nickname ? `${entry.nickname} - ${entry.name}` : entry.name}</span>
+                                <span>Lv.{Number(entry.level || 1).toLocaleString('vi-VN')}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                 <SectionHeader title="Thay Đổi Đội Hình" />
@@ -143,7 +173,7 @@ export default function ChangePartyPage() {
 
             <div className="mt-4 text-center">
                 <Link to="/box" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow">
-                    + Thêm Pokemon Từ Kho Pokemon
+                    + Thêm Pokémon Từ Kho Pokémon
                 </Link>
             </div>
 

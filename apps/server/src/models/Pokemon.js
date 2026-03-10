@@ -13,12 +13,12 @@ const FormSpritesSchema = new Schema(
 
 const FormStatsSchema = new Schema(
     {
-        hp: { type: Number, default: 0, min: 0, max: 255 },
-        atk: { type: Number, default: 0, min: 0, max: 255 },
-        def: { type: Number, default: 0, min: 0, max: 255 },
-        spatk: { type: Number, default: 0, min: 0, max: 255 },
-        spdef: { type: Number, default: 0, min: 0, max: 255 },
-        spd: { type: Number, default: 0, min: 0, max: 255 },
+        hp: { type: Number, default: 0, min: 0, max: 100000 },
+        atk: { type: Number, default: 0, min: 0, max: 100000 },
+        def: { type: Number, default: 0, min: 0, max: 100000 },
+        spatk: { type: Number, default: 0, min: 0, max: 100000 },
+        spdef: { type: Number, default: 0, min: 0, max: 100000 },
+        spd: { type: Number, default: 0, min: 0, max: 100000 },
     },
     { _id: false }
 )
@@ -83,12 +83,12 @@ const pokemonSchema = new Schema(
 
         // Base Stats
         baseStats: {
-            hp: { type: Number, required: true, min: 1, max: 255 },
-            atk: { type: Number, required: true, min: 1, max: 255 },
-            def: { type: Number, required: true, min: 1, max: 255 },
-            spatk: { type: Number, required: true, min: 1, max: 255 },
-            spldef: { type: Number, required: true, min: 1, max: 255 },
-            spd: { type: Number, required: true, min: 1, max: 255 },
+            hp: { type: Number, required: true, min: 1, max: 100000 },
+            atk: { type: Number, required: true, min: 1, max: 100000 },
+            def: { type: Number, required: true, min: 1, max: 100000 },
+            spatk: { type: Number, required: true, min: 1, max: 100000 },
+            spldef: { type: Number, required: true, min: 1, max: 100000 },
+            spd: { type: Number, required: true, min: 1, max: 100000 },
         },
 
         // Types (lowercase, max 2, unique values)
@@ -190,7 +190,7 @@ const pokemonSchema = new Schema(
         rarity: {
             type: String,
             required: true,
-            enum: ['sss', 'ss', 's', 'a', 'b', 'c', 'd'],
+            enum: ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd'],
             default: 'd',
         },
 
@@ -198,6 +198,7 @@ const pokemonSchema = new Schema(
             type: Number,
             default: function () {
                 const weights = {
+                    'sss+': 0.01,
                     d: 100,
                     c: 50,
                     b: 20,

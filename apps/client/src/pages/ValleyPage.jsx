@@ -266,8 +266,8 @@ function ValleyBrowseTab() {
 
     useEffect(() => { loadBalls() }, [loadBalls])
 
-    const rarityOptions = ['', 'd', 'c', 'b', 'a', 's', 'ss', 'sss']
-    const rarityLabels = { '': 'Tất cả', d: 'D', c: 'C', b: 'B', a: 'A', s: 'S', ss: 'SS', sss: 'SSS' }
+    const rarityOptions = ['', 'd', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
+    const rarityLabels = { '': 'Tất cả', d: 'D', c: 'C', b: 'B', a: 'A', s: 'S', ss: 'SS', sss: 'SSS', 'sss+': 'SSS+' }
 
     return (
         <div className="space-y-4">

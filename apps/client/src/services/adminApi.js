@@ -53,7 +53,7 @@ const normalizeMapSpecialPokemonConfigs = (value) => {
     return normalized
 }
 
-const MAP_RARITY_CATCH_KEYS = ['s', 'ss', 'sss']
+const MAP_RARITY_CATCH_KEYS = ['s', 'ss', 'sss', 'sss+']
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
 
@@ -95,6 +95,7 @@ const buildMapPayload = (data = {}) => {
         requiredSearches: Math.max(0, Number(data?.requiredSearches) || 0),
         requiredPlayerLevel: Math.max(1, Number(data?.requiredPlayerLevel) || 1),
         requiredVipLevel: Math.max(0, Number(data?.requiredVipLevel) || 0),
+        vipVisibilityLevel: Math.max(0, Number(data?.vipVisibilityLevel) || 0),
         autoSearchRequiredVipLevel: Math.max(0, Number(data?.autoSearchRequiredVipLevel) || 0),
         encounterRate: Number(data?.encounterRate ?? 1),
         itemDropRate: Number(data?.itemDropRate ?? 0),

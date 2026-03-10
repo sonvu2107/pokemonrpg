@@ -58,7 +58,7 @@ export const POKEMON_TYPES = [
     'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
 ]
 
-export const POKEMON_RARITIES = ['sss', 'ss', 's', 'a', 'b', 'c', 'd']
+export const POKEMON_RARITIES = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 export const MOVE_LEARN_SCOPES = [
     'all',

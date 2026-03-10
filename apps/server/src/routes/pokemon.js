@@ -34,14 +34,14 @@ const normalizeOptionalFormId = (value = '') => {
 }
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
-const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss']
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 const normalizePokemonRarity = (value = '') => String(value || '').trim().toLowerCase()
 const isEvolutionItemAllowedForRarity = (itemLike = {}, rarity = '') => {
     const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
     if (rarityIndex < 0) return true
 
     const fromIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(itemLike?.evolutionRarityFrom || 'd'))
-    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(itemLike?.evolutionRarityTo || 'sss'))
+    const toIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(itemLike?.evolutionRarityTo || 'sss+'))
     if (fromIndex < 0 || toIndex < 0 || fromIndex > toIndex) return false
     return rarityIndex >= fromIndex && rarityIndex <= toIndex
 }
@@ -111,8 +111,8 @@ const buildPokemonObtainedEvent = (userPokemon) => {
         return {
             id: `obtained-${String(userPokemon?._id || 'pokemon')}`,
             type: 'obtained',
-            title: 'Nhận từ hệ thống',
-            description: 'Pokemon được cấp bởi hệ thống hoặc quản trị viên.',
+            title: '',
+            description: '',
             occurredAt,
         }
     }
@@ -938,7 +938,7 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
                             inventoryQuantity,
                             hasEnough: true,
                             rarityFrom: String(requiredItem.evolutionRarityFrom || 'd').trim().toLowerCase() || 'd',
-                            rarityTo: String(requiredItem.evolutionRarityTo || 'sss').trim().toLowerCase() || 'sss',
+                            rarityTo: String(requiredItem.evolutionRarityTo || 'sss+').trim().toLowerCase() || 'sss+',
                         }
                         : null,
                     targetPokemon: targetSpecies
@@ -951,7 +951,7 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
                             sprites: {
                                 normal: targetDisplay.sprite,
                             },
-                    }
+                        }
                         : null,
                 },
             }
@@ -982,6 +982,21 @@ router.get('/evolution-zone', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('GET /api/pokemon/evolution-zone error:', error)
         return res.status(500).json({ ok: false, message: 'Không thể tải khu vực tiến hóa' })
+    }
+})
+
+// GET /api/pokemon/species/:id
+router.get('/species/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const species = await Pokemon.findById(id).lean()
+        if (!species) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy thông tin loài Pokemon' })
+        }
+        res.json({ ok: true, species })
+    } catch (error) {
+        console.error('GET /api/pokemon/species/:id error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
 
@@ -1131,7 +1146,7 @@ router.get('/:id', async (req, res) => {
                     imageUrl: itemDoc.imageUrl || '',
                     requiredQuantity: requiredItemQuantity,
                     rarityFrom: String(itemDoc.evolutionRarityFrom || 'd').trim().toLowerCase() || 'd',
-                    rarityTo: String(itemDoc.evolutionRarityTo || 'sss').trim().toLowerCase() || 'sss',
+                    rarityTo: String(itemDoc.evolutionRarityTo || 'sss+').trim().toLowerCase() || 'sss+',
                 }
                 const ownerUserId = String(userPokemon?.userId?._id || userPokemon?.userId || '').trim()
                 if (ownerUserId) {
@@ -1626,7 +1641,7 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
             if (!isEvolutionItemAllowedForRarity(requiredItem, currentSpecies?.rarity)) {
                 return res.status(400).json({
                     ok: false,
-                    message: `${requiredItem.name} chỉ dùng cho Pokemon rank ${String(requiredItem.evolutionRarityFrom || 'd').toUpperCase()} - ${String(requiredItem.evolutionRarityTo || 'sss').toUpperCase()}`,
+                    message: `${requiredItem.name} chỉ dùng cho Pokemon rank ${String(requiredItem.evolutionRarityFrom || 'd').toUpperCase()} - ${String(requiredItem.evolutionRarityTo || 'sss+').toUpperCase()}`,
                 })
             }
 

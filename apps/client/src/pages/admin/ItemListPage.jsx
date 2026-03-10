@@ -297,7 +297,7 @@ export default function ItemListPage() {
                                                                 Dùng tiến hóa
                                                             </span>
                                                             <span className="text-[10px] font-semibold text-slate-600">
-                                                                Rank {String(item.evolutionRarityFrom || 'd').toUpperCase()} - {String(item.evolutionRarityTo || 'sss').toUpperCase()}
+                                                                Rank {String(item.evolutionRarityFrom || 'd').toUpperCase()} - {String(item.evolutionRarityTo || 'sss+').toUpperCase()}
                                                             </span>
                                                         </div>
                                                     ) : (
