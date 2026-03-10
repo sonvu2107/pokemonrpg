@@ -901,7 +901,7 @@ const ActiveBattleView = ({
                 <div className="bg-amber-50 border-b border-slate-300 text-center text-sm font-bold py-1.5">
                     Kết Quả Trận Đấu
                 </div>
-                <div className="p-3 text-center text-sm text-slate-700 min-h-20">
+                <div className="p-3 text-center text-sm text-slate-700 min-h-20 max-h-64 overflow-y-auto">
                     {battleLog?.length > 0 ? (
                         battleLog.map((entry, idx) => {
                             const lines = Array.isArray(entry?.lines)
