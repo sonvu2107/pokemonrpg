@@ -42,7 +42,6 @@ export default function ShopSellPage() {
         active: { page: 1, totalPages: 1 },
         sold: { page: 1, totalPages: 1 },
     })
-
     const [selectedPokemonId, setSelectedPokemonId] = useState('')
     const [price, setPrice] = useState('')
     const [loading, setLoading] = useState(true)
@@ -64,7 +63,6 @@ export default function ShopSellPage() {
     const [itemPrice, setItemPrice] = useState('')
     const [itemSubmitting, setItemSubmitting] = useState(false)
     const [itemCancellingId, setItemCancellingId] = useState('')
-
     const activePage = pagination?.active?.page || 1
     const soldPage = pagination?.sold?.page || 1
 
@@ -84,7 +82,6 @@ export default function ShopSellPage() {
     const pokemonPickerRows = useMemo(() => {
         const normalizedSearch = String(pokemonPickerSearchTerm || '').trim().toLowerCase()
         if (!normalizedSearch) return availablePokemon
-
         return availablePokemon.filter((entry) => {
             const pokemonName = String(entry?.pokemonName || '').toLowerCase()
             const speciesName = String(entry?.speciesName || '').toLowerCase()
@@ -97,7 +94,6 @@ export default function ShopSellPage() {
         })
     }, [availablePokemon, pokemonPickerSearchTerm])
     const selectedItem = useMemo(() => availableItems.find((entry) => String(entry.itemId) === String(selectedItemId)) || null, [availableItems, selectedItemId])
-
     const pokemonPickerTotal = pokemonPickerRows.length
     const pokemonPickerTotalPages = Math.max(1, Math.ceil(pokemonPickerTotal / SELL_POKEMON_MODAL_PAGE_SIZE))
     const normalizedPokemonPickerPage = Math.min(pokemonPickerPage, pokemonPickerTotalPages)

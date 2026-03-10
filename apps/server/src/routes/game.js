@@ -618,15 +618,6 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             })
         }
 
-        if (shouldUpdateEnabled && !nextEnabled && storedClientInstanceId && requestedClientInstanceId !== storedClientInstanceId) {
-            const payload = await buildAutoTrainerStatusPayload(user.toObject())
-            return res.status(409).json({
-                ok: false,
-                message: 'Phiên auto battle đang được điều khiển từ thiết bị/tab khác.',
-                autoTrainer: payload,
-            })
-        }
-
         if (nextEnabled && !canUseVipAutoTrainer) {
             return res.status(403).json({
                 ok: false,
