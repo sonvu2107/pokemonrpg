@@ -118,6 +118,35 @@ const maybePush = (effects, candidate) => {
     effects.push(candidate)
 }
 
+const STATUS_REQUIREMENT_MATCHERS = [
+    { regex: /(?:asleep|sleeping)/, condition: 'asleep', label: 'ngủ' },
+    { regex: /poisoned/, condition: 'poisoned', label: 'trúng độc' },
+    { regex: /burned/, condition: 'burned', label: 'bỏng' },
+    { regex: /paralyzed/, condition: 'paralyzed', label: 'tê liệt' },
+    { regex: /frozen/, condition: 'frozen', label: 'đóng băng' },
+    { regex: /confused/, condition: 'confused', label: 'rối loạn' },
+]
+
+const resolveStatusRequirement = (text = '') => {
+    for (const matcher of STATUS_REQUIREMENT_MATCHERS) {
+        if (matcher.regex.test(text)) return matcher
+    }
+    return null
+}
+
+const buildRequirementEffect = ({ condition = '', message = '', sourceText = '', parserConfidence = 0.9 } = {}) => makeEffect({
+    op: 'require_condition',
+    trigger: 'on_select_move',
+    target: 'self',
+    chance: 1,
+    params: {
+        condition,
+        message,
+    },
+    sourceText,
+    parserConfidence,
+})
+
 export const parseMoveEffectText = ({ description = '', probability = null } = {}) => {
     const sourceText = normalizeText(description)
     if (!sourceText) {
@@ -132,6 +161,36 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     const chanceFromProb = parseProbabilityToChance(probability)
     const effects = []
     const warnings = []
+
+    const targetStatusRequirement = resolveStatusRequirement(text)
+    if (targetStatusRequirement && (
+        /only works on .*pok[eé]mon/.test(text)
+        || /only works on .*targets?/.test(text)
+        || /only works if (?:the )?(?:target|opponent) is /.test(text)
+        || /fails if (?:the )?(?:target|opponent) is not /.test(text)
+    )) {
+        maybePush(effects, buildRequirementEffect({
+            condition: `target_is_${targetStatusRequirement.condition}`,
+            message: `Chiêu này chỉ dùng được khi mục tiêu đang ${targetStatusRequirement.label}.`,
+            sourceText,
+            parserConfidence: 0.96,
+        }))
+    }
+
+    const userStatusRequirement = resolveStatusRequirement(text)
+    if (userStatusRequirement && (
+        /can only be used if the user is /.test(text)
+        || /only works if the user is /.test(text)
+        || /only works while the user is /.test(text)
+        || /fails if the user is not /.test(text)
+    )) {
+        maybePush(effects, buildRequirementEffect({
+            condition: `user_is_${userStatusRequirement.condition}`,
+            message: `Chiêu này chỉ dùng được khi Pokemon của bạn đang ${userStatusRequirement.label}.`,
+            sourceText,
+            parserConfidence: 0.96,
+        }))
+    }
 
     if (/high critical hit ratio/.test(text)) {
         maybePush(effects, makeEffect({
@@ -3817,7 +3876,7 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
             target: 'self',
             chance: 1,
             params: {
-                condition: 'target_has_status_ailment',
+                condition: 'target_is_poisoned',
                 multiplier: 2,
             },
             sourceText,

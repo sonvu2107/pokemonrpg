@@ -27,6 +27,46 @@ const loadTrainerBattleCombatView = (trainerId) => BattleTrainer.findById(traine
     .populate('team.pokemonId', TRAINER_COMBAT_TEAM_POPULATE)
     .lean()
 
+const buildEffectSpecRuntimeKey = (effect = {}) => JSON.stringify({
+    op: String(effect?.op || '').trim(),
+    trigger: String(effect?.trigger || '').trim(),
+    target: String(effect?.target || '').trim(),
+    chance: effect?.chance ?? null,
+    params: effect?.params && typeof effect.params === 'object' ? effect.params : {},
+})
+
+const mergeUniqueEffectSpecs = (...lists) => {
+    const merged = []
+    const seen = new Set()
+
+    lists.forEach((list) => {
+        normalizeEffectSpecs(list).forEach((effect) => {
+            const key = buildEffectSpecRuntimeKey(effect)
+            if (!key || seen.has(key)) return
+            seen.add(key)
+            merged.push(effect)
+        })
+    })
+
+    return merged
+}
+
+const resolveRuntimeMoveEffectSpecs = ({ moveDoc = null, fallbackMove = null } = {}) => {
+    const description = String(moveDoc?.description || fallbackMove?.description || '').trim()
+    const effectChance = Number.isFinite(Number(moveDoc?.effects?.effectChance))
+        ? Number(moveDoc.effects.effectChance)
+        : (Number.isFinite(Number(fallbackMove?.effects?.effectChance)) ? Number(fallbackMove.effects.effectChance) : null)
+    const parsedEffectSpecs = description
+        ? parseMoveEffectText({ description, probability: effectChance }).effectSpecs
+        : []
+
+    return mergeUniqueEffectSpecs(
+        moveDoc?.effectSpecs,
+        fallbackMove?.effectSpecs,
+        parsedEffectSpecs,
+    )
+}
+
 import {
     EXP_PER_SEARCH,
     expToNext,
@@ -37,6 +77,7 @@ import {
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
+import { parseMoveEffectText } from '../battle/effects/effectParser.js'
 import {
     inferMoveType,
     normalizePokemonTypes,
@@ -402,7 +443,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let movePriority = resolveMovePriority(moveDoc, move)
         const baseMovePriority = movePriority
         let moveCriticalChance = resolveMoveCriticalChance(moveDoc, move)
-        const moveEffectSpecs = normalizeEffectSpecs(moveDoc?.effectSpecs?.length ? moveDoc.effectSpecs : move?.effectSpecs)
+        const moveEffectSpecs = resolveRuntimeMoveEffectSpecs({
+            moveDoc,
+            fallbackMove: move,
+        })
         const randomFn = () => Math.random()
 
         let selectMoveEffects = applyEffectSpecs({
@@ -937,7 +981,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                         const moveKey = normalizeMoveName(moveName)
                         const moveDocEntry = trainerMoveLookup.get(moveKey)
                         const storedCounterMove = storedCounterMoveMap.get(moveKey)
-                        const moveEffectSpecs = normalizeEffectSpecs(moveDocEntry?.effectSpecs)
+                        const moveEffectSpecs = resolveRuntimeMoveEffectSpecs({
+                            moveDoc: moveDocEntry,
+                            fallbackMove: storedCounterMove,
+                        })
                         const moveDamageCalcEffects = applyEffectSpecs({
                             effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'on_calculate_damage'),
                             context: {
@@ -1056,6 +1103,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 7
             )
         }
+        const moveRequirement = selectMoveEffects?.statePatches?.self?.moveRequirement
+            && typeof selectMoveEffects.statePatches.self.moveRequirement === 'object'
+            ? selectMoveEffects.statePatches.self.moveRequirement
+            : null
 
         const defaultOpponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
         let selectedOpponentMove = selectedCounterMoveInput
@@ -1504,6 +1555,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         const moveBlockedByTerrainRequirement = requireTerrain && !battleFieldState.terrain
+        const moveBlockedByRequirement = Boolean(moveRequirement?.failed)
         const canPlayerAct = playerCurrentHp > 0 && Boolean(playerTurnStatusCheck.canAct) && canPlayerActByVolatile
 
         if (moveBlockedByTerrainRequirement) {
@@ -1512,6 +1564,13 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 moveName: selectedMoveName,
             })
         }
+        if (moveBlockedByRequirement) {
+            appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'move_failed', String(moveRequirement?.message || 'Chiêu này chưa thỏa điều kiện để sử dụng.'), {
+                reason: String(moveRequirement?.condition || 'move_requirement').trim() || 'move_requirement',
+                moveName: selectedMoveName,
+            })
+        }
+        const canResolvePlayerMoveEffects = canPlayerAct && !moveBlockedByTerrainRequirement && !moveBlockedByRequirement
         const pendingAlwaysCrit = Boolean(playerVolatileState?.pendingAlwaysCrit)
         const pendingNeverMiss = Boolean(playerVolatileState?.pendingNeverMiss)
 
@@ -1537,15 +1596,15 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             })
         }
 
-        const beforeAccuracyEffects = canPlayerAct
+        const beforeAccuracyEffects = canResolvePlayerMoveEffects
             ? applyEffectSpecs({
                 effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'before_accuracy_check'),
                 context: { random: randomFn },
             })
             : createEmptyEffectAggregate()
-        const forcedHit = canPlayerAct && !moveBlockedByTerrainRequirement
+        const forcedHit = canPlayerAct && !moveBlockedByTerrainRequirement && !moveBlockedByRequirement
             && (Boolean(beforeAccuracyEffects?.statePatches?.self?.neverMiss) || pendingNeverMiss)
-        const didPlayerMoveHit = canPlayerAct && !moveBlockedByTerrainRequirement
+        const didPlayerMoveHit = canPlayerAct && !moveBlockedByTerrainRequirement && !moveBlockedByRequirement
             && (forcedHit || moveAccuracy >= 100 || (Math.random() * 100) <= moveAccuracy)
         const playerTypeEffectiveness = precomputedTypeEffectiveness
         const playerStabMultiplier = attackerTypes.includes(moveType) ? 1.5 : 1
@@ -1597,8 +1656,8 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             : 1
 
         const onHitSelfPatch = onHitEffects?.statePatches?.self || {}
-        const consumedPendingCrit = pendingAlwaysCrit && canPlayerAct && !isStatusMove
-        const consumedPendingNeverMiss = pendingNeverMiss && canPlayerAct && !isStatusMove
+        const consumedPendingCrit = pendingAlwaysCrit && canResolvePlayerMoveEffects && !isStatusMove
+        const consumedPendingNeverMiss = pendingNeverMiss && canResolvePlayerMoveEffects && !isStatusMove
         const shouldForceTargetKo = Boolean(onHitSelfPatch?.forceTargetKo)
         const shouldUseUserCurrentHpAsDamage = Boolean(onHitSelfPatch?.fixedDamageFromUserCurrentHp)
         const fixedDamageValue = Math.max(0, Math.floor(Number(onHitSelfPatch?.fixedDamageValue) || 0))
@@ -1640,7 +1699,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
         const playerEffectivenessText = didPlayerMoveHit ? resolveEffectivenessText(playerTypeEffectiveness.multiplier) : ''
 
-        const afterDamageEffects = canPlayerAct
+        const afterDamageEffects = canResolvePlayerMoveEffects
             ? applyEffectSpecs({
                 effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'after_damage'),
                 context: {
@@ -1654,7 +1713,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             })
             : createEmptyEffectAggregate()
 
-        const endTurnEffects = canPlayerAct
+        const endTurnEffects = canResolvePlayerMoveEffects
             ? applyEffectSpecs({
                 effectSpecs: effectSpecsByTrigger(moveEffectSpecs, 'end_turn'),
                 context: {
@@ -1666,9 +1725,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             })
             : createEmptyEffectAggregate()
 
+        const resolvedDamageCalcEffects = canResolvePlayerMoveEffects ? damageCalcEffects : createEmptyEffectAggregate()
         const combinedEffectResult = [
             selectMoveEffects,
-            damageCalcEffects,
+            resolvedDamageCalcEffects,
             beforeAccuracyEffects,
             onHitEffects,
             afterDamageEffects,
@@ -2263,14 +2323,18 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 effectivenessText: playerEffectivenessText,
                 suffix: moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.)' : '',
             })
-            : (moveBlockedByTerrainRequirement
+            : (moveBlockedByRequirement
+                ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại.${moveRequirement?.message ? ` ${moveRequirement.message}` : ''}${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`.trim()
+                : (moveBlockedByTerrainRequirement
                 ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại vì sân đấu không có địa hình phù hợp.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
-                : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`))
+                : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)))
 
         appendPhaseEvent(
             playerTurnPhaseKeys.action,
             'player',
-            canPlayerAct ? 'move_used' : 'action_skipped',
+            !canPlayerAct
+                ? 'action_skipped'
+                : ((moveBlockedByRequirement || moveBlockedByTerrainRequirement) ? 'move_failed' : 'move_used'),
             playerActionLog,
             {
                 moveName: selectedMoveName,

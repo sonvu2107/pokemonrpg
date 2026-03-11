@@ -73,6 +73,54 @@ const formatStatusLabel = (value = '') => {
     return String(value || '').trim().toLowerCase()
 }
 
+const CONDITION_ALIASES = {
+    user_is_sleeping: 'user_is_asleep',
+    target_is_sleeping: 'target_is_asleep',
+    user_is_poison: 'user_is_poisoned',
+    target_is_poison: 'target_is_poisoned',
+    user_is_burn: 'user_is_burned',
+    target_is_burn: 'target_is_burned',
+    user_is_paralyze: 'user_is_paralyzed',
+    target_is_paralyze: 'target_is_paralyzed',
+    user_is_freeze: 'user_is_frozen',
+    target_is_freeze: 'target_is_frozen',
+    user_is_confuse: 'user_is_confused',
+    target_is_confuse: 'target_is_confused',
+    user_is_flinch: 'user_is_flinched',
+    target_is_flinch: 'target_is_flinched',
+}
+
+const normalizeConditionKey = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return ''
+    return CONDITION_ALIASES[normalized] || normalized
+}
+
+const buildMoveRequirementMessage = (condition = '') => {
+    const normalizedCondition = normalizeConditionKey(condition)
+    const labelsByCondition = {
+        user_is_asleep: 'khi Pokemon của bạn đang ngủ',
+        target_is_asleep: 'khi mục tiêu đang ngủ',
+        user_is_poisoned: 'khi Pokemon của bạn đang bị trúng độc',
+        target_is_poisoned: 'khi mục tiêu đang bị trúng độc',
+        user_is_burned: 'khi Pokemon của bạn đang bị bỏng',
+        target_is_burned: 'khi mục tiêu đang bị bỏng',
+        user_is_paralyzed: 'khi Pokemon của bạn đang bị tê liệt',
+        target_is_paralyzed: 'khi mục tiêu đang bị tê liệt',
+        user_is_frozen: 'khi Pokemon của bạn đang bị đóng băng',
+        target_is_frozen: 'khi mục tiêu đang bị đóng băng',
+        user_is_confused: 'khi Pokemon của bạn đang bị rối loạn',
+        target_is_confused: 'khi mục tiêu đang bị rối loạn',
+        user_has_status_ailment: 'khi Pokemon của bạn đang có trạng thái bất lợi',
+        target_has_status_ailment: 'khi mục tiêu đang có trạng thái bất lợi',
+        terrain_present: 'khi sân đấu có địa hình phù hợp',
+    }
+    const label = labelsByCondition[normalizedCondition]
+    return label
+        ? `Chiêu này chỉ dùng được ${label}.`
+        : 'Chiêu này chưa thỏa điều kiện để sử dụng.'
+}
+
 const normalizeWeather = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
     if (['sun', 'rain', 'sandstorm', 'hail'].includes(normalized)) return normalized
@@ -135,7 +183,7 @@ const hasNegativeStage = (stages = {}) => {
 }
 
 const evaluateCondition = (context = {}, condition = '') => {
-    const normalizedCondition = String(condition || '').trim().toLowerCase()
+    const normalizedCondition = normalizeConditionKey(condition)
     if (!normalizedCondition) return false
 
     const targetStats = context?.targetStatStages && typeof context.targetStatStages === 'object'
@@ -145,6 +193,8 @@ const evaluateCondition = (context = {}, condition = '') => {
         ? context.userStatStages
         : {}
 
+    const userStatus = normalizeStatus(context?.userStatus)
+    const targetStatus = normalizeStatus(context?.targetStatus)
     const checks = {
         target_was_damaged_last_turn: Boolean(context?.targetWasDamagedLastTurn),
         user_was_damaged_last_turn: Boolean(context?.userWasDamagedLastTurn),
@@ -152,14 +202,10 @@ const evaluateCondition = (context = {}, condition = '') => {
         target_is_dynamaxed: Boolean(context?.targetIsDynamaxed),
         user_acts_first: Boolean(context?.userActsFirst),
         is_super_effective: Boolean(context?.isSuperEffective),
-        user_has_status_ailment: Boolean(String(context?.userStatus || '').trim()),
-        target_has_status_ailment: Boolean(String(context?.targetStatus || '').trim()),
-        user_is_poisoned: normalizeStatus(context?.userStatus) === 'poison',
-        target_is_poisoned: normalizeStatus(context?.targetStatus) === 'poison',
-        user_is_paralyzed: normalizeStatus(context?.userStatus) === 'paralyze',
-        target_is_paralyzed: normalizeStatus(context?.targetStatus) === 'paralyze',
-        user_is_burned: normalizeStatus(context?.userStatus) === 'burn',
-        target_is_burned: normalizeStatus(context?.targetStatus) === 'burn',
+        user_has_status_ailment: Boolean(userStatus),
+        target_has_status_ailment: Boolean(targetStatus),
+        user_has_no_status_ailment: !userStatus,
+        target_has_no_status_ailment: !targetStatus,
         user_has_stat_boost: hasPositiveStage(userStats),
         target_has_stat_boost: hasPositiveStage(targetStats),
         user_has_stat_drop: hasNegativeStage(userStats),
@@ -187,6 +233,22 @@ const evaluateCondition = (context = {}, condition = '') => {
             return (targetCurrentHp / targetMaxHp) > (userCurrentHp / userMaxHp)
         })(),
     }
+
+    const statusConditionMap = {
+        poison: ['poisoned'],
+        paralyze: ['paralyzed'],
+        burn: ['burned'],
+        freeze: ['frozen'],
+        sleep: ['asleep'],
+        confuse: ['confused'],
+        flinch: ['flinched'],
+    }
+    Object.entries(statusConditionMap).forEach(([status, suffixes]) => {
+        suffixes.forEach((suffix) => {
+            checks[`user_is_${suffix}`] = userStatus === status
+            checks[`target_is_${suffix}`] = targetStatus === status
+        })
+    })
 
     return Boolean(checks[normalizedCondition])
 }
@@ -963,6 +1025,23 @@ const handlers = {
             rechargeTurns: turns,
         }
         appendEffectLog(result, `Pokemon của bạn cần hồi sức ${turns} lượt.`)
+        return result
+    },
+
+    require_condition: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const condition = normalizeConditionKey(effect?.params?.condition)
+        if (!condition || evaluateCondition(context, condition)) return result
+
+        const customMessage = String(effect?.params?.message || '').trim()
+        result.applied = true
+        result.statePatches.self.moveRequirement = {
+            failed: true,
+            condition,
+            message: customMessage || buildMoveRequirementMessage(condition),
+        }
         return result
     },
 

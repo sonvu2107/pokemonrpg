@@ -113,6 +113,7 @@ const OP_META_OVERRIDES = {
     prevent_repeat_move: { nameVi: 'Khong cho lap lai chieu vua dung' },
     priority_mod: { nameVi: 'Dieu chinh do uu tien' },
     priority_mod_if: { nameVi: 'Dieu chinh do uu tien theo dieu kien' },
+    require_condition: { nameEn: 'Require Condition', nameVi: 'Bat buoc dung dieu kien' },
     require_recharge: { nameEn: 'Require Recharge', nameVi: 'Buoc hoi suc' },
     require_terrain: { nameVi: 'Bat buoc co dia hinh' },
     set_crit_block: { nameVi: 'Chan sat thuong chi mang' },
