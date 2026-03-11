@@ -14,15 +14,21 @@ import {
     toSafeInt as toSafeAutoTrainerInt,
 } from '../utils/autoTrainerUtils.js'
 import { resolveTrainerAverageLevel } from './trainerBattleStateService.js'
+import { resolveEffectiveVipBenefits } from './vipBenefitService.js'
 
 const AUTO_TRAINER_LOGS_LIMIT = 12
 const AUTO_SEARCH_LOGS_LIMIT = 12
 
 export const buildAutoTrainerStatusPayload = async (userLike = {}) => {
+    const effectiveVipBenefits = await resolveEffectiveVipBenefits(userLike)
+    const effectiveUser = {
+        ...userLike,
+        vipBenefits: effectiveVipBenefits,
+    }
     const normalizedState = normalizeAutoTrainerState(userLike?.autoTrainer)
-    const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+    const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoBattleTrainerUsesPerDay, 0)
     const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
-    const durationLimitMinutes = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoBattleTrainerDurationMinutes, 0)
+    const durationLimitMinutes = toSafeAutoTrainerInt(effectiveVipBenefits?.autoBattleTrainerDurationMinutes, 0)
     const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
         ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
         : 0
@@ -53,7 +59,7 @@ export const buildAutoTrainerStatusPayload = async (userLike = {}) => {
         trainer: trainerMeta,
         attackIntervalMs: Math.max(450, toSafeAutoTrainerInt(normalizedState.attackIntervalMs, 700)),
         startedAt: normalizedState.startedAt || null,
-        canUseVipAutoTrainer: hasVipAutoTrainerAccess(userLike),
+        canUseVipAutoTrainer: hasVipAutoTrainerAccess(effectiveUser),
         daily: {
             dayKey: dailyState.dayKey,
             count: dailyState.count,
@@ -71,10 +77,15 @@ export const buildAutoTrainerStatusPayload = async (userLike = {}) => {
 }
 
 export const buildAutoSearchStatusPayload = async (userLike = {}) => {
+    const effectiveVipBenefits = await resolveEffectiveVipBenefits(userLike)
+    const effectiveUser = {
+        ...userLike,
+        vipBenefits: effectiveVipBenefits,
+    }
     const normalizedState = normalizeAutoSearchState(userLike?.autoSearch)
-    const dailyLimit = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoSearchUsesPerDay, 0)
+    const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoSearchUsesPerDay, 0)
     const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
-    const durationLimitMinutes = toSafeAutoTrainerInt(userLike?.vipBenefits?.autoSearchDurationMinutes, 0)
+    const durationLimitMinutes = toSafeAutoTrainerInt(effectiveVipBenefits?.autoSearchDurationMinutes, 0)
     const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
         ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
         : 0
@@ -105,7 +116,7 @@ export const buildAutoSearchStatusPayload = async (userLike = {}) => {
         catchFormMode: normalizeAutoCatchFormMode(normalizedState.catchFormMode),
         catchBallItemId: normalizeAutoTrainerId(normalizedState.catchBallItemId),
         startedAt: normalizedState.startedAt || null,
-        canUseVipAutoSearch: hasVipAutoSearchAccess(userLike),
+        canUseVipAutoSearch: hasVipAutoSearchAccess(effectiveUser),
         daily: {
             dayKey: dailyState.dayKey,
             count: dailyState.count,

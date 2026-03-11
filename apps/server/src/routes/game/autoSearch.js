@@ -14,6 +14,7 @@ import {
     toSafeInt as toSafeAutoTrainerInt,
 } from '../../utils/autoTrainerUtils.js'
 import { buildAutoSearchStatusPayload } from '../../services/autoStatusService.js'
+import { resolveEffectiveVipBenefits } from '../../services/vipBenefitService.js'
 
 const router = express.Router()
 
@@ -22,15 +23,16 @@ const AUTO_SEARCH_LOGS_LIMIT = 12
 router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits autoSearch isBanned')
             .lean()
 
         if (!user) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const effectiveVipBenefits = await resolveEffectiveVipBenefits(user)
         const normalizedState = normalizeAutoSearchState(user.autoSearch)
-        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
+        const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoSearchUsesPerDay, 0)
         const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
         const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
             ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
@@ -78,12 +80,17 @@ router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
 router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits autoSearch isBanned')
 
         if (!user) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const effectiveVipBenefits = await resolveEffectiveVipBenefits(user)
+        const effectiveUser = {
+            ...user.toObject(),
+            vipBenefits: effectiveVipBenefits,
+        }
         const incomingEnabled = req.body?.enabled
         const shouldUpdateEnabled = incomingEnabled === true || incomingEnabled === false
         const hasMapSlugPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'mapSlug')
@@ -95,9 +102,9 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
         const hasCatchBallPatch = Object.prototype.hasOwnProperty.call(req.body || {}, 'catchBallItemId')
 
         const normalizedState = normalizeAutoSearchState(user.autoSearch)
-        const canUseVipAutoSearch = hasVipAutoSearchAccess(user)
-        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchUsesPerDay, 0)
-        const durationLimitMinutes = toSafeAutoTrainerInt(user?.vipBenefits?.autoSearchDurationMinutes, 0)
+        const canUseVipAutoSearch = hasVipAutoSearchAccess(effectiveUser)
+        const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoSearchUsesPerDay, 0)
+        const durationLimitMinutes = toSafeAutoTrainerInt(effectiveVipBenefits?.autoSearchDurationMinutes, 0)
         const dailyState = resolveAutoSearchDailyState(normalizedState, dailyLimit)
         const currentDayRuntimeMs = String(normalizedState.dayKey || '') === dailyState.dayKey
             ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
@@ -224,7 +231,7 @@ router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
 
         await User.updateOne({ _id: req.user.userId }, updateDoc)
         const refreshedUser = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits autoSearch isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits autoSearch isBanned')
             .lean()
         const payload = await buildAutoSearchStatusPayload(refreshedUser || user.toObject())
 

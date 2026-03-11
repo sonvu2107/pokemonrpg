@@ -146,6 +146,9 @@ export default function VipPrivilegePage() {
     const [showInactive, setShowInactive] = useState(true)
     const [saving, setSaving] = useState(false)
     const [deletingId, setDeletingId] = useState('')
+    const [syncingTierId, setSyncingTierId] = useState('')
+    const [syncingAllTiers, setSyncingAllTiers] = useState(false)
+    const [syncNotice, setSyncNotice] = useState(null)
     const [editingId, setEditingId] = useState('')
     const [form, setForm] = useState(createDefaultTierForm())
     const [rangeForm, setRangeForm] = useState({ fromLevel: '1', toLevel: '10' })
@@ -289,18 +292,71 @@ export default function VipPrivilegePage() {
         try {
             setSaving(true)
             setError('')
+            setSyncNotice(null)
             const payload = buildPayloadFromForm(form)
+            let res = null
             if (editingId) {
-                await vipTierApi.update(editingId, payload)
+                res = await vipTierApi.update(editingId, payload)
             } else {
-                await vipTierApi.create(payload)
+                res = await vipTierApi.create(payload)
             }
             await refreshPageData()
             resetForm()
+            if (editingId && Number(res?.syncedUsers || 0) > 0) {
+                setSyncNotice({
+                    tone: 'success',
+                    message: `${res?.vipTier?.name || 'Tier VIP'}: đã đồng bộ ${Number(res?.syncedUsers || 0)} / ${Number(res?.matchedUsers || 0)} user đang dùng tier này.`,
+                })
+            }
         } catch (err) {
             setError(err.message || 'Không thể lưu cấu hình đặc quyền VIP')
         } finally {
             setSaving(false)
+        }
+    }
+
+    const handleSyncTierUsers = async (tier) => {
+        const tierId = String(tier?._id || '').trim()
+        if (!tierId) return
+
+        const confirmed = confirm(`Đồng bộ lại toàn bộ user đang dùng ${tier?.name || tier?.code}?`)
+        if (!confirmed) return
+
+        try {
+            setSyncingTierId(tierId)
+            setError('')
+            setSyncNotice(null)
+            const res = await vipTierApi.syncUsers(tierId)
+            await refreshPageData()
+            setSyncNotice({
+                tone: Number(res?.syncedUsers || 0) > 0 ? 'success' : 'info',
+                message: `${tier?.name || tier?.code || 'Tier VIP'}: đã đồng bộ ${Number(res?.syncedUsers || 0)} / ${Number(res?.matchedUsers || 0)} user.`,
+            })
+        } catch (err) {
+            setError(err.message || 'Không thể đồng bộ user của cấp VIP')
+        } finally {
+            setSyncingTierId('')
+        }
+    }
+
+    const handleSyncAllTierUsers = async () => {
+        const confirmed = confirm('Đồng bộ lại toàn bộ user của tất cả gói VIP?')
+        if (!confirmed) return
+
+        try {
+            setSyncingAllTiers(true)
+            setError('')
+            setSyncNotice(null)
+            const res = await vipTierApi.syncAllUsers()
+            await refreshPageData()
+            setSyncNotice({
+                tone: Number(res?.syncedUsers || 0) > 0 ? 'success' : 'info',
+                message: `Đã đồng bộ ${Number(res?.syncedUsers || 0)} / ${Number(res?.matchedUsers || 0)} user từ ${Number(res?.tierCount || 0)} tier VIP.`,
+            })
+        } catch (err) {
+            setError(err.message || 'Không thể đồng bộ toàn bộ user VIP')
+        } finally {
+            setSyncingAllTiers(false)
         }
     }
 
@@ -409,6 +465,9 @@ export default function VipPrivilegePage() {
 
     const saveBtn =
         `${ghostBtnBase} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white focus:ring-emerald-300`;
+
+    const syncBtn =
+        `${ghostBtnBase} border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-600 hover:text-white focus:ring-cyan-300`;
 
     const neutralBtn =
         `${ghostBtnBase} border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-700 hover:text-white focus:ring-slate-300`;
@@ -897,12 +956,29 @@ export default function VipPrivilegePage() {
                             >
                                 Làm mới
                             </button>
+                            <button
+                                type="button"
+                                onClick={handleSyncAllTierUsers}
+                                disabled={syncingAllTiers}
+                                className="px-2.5 py-1.5 bg-cyan-600 border border-cyan-700 hover:bg-cyan-700 text-white rounded text-xs font-bold disabled:opacity-60"
+                            >
+                                {syncingAllTiers ? 'Đang đồng bộ tất cả...' : 'Đồng bộ tất cả user VIP'}
+                            </button>
                         </div>
                     </div>
 
                     {error && (
                         <div className="mx-4 mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 font-medium">
                             {error}
+                        </div>
+                    )}
+
+                    {syncNotice && (
+                        <div className={`mx-4 mt-4 p-3 rounded text-sm font-medium border ${syncNotice.tone === 'success'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            : 'bg-cyan-50 border-cyan-200 text-cyan-700'
+                            }`}>
+                            {syncNotice.message}
                         </div>
                     )}
 
@@ -1001,9 +1077,18 @@ export default function VipPrivilegePage() {
 
                                                                 <button
                                                                     type="button"
+                                                                    className={syncBtn}
+                                                                    onClick={() => handleSyncTierUsers(tier)}
+                                                                    disabled={syncingTierId === tier._id}
+                                                                >
+                                                                    {syncingTierId === tier._id ? 'Đồng bộ...' : 'Đồng bộ user'}
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
                                                                     className={deleteBtn}
                                                                     onClick={() => handleDelete(tier)}
-                                                                    disabled={deletingId === tier._id}
+                                                                    disabled={deletingId === tier._id || syncingTierId === tier._id}
                                                                 >
                                                                     {deletingId === tier._id ? 'Xóa...' : 'Xóa'}
                                                                 </button>
@@ -1118,8 +1203,16 @@ export default function VipPrivilegePage() {
                                                 </button>
                                                 <button
                                                     type="button"
+                                                    onClick={() => handleSyncTierUsers(tier)}
+                                                    disabled={syncingTierId === tier._id}
+                                                    className={syncBtn}
+                                                >
+                                                    {syncingTierId === tier._id ? 'Đồng bộ...' : 'Đồng bộ user'}
+                                                </button>
+                                                <button
+                                                    type="button"
                                                     onClick={() => handleDelete(tier)}
-                                                    disabled={deletingId === tier._id}
+                                                    disabled={deletingId === tier._id || syncingTierId === tier._id}
                                                     className={deleteBtn}
                                                 >
                                                     {deletingId === tier._id ? 'Đang xóa...' : 'Xóa'}

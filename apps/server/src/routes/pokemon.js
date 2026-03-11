@@ -295,6 +295,11 @@ const getOffTypeSkillAllowance = (userPokemonLike = null) => {
     return userPokemonLike?.allowOffTypeSkills ? 1 : 0
 }
 
+const hasLegacyOffTypeSkillState = (userPokemonLike = null) => {
+    const explicitAllowance = Math.max(0, Number.parseInt(userPokemonLike?.offTypeSkillAllowance, 10) || 0)
+    return explicitAllowance <= 0 && Boolean(userPokemonLike?.allowOffTypeSkills)
+}
+
 const evaluateMoveLearnRestriction = (move, pokemonSpecies, userPokemonLike = null) => {
     const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
     const speciesId = String(pokemonSpecies?._id || '').trim()
@@ -1529,6 +1534,12 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Kỹ năng không tồn tại hoặc đã bị vô hiệu hóa' })
         }
 
+        if (hasLegacyOffTypeSkillState(userPokemon)) {
+            userPokemon.offTypeSkillAllowance = 1
+            userPokemon.allowOffTypeSkills = true
+            await userPokemon.save()
+        }
+
         const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId, userPokemon)
         if (!restrictionResult.canLearn) {
             return res.status(400).json({ ok: false, message: restrictionResult.reason })
@@ -1602,14 +1613,41 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             moveLookupMap,
         })
 
-        userPokemon.moves = nextMoves
-        userPokemon.movePpState = nextMovePpState
+        let persistedPokemon = null
         if (restrictionResult.usesOffTypeAllowance) {
-            const remainingOffTypeAllowance = Math.max(0, getOffTypeSkillAllowance(userPokemon) - 1)
-            userPokemon.offTypeSkillAllowance = remainingOffTypeAllowance
-            userPokemon.allowOffTypeSkills = remainingOffTypeAllowance > 0
+            persistedPokemon = await UserPokemon.findOneAndUpdate(
+                withActiveUserPokemonFilter({
+                    _id: req.params.id,
+                    userId,
+                    offTypeSkillAllowance: { $gte: 1 },
+                }),
+                [
+                    {
+                        $set: {
+                            moves: nextMoves,
+                            movePpState: nextMovePpState,
+                            offTypeSkillAllowance: { $subtract: ['$offTypeSkillAllowance', 1] },
+                        },
+                    },
+                    {
+                        $set: {
+                            allowOffTypeSkills: { $gt: ['$offTypeSkillAllowance', 0] },
+                        },
+                    },
+                ],
+                { new: true }
+            )
+
+            if (!persistedPokemon) {
+                const conflictError = new Error('OFF_TYPE_SKILL_ALLOWANCE_CONFLICT')
+                conflictError.statusCode = 409
+                throw conflictError
+            }
+        } else {
+            userPokemon.moves = nextMoves
+            userPokemon.movePpState = nextMovePpState
+            persistedPokemon = await userPokemon.save()
         }
-        await userPokemon.save()
 
         if (consumedEntry.quantity <= 0) {
             await UserMoveInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
@@ -1618,14 +1656,14 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
         return res.json({
             ok: true,
             message: replacedMove
-                ? `${userPokemon.nickname || 'Pokemon'} đã học ${moveName} và quên ${replacedMove}`
-                : `${userPokemon.nickname || 'Pokemon'} đã học ${moveName}`,
+                ? `${persistedPokemon?.nickname || userPokemon.nickname || 'Pokemon'} đã học ${moveName} và quên ${replacedMove}`
+                : `${persistedPokemon?.nickname || userPokemon.nickname || 'Pokemon'} đã học ${moveName}`,
             pokemon: {
-                _id: userPokemon._id,
-                moves: userPokemon.moves,
-                movePpState: toDisplayMovePpState(userPokemon.movePpState),
-                offTypeSkillAllowance: getOffTypeSkillAllowance(userPokemon),
-                allowOffTypeSkills: getOffTypeSkillAllowance(userPokemon) > 0,
+                _id: persistedPokemon?._id || userPokemon._id,
+                moves: persistedPokemon?.moves || nextMoves,
+                movePpState: toDisplayMovePpState(persistedPokemon?.movePpState || nextMovePpState),
+                offTypeSkillAllowance: getOffTypeSkillAllowance(persistedPokemon || userPokemon),
+                allowOffTypeSkills: getOffTypeSkillAllowance(persistedPokemon || userPokemon) > 0,
             },
             taughtMove: {
                 _id: move._id,
@@ -1650,6 +1688,9 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             } catch (rollbackError) {
                 console.error('POST /api/pokemon/:id/teach-skill rollback error:', rollbackError)
             }
+        }
+        if (error?.statusCode === 409) {
+            return res.status(409).json({ ok: false, message: 'Lượt học skill khác hệ đã thay đổi, vui lòng thử lại' })
         }
         console.error('POST /api/pokemon/:id/teach-skill error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })

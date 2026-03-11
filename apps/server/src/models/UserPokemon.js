@@ -111,17 +111,16 @@ UserPokemonSchema.pre('validate', function (next) {
     this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
 
     const offTypeSkillAllowance = Number.parseInt(this.offTypeSkillAllowance, 10)
-    this.offTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0 ? offTypeSkillAllowance : 0
+    const normalizedOffTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0
+        ? offTypeSkillAllowance
+        : (this.allowOffTypeSkills ? 1 : 0)
+    this.offTypeSkillAllowance = normalizedOffTypeSkillAllowance
 
     if (this.level >= USER_POKEMON_MAX_LEVEL) {
         this.experience = 0
     }
 
-    if (this.offTypeSkillAllowance > 0) {
-        this.allowOffTypeSkills = true
-    } else if (!this.allowOffTypeSkills) {
-        this.allowOffTypeSkills = false
-    }
+    this.allowOffTypeSkills = this.offTypeSkillAllowance > 0
 
     next()
 })

@@ -17,6 +17,7 @@ import {
     resolveDailyState,
     toSafeInt,
 } from '../utils/autoTrainerUtils.js'
+import { resolveEffectiveVipBenefits } from '../services/vipBenefitService.js'
 
 const WORKER_LOCK_KEY_PREFIX = 'auto-search:tick-lock'
 const OWNER_ID = `auto-search-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
@@ -294,11 +295,16 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     const userId = String(userDoc?._id || '').trim()
     if (!userId) return
 
+    const effectiveVipBenefits = await resolveEffectiveVipBenefits(userDoc)
+    const effectiveUser = {
+        ...userDoc,
+        vipBenefits: effectiveVipBenefits,
+    }
     const now = new Date()
     const nowMs = Date.now()
     const autoState = normalizeAutoSearchState(userDoc?.autoSearch)
-    const dailyLimit = toSafeInt(userDoc?.vipBenefits?.autoSearchUsesPerDay, 0)
-    const durationLimitMinutes = toSafeInt(userDoc?.vipBenefits?.autoSearchDurationMinutes, 0)
+    const dailyLimit = toSafeInt(effectiveVipBenefits?.autoSearchUsesPerDay, 0)
+    const durationLimitMinutes = toSafeInt(effectiveVipBenefits?.autoSearchDurationMinutes, 0)
     const dailyState = resolveDailyState(autoState, dailyLimit)
     const isSameRuntimeDay = String(autoState.dayKey || '') === dailyState.dayKey
     const storedRuntimeMs = isSameRuntimeDay ? Math.max(0, Number(autoState.dayRuntimeMs || 0)) : 0
@@ -320,7 +326,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         'autoSearch.dayCount': dailyState.count,
     }
 
-    if (!hasVipAutoSearchAccess(userDoc)) {
+    if (!hasVipAutoSearchAccess(effectiveUser)) {
         await updateAutoSearchState({
             userId,
             setPatch: {
@@ -900,7 +906,7 @@ const fetchEligibleUsers = async () => {
     const baseFilter = {
         'autoSearch.enabled': true,
         isBanned: { $ne: true },
-        'vipBenefits.autoSearchEnabled': { $ne: false },
+        role: { $in: ['vip', 'admin'] },
     }
 
     const buildFilterWithCursor = () => (
@@ -913,7 +919,7 @@ const fetchEligibleUsers = async () => {
     )
 
     let users = await User.find(buildFilterWithCursor())
-        .select('_id role vipTierLevel vipBenefits autoSearch isBanned')
+        .select('_id role vipTierId vipTierLevel vipBenefits autoSearch isBanned')
         .sort({ _id: 1 })
         .limit(BATCH_SIZE)
         .lean()
@@ -921,7 +927,7 @@ const fetchEligibleUsers = async () => {
     if (users.length === 0 && lastCursorId) {
         lastCursorId = ''
         users = await User.find(baseFilter)
-            .select('_id role vipTierLevel vipBenefits autoSearch isBanned')
+            .select('_id role vipTierId vipTierLevel vipBenefits autoSearch isBanned')
             .sort({ _id: 1 })
             .limit(BATCH_SIZE)
             .lean()

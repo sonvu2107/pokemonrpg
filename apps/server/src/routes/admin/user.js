@@ -54,6 +54,25 @@ const parseOptionalFutureDate = (value) => {
     return date
 }
 
+const VIP_SYNCABLE_BENEFIT_FIELDS = Object.freeze([
+    'title',
+    'titleImageUrl',
+    'avatarFrameUrl',
+    'autoSearchEnabled',
+    'autoSearchDurationMinutes',
+    'autoSearchUsesPerDay',
+    'autoBattleTrainerEnabled',
+    'autoBattleTrainerDurationMinutes',
+    'autoBattleTrainerUsesPerDay',
+    'expBonusPercent',
+    'platinumCoinBonusPercent',
+    'moonPointBonusPercent',
+    'ssCatchRateBonusPercent',
+    'catchRateBonusPercent',
+    'itemDropBonusPercent',
+    'dailyRewardBonusPercent',
+])
+
 const resolvePokemonSprite = (pokemonLike) => {
     if (!pokemonLike) return ''
     const forms = Array.isArray(pokemonLike.forms) ? pokemonLike.forms : []
@@ -173,16 +192,172 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
     }
 }
 
+const toPlainObject = (value) => {
+    if (!value || typeof value !== 'object') return {}
+    if (typeof value.toObject === 'function') {
+        return value.toObject()
+    }
+    return value
+}
+
+const pickVipBenefitSnapshot = (benefitsLike = {}) => {
+    const normalized = normalizeVipBenefits(benefitsLike)
+    return VIP_SYNCABLE_BENEFIT_FIELDS.reduce((snapshot, field) => {
+        snapshot[field] = normalized[field]
+        return snapshot
+    }, {})
+}
+
+const areVipBenefitSnapshotsEqual = (leftLike = {}, rightLike = {}) => {
+    const left = pickVipBenefitSnapshot(leftLike)
+    const right = pickVipBenefitSnapshot(rightLike)
+    return VIP_SYNCABLE_BENEFIT_FIELDS.every((field) => Object.is(left[field], right[field]))
+}
+
+const buildSyncedVipBenefits = (currentBenefitsLike = {}, previousTierBenefitsLike = {}, nextTierBenefitsLike = {}) => {
+    const currentRaw = toPlainObject(currentBenefitsLike)
+    const current = pickVipBenefitSnapshot(currentBenefitsLike)
+    const previousTier = pickVipBenefitSnapshot(previousTierBenefitsLike)
+    const nextTier = pickVipBenefitSnapshot(nextTierBenefitsLike)
+    const nextBenefits = {
+        ...currentRaw,
+    }
+
+    for (const field of VIP_SYNCABLE_BENEFIT_FIELDS) {
+        nextBenefits[field] = Object.is(current[field], previousTier[field])
+            ? nextTier[field]
+            : current[field]
+    }
+
+    return nextBenefits
+}
+
+const syncUsersForVipTierUpdate = async ({ tierId, previousTierLike, nextTierLike }) => {
+    const normalizedTierId = String(tierId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(normalizedTierId)) {
+        return {
+            matchedCount: 0,
+            updatedCount: 0,
+        }
+    }
+
+    const previousTier = previousTierLike?.toObject ? previousTierLike.toObject() : (previousTierLike || {})
+    const nextTier = nextTierLike?.toObject ? nextTierLike.toObject() : (nextTierLike || {})
+    const previousTierLevel = Math.max(1, Number.parseInt(previousTier?.level, 10) || 1)
+    const nextTierLevel = Math.max(1, Number.parseInt(nextTier?.level, 10) || 1)
+    const nextTierCode = normalizeVipTierCode(nextTier?.code)
+    const tierObjectId = new mongoose.Types.ObjectId(normalizedTierId)
+
+    const users = await User.find({
+        $or: [
+            { vipTierId: tierObjectId },
+            { vipTierId: null, vipTierLevel: previousTierLevel },
+        ],
+        role: { $in: ['vip', 'admin'] },
+    })
+        .select('_id vipTierId vipTierLevel vipTierCode vipBenefits')
+        .lean()
+
+    if (users.length === 0) {
+        return {
+            matchedCount: 0,
+            updatedCount: 0,
+        }
+    }
+
+    const operations = []
+
+    for (const user of users) {
+        const updateSet = {}
+        const nextVipBenefits = buildSyncedVipBenefits(user?.vipBenefits, previousTier?.benefits, nextTier?.benefits)
+
+        if (String(user?.vipTierId || '') !== normalizedTierId) {
+            updateSet.vipTierId = tierObjectId
+        }
+
+        if (Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0) !== nextTierLevel) {
+            updateSet.vipTierLevel = nextTierLevel
+        }
+
+        if (normalizeVipTierCode(user?.vipTierCode) !== nextTierCode) {
+            updateSet.vipTierCode = nextTierCode
+        }
+
+        if (!areVipBenefitSnapshotsEqual(user?.vipBenefits, nextVipBenefits)) {
+            updateSet.vipBenefits = nextVipBenefits
+        }
+
+        if (Object.keys(updateSet).length > 0) {
+            operations.push({
+                updateOne: {
+                    filter: { _id: user._id },
+                    update: { $set: updateSet },
+                },
+            })
+        }
+    }
+
+    if (operations.length === 0) {
+        return {
+            matchedCount: users.length,
+            updatedCount: 0,
+        }
+    }
+
+    await User.bulkWrite(operations, { ordered: false })
+
+    return {
+        matchedCount: users.length,
+        updatedCount: operations.length,
+    }
+}
+
+const buildVipTierSyncMessage = (syncResult = {}) => {
+    const updatedCount = Math.max(0, Number(syncResult?.updatedCount || 0))
+    if (updatedCount > 0) {
+        return `Đã đồng bộ ${updatedCount} tài khoản đang dùng gói VIP này`
+    }
+    return 'Không có tài khoản nào cần đồng bộ lại'
+}
+
+const syncAllVipTierUsers = async () => {
+    const tiers = await VipPrivilegeTier.find({})
+        .select('_id level code benefits')
+        .sort({ level: 1, _id: 1 })
+        .lean()
+
+    let matchedUsers = 0
+    let syncedUsers = 0
+
+    for (const tier of tiers) {
+        const syncResult = await syncUsersForVipTierUpdate({
+            tierId: tier._id,
+            previousTierLike: {
+                level: tier.level,
+                code: tier.code,
+                benefits: normalizeVipTierBenefits(tier.benefits || {}),
+            },
+            nextTierLike: {
+                level: tier.level,
+                code: tier.code,
+                benefits: normalizeVipTierBenefits(tier.benefits || {}),
+            },
+        })
+
+        matchedUsers += Math.max(0, Number(syncResult?.matchedCount || 0))
+        syncedUsers += Math.max(0, Number(syncResult?.updatedCount || 0))
+    }
+
+    return {
+        tierCount: tiers.length,
+        matchedUsers,
+        syncedUsers,
+    }
+}
+
 const resetDailyAutoUsage = (userDoc) => {
     if (!userDoc || typeof userDoc !== 'object') return
 
-    const toPlainObject = (value) => {
-        if (!value || typeof value !== 'object') return {}
-        if (typeof value.toObject === 'function') {
-            return value.toObject()
-        }
-        return value
-    }
     const isRecord = (value) => (
         value
         && typeof value === 'object'
@@ -750,6 +925,12 @@ router.put('/vip-tiers/:tierId', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy gói VIP' })
         }
 
+        const previousTierState = {
+            level: tier.level,
+            code: tier.code,
+            benefits: normalizeVipTierBenefits(tier.benefits || {}),
+        }
+
         if (Object.prototype.hasOwnProperty.call(payload, 'level')) {
             tier.level = clamp(parseInt(payload.level, 10) || 1, 1, 9999)
         }
@@ -783,10 +964,24 @@ router.put('/vip-tiers/:tierId', async (req, res) => {
         tier.updatedBy = req.user.userId
         await tier.save()
 
+        const syncResult = await syncUsersForVipTierUpdate({
+            tierId: tier._id,
+            previousTierLike: previousTierState,
+            nextTierLike: {
+                level: tier.level,
+                code: tier.code,
+                benefits: normalizeVipTierBenefits(tier.benefits || {}),
+            },
+        })
+
         res.json({
             ok: true,
             vipTier: buildVipTierResponse(tier),
-            message: 'Đã cập nhật gói đặc quyền VIP',
+            syncedUsers: syncResult.updatedCount,
+            matchedUsers: syncResult.matchedCount,
+            message: syncResult.updatedCount > 0
+                ? `Đã cập nhật gói đặc quyền VIP và đồng bộ ${syncResult.updatedCount} tài khoản đang dùng gói này`
+                : 'Đã cập nhật gói đặc quyền VIP',
         })
     } catch (error) {
         if (error?.code === 11000) {
@@ -796,6 +991,66 @@ router.put('/vip-tiers/:tierId', async (req, res) => {
             })
         }
         console.error('PUT /api/admin/users/vip-tiers/:tierId error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/vip-tiers/:tierId/sync-users - Manual sync users assigned to a VIP tier
+router.post('/vip-tiers/:tierId/sync-users', async (req, res) => {
+    try {
+        const tierId = String(req.params.tierId || '').trim()
+        if (!mongoose.Types.ObjectId.isValid(tierId)) {
+            return res.status(400).json({ ok: false, message: 'tierId không hợp lệ' })
+        }
+
+        const tier = await VipPrivilegeTier.findById(tierId)
+        if (!tier) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy gói VIP' })
+        }
+
+        const syncResult = await syncUsersForVipTierUpdate({
+            tierId: tier._id,
+            previousTierLike: {
+                level: tier.level,
+                code: tier.code,
+                benefits: normalizeVipTierBenefits(tier.benefits || {}),
+            },
+            nextTierLike: {
+                level: tier.level,
+                code: tier.code,
+                benefits: normalizeVipTierBenefits(tier.benefits || {}),
+            },
+        })
+
+        res.json({
+            ok: true,
+            vipTier: buildVipTierResponse(tier),
+            syncedUsers: syncResult.updatedCount,
+            matchedUsers: syncResult.matchedCount,
+            message: buildVipTierSyncMessage(syncResult),
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/vip-tiers/:tierId/sync-users error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// POST /api/admin/users/vip-tiers/sync-all-users - Manual sync all VIP tier users
+router.post('/vip-tiers/sync-all-users', async (req, res) => {
+    try {
+        const syncResult = await syncAllVipTierUsers()
+
+        res.json({
+            ok: true,
+            tierCount: syncResult.tierCount,
+            matchedUsers: syncResult.matchedUsers,
+            syncedUsers: syncResult.syncedUsers,
+            message: syncResult.syncedUsers > 0
+                ? `Đã đồng bộ ${syncResult.syncedUsers} tài khoản từ ${syncResult.tierCount} gói VIP`
+                : `Không có tài khoản nào cần đồng bộ trong ${syncResult.tierCount} gói VIP`,
+        })
+    } catch (error) {
+        console.error('POST /api/admin/users/vip-tiers/sync-all-users error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })

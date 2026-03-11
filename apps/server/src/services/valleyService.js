@@ -11,9 +11,9 @@ import UserPokemon from '../models/UserPokemon.js'
 import UserInventory from '../models/UserInventory.js'
 import Item from '../models/Item.js'
 import User from '../models/User.js'
-import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { calcCatchChance, rollCatch } from './catchChanceService.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
+import { resolveEffectiveVipBonusBenefits } from './vipBenefitService.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,25 +31,8 @@ const levelBand = (level) => {
 
 const resolveVipSsCatchBonus = async (userLike) => {
     if (!userLike) return 0
-
-    const fromUser = Math.max(
-        0,
-        Number(userLike?.vipBenefits?.ssCatchRateBonusPercent ?? userLike?.vipBenefits?.catchRateBonusPercent ?? 0) || 0
-    )
-    if (fromUser > 0) return fromUser
-
-    if (userLike?.vipTierId) {
-        const tier = await VipPrivilegeTier.findById(userLike.vipTierId).select('benefits').lean()
-        return Math.max(0, Number(tier?.benefits?.ssCatchRateBonusPercent ?? 0) || 0)
-    }
-
-    const tierLevel = Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
-    if (tierLevel > 0) {
-        const tier = await VipPrivilegeTier.findOne({ level: tierLevel }).select('benefits').lean()
-        return Math.max(0, Number(tier?.benefits?.ssCatchRateBonusPercent ?? 0) || 0)
-    }
-
-    return 0
+    const effectiveVipBonusBenefits = await resolveEffectiveVipBonusBenefits(userLike)
+    return Math.max(0, Number(effectiveVipBonusBenefits?.ssCatchRateBonusPercent || 0) || 0)
 }
 
 // ─── Release ──────────────────────────────────────────────────────────────────

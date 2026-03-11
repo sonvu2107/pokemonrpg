@@ -3,25 +3,56 @@ import Message from '../models/Message.js'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
 import { authMiddleware as auth } from '../middleware/auth.js'
+import {
+  normalizeVipVisualBenefits,
+  resolveEffectiveVipBenefitsForUsers,
+  resolveEffectiveVipVisualBenefits,
+} from '../services/vipBenefitService.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
 const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
-const normalizeVipBenefits = (vipBenefitsLike = {}) => {
-  const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
-  return {
-    title: String(source?.title || '').trim().slice(0, 80),
-    titleImageUrl: String(source?.titleImageUrl || '').trim(),
-    avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
-    autoSearchEnabled: source?.autoSearchEnabled !== false,
-    autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
-    autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
-    autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
-    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
-    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
-  }
+const hydrateMessageSendersVipBenefits = async (messages = []) => {
+  const list = Array.isArray(messages) ? messages : []
+  if (list.length === 0) return list
+
+  const senderIds = Array.from(new Set(
+    list
+      .map((entry) => String(entry?.sender?._id || '').trim())
+      .filter(Boolean)
+  ))
+
+  if (senderIds.length === 0) return list
+
+  const users = await User.find({ _id: { $in: senderIds } })
+    .select('_id avatar role vipTierId vipTierLevel vipTierCode vipBenefits')
+    .lean()
+
+  const userById = new Map(users.map((entry) => [String(entry?._id || '').trim(), entry]))
+  const benefitsByUserId = await resolveEffectiveVipBenefitsForUsers(users)
+
+  return list.map((entry) => {
+    const senderId = String(entry?.sender?._id || '').trim()
+    const senderUser = senderId ? userById.get(senderId) : null
+    const effectiveVipBenefits = benefitsByUserId.get(senderId)
+    if (!senderUser || !entry?.sender || !effectiveVipBenefits) {
+      return entry
+    }
+
+    return {
+      ...entry,
+      sender: {
+        ...entry.sender,
+        avatar: normalizeAvatarUrl(senderUser?.avatar || entry?.sender?.avatar),
+        role: senderUser.role || entry.sender.role || 'user',
+        vipTierLevel: Math.max(0, parseInt(senderUser?.vipTierLevel, 10) || 0),
+        vipTierCode: String(senderUser?.vipTierCode || '').trim().toUpperCase(),
+        vipBenefits: normalizeVipVisualBenefits(effectiveVipBenefits),
+      },
+    }
+  })
 }
 
 router.get('/global', auth, async (req, res) => {
@@ -37,10 +68,12 @@ router.get('/global', auth, async (req, res) => {
       messages = await Message.getRecentMessages('global', limit)
     }
 
+    const hydratedMessages = await hydrateMessageSendersVipBenefits(messages)
+
     res.json({
       ok: true,
-      messages,
-      count: messages.length
+      messages: hydratedMessages,
+      count: hydratedMessages.length
     })
   } catch (error) {
     console.error('Error fetching messages:', error)
@@ -77,7 +110,7 @@ router.post('/global', auth, async (req, res) => {
     }
 
     const [user, playerState] = await Promise.all([
-      User.findById(currentUserId).select('username role avatar vipTierLevel vipTierCode vipBenefits').lean(),
+      User.findById(currentUserId).select('username role avatar vipTierId vipTierLevel vipTierCode vipBenefits').lean(),
       PlayerState.findOne({ userId: currentUserId }).select('level').lean(),
     ])
 
@@ -100,6 +133,8 @@ router.post('/global', auth, async (req, res) => {
       })
     }
 
+    const effectiveVipBenefits = await resolveEffectiveVipVisualBenefits(user)
+
     const message = new Message({
       room: 'global',
       sender: {
@@ -110,7 +145,7 @@ router.post('/global', auth, async (req, res) => {
         avatar: normalizeAvatarUrl(user?.avatar),
         vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
         vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
-        vipBenefits: normalizeVipBenefits(user?.vipBenefits),
+        vipBenefits: effectiveVipBenefits,
       },
       content: content.trim(),
       type: 'text'

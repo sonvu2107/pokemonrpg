@@ -1384,6 +1384,26 @@ export const vipTierApi = {
         return res.json()
     },
 
+    // POST /api/admin/users/vip-tiers/:tierId/sync-users
+    async syncUsers(tierId) {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/${tierId}/sync-users`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể đồng bộ user của đặc quyền VIP')
+        return res.json()
+    },
+
+    // POST /api/admin/users/vip-tiers/sync-all-users
+    async syncAllUsers() {
+        const res = await fetch(`${API_URL}/admin/users/vip-tiers/sync-all-users`, {
+            method: 'POST',
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) await throwApiError(res, 'Không thể đồng bộ toàn bộ user VIP')
+        return res.json()
+    },
+
     // DELETE /api/admin/users/vip-tiers/:tierId
     async delete(tierId) {
         const res = await fetch(`${API_URL}/admin/users/vip-tiers/${tierId}`, {

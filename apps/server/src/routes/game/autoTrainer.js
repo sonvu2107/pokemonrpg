@@ -11,6 +11,7 @@ import {
 } from '../../utils/autoTrainerUtils.js'
 import { buildAutoTrainerStatusPayload } from '../../services/autoStatusService.js'
 import { ensureTrainerCompletionTracked } from '../../services/mapProgressionService.js'
+import { resolveEffectiveVipBenefits } from '../../services/vipBenefitService.js'
 
 const router = express.Router()
 
@@ -19,15 +20,16 @@ const AUTO_TRAINER_LOGS_LIMIT = 12
 router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
             .lean()
 
         if (!user) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const effectiveVipBenefits = await resolveEffectiveVipBenefits(user)
         const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
-        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
+        const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoBattleTrainerUsesPerDay, 0)
         const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
         const runtimeMsToday = String(normalizedState.dayKey || '') === dailyState.dayKey
             ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
@@ -75,12 +77,17 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
 router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
 
         if (!user) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy người dùng' })
         }
 
+        const effectiveVipBenefits = await resolveEffectiveVipBenefits(user)
+        const effectiveUser = {
+            ...user.toObject(),
+            vipBenefits: effectiveVipBenefits,
+        }
         const incomingEnabled = req.body?.enabled
         const shouldUpdateEnabled = incomingEnabled === true || incomingEnabled === false
         const requestedTrainerId = normalizeAutoTrainerId(req.body?.trainerId)
@@ -92,9 +99,9 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
             ? Math.max(450, Math.min(10000, Math.floor(requestedIntervalRaw)))
             : Math.max(450, toSafeAutoTrainerInt(user?.autoTrainer?.attackIntervalMs, 700))
         const normalizedState = normalizeAutoTrainerState(user.autoTrainer)
-        const canUseVipAutoTrainer = hasVipAutoTrainerAccess(user)
-        const dailyLimit = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 0)
-        const durationLimitMinutes = toSafeAutoTrainerInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 0)
+        const canUseVipAutoTrainer = hasVipAutoTrainerAccess(effectiveUser)
+        const dailyLimit = toSafeAutoTrainerInt(effectiveVipBenefits?.autoBattleTrainerUsesPerDay, 0)
+        const durationLimitMinutes = toSafeAutoTrainerInt(effectiveVipBenefits?.autoBattleTrainerDurationMinutes, 0)
         const dailyState = resolveAutoTrainerDailyState(normalizedState, dailyLimit)
         const currentDayRuntimeMs = String(normalizedState.dayKey || '') === dailyState.dayKey
             ? Math.max(0, Number(normalizedState.dayRuntimeMs || 0))
@@ -217,7 +224,7 @@ router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => 
 
         await User.updateOne({ _id: req.user.userId }, updateDoc)
         const refreshedUser = await User.findById(req.user.userId)
-            .select('role vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
+            .select('role vipTierId vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')
             .lean()
         const payload = await buildAutoTrainerStatusPayload(refreshedUser || user.toObject())
 

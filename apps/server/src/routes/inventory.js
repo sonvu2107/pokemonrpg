@@ -179,6 +179,12 @@ const getHealAmounts = (item) => {
     return { hpAmount: 0, ppAmount: 0 }
 }
 
+const getOffTypeSkillAllowance = (userPokemonLike = null) => {
+    const explicitAllowance = Math.max(0, Number.parseInt(userPokemonLike?.offTypeSkillAllowance, 10) || 0)
+    if (explicitAllowance > 0) return explicitAllowance
+    return userPokemonLike?.allowOffTypeSkills ? 1 : 0
+}
+
 const applyExperienceGainToUserPokemon = (userPokemon, expAmount = 0) => {
     const safeExpAmount = Math.max(0, Math.floor(Number(expAmount) || 0))
     const expBefore = Math.max(0, Math.floor(Number(userPokemon?.experience) || 0))
@@ -777,7 +783,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
             }
 
-            const nextOffTypeSkillAllowance = Math.max(0, Number.parseInt(targetPokemon.offTypeSkillAllowance, 10) || 0) + 1
+            const nextOffTypeSkillAllowance = getOffTypeSkillAllowance(targetPokemon) + 1
             targetPokemon.offTypeSkillAllowance = nextOffTypeSkillAllowance
             targetPokemon.allowOffTypeSkills = nextOffTypeSkillAllowance > 0
 

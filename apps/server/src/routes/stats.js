@@ -10,6 +10,7 @@ import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFa
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 import { getLiveSocketPresenceSnapshot } from '../socket/index.js'
+import { resolveEffectiveVipBenefits, resolveEffectiveVipBenefitsForUsers } from '../services/vipBenefitService.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -147,9 +148,11 @@ const buildLivePresenceReport = async ({ page, limit, includeSocketIds = false }
 
     const liveUsers = liveUserIds.length > 0
         ? await User.find({ _id: { $in: liveUserIds } })
-            .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
+            .select('username avatar signature createdAt lastActive role vipTierId vipTierLevel vipTierCode vipBenefits isOnline')
             .lean()
         : []
+
+    const effectiveVipBenefitsByUserId = await resolveEffectiveVipBenefitsForUsers(liveUsers)
 
     const userById = new Map(liveUsers.map((entry) => [String(entry?._id || '').trim(), entry]))
     const sortedRows = snapshot.users
@@ -166,7 +169,7 @@ const buildLivePresenceReport = async ({ page, limit, includeSocketIds = false }
                 role: user?.role || 'user',
                 vipTierLevel: user?.vipTierLevel || 0,
                 vipTierCode: user?.vipTierCode || '',
-                vipBenefits: user?.vipBenefits || {},
+                vipBenefits: effectiveVipBenefitsByUserId.get(userId) || {},
                 isOnline: user?.isOnline === true,
                 socketCount: Math.max(0, Number(entry?.socketCount || 0)),
                 socketIds: includeSocketIds ? (Array.isArray(entry?.socketIds) ? entry.socketIds : []) : undefined,
@@ -586,7 +589,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
 
         const [user, playerState, partyRows, badgeOverview] = await Promise.all([
             User.findById(targetUserId)
-                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline showPartyInProfile')
+                .select('username avatar signature createdAt lastActive role vipTierId vipTierLevel vipTierCode vipBenefits isOnline showPartyInProfile')
                 .lean(),
             PlayerState.findOne({ userId: targetUserId })
                 .select('level experience moonPoints wins losses gold hp maxHp stamina maxStamina')
@@ -612,6 +615,8 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
         if (!user.isOnline) {
             return res.status(400).json({ ok: false, message: 'Huấn luyện viên này hiện không còn trực tuyến' })
         }
+
+        const effectiveVipBenefits = await resolveEffectiveVipBenefits(user)
 
         const moveLookupMap = await buildMoveLookupByName(
             partyRows.flatMap((entry) => mergeKnownMovesWithFallback(entry?.moves))
@@ -667,17 +672,7 @@ router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
                 role: String(user?.role || 'user'),
                 vipTierLevel: Math.max(0, parseInt(user?.vipTierLevel, 10) || 0),
                 vipTierCode: String(user?.vipTierCode || '').trim().toUpperCase(),
-                vipBenefits: {
-                    title: String(user?.vipBenefits?.title || '').trim().slice(0, 80),
-                    titleImageUrl: String(user?.vipBenefits?.titleImageUrl || '').trim(),
-                    avatarFrameUrl: String(user?.vipBenefits?.avatarFrameUrl || '').trim(),
-                    autoSearchEnabled: user?.vipBenefits?.autoSearchEnabled !== false,
-                    autoSearchDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
-                    autoSearchUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
-                    autoBattleTrainerEnabled: user?.vipBenefits?.autoBattleTrainerEnabled !== false,
-                    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
-                    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(user?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
-                },
+                vipBenefits: serializeVipBenefits(effectiveVipBenefits),
                 isOnline: Boolean(user?.isOnline),
                 showPartyInProfile,
                 canViewParty,
@@ -710,7 +705,7 @@ router.get('/online', authMiddleware, async (req, res) => {
         const [totalOnline, users] = await Promise.all([
             User.countDocuments({ isOnline: true }),
             User.find({ isOnline: true })
-                .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
+                .select('username avatar signature createdAt lastActive role vipTierId vipTierLevel vipTierCode vipBenefits isOnline')
                 .sort({ createdAt: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -718,8 +713,12 @@ router.get('/online', authMiddleware, async (req, res) => {
         ])
 
         const now = new Date()
+        const effectiveVipBenefitsByUserId = await resolveEffectiveVipBenefitsForUsers(users)
 
-        const onlineTrainers = users.map((entry, index) => serializeOnlineTrainer(entry, index, skip, now))
+        const onlineTrainers = users.map((entry, index) => serializeOnlineTrainer({
+            ...entry,
+            vipBenefits: effectiveVipBenefitsByUserId.get(String(entry?._id || '').trim()) || {},
+        }, index, skip, now))
 
         res.json({
             ok: true,

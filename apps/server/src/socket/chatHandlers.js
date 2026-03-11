@@ -1,7 +1,11 @@
 import Message from '../models/Message.js'
 import User from '../models/User.js'
 import PlayerState from '../models/PlayerState.js'
-import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
+import {
+  normalizeVipVisualBenefits,
+  resolveEffectiveVipBenefitsForUsers,
+  resolveEffectiveVipVisualBenefits,
+} from '../services/vipBenefitService.js'
 
 // Store typing users in memory (in production, use Redis)
 const typingUsers = new Map() // roomId -> Set of usernames
@@ -15,95 +19,6 @@ const GLOBAL_ROOM = 'global'
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 
 const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
-
-const normalizeVipBenefits = (vipBenefitsLike = {}) => {
-  const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
-  return {
-    title: String(source?.title || '').trim().slice(0, 80),
-    titleImageUrl: String(source?.titleImageUrl || '').trim(),
-    avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
-    autoSearchEnabled: source?.autoSearchEnabled !== false,
-    autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
-    autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
-    autoBattleTrainerEnabled: source?.autoBattleTrainerEnabled !== false,
-    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(source?.autoBattleTrainerDurationMinutes, 10) || 0),
-    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(source?.autoBattleTrainerUsesPerDay, 10) || 0),
-  }
-}
-
-const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}) => {
-  const current = normalizeVipBenefits(currentBenefitsLike)
-  const tier = normalizeVipBenefits(tierBenefitsLike)
-  return {
-    ...current,
-    title: current.title || tier.title,
-    titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
-    avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
-  }
-}
-
-const buildVipTierLookup = async (users = []) => {
-  const tierIdSet = new Set()
-  const tierLevelSet = new Set()
-
-  for (const entry of users) {
-    const vipTierId = String(entry?.vipTierId || '').trim()
-    if (vipTierId) {
-      tierIdSet.add(vipTierId)
-      continue
-    }
-    const vipTierLevel = Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0)
-    if (vipTierLevel > 0) {
-      tierLevelSet.add(vipTierLevel)
-    }
-  }
-
-  const conditions = []
-  if (tierIdSet.size > 0) {
-    conditions.push({ _id: { $in: Array.from(tierIdSet) } })
-  }
-  if (tierLevelSet.size > 0) {
-    conditions.push({ level: { $in: Array.from(tierLevelSet) } })
-  }
-
-  if (conditions.length === 0) {
-    return {
-      tierById: new Map(),
-      tierByLevel: new Map(),
-    }
-  }
-
-  const tiers = await VipPrivilegeTier.find({ $or: conditions }).select('_id level benefits').lean()
-  const tierById = new Map()
-  const tierByLevel = new Map()
-
-  for (const tier of tiers) {
-    const idKey = String(tier?._id || '').trim()
-    if (idKey) {
-      tierById.set(idKey, tier)
-    }
-    const levelKey = Math.max(0, parseInt(tier?.level, 10) || 0)
-    if (levelKey > 0) {
-      tierByLevel.set(levelKey, tier)
-    }
-  }
-
-  return { tierById, tierByLevel }
-}
-
-const resolveTierBenefitsForUser = (userLike, tierById, tierByLevel) => {
-  const vipTierId = String(userLike?.vipTierId || '').trim()
-  if (vipTierId && tierById.has(vipTierId)) {
-    return normalizeVipBenefits(tierById.get(vipTierId)?.benefits)
-  }
-
-  const vipTierLevel = Math.max(0, parseInt(userLike?.vipTierLevel, 10) || 0)
-  if (vipTierLevel > 0 && tierByLevel.has(vipTierLevel)) {
-    return normalizeVipBenefits(tierByLevel.get(vipTierLevel)?.benefits)
-  }
-
-  return normalizeVipBenefits({})
-}
 
 const enrichMessageSenderVipBenefits = async (messages = []) => {
   const list = Array.isArray(messages) ? messages : []
@@ -122,7 +37,7 @@ const enrichMessageSenderVipBenefits = async (messages = []) => {
     .lean()
 
   const userById = new Map(users.map((entry) => [String(entry?._id || ''), entry]))
-  const { tierById, tierByLevel } = await buildVipTierLookup(users)
+  const benefitsByUserId = await resolveEffectiveVipBenefitsForUsers(users)
 
   return list.map((entry) => {
     const senderId = String(entry?.sender?._id || '').trim()
@@ -131,12 +46,9 @@ const enrichMessageSenderVipBenefits = async (messages = []) => {
       return entry
     }
 
-    const effectiveVipBenefits = mergeVipVisualBenefits(
-      senderUser?.vipBenefits,
-      resolveTierBenefitsForUser(senderUser, tierById, tierByLevel)
-    )
+    const effectiveVipBenefits = benefitsByUserId.get(senderId)
 
-    return {
+    return effectiveVipBenefits ? {
       ...entry,
       sender: {
         ...entry.sender,
@@ -144,9 +56,9 @@ const enrichMessageSenderVipBenefits = async (messages = []) => {
         role: senderUser.role || entry.sender.role || 'user',
         vipTierLevel: Math.max(0, parseInt(senderUser?.vipTierLevel, 10) || 0),
         vipTierCode: String(senderUser?.vipTierCode || '').trim().toUpperCase(),
-        vipBenefits: mergeVipVisualBenefits(entry.sender.vipBenefits, effectiveVipBenefits),
+        vipBenefits: normalizeVipVisualBenefits(effectiveVipBenefits),
       },
-    }
+    } : entry
   })
 }
 
@@ -305,18 +217,7 @@ const attachChatHandlers = (socket, io) => {
 
         socket.data.chatUsername = cacheUsername(userId, user.username)
 
-        const vipTier = (() => {
-          if (user?.vipTierId) {
-            return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
-          }
-          const vipTierLevel = Math.max(0, parseInt(user?.vipTierLevel, 10) || 0)
-          if (vipTierLevel > 0) {
-            return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
-          }
-          return Promise.resolve(null)
-        })()
-
-        const effectiveVipBenefits = mergeVipVisualBenefits(user?.vipBenefits, (await vipTier)?.benefits)
+        const effectiveVipBenefits = await resolveEffectiveVipVisualBenefits(user)
 
         // Validation
         if (!content || typeof content !== 'string' || !content.trim()) {
