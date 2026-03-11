@@ -584,6 +584,11 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             const maxAttempts = getMaxCatchAttempts(catchUser)
             const nextAttempts = Math.max(0, Number(encounter.catchAttempts || 0)) + 1
 
+            await User.updateOne(
+                { _id: userId },
+                { $inc: { catchFailCount: 1 } }
+            )
+
             if (nextAttempts >= maxAttempts) {
                 // Pokemon flees
                 await Encounter.findOneAndUpdate(

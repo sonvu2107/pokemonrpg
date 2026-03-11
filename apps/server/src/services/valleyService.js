@@ -289,6 +289,11 @@ export const catchValleyPokemon = async ({ userId, valleyPokemonId, ballItemId, 
         { $set: { status: 'available', reservedByUserId: null, reservedAt: null } }
     )
 
+    await User.updateOne(
+        { _id: userId },
+        { $inc: { catchFailCount: 1 } }
+    )
+
     return {
         ok: true,
         caught: false,
