@@ -3,6 +3,7 @@ import MapProgress from '../models/MapProgress.js'
 import PlayerState from '../models/PlayerState.js'
 import User from '../models/User.js'
 import { EXP_PER_SEARCH, expToNext } from '../utils/gameUtils.js'
+import { invalidateCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 
 const isDuplicateKeyError = (error) => Number(error?.code) === 11000
 
@@ -40,6 +41,7 @@ export const ensureTrainerCompletionTracked = async (userId, trainerId, complete
 
     if (shouldSave) {
         await user.save()
+        invalidateCachedActiveBadgeBonuses(normalizedUserId)
     }
 
     return {

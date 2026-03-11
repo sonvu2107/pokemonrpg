@@ -3,7 +3,7 @@ import mongoose from 'mongoose'
 import User from '../models/User.js'
 import { authMiddleware } from '../middleware/auth.js'
 import BadgeDefinition from '../models/BadgeDefinition.js'
-import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
+import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser, invalidateCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 
 const router = express.Router()
 
@@ -63,6 +63,7 @@ router.put('/equipped', authMiddleware, async (req, res) => {
 
         user.equippedBadgeIds = badgeIds
         await user.save()
+        invalidateCachedActiveBadgeBonuses(req.user.userId)
 
         const nextOverview = await buildBadgeOverviewForUser(req.user.userId)
         res.json({

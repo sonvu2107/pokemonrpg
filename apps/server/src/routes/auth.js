@@ -9,7 +9,7 @@ import WeeklyLeaderboardReward from '../models/WeeklyLeaderboardReward.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { expireVipUsersIfNeeded, resetExpiredVipUser } from '../utils/vipStatus.js'
 import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
-import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
+import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser, invalidateCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 import { extractClientIp } from '../utils/ipUtils.js'
 import { closeOnlineSession, getTotalOnlineHours, startOnlineSession } from '../utils/onlineTime.js'
 
@@ -653,6 +653,7 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
 // GET /api/auth/me (protected)
 router.get('/me', authMiddleware, async (req, res, next) => {
     try {
+        const isLightResponse = String(req.query?.light || '').trim() === '1'
         const user = await User.findById(req.user.userId).select('-password -recoveryPinHash')
         if (!user) {
             return res.status(404).json({
@@ -679,49 +680,69 @@ router.get('/me', authMiddleware, async (req, res, next) => {
             }
         }
 
-        const [playerState, vipTier, rewardRows] = await Promise.all([
-            PlayerState.findOne({ userId: user._id }),
-            (() => {
-                if (user?.vipTierId) {
-                    return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
-                }
-                const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
-                if (vipTierLevel > 0) {
-                    return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
-                }
-                return Promise.resolve(null)
-            })(),
-            WeeklyLeaderboardReward.find({
-                userId: user._id,
-                rewardType: { $in: COSMETIC_REWARD_TYPES },
-            })
-                .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl rewardedAt createdAt')
-                .sort({ rewardedAt: -1, _id: -1 })
-                .lean(),
-        ])
+        const playerState = await PlayerState.findOne({ userId: user._id })
 
-        const activeRewardRows = rewardRows.filter((row) => isWeeklyCosmeticRewardActive(row))
-        const sanitizedVipBenefits = sanitizeEquippedProfileCosmetics(user?.vipBenefits, vipTier?.benefits, activeRewardRows)
+        let effectiveVipBenefits = null
+        if (!isLightResponse) {
+            const [vipTier, rewardRows] = await Promise.all([
+                (() => {
+                    if (user?.vipTierId) {
+                        return VipPrivilegeTier.findById(user.vipTierId).select('benefits').lean()
+                    }
+                    const vipTierLevel = Math.max(0, Number.parseInt(user?.vipTierLevel, 10) || 0)
+                    if (vipTierLevel > 0) {
+                        return VipPrivilegeTier.findOne({ level: vipTierLevel }).select('benefits').lean()
+                    }
+                    return Promise.resolve(null)
+                })(),
+                WeeklyLeaderboardReward.find({
+                    userId: user._id,
+                    rewardType: { $in: COSMETIC_REWARD_TYPES },
+                })
+                    .select('rewardType rewardTitleImageUrl rewardAvatarFrameUrl rewardedAt createdAt')
+                    .sort({ rewardedAt: -1, _id: -1 })
+                    .lean(),
+            ])
 
-        if (!hasSameVipVisualBenefits(user?.vipBenefits, sanitizedVipBenefits)) {
-            user.vipBenefits = {
-                ...user.vipBenefits,
-                ...sanitizedVipBenefits,
+            const activeRewardRows = rewardRows.filter((row) => isWeeklyCosmeticRewardActive(row))
+            const sanitizedVipBenefits = sanitizeEquippedProfileCosmetics(user?.vipBenefits, vipTier?.benefits, activeRewardRows)
+
+            if (!hasSameVipVisualBenefits(user?.vipBenefits, sanitizedVipBenefits)) {
+                user.vipBenefits = {
+                    ...user.vipBenefits,
+                    ...sanitizedVipBenefits,
+                }
+                shouldSaveUser = true
             }
-            shouldSaveUser = true
+
+            effectiveVipBenefits = mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits)
         }
 
         if (shouldSaveUser) {
             await user.save()
         }
 
-        const effectiveVipBenefits = mergeVipVisualBenefits(sanitizedVipBenefits, vipTier?.benefits)
+        const serializedUser = serializeAuthUser(user, effectiveVipBenefits)
+        if (isLightResponse) {
+            return res.json({
+                ok: true,
+                user: serializedUser,
+                playerState: serializePlayerState(playerState),
+                badges: {
+                    equippedBadgeIds: serializedUser?.equippedBadgeIds || [],
+                    equippedBadges: [],
+                    activeBonuses: {},
+                    maxEquipped: BADGE_MAX_EQUIPPED,
+                    light: true,
+                },
+            })
+        }
 
         const badgeOverview = await buildBadgeOverviewForUser(user._id, { userDoc: user.toObject() })
 
         res.json({
             ok: true,
-            user: serializeAuthUser(user, effectiveVipBenefits),
+            user: serializedUser,
             playerState: serializePlayerState(playerState),
             badges: {
                 equippedBadgeIds: badgeOverview.equippedBadgeIds,
@@ -917,6 +938,7 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
 
         if (shouldSave) {
             await user.save()
+            invalidateCachedActiveBadgeBonuses(req.user.userId)
         }
 
         res.json({

@@ -15,6 +15,18 @@ import Pokemon from '../models/Pokemon.js'
 
 const router = express.Router()
 
+const TRAINER_COMBAT_TEAM_POPULATE = 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves'
+const hasActiveTrainerBattleSession = (session = null, now = new Date()) => Boolean(
+    session?.expiresAt
+    && session.expiresAt > now
+    && Array.isArray(session.team)
+    && session.team.length > 0
+)
+const loadTrainerBattleCombatView = (trainerId) => BattleTrainer.findById(trainerId)
+    .select('_id team')
+    .populate('team.pokemonId', TRAINER_COMBAT_TEAM_POPULATE)
+    .lean()
+
 import {
     EXP_PER_SEARCH,
     expToNext,
@@ -98,7 +110,7 @@ import {
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
-import { loadBattleBadgeBonusStateForUser } from '../utils/badgeUtils.js'
+import { getCachedActiveBadgeBonuses, resolveBattleBadgeBonusState } from '../utils/badgeUtils.js'
 import autoSearchRoutes from './game/autoSearch.js'
 import autoTrainerRoutes from './game/autoTrainer.js'
 import battleRoutes from './game/battle.js'
@@ -316,7 +328,20 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         const Move = (await import('../models/Move.js')).default
-        const moveDoc = await Move.findOne({ nameLower: normalizeMoveName(selectedMoveName) }).lean()
+        const moveLookupCache = new Map()
+        const getMoveDocByName = async (moveName = '') => {
+            const moveKey = normalizeMoveName(moveName)
+            if (!moveKey || moveKey === 'struggle') return null
+            if (moveLookupCache.has(moveKey)) return moveLookupCache.get(moveKey)
+
+            const movePromise = Move.findOne({ nameLower: moveKey }).lean()
+            moveLookupCache.set(moveKey, movePromise)
+            const resolvedMove = await movePromise
+            moveLookupCache.set(moveKey, resolvedMove || null)
+            return resolvedMove || null
+        }
+
+        const moveDoc = await getMoveDocByName(selectedMoveName)
 
         let resolvedPower = Number(moveDoc?.power)
         if (!Number.isFinite(resolvedPower) || resolvedPower <= 0) {
@@ -419,7 +444,16 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             (20 + attackerLevel * 2)
         )
 
-        const badgeBonusState = await loadBattleBadgeBonusStateForUser(req.user.userId, attackerTypes)
+        let cachedPlayerBattleBadgeBonusState = null
+        const getPlayerBattleBadgeBonusState = async () => {
+            if (cachedPlayerBattleBadgeBonusState) return cachedPlayerBattleBadgeBonusState
+
+            const activeBadgeBonuses = await getCachedActiveBadgeBonuses(req.user.userId)
+            cachedPlayerBattleBadgeBonusState = resolveBattleBadgeBonusState(activeBadgeBonuses, attackerTypes)
+            return cachedPlayerBattleBadgeBonusState
+        }
+
+        const badgeBonusState = await getPlayerBattleBadgeBonusState()
         const playerMaxHp = Math.max(1, applyPercentBonus(calcMaxHp(attackerBaseStats?.hp, attackerLevel, attackerSpecies.rarity), badgeBonusState?.hpBonusPercent || 0))
         const parsedPlayerCurrentHp = Number(player.currentHp)
         let playerCurrentHp = clamp(
@@ -543,13 +577,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let usingTrainerCounterMoves = false
 
         if (normalizedTrainerId) {
-            const trainer = await BattleTrainer.findById(normalizedTrainerId)
-                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
-                .lean()
-
-            if (!trainer) {
-                return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
-            }
+            const currentTurnStartedAt = new Date()
+            const existingTrainerSession = await BattleSession.findOne({ userId, trainerId: normalizedTrainerId })
+            const hasStoredActiveTrainerSession = hasActiveTrainerBattleSession(existingTrainerSession, currentTurnStartedAt)
+            let trainer = null
 
             selectedCounterMoveInput = null
             selectedCounterMoveIndex = -1
@@ -557,9 +588,21 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             counterMoveState = []
             hasCounterMoveList = false
 
-            trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer)
+            if (!hasStoredActiveTrainerSession) {
+                trainer = await loadTrainerBattleCombatView(normalizedTrainerId)
+                if (!trainer) {
+                    return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
+                }
+                trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer, null, existingTrainerSession)
+            } else {
+                trainerSession = existingTrainerSession
+            }
 
             if (Boolean(resetTrainerSession)) {
+                trainer = trainer || await loadTrainerBattleCombatView(normalizedTrainerId)
+                if (!trainer) {
+                    return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
+                }
                 trainerSession.team = buildTrainerBattleTeam(trainer)
                 trainerSession.playerTeam = []
                 trainerSession.knockoutCounts = []
@@ -582,6 +625,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 trainerSession,
                 userId,
                 preferredActivePokemonId: activePokemon._id,
+                preloadedParty: party,
             })
 
             const activePokemonIdString = String(activePokemon._id)
@@ -680,6 +724,14 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             )
 
             const trainerSlot = Math.max(0, Number(activeTrainerOpponent.slot) || activeOpponentIndex)
+            const hasStoredTrainerMovePool = Array.isArray(activeTrainerOpponent?.counterMoves) && activeTrainerOpponent.counterMoves.length > 0
+            const hasStoredTrainerTypes = Array.isArray(activeTrainerOpponent?.types) && activeTrainerOpponent.types.length > 0
+            if (!hasStoredTrainerMovePool || !hasStoredTrainerTypes) {
+                trainer = trainer || await loadTrainerBattleCombatView(normalizedTrainerId)
+                if (!trainer) {
+                    return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
+                }
+            }
             const trainerTeamEntry = Array.isArray(trainer?.team)
                 ? trainer.team[trainerSlot]
                 : null
@@ -964,7 +1016,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let opponentMoveDoc = null
 
         if (selectedOpponentMoveKey && selectedOpponentMoveKey !== 'struggle') {
-            opponentMoveDoc = await Move.findOne({ nameLower: selectedOpponentMoveKey }).lean()
+            opponentMoveDoc = await getMoveDocByName(selectedOpponentMoveKey)
         }
 
         if (!selectedOpponentMoveName) {

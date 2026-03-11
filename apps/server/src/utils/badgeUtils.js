@@ -7,6 +7,15 @@ import { getTotalOnlineHours } from './onlineTime.js'
 
 export const BADGE_MAX_EQUIPPED = 5
 
+const ACTIVE_BADGE_BONUS_TTL_MS = 60 * 1000
+const activeBadgeBonusCache = new Map()
+const BADGE_OVERVIEW_USER_SELECT = 'role completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount'
+const BADGE_OVERVIEW_OWNED_POKEMON_SELECT = 'pokemonId formId'
+const BADGE_OVERVIEW_OWNED_POKEMON_POPULATE = 'name types defaultFormId'
+const BADGE_OVERVIEW_PLAYER_STATE_SELECT = 'gold'
+const BADGE_OVERVIEW_DEFINITION_SELECT = 'code slug name description imageUrl rank isActive orderIndex missionType missionConfig rewardEffects createdAt updatedAt'
+const BADGE_LITE_DEFINITION_SELECT = '_id isActive missionType missionConfig rewardEffects'
+
 const clampPercent = (value, min = 0, max = 1000) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return min
@@ -15,6 +24,26 @@ const clampPercent = (value, min = 0, max = 1000) => {
 
 const normalizePokemonType = (value = '') => String(value || '').trim().toLowerCase()
 const normalizePokemonName = (value = '') => String(value || '').trim().toLowerCase()
+
+const getActiveBadgeBonusCacheKey = (userId = '') => String(userId || '').trim()
+
+const getCachedValue = (map, key) => {
+    const hit = map.get(key)
+    if (!hit) return null
+    if (Number(hit.expiresAt) <= Date.now()) {
+        map.delete(key)
+        return null
+    }
+    return hit.value
+}
+
+const setCachedValue = (map, key, value, ttlMs) => {
+    map.set(key, {
+        value,
+        expiresAt: Date.now() + Math.max(1000, Number(ttlMs) || ACTIVE_BADGE_BONUS_TTL_MS),
+    })
+    return value
+}
 
 const slugify = (value = '') => String(value || '')
     .trim()
@@ -193,6 +222,13 @@ const createEmptyBattleBadgeBonusState = () => ({
     speedBonusPercent: 0,
 })
 
+const createEmptyBadgeOverview = () => ({
+    badges: [],
+    equippedBadgeIds: [],
+    equippedBadges: [],
+    activeBonuses: createEmptyBonusSummary(),
+})
+
 export const mergeBadgeBonuses = (badges = []) => {
     const summary = createEmptyBonusSummary()
 
@@ -279,38 +315,38 @@ const computeMissionProgress = (badge, context = {}) => {
     }
 }
 
-export const buildBadgeOverviewForUser = async (userId, options = {}) => {
-    const normalizedUserId = String(userId || '').trim()
-    if (!normalizedUserId) {
-        return {
-            badges: [],
-            equippedBadgeIds: [],
-            equippedBadges: [],
-            activeBonuses: createEmptyBonusSummary(),
-        }
-    }
+const loadBadgeComputationResources = async (normalizedUserId, options = {}, { lite = false } = {}) => {
+    const definitionSelect = lite ? BADGE_LITE_DEFINITION_SELECT : BADGE_OVERVIEW_DEFINITION_SELECT
 
-    const [definitions, userDoc, ownedPokemonRows, playerStateDoc] = await Promise.all([
+    return Promise.all([
         Array.isArray(options?.definitions)
             ? options.definitions
-            : BadgeDefinition.find({}).sort({ orderIndex: 1, createdAt: -1, _id: -1 }).lean(),
+            : BadgeDefinition.find({})
+                .select(definitionSelect)
+                .sort({ orderIndex: 1, createdAt: -1, _id: -1 })
+                .lean(),
         options?.userDoc
             ? Promise.resolve(options.userDoc)
             : User.findById(normalizedUserId)
-                .select('role completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount')
+                .select(BADGE_OVERVIEW_USER_SELECT)
                 .lean(),
         UserPokemon.find(withActiveUserPokemonFilter({ userId: normalizedUserId }))
-            .select('pokemonId formId')
-            .populate('pokemonId', 'name types defaultFormId')
+            .select(BADGE_OVERVIEW_OWNED_POKEMON_SELECT)
+            .populate('pokemonId', BADGE_OVERVIEW_OWNED_POKEMON_POPULATE)
             .lean(),
-        PlayerState.findOne({ userId: normalizedUserId }).select('gold').lean(),
+        PlayerState.findOne({ userId: normalizedUserId })
+            .select(BADGE_OVERVIEW_PLAYER_STATE_SELECT)
+            .lean(),
     ])
+}
 
+const buildBadgeProgressContext = ({ userDoc = null, ownedPokemonRows = [], playerStateDoc = null } = {}) => {
     const ownedTypeCounts = {}
     const ownedDistinctTypeCounts = {}
     const ownedDifferentFormSetByName = {}
     const uniqueSpeciesFormKeys = new Set()
-    for (const row of ownedPokemonRows) {
+
+    for (const row of Array.isArray(ownedPokemonRows) ? ownedPokemonRows : []) {
         const speciesId = String(row?.pokemonId?._id || '').trim()
         const speciesName = normalizePokemonName(row?.pokemonId?.name)
         const types = Array.isArray(row?.pokemonId?.types) ? row.pokemonId.types : []
@@ -343,35 +379,52 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         }
     }
 
-    const completedTrainerCount = Array.isArray(userDoc?.completedBattleTrainers)
-        ? userDoc.completedBattleTrainers.length
-        : 0
-    const equippedBadgeIdSet = new Set((Array.isArray(userDoc?.equippedBadgeIds) ? userDoc.equippedBadgeIds : [])
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean))
-    const onlineHoursCount = getTotalOnlineHours(userDoc)
     const ownedDifferentFormCountByName = Object.fromEntries(
         Object.entries(ownedDifferentFormSetByName).map(([name, formSet]) => [name, formSet.size])
     )
 
-    const context = {
+    return {
         isAdmin: String(userDoc?.role || '').trim().toLowerCase() === 'admin',
         ownedTypeCounts,
         ownedDistinctTypeCounts,
         ownedDifferentFormCountByName,
-        ownedTotalCount: ownedPokemonRows.length,
+        ownedTotalCount: Array.isArray(ownedPokemonRows) ? ownedPokemonRows.length : 0,
         vipTierLevel: Math.max(0, Number.parseInt(userDoc?.vipTierLevel, 10) || 0),
         platinumCoinsOwned: Math.max(0, Number(playerStateDoc?.gold || 0)),
         catchFailCount: Math.max(0, Number(userDoc?.catchFailCount || 0)),
-        completedTrainerCount,
-        onlineHoursCount,
+        completedTrainerCount: Array.isArray(userDoc?.completedBattleTrainers)
+            ? userDoc.completedBattleTrainers.length
+            : 0,
+        onlineHoursCount: getTotalOnlineHours(userDoc),
     }
+}
 
-    const badges = definitions.map((entry) => {
+const buildEquippedBadgeIdSet = (userDoc = null) => new Set(
+    (Array.isArray(userDoc?.equippedBadgeIds) ? userDoc.equippedBadgeIds : [])
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+)
+
+const buildResolvedBadgeEntries = ({ definitions = [], context = {}, equippedBadgeIdSet = new Set(), lite = false } = {}) => {
+    return (Array.isArray(definitions) ? definitions : []).map((entry) => {
+        if (lite) {
+            const missionType = String(entry?.missionType || '').trim()
+            const missionConfig = normalizeBadgeMissionConfig(missionType, entry?.missionConfig)
+            const rewardEffects = normalizeBadgeRewardEffects(entry?.rewardEffects)
+            const progress = computeMissionProgress({ missionType, missionConfig }, context)
+            const badgeId = String(entry?._id || '').trim()
+            return {
+                _id: entry?._id,
+                isActive: entry?.isActive !== false,
+                rewardEffects,
+                isUnlocked: progress.isUnlocked,
+                isEquipped: badgeId ? equippedBadgeIdSet.has(badgeId) : false,
+            }
+        }
+
         const badge = serializeBadgeDefinition(entry)
         const progress = computeMissionProgress(badge, context)
         const badgeId = String(badge?._id || '').trim()
-        const isEquipped = badgeId ? equippedBadgeIdSet.has(badgeId) : false
         return {
             ...badge,
             missionLabel: describeMission(badge),
@@ -379,9 +432,21 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
             rewardLabels: describeEffects(badge.rewardEffects),
             progress,
             isUnlocked: progress.isUnlocked,
-            isEquipped,
+            isEquipped: badgeId ? equippedBadgeIdSet.has(badgeId) : false,
         }
     })
+}
+
+export const buildBadgeOverviewForUser = async (userId, options = {}) => {
+    const normalizedUserId = String(userId || '').trim()
+    if (!normalizedUserId) {
+        return createEmptyBadgeOverview()
+    }
+
+    const [definitions, userDoc, ownedPokemonRows, playerStateDoc] = await loadBadgeComputationResources(normalizedUserId, options)
+    const context = buildBadgeProgressContext({ userDoc, ownedPokemonRows, playerStateDoc })
+    const equippedBadgeIdSet = buildEquippedBadgeIdSet(userDoc)
+    const badges = buildResolvedBadgeEntries({ definitions, context, equippedBadgeIdSet })
 
     const equippedBadges = badges.filter((badge) => badge.isActive && badge.isUnlocked && badge.isEquipped)
         .slice(0, BADGE_MAX_EQUIPPED)
@@ -395,9 +460,40 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
     }
 }
 
+export const buildActiveBadgeBonusesLiteForUser = async (userId, options = {}) => {
+    const normalizedUserId = String(userId || '').trim()
+    if (!normalizedUserId) return createEmptyBonusSummary()
+
+    const [definitions, userDoc, ownedPokemonRows, playerStateDoc] = await loadBadgeComputationResources(normalizedUserId, options, { lite: true })
+    const context = buildBadgeProgressContext({ userDoc, ownedPokemonRows, playerStateDoc })
+    const equippedBadgeIdSet = buildEquippedBadgeIdSet(userDoc)
+    const liteBadges = buildResolvedBadgeEntries({ definitions, context, equippedBadgeIdSet, lite: true })
+    const equippedBadges = liteBadges.filter((badge) => badge.isActive && badge.isUnlocked && badge.isEquipped)
+        .slice(0, BADGE_MAX_EQUIPPED)
+
+    return mergeBadgeBonuses(equippedBadges)
+}
+
+export const invalidateCachedActiveBadgeBonuses = (userId) => {
+    const cacheKey = getActiveBadgeBonusCacheKey(userId)
+    if (!cacheKey) return false
+    return activeBadgeBonusCache.delete(cacheKey)
+}
+
+export const getCachedActiveBadgeBonuses = async (userId, options = {}) => {
+    const normalizedUserId = String(userId || '').trim()
+    if (!normalizedUserId) return createEmptyBonusSummary()
+
+    const cacheKey = getActiveBadgeBonusCacheKey(normalizedUserId)
+    const cached = getCachedValue(activeBadgeBonusCache, cacheKey)
+    if (cached) return cached
+
+    const fresh = await buildActiveBadgeBonusesLiteForUser(normalizedUserId, options)
+    return setCachedValue(activeBadgeBonusCache, cacheKey, fresh, options?.ttlMs)
+}
+
 export const loadActiveBadgeBonusesForUser = async (userId) => {
-    const overview = await buildBadgeOverviewForUser(userId)
-    return overview.activeBonuses
+    return getCachedActiveBadgeBonuses(userId)
 }
 
 export const loadBattleBadgeBonusStateForUser = async (userId, pokemonTypes = []) => {

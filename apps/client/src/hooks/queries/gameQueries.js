@@ -3,14 +3,24 @@ import { gameApi } from '../../services/gameApi'
 
 export const gameQueryKeys = {
     profile: ['profile'],
+    profileLight: ['profile', 'light'],
     inventory: ['inventory'],
     maps: ['maps'],
-    battleTrainers: ['battleTrainers'],
+    battleTrainers: ['battleTrainers', 'summary'],
+    battleTrainerDetail: (trainerId) => ['battleTrainers', 'detail', String(trainerId || '').trim()],
 }
 
 export const profileQueryOptions = () => ({
     queryKey: gameQueryKeys.profile,
     queryFn: () => gameApi.getProfile(),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+})
+
+export const profileLightQueryOptions = () => ({
+    queryKey: gameQueryKeys.profileLight,
+    queryFn: () => gameApi.getProfile({ light: true }),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
@@ -34,7 +44,15 @@ export const mapsQueryOptions = () => ({
 
 export const battleTrainersQueryOptions = () => ({
     queryKey: gameQueryKeys.battleTrainers,
-    queryFn: () => gameApi.getBattleTrainers(),
+    queryFn: () => gameApi.getBattleTrainers({ view: 'summary' }),
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+})
+
+export const battleTrainerDetailQueryOptions = (trainerId) => ({
+    queryKey: gameQueryKeys.battleTrainerDetail(trainerId),
+    queryFn: () => gameApi.getBattleTrainer(trainerId),
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,

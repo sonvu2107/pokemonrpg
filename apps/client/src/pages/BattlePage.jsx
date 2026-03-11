@@ -11,7 +11,7 @@ import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
 import { hasVipAutoBattleTrainerAccess } from '../utils/vip'
 import { getVipAutoLimitConfig } from '../utils/vipAutoLimits'
-import { battleTrainersQueryOptions, inventoryQueryOptions, mapsQueryOptions, profileQueryOptions } from '../hooks/queries/gameQueries'
+import { battleTrainerDetailQueryOptions, battleTrainersQueryOptions, inventoryQueryOptions, profileLightQueryOptions, profileQueryOptions } from '../hooks/queries/gameQueries'
 
 const MOBILE_COMPLETED_ENTRIES_PER_VIEW = 4
 const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
@@ -1016,7 +1016,6 @@ export function BattlePage() {
     const isRankedChallengeRequested = Boolean(rankedChallengePokemonId)
     const isOnlineChallengeRequested = Boolean(onlineChallengeUserId)
     const isExternalChallengeRequested = isRankedChallengeRequested || isOnlineChallengeRequested
-    const [maps, setMaps] = useState([])
     const [party, setParty] = useState([])
     const [loading, setLoading] = useState(true)
     const [loadingTrainerLobby, setLoadingTrainerLobby] = useState(!isExternalChallengeRequested)
@@ -1204,25 +1203,27 @@ export function BattlePage() {
             .filter(Boolean)
         if (nextCompletedIds.length === 0) return
 
-        queryClient.setQueryData(profileQueryOptions().queryKey, (prev) => {
-            if (!prev || typeof prev !== 'object') return prev
-            const prevUser = prev?.user
-            if (!prevUser || typeof prevUser !== 'object') return prev
+        ;[profileQueryOptions().queryKey, profileLightQueryOptions().queryKey].forEach((queryKey) => {
+            queryClient.setQueryData(queryKey, (prev) => {
+                if (!prev || typeof prev !== 'object') return prev
+                const prevUser = prev?.user
+                if (!prevUser || typeof prevUser !== 'object') return prev
 
-            const mergedCompletedIds = Array.from(new Set([
-                ...(Array.isArray(prevUser.completedBattleTrainers) ? prevUser.completedBattleTrainers : [])
-                    .map((id) => normalizeEntityId(id))
-                    .filter(Boolean),
-                ...nextCompletedIds,
-            ]))
+                const mergedCompletedIds = Array.from(new Set([
+                    ...(Array.isArray(prevUser.completedBattleTrainers) ? prevUser.completedBattleTrainers : [])
+                        .map((id) => normalizeEntityId(id))
+                        .filter(Boolean),
+                    ...nextCompletedIds,
+                ]))
 
-            return {
-                ...prev,
-                user: {
-                    ...prevUser,
-                    completedBattleTrainers: mergedCompletedIds,
-                },
-            }
+                return {
+                    ...prev,
+                    user: {
+                        ...prevUser,
+                        completedBattleTrainers: mergedCompletedIds,
+                    },
+                }
+            })
         })
     }
 
@@ -1312,6 +1313,36 @@ export function BattlePage() {
         trainers.slice(0, size).forEach((entry) => {
             prefetchTrainerImage(entry?.imageUrl)
         })
+    }
+
+    const loadTrainerDetailById = async (trainerId) => {
+        const normalizedId = normalizeEntityId(trainerId)
+        if (!normalizedId) return null
+
+        const trainerPayload = await queryClient.fetchQuery(battleTrainerDetailQueryOptions(normalizedId))
+        return trainerPayload?.trainer || null
+    }
+
+    const buildTrainerOpponentById = async (trainerId, trainerOrder = 0, currentEncounter = null) => {
+        try {
+            const trainer = await loadTrainerDetailById(trainerId)
+            if (!trainer) return null
+            return buildOpponent(currentEncounter, trainer, trainerOrder)
+        } catch (error) {
+            console.error('Tải chi tiết battle trainer thất bại', error)
+            return null
+        }
+    }
+
+    const buildPreferredTrainerOpponent = async (trainerList = [], completedTrainerIds = new Set(), currentEncounter = null) => {
+        if (!Array.isArray(trainerList) || trainerList.length === 0) return null
+
+        const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
+        const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
+        const trainerId = normalizeEntityId(trainer?._id || trainer?.id)
+        if (!trainerId) return null
+
+        return buildTrainerOpponentById(trainerId, trainerOrder, currentEncounter)
     }
 
     useEffect(() => {
@@ -1548,13 +1579,9 @@ export function BattlePage() {
         setLoading(true)
         setLoadingTrainerLobby(!isExternalChallengeRequested)
         try {
-            const cachedMaps = queryClient.getQueryData(mapsQueryOptions().queryKey)
-            const cachedProfile = queryClient.getQueryData(profileQueryOptions().queryKey)
+            const cachedProfile = queryClient.getQueryData(profileLightQueryOptions().queryKey)
             const cachedInventory = queryClient.getQueryData(inventoryQueryOptions().queryKey)
 
-            if (Array.isArray(cachedMaps) && cachedMaps.length > 0) {
-                setMaps(cachedMaps)
-            }
             if (cachedProfile?.playerState) {
                 setPlayerState(cachedProfile.playerState)
             }
@@ -1564,8 +1591,8 @@ export function BattlePage() {
 
             if (isExternalChallengeRequested) {
                 const profileQueryConfig = forceProfileRefetch
-                    ? { ...profileQueryOptions(), staleTime: 0 }
-                    : profileQueryOptions()
+                    ? { ...profileLightQueryOptions(), staleTime: 0 }
+                    : profileLightQueryOptions()
                 const [partyData, encounterData, profileData] = await Promise.all([
                     gameApi.getParty(),
                     gameApi.getActiveEncounter(),
@@ -1591,14 +1618,9 @@ export function BattlePage() {
                 setLoadingTrainerLobby(false)
 
                 void Promise.allSettled([
-                    queryClient.fetchQuery(mapsQueryOptions()),
                     queryClient.fetchQuery(inventoryQueryOptions()),
                 ]).then((results) => {
-                    const mapsResult = results?.[0]
-                    const inventoryResult = results?.[1]
-                    if (mapsResult?.status === 'fulfilled') {
-                        setMaps(mapsResult.value || [])
-                    }
+                    const inventoryResult = results?.[0]
                     if (inventoryResult?.status === 'fulfilled') {
                         setInventory(inventoryResult.value?.inventory || [])
                     }
@@ -1607,8 +1629,8 @@ export function BattlePage() {
             }
 
             const profileQueryConfig = forceProfileRefetch
-                ? { ...profileQueryOptions(), staleTime: 0 }
-                : profileQueryOptions()
+                ? { ...profileLightQueryOptions(), staleTime: 0 }
+                : profileLightQueryOptions()
             const [partyData, encounterData, profileData] = await Promise.all([
                 gameApi.getParty(),
                 gameApi.getActiveEncounter(),
@@ -1638,11 +1660,11 @@ export function BattlePage() {
                 setCompletedEntries(completedFromCache)
                 setCompletedCarouselIndex(0)
 
-                const syncedTrainerOrder = getTrainerOrderFromProgress(cachedTrainerList, completedTrainerIds)
-                const { trainer, trainerOrder } = getTrainerByOrder(cachedTrainerList, syncedTrainerOrder)
-                const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
-                setOpponent(builtOpponent)
-                setBattleOpponent(builtOpponent)
+                const builtOpponent = await buildPreferredTrainerOpponent(cachedTrainerList, completedTrainerIds, encounterData?.encounter || null)
+                if (builtOpponent) {
+                    setOpponent(builtOpponent)
+                    setBattleOpponent(builtOpponent)
+                }
                 setLoadingTrainerLobby(false)
             }
 
@@ -1657,12 +1679,10 @@ export function BattlePage() {
 
             void Promise.allSettled([
                 queryClient.fetchQuery(battleTrainersQueryOptions()),
-                queryClient.fetchQuery(mapsQueryOptions()),
                 queryClient.fetchQuery(inventoryQueryOptions()),
-            ]).then((results) => {
+            ]).then(async (results) => {
                 const trainerResult = results?.[0]
-                const mapsResult = results?.[1]
-                const inventoryResult = results?.[2]
+                const inventoryResult = results?.[1]
                 if (trainerResult?.status === 'fulfilled') {
                     const trainerList = Array.isArray(trainerResult.value?.trainers) ? trainerResult.value.trainers : []
                     setMasterPokemon(trainerList)
@@ -1673,16 +1693,13 @@ export function BattlePage() {
                     setCompletedEntries(completedFromServer)
                     setCompletedCarouselIndex(0)
 
-                    const syncedTrainerOrder = getTrainerOrderFromProgress(trainerList, completedTrainerIds)
-                    const { trainer, trainerOrder } = getTrainerByOrder(trainerList, syncedTrainerOrder)
-                    const builtOpponent = buildOpponent(encounterData?.encounter || null, trainer, trainerOrder)
-                    setOpponent(builtOpponent)
-                    setBattleOpponent(builtOpponent)
+                    const builtOpponent = await buildPreferredTrainerOpponent(trainerList, completedTrainerIds, encounterData?.encounter || null)
+                    if (builtOpponent) {
+                        setOpponent(builtOpponent)
+                        setBattleOpponent(builtOpponent)
+                    }
                 }
                 setLoadingTrainerLobby(false)
-                if (mapsResult?.status === 'fulfilled') {
-                    setMaps(mapsResult.value || [])
-                }
                 if (inventoryResult?.status === 'fulfilled') {
                     setInventory(inventoryResult.value?.inventory || [])
                 }
@@ -2501,9 +2518,10 @@ export function BattlePage() {
                     syncCachedProfileCompletedTrainers(nextCompletedIds)
 
                     if (masterPokemon.length > 0) {
-                        const syncedTrainerOrder = getTrainerOrderFromProgress(masterPokemon, nextCompletedIds)
-                        const { trainer, trainerOrder } = getTrainerByOrder(masterPokemon, syncedTrainerOrder)
-                        setOpponent(buildOpponent(null, trainer, trainerOrder))
+                        const nextOpponent = await buildPreferredTrainerOpponent(masterPokemon, nextCompletedIds)
+                        if (nextOpponent) {
+                            setOpponent(nextOpponent)
+                        }
                     }
                 } catch (err) {
                     setActionMessage(err.message)
@@ -3087,7 +3105,7 @@ export function BattlePage() {
 
     const buildCompletedEntries = (trainerList) => {
         return trainerList.map((trainer) => {
-            const team = (trainer.team || []).map((entry) => {
+            const team = ((trainer.teamPreview || trainer.team) || []).map((entry) => {
                 const resolvedEntry = resolveTrainerTeamEntry(entry)
                 const poke = resolvedEntry.poke
                 return {
@@ -3108,7 +3126,7 @@ export function BattlePage() {
         })
     }
 
-    const resolveTrainerOpponentById = (trainerId) => {
+    const resolveTrainerOpponentById = async (trainerId) => {
         const normalizedId = normalizeEntityId(trainerId)
         if (!normalizedId) return null
 
@@ -3119,8 +3137,7 @@ export function BattlePage() {
             return null
         }
 
-        const trainer = masterPokemon[trainerOrder]
-        return buildOpponent(null, trainer, trainerOrder)
+        return buildTrainerOpponentById(normalizedId, trainerOrder)
     }
 
     const startBattleWithOpponent = (candidateOpponent = null) => {
@@ -3460,11 +3477,12 @@ export function BattlePage() {
         }
     }
 
-    const handleRematchTrainer = (entry) => {
+    const handleRematchTrainer = async (entry) => {
         const normalizedId = String(entry?.id || '').trim()
         if (!normalizedId) return
 
-        const rematchOpponent = resolveTrainerOpponentById(normalizedId)
+        setActionMessage('Đang tải dữ liệu huấn luyện viên...')
+        const rematchOpponent = await resolveTrainerOpponentById(normalizedId)
         if (!rematchOpponent) {
             setActionMessage('Không tìm thấy dữ liệu huấn luyện viên để đấu lại.')
             return
@@ -3472,6 +3490,7 @@ export function BattlePage() {
 
         setAutoTrainerTargetId(normalizedId)
         setOpponent(rematchOpponent)
+        setActionMessage('')
         startBattleWithOpponent(rematchOpponent)
     }
 

@@ -84,10 +84,10 @@ export const buildTrainerBattleSessionPayload = ({ userId, trainerId, trainer, a
     expiresAt: getTrainerBattleSessionExpiryDate(),
 })
 
-export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer, activePokemonId = null) => {
+export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer, activePokemonId = null, existingSession = null) => {
     const now = new Date()
     const expiresAt = getTrainerBattleSessionExpiryDate()
-    let session = await BattleSession.findOne({ userId, trainerId })
+    let session = existingSession || await BattleSession.findOne({ userId, trainerId })
 
     if (!session) {
         return BattleSession.create({

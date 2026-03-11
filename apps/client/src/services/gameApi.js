@@ -498,8 +498,14 @@ export const gameApi = {
     },
 
     // GET /api/auth/me
-    async getProfile() {
-        const res = await fetch(`${API_URL}/auth/me`, {
+    async getProfile(options = {}) {
+        const searchParams = new URLSearchParams()
+        if (options?.light) {
+            searchParams.set('light', '1')
+        }
+
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/auth/me${query ? `?${query}` : ''}`, {
             headers: getAuthHeader(),
         })
         if (!res.ok) {
@@ -585,11 +591,31 @@ export const gameApi = {
     },
 
     // GET /api/battle-trainers
-    async getBattleTrainers() {
-        const res = await fetch(`${API_URL}/battle-trainers`)
+    async getBattleTrainers(options = {}) {
+        const searchParams = new URLSearchParams()
+        if (options?.view) {
+            searchParams.set('view', String(options.view || '').trim())
+        }
+
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/battle-trainers${query ? `?${query}` : ''}`)
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Không thể tải danh sách huấn luyện viên battle')
+        }
+        return res.json()
+    },
+
+    async getBattleTrainer(trainerId) {
+        const normalizedTrainerId = String(trainerId || '').trim()
+        if (!normalizedTrainerId) {
+            throw new Error('Thiếu mã huấn luyện viên battle')
+        }
+
+        const res = await fetch(`${API_URL}/battle-trainers/${normalizedTrainerId}`)
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải chi tiết huấn luyện viên battle')
         }
         return res.json()
     },

@@ -48,16 +48,18 @@ export const buildTrainerPlayerPartyState = (partyRows = [], existingEntries = [
         .filter((entry) => entry?.userPokemonId)
 }
 
-export const ensureTrainerSessionPlayerParty = async ({ trainerSession, userId, preferredActivePokemonId = null } = {}) => {
+export const ensureTrainerSessionPlayerParty = async ({ trainerSession, userId, preferredActivePokemonId = null, preloadedParty = null } = {}) => {
     if (!trainerSession || !userId) return []
 
-    const partyRows = await UserPokemon.find({
-        userId,
-        location: 'party',
-    })
-        .select('_id nickname level pokemonId partyIndex')
-        .populate('pokemonId', 'name baseStats rarity')
-        .sort({ partyIndex: 1, _id: 1 })
+    const partyRows = Array.isArray(preloadedParty)
+        ? preloadedParty
+        : await UserPokemon.find({
+            userId,
+            location: 'party',
+        })
+            .select('_id nickname level pokemonId partyIndex')
+            .populate('pokemonId', 'name baseStats rarity')
+            .sort({ partyIndex: 1, _id: 1 })
 
     const nextPlayerTeam = buildTrainerPlayerPartyState(partyRows, trainerSession.playerTeam)
     trainerSession.playerTeam = nextPlayerTeam
