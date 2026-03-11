@@ -1,6 +1,33 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ADMIN_PERMISSIONS } from '../../constants/adminPermissions'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const HEALTHCHECK_URL = `${API_URL.replace(/\/api\/?$/, '')}/health`
+const LATENCY_REFRESH_MS = 10000
+const LATENCY_TIMEOUT_MS = 5000
+
+const QUICK_STAT_COLOR_CLASSES = {
+    amber: 'text-amber-500',
+    blue: 'text-blue-600',
+    emerald: 'text-emerald-600',
+    red: 'text-red-600',
+    slate: 'text-slate-600',
+}
+
+const formatLatencyValue = (latencyMs) => {
+    if (!Number.isFinite(latencyMs) || latencyMs <= 0) return '--'
+    return `${Math.round(latencyMs)}ms`
+}
+
+const getLatencyColor = (isServerOnline, latencyMs) => {
+    if (!isServerOnline) return 'red'
+    if (!Number.isFinite(latencyMs)) return 'slate'
+    if (latencyMs <= 80) return 'emerald'
+    if (latencyMs <= 180) return 'amber'
+    return 'red'
+}
 
 const ICONS = {
     pokemon: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png",
@@ -47,12 +74,14 @@ const DashboardCard = ({ title, description, to, icon, color }) => {
 const QuickStats = ({ label, value, color }) => (
     <div className="flex flex-row lg:flex-col justify-between lg:justify-center items-center p-2 lg:p-2.5 bg-slate-50 rounded-lg border border-slate-100">
         <span className="text-[10px] lg:text-[9px] uppercase font-bold text-slate-400 tracking-wider order-1 lg:order-2 lg:mt-1">{label}</span>
-        <span className={`text-base lg:text-lg font-bold text-${color}-600 leading-none order-2 lg:order-1`}>{value}</span>
+        <span className={`text-base lg:text-lg font-bold leading-none order-2 lg:order-1 ${QUICK_STAT_COLOR_CLASSES[color] || QUICK_STAT_COLOR_CLASSES.slate}`}>{value}</span>
     </div>
 )
 
 export default function AdminDashboard() {
     const { canAccessAdminModule } = useAuth()
+    const [latencyMs, setLatencyMs] = useState(null)
+    const [isServerOnline, setIsServerOnline] = useState(true)
 
 
     const groups = [
@@ -189,6 +218,64 @@ export default function AdminDashboard() {
         { permission: ADMIN_PERMISSIONS.MAPS, to: '/admin/maps/create', label: 'Bản đồ', className: 'bg-emerald-600 hover:bg-emerald-700' },
     ].filter((action) => canAccessAdminModule(action.permission))
 
+    const latencyColor = useMemo(() => getLatencyColor(isServerOnline, latencyMs), [isServerOnline, latencyMs])
+
+    useEffect(() => {
+        let isMounted = true
+        let activeController = null
+        let isRequestInFlight = false
+
+        const pingServer = async () => {
+            if (isRequestInFlight) return
+            isRequestInFlight = true
+
+            activeController?.abort()
+            const controller = new AbortController()
+            activeController = controller
+            const timeoutId = window.setTimeout(() => controller.abort(), LATENCY_TIMEOUT_MS)
+            const startedAt = performance.now()
+
+            try {
+                const response = await fetch(`${HEALTHCHECK_URL}?t=${Date.now()}`, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    signal: controller.signal,
+                })
+
+                if (!response.ok) {
+                    throw new Error('Healthcheck failed')
+                }
+
+                if (!isMounted) return
+
+                setLatencyMs(Math.max(1, Math.round(performance.now() - startedAt)))
+                setIsServerOnline(true)
+            } catch (_error) {
+                if (!isMounted) return
+
+                setLatencyMs(null)
+                setIsServerOnline(false)
+            } finally {
+                window.clearTimeout(timeoutId)
+                if (activeController === controller) {
+                    activeController = null
+                }
+                isRequestInFlight = false
+            }
+        }
+
+        pingServer()
+        const intervalId = window.setInterval(pingServer, LATENCY_REFRESH_MS)
+
+        return () => {
+            isMounted = false
+            if (activeController) {
+                activeController.abort()
+            }
+            window.clearInterval(intervalId)
+        }
+    }, [])
+
     return (
         <div className="max-w-6xl mx-auto space-y-5 bg-slate-50/50 p-6 rounded-3xl animate-fade-in relative z-0">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-5">
@@ -241,12 +328,12 @@ export default function AdminDashboard() {
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trạng Thái Hệ Thống</h3>
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className={`w-2 h-2 rounded-full animate-pulse ${isServerOnline ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                            <QuickStats label="Máy chủ" value="ON" color="emerald" />
+                            <QuickStats label="Máy chủ" value={isServerOnline ? 'ON' : 'OFF'} color={isServerOnline ? 'emerald' : 'red'} />
                             <QuickStats label="Phiên bản" value="1.0" color="blue" />
-                            <QuickStats label="Độ trễ" value="24ms" color="emerald" />
+                            <QuickStats label="Độ trễ" value={formatLatencyValue(latencyMs)} color={latencyColor} />
                             <QuickStats label="Module" value={groups.reduce((acc, group) => acc + group.cards.length, 0)} color="slate" />
                         </div>
                     </div>

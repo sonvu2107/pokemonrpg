@@ -561,6 +561,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
             if (Boolean(resetTrainerSession)) {
                 trainerSession.team = buildTrainerBattleTeam(trainer)
+                trainerSession.playerTeam = []
                 trainerSession.knockoutCounts = []
                 trainerSession.currentIndex = 0
                 trainerSession.playerPokemonId = activePokemon._id
