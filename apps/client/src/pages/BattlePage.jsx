@@ -2363,6 +2363,9 @@ export function BattlePage() {
             if (nextPlayerHp <= 0) {
                 if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
                     const defeatedTargetName = target?.name || battleOpponent?.trainerName || (activeBattleMode === 'online' ? 'đối thủ online' : 'Đối thủ BXH')
+                    appendBattleLog([activeBattleMode === 'online'
+                        ? `Bạn đã thua trước đội hình của ${battleOpponent?.trainerName || defeatedTargetName}.`
+                        : `Bạn đã thua trước ${defeatedTargetName}.`])
                     setActionMessage('Pokemon của bạn đã bại trận.')
                     showRankedDuelResultModal({
                         resultType: 'defeat',
@@ -2373,6 +2376,7 @@ export function BattlePage() {
                     })
                     return
                 }
+                appendBattleLog(['Pokemon của bạn đã bại trận. Trận đấu kết thúc.'])
                 setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
                 setBattleResults({
                     resultType: 'defeat',
@@ -2404,6 +2408,9 @@ export function BattlePage() {
             if (defeatedAll) {
                 if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
                     const defeatedTargetName = target?.name || battleOpponent?.trainerName || (activeBattleMode === 'online' ? 'đối thủ online' : 'Đối thủ BXH')
+                    appendBattleLog([activeBattleMode === 'online'
+                        ? `Bạn đã đánh bại đội hình của ${battleOpponent?.trainerName || defeatedTargetName}.`
+                        : `Bạn đã đánh bại ${defeatedTargetName}.`])
                     setActionMessage(activeBattleMode === 'online' ? 'Bạn đã chiến thắng trận khiêu chiến online.' : 'Bạn đã chiến thắng trận khiêu chiến BXH.')
                     showRankedDuelResultModal({
                         resultType: 'win',
@@ -2414,6 +2421,7 @@ export function BattlePage() {
                     })
                     return
                 }
+                appendBattleLog(['Bạn đã đánh bại toàn bộ đội hình đối thủ.'])
                 setActionMessage('Bạn đã đánh bại toàn bộ đội hình đối thủ.')
                 try {
                     const resResolve = await gameApi.resolveBattle(
