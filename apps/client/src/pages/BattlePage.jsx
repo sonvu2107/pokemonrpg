@@ -1032,6 +1032,8 @@ export function BattlePage() {
     const [completedEntriesPerView, setCompletedEntriesPerView] = useState(DESKTOP_COMPLETED_ENTRIES_PER_VIEW)
     const [hoveredCompletedId, setHoveredCompletedId] = useState(null)
     const [hoveredCompletedTooltipPos, setHoveredCompletedTooltipPos] = useState(null)
+    const [completedEntryDetailsById, setCompletedEntryDetailsById] = useState({})
+    const [hoveredCompletedDetailLoading, setHoveredCompletedDetailLoading] = useState(false)
     const [activeTab, setActiveTab] = useState('fight')
     const [inventory, setInventory] = useState([])
     const [selectedMoveIndex, setSelectedMoveIndex] = useState(0)
@@ -1368,6 +1370,36 @@ export function BattlePage() {
         const lastSlide = Math.max(0, completedSlideCount - 1)
         setCompletedCarouselIndex((prev) => Math.min(prev, lastSlide))
     }, [completedSlideCount])
+
+    useEffect(() => {
+        const normalizedHoveredId = normalizeEntityId(hoveredCompletedId)
+        if (!normalizedHoveredId) {
+            setHoveredCompletedDetailLoading(false)
+            return
+        }
+
+        let isCancelled = false
+        const cachedDetail = completedEntryDetailsById[normalizedHoveredId]
+        if (cachedDetail) {
+            setHoveredCompletedDetailLoading(false)
+            return
+        }
+
+        setHoveredCompletedDetailLoading(true)
+        loadCompletedEntryDetail(normalizedHoveredId)
+            .catch((error) => {
+                console.error('Tải tooltip battle trainer thất bại', error)
+            })
+            .finally(() => {
+                if (!isCancelled) {
+                    setHoveredCompletedDetailLoading(false)
+                }
+            })
+
+        return () => {
+            isCancelled = true
+        }
+    }, [hoveredCompletedId, completedEntryDetailsById])
 
     useEffect(() => {
         setCompletedCarouselIndex(0)
@@ -3103,25 +3135,58 @@ export function BattlePage() {
         }
     }
 
+    const buildCompletedEntryFromTrainerDetail = (trainer) => {
+        if (!trainer) return null
+
+        const team = (Array.isArray(trainer.team) ? trainer.team : []).map((entry) => {
+            const resolvedEntry = resolveTrainerTeamEntry(entry)
+            const poke = resolvedEntry.poke
+            return {
+                id: poke?._id || entry.pokemonId,
+                name: poke?.name || 'Pokemon',
+                level: entry.level || 1,
+                sprite: resolvedEntry.sprite,
+            }
+        })
+
+        return {
+            id: normalizeEntityId(trainer?._id || trainer?.id),
+            name: trainer.name,
+            image: trainer.imageUrl || '/assets/08_trainer_female.png',
+            quote: trainer.quote || '',
+            team,
+            prize: trainer.prizePokemonId?.name || 'Không có',
+        }
+    }
+
+    const loadCompletedEntryDetail = async (trainerId) => {
+        const normalizedId = normalizeEntityId(trainerId)
+        if (!normalizedId) return null
+
+        const cachedDetail = completedEntryDetailsById[normalizedId]
+        if (cachedDetail) return cachedDetail
+
+        const trainer = await loadTrainerDetailById(normalizedId)
+        const nextDetail = buildCompletedEntryFromTrainerDetail(trainer)
+        if (!nextDetail) return null
+
+        setCompletedEntryDetailsById((prev) => ({
+            ...prev,
+            [normalizedId]: nextDetail,
+        }))
+
+        return nextDetail
+    }
+
     const buildCompletedEntries = (trainerList) => {
         return trainerList.map((trainer) => {
-            const team = ((trainer.teamPreview || trainer.team) || []).map((entry) => {
-                const resolvedEntry = resolveTrainerTeamEntry(entry)
-                const poke = resolvedEntry.poke
-                return {
-                    id: poke?._id || entry.pokemonId,
-                    name: poke?.name || 'Pokemon',
-                    level: entry.level || 1,
-                    sprite: resolvedEntry.sprite,
-                }
-            })
             return {
                 id: normalizeEntityId(trainer?._id || trainer?.id),
                 name: trainer.name,
                 image: trainer.imageUrl || '/assets/08_trainer_female.png',
-                quote: trainer.quote || '',
-                team,
-                prize: trainer.prizePokemonId?.name || 'Không có',
+                quote: '',
+                team: [],
+                prize: 'Không có',
             }
         })
     }
@@ -3497,9 +3562,12 @@ export function BattlePage() {
     const selectedAutoTrainerEntry = completedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(autoTrainerTargetId)
     ) || null
-    const hoveredCompletedEntry = filteredCompletedEntries.find(
+    const hoveredCompletedEntryBase = filteredCompletedEntries.find(
         (entry) => normalizeEntityId(entry?.id) === normalizeEntityId(hoveredCompletedId)
     ) || null
+    const hoveredCompletedEntry = normalizeEntityId(hoveredCompletedId)
+        ? (completedEntryDetailsById[normalizeEntityId(hoveredCompletedId)] || hoveredCompletedEntryBase)
+        : null
     const hasMissingAutoTrainerSelection = Boolean(normalizeEntityId(autoTrainerTargetId)) && !selectedAutoTrainerEntry
 
     const handleToggleAutoTrainer = async () => {
@@ -4105,6 +4173,7 @@ export function BattlePage() {
                                                         onMouseEnter={(event) => {
                                                             setHoveredCompletedId(entry.id)
                                                             updateCompletedTooltipPosition(event.currentTarget)
+                                                            void loadCompletedEntryDetail(entry.id)
                                                         }}
                                                         onMouseMove={(event) => {
                                                             if (normalizeEntityId(hoveredCompletedId) !== normalizeEntityId(entry.id)) return
@@ -4141,24 +4210,30 @@ export function BattlePage() {
                                             <img src={hoveredCompletedEntry.image} className="w-12 h-12 object-contain pixelated" />
                                             <div>
                                                 <div className="font-bold">Huấn luyện viên {hoveredCompletedEntry.name}:</div>
-                                                <div className="italic text-slate-600">"{hoveredCompletedEntry.quote}"</div>
+                                                <div className="italic text-slate-600">"{hoveredCompletedEntry.quote || 'Đang tải lời thoại...'}"</div>
                                             </div>
                                         </div>
                                         <div className="mt-3 font-bold">Đội hình Pokémon</div>
-                                        <div className="flex gap-4 mt-2">
-                                            {hoveredCompletedEntry.team.map((poke) => (
-                                                <div key={poke.id} className="flex flex-col items-center">
-                                                    {poke.sprite ? (
-                                                        <img src={poke.sprite} className="w-8 h-8 pixelated" />
-                                                    ) : (
-                                                        <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
-                                                    )}
-                                                    <div className="text-[10px] font-bold">L. {poke.level}</div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                        {hoveredCompletedEntry.team.length > 0 ? (
+                                            <div className="flex gap-4 mt-2">
+                                                {hoveredCompletedEntry.team.map((poke) => (
+                                                    <div key={poke.id} className="flex flex-col items-center">
+                                                        {poke.sprite ? (
+                                                            <img src={poke.sprite} className="w-8 h-8 pixelated" />
+                                                        ) : (
+                                                            <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
+                                                        )}
+                                                        <div className="text-[10px] font-bold">L. {poke.level}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 text-[11px] text-slate-500">
+                                                {hoveredCompletedDetailLoading ? 'Đang tải đội hình...' : 'Chưa có dữ liệu đội hình.'}
+                                            </div>
+                                        )}
                                         <div className="mt-3 font-bold">Phần thưởng Pokémon</div>
-                                        <div>{hoveredCompletedEntry.prize}</div>
+                                        <div>{hoveredCompletedEntry.prize || (hoveredCompletedDetailLoading ? 'Đang tải phần thưởng...' : 'Không có')}</div>
                                     </div>
                                 )}
 

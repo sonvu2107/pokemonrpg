@@ -190,4 +190,28 @@ export const emitToUser = (userId, eventName, payload = {}) => {
     io.to(normalizedUserId).emit(eventName, payload)
 }
 
+export const getLiveSocketPresenceSnapshot = ({ includeSocketIds = false } = {}) => {
+    const users = Array.from(activeSocketsByUser.entries())
+        .map(([userId, socketSet]) => {
+            const socketIds = Array.from(socketSet || []).filter(Boolean)
+            return {
+                userId,
+                socketCount: socketIds.length,
+                ...(includeSocketIds ? { socketIds } : {}),
+            }
+        })
+        .filter((entry) => entry.socketCount > 0)
+        .sort((a, b) => a.userId.localeCompare(b.userId))
+
+    const totalSockets = users.reduce((sum, entry) => sum + entry.socketCount, 0)
+    const globalChatConnections = io?.sockets?.adapter?.rooms?.get('global')?.size || 0
+
+    return {
+        connectedUsers: users.length,
+        totalSockets,
+        globalChatConnections,
+        users,
+    }
+}
+
 export const getIO = () => io

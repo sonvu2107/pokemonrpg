@@ -4,11 +4,12 @@ import User from '../models/User.js'
 import DailyActivity from '../models/DailyActivity.js'
 import PlayerState from '../models/PlayerState.js'
 import UserPokemon from '../models/UserPokemon.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, requireAdmin } from '../middleware/auth.js'
 import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
+import { getLiveSocketPresenceSnapshot } from '../socket/index.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -99,6 +100,111 @@ const formatPlayTime = (createdAt, nowDate = new Date()) => {
 const toSafeIsoDate = (value) => {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const serializeVipBenefits = (vipBenefitsLike = {}) => ({
+    title: String(vipBenefitsLike?.title || '').trim().slice(0, 80),
+    titleImageUrl: String(vipBenefitsLike?.titleImageUrl || '').trim(),
+    avatarFrameUrl: String(vipBenefitsLike?.avatarFrameUrl || '').trim(),
+    autoSearchEnabled: vipBenefitsLike?.autoSearchEnabled !== false,
+    autoSearchDurationMinutes: Math.max(0, parseInt(vipBenefitsLike?.autoSearchDurationMinutes, 10) || 0),
+    autoSearchUsesPerDay: Math.max(0, parseInt(vipBenefitsLike?.autoSearchUsesPerDay, 10) || 0),
+    autoBattleTrainerEnabled: vipBenefitsLike?.autoBattleTrainerEnabled !== false,
+    autoBattleTrainerDurationMinutes: Math.max(0, parseInt(vipBenefitsLike?.autoBattleTrainerDurationMinutes, 10) || 0),
+    autoBattleTrainerUsesPerDay: Math.max(0, parseInt(vipBenefitsLike?.autoBattleTrainerUsesPerDay, 10) || 0),
+})
+
+const serializeOnlineTrainer = (entry, index, skip = 0, now = new Date()) => ({
+    userId: String(entry?._id || entry?.userId || ''),
+    rank: skip + index + 1,
+    userIdLabel: `#${String(entry?._id || entry?.userId || '').slice(-7).toUpperCase()}`,
+    username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
+    playTime: formatPlayTime(entry?.createdAt, now),
+    avatar: normalizeAvatarUrl(entry?.avatar),
+    signature: String(entry?.signature || '').trim(),
+    createdAt: toSafeIsoDate(entry?.createdAt),
+    lastActive: toSafeIsoDate(entry?.lastActive),
+    role: String(entry?.role || 'user'),
+    vipTierLevel: Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0),
+    vipTierCode: String(entry?.vipTierCode || '').trim().toUpperCase(),
+    vipBenefits: serializeVipBenefits(entry?.vipBenefits),
+    isOnline: Boolean(entry?.isOnline),
+})
+
+const buildLivePresenceReport = async ({ page, limit, includeSocketIds = false }) => {
+    const snapshot = getLiveSocketPresenceSnapshot({ includeSocketIds })
+    const liveUserIds = snapshot.users.map((entry) => String(entry?.userId || '').trim()).filter(Boolean)
+    const dbOnlineUsers = await User.find({ isOnline: true })
+        .select('_id')
+        .lean()
+
+    const dbOnlineUserIds = new Set(dbOnlineUsers.map((entry) => String(entry?._id || '').trim()).filter(Boolean))
+    const liveUserIdSet = new Set(liveUserIds)
+    const phantomOnlineCount = dbOnlineUsers.reduce((count, entry) => {
+        const userId = String(entry?._id || '').trim()
+        return count + (userId && !liveUserIdSet.has(userId) ? 1 : 0)
+    }, 0)
+
+    const liveUsers = liveUserIds.length > 0
+        ? await User.find({ _id: { $in: liveUserIds } })
+            .select('username avatar signature createdAt lastActive role vipTierLevel vipTierCode vipBenefits isOnline')
+            .lean()
+        : []
+
+    const userById = new Map(liveUsers.map((entry) => [String(entry?._id || '').trim(), entry]))
+    const sortedRows = snapshot.users
+        .map((entry) => {
+            const userId = String(entry?.userId || '').trim()
+            const user = userById.get(userId)
+            return {
+                _id: userId,
+                username: user?.username || '',
+                avatar: user?.avatar || '',
+                signature: user?.signature || '',
+                createdAt: user?.createdAt || null,
+                lastActive: user?.lastActive || null,
+                role: user?.role || 'user',
+                vipTierLevel: user?.vipTierLevel || 0,
+                vipTierCode: user?.vipTierCode || '',
+                vipBenefits: user?.vipBenefits || {},
+                isOnline: user?.isOnline === true,
+                socketCount: Math.max(0, Number(entry?.socketCount || 0)),
+                socketIds: includeSocketIds ? (Array.isArray(entry?.socketIds) ? entry.socketIds : []) : undefined,
+                inDbOnlineList: dbOnlineUserIds.has(userId),
+            }
+        })
+        .sort((a, b) => {
+            const nameCompare = String(a?.username || '').localeCompare(String(b?.username || ''), 'vi')
+            if (nameCompare !== 0) return nameCompare
+            return String(a?._id || '').localeCompare(String(b?._id || ''))
+        })
+
+    const safePage = toSafePage(page)
+    const safeLimit = toSafeLimit(limit)
+    const skip = (safePage - 1) * safeLimit
+    const pagedRows = sortedRows.slice(skip, skip + safeLimit)
+    const now = new Date()
+
+    return {
+        ok: true,
+        liveUsersCount: snapshot.connectedUsers,
+        liveSocketConnectionsCount: snapshot.totalSockets,
+        globalChatConnectionsCount: snapshot.globalChatConnections,
+        dbOnlineUsersCount: dbOnlineUsers.length,
+        phantomOnlineUsersCount: phantomOnlineCount,
+        onlineTrainers: pagedRows.map((entry, index) => ({
+            ...serializeOnlineTrainer(entry, index, skip, now),
+            socketCount: entry.socketCount,
+            ...(includeSocketIds ? { socketIds: entry.socketIds } : {}),
+            inDbOnlineList: entry.inDbOnlineList,
+        })),
+        pagination: {
+            page: safePage,
+            limit: safeLimit,
+            total: sortedRows.length,
+            totalPages: Math.max(1, Math.ceil(sortedRows.length / safeLimit)),
+        },
+    }
 }
 
 const createEmptyPartySlots = () => Array.from({ length: 6 }, () => null)
@@ -368,6 +474,108 @@ router.get('/daily', authMiddleware, async (req, res) => {
     }
 })
 
+// GET /api/stats/online/live - Live online trainers from active sockets
+router.get('/online/live', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const page = toSafePage(req.query.page)
+        const limit = toSafeLimit(req.query.limit)
+        const includeSocketIds = String(req.query.includeSocketIds || '').trim() === '1'
+        const report = await buildLivePresenceReport({ page, limit, includeSocketIds })
+        res.json(report)
+    } catch (error) {
+        console.error('GET /api/stats/online/live error:', error)
+        res.status(500).json({
+            ok: false,
+            message: 'Khong the tai danh sach ket noi socket thuc te',
+        })
+    }
+})
+
+// POST /api/stats/online/reconcile - Reconcile DB online flags with active sockets
+router.post('/online/reconcile', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const apply = req.body?.apply === true || String(req.query.apply || '').trim() === '1'
+        const snapshot = getLiveSocketPresenceSnapshot()
+        const liveUserIds = snapshot.users.map((entry) => String(entry?.userId || '').trim()).filter(Boolean)
+        const liveUserIdSet = new Set(liveUserIds)
+
+        const [dbOnlineUsers, liveUsersMarkedOffline] = await Promise.all([
+            User.find({ isOnline: true })
+                .select('_id username lastActive role')
+                .lean(),
+            liveUserIds.length > 0
+                ? User.find({ _id: { $in: liveUserIds }, isOnline: { $ne: true } })
+                    .select('_id username lastActive role')
+                    .lean()
+                : Promise.resolve([]),
+        ])
+
+        const usersToSetOffline = dbOnlineUsers.filter((entry) => !liveUserIdSet.has(String(entry?._id || '').trim()))
+        const offlineUserIds = usersToSetOffline.map((entry) => entry._id)
+        const onlineUserIds = liveUsersMarkedOffline.map((entry) => entry._id)
+        const now = new Date()
+
+        let offlineModifiedCount = 0
+        let onlineModifiedCount = 0
+
+        if (apply && offlineUserIds.length > 0) {
+            const offlineResult = await User.updateMany(
+                { _id: { $in: offlineUserIds } },
+                {
+                    $set: {
+                        isOnline: false,
+                        onlineSessionStartedAt: null,
+                    },
+                }
+            )
+            offlineModifiedCount = Number(offlineResult?.modifiedCount || 0)
+        }
+
+        if (apply && onlineUserIds.length > 0) {
+            const onlineResult = await User.updateMany(
+                { _id: { $in: onlineUserIds } },
+                {
+                    $set: {
+                        isOnline: true,
+                        lastActive: now,
+                    },
+                }
+            )
+            onlineModifiedCount = Number(onlineResult?.modifiedCount || 0)
+        }
+
+        res.json({
+            ok: true,
+            apply,
+            liveUsersCount: snapshot.connectedUsers,
+            liveSocketConnectionsCount: snapshot.totalSockets,
+            dbOnlineUsersCount: dbOnlineUsers.length,
+            usersToSetOfflineCount: usersToSetOffline.length,
+            usersToSetOnlineCount: liveUsersMarkedOffline.length,
+            offlineModifiedCount,
+            onlineModifiedCount,
+            usersToSetOffline: usersToSetOffline.slice(0, 200).map((entry) => ({
+                userId: String(entry?._id || ''),
+                username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
+                lastActive: toSafeIsoDate(entry?.lastActive),
+                role: String(entry?.role || 'user'),
+            })),
+            usersToSetOnline: liveUsersMarkedOffline.slice(0, 200).map((entry) => ({
+                userId: String(entry?._id || ''),
+                username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
+                lastActive: toSafeIsoDate(entry?.lastActive),
+                role: String(entry?.role || 'user'),
+            })),
+        })
+    } catch (error) {
+        console.error('POST /api/stats/online/reconcile error:', error)
+        res.status(500).json({
+            ok: false,
+            message: 'Khong the doi chieu trang thai online',
+        })
+    }
+})
+
 // GET /api/stats/online/challenge/:userId - Online trainer challenge data
 router.get('/online/challenge/:userId', authMiddleware, async (req, res) => {
     try {
@@ -511,32 +719,7 @@ router.get('/online', authMiddleware, async (req, res) => {
 
         const now = new Date()
 
-        const onlineTrainers = users.map((entry, index) => ({
-            userId: String(entry?._id || ''),
-            rank: skip + index + 1,
-            userIdLabel: `#${String(entry?._id || '').slice(-7).toUpperCase()}`,
-            username: String(entry?.username || '').trim() || 'Huấn Luyện Viên',
-            playTime: formatPlayTime(entry?.createdAt, now),
-            avatar: normalizeAvatarUrl(entry?.avatar),
-            signature: String(entry?.signature || '').trim(),
-            createdAt: toSafeIsoDate(entry?.createdAt),
-            lastActive: toSafeIsoDate(entry?.lastActive),
-            role: String(entry?.role || 'user'),
-            vipTierLevel: Math.max(0, parseInt(entry?.vipTierLevel, 10) || 0),
-            vipTierCode: String(entry?.vipTierCode || '').trim().toUpperCase(),
-            vipBenefits: {
-                title: String(entry?.vipBenefits?.title || '').trim().slice(0, 80),
-                titleImageUrl: String(entry?.vipBenefits?.titleImageUrl || '').trim(),
-                avatarFrameUrl: String(entry?.vipBenefits?.avatarFrameUrl || '').trim(),
-                autoSearchEnabled: entry?.vipBenefits?.autoSearchEnabled !== false,
-                autoSearchDurationMinutes: Math.max(0, parseInt(entry?.vipBenefits?.autoSearchDurationMinutes, 10) || 0),
-                autoSearchUsesPerDay: Math.max(0, parseInt(entry?.vipBenefits?.autoSearchUsesPerDay, 10) || 0),
-                autoBattleTrainerEnabled: entry?.vipBenefits?.autoBattleTrainerEnabled !== false,
-                autoBattleTrainerDurationMinutes: Math.max(0, parseInt(entry?.vipBenefits?.autoBattleTrainerDurationMinutes, 10) || 0),
-                autoBattleTrainerUsesPerDay: Math.max(0, parseInt(entry?.vipBenefits?.autoBattleTrainerUsesPerDay, 10) || 0),
-            },
-            isOnline: Boolean(entry?.isOnline),
-        }))
+        const onlineTrainers = users.map((entry, index) => serializeOnlineTrainer(entry, index, skip, now))
 
         res.json({
             ok: true,
