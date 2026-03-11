@@ -80,6 +80,16 @@ const itemSchema = new Schema(
             default: 0,
             min: 0,
         },
+        itemShopPurchaseLimit: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        moonShopPurchaseLimit: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         vipPurchaseLimitBonusPerLevel: {
             type: Number,
             default: 0,

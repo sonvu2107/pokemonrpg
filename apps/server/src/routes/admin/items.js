@@ -24,6 +24,8 @@ const validateEvolutionRarityRange = (fromTier, toTier) => {
     return fromIndex >= 0 && toIndex >= 0 && fromIndex <= toIndex
 }
 
+const isInvalidPurchaseLimit = (value) => value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)
+
 // GET /api/admin/items - List items with search & pagination
 router.get('/', async (req, res) => {
     try {
@@ -236,6 +238,8 @@ router.post('/', async (req, res) => {
             isMoonShopEnabled,
             isTradable,
             purchaseLimit,
+            itemShopPurchaseLimit,
+            moonShopPurchaseLimit,
             vipPurchaseLimitBonusPerLevel,
             isEvolutionMaterial,
             evolutionRarityFrom,
@@ -264,8 +268,14 @@ router.post('/', async (req, res) => {
         if (moonShopPrice !== undefined && (!Number.isFinite(Number(moonShopPrice)) || Number(moonShopPrice) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giá Nguyệt Các không hợp lệ' })
         }
-        if (purchaseLimit !== undefined && (!Number.isFinite(Number(purchaseLimit)) || Number(purchaseLimit) < 0)) {
+        if (isInvalidPurchaseLimit(purchaseLimit)) {
             return res.status(400).json({ ok: false, message: 'Giới hạn mua không hợp lệ' })
+        }
+        if (isInvalidPurchaseLimit(itemShopPurchaseLimit)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua Shop vật phẩm không hợp lệ' })
+        }
+        if (isInvalidPurchaseLimit(moonShopPurchaseLimit)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua Shop Nguyệt Các không hợp lệ' })
         }
         if (vipPurchaseLimitBonusPerLevel !== undefined && (!Number.isFinite(Number(vipPurchaseLimitBonusPerLevel)) || Number(vipPurchaseLimitBonusPerLevel) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giới hạn cộng thêm theo VIP không hợp lệ' })
@@ -314,6 +324,14 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Khoảng rank tiến hóa không hợp lệ (From phải <= To)' })
         }
 
+        const resolvedLegacyPurchaseLimit = Number.isFinite(Number(purchaseLimit)) ? Math.max(0, Number(purchaseLimit)) : 0
+        const resolvedItemShopPurchaseLimit = Number.isFinite(Number(itemShopPurchaseLimit))
+            ? Math.max(0, Number(itemShopPurchaseLimit))
+            : resolvedLegacyPurchaseLimit
+        const resolvedMoonShopPurchaseLimit = Number.isFinite(Number(moonShopPurchaseLimit))
+            ? Math.max(0, Number(moonShopPurchaseLimit))
+            : resolvedLegacyPurchaseLimit
+
         const item = new Item({
             name,
             type: type || 'misc',
@@ -325,7 +343,9 @@ router.post('/', async (req, res) => {
             moonShopPrice: Number.isFinite(Number(moonShopPrice)) ? Number(moonShopPrice) : 0,
             isMoonShopEnabled: toBoolean(isMoonShopEnabled, false),
             isTradable: toBoolean(isTradable, false),
-            purchaseLimit: Number.isFinite(Number(purchaseLimit)) ? Math.max(0, Number(purchaseLimit)) : 0,
+            purchaseLimit: resolvedLegacyPurchaseLimit,
+            itemShopPurchaseLimit: resolvedItemShopPurchaseLimit,
+            moonShopPurchaseLimit: resolvedMoonShopPurchaseLimit,
             vipPurchaseLimitBonusPerLevel: Number.isFinite(Number(vipPurchaseLimitBonusPerLevel))
                 ? Math.max(0, Number(vipPurchaseLimitBonusPerLevel))
                 : 0,
@@ -366,6 +386,8 @@ router.put('/:id', async (req, res) => {
             isMoonShopEnabled,
             isTradable,
             purchaseLimit,
+            itemShopPurchaseLimit,
+            moonShopPurchaseLimit,
             vipPurchaseLimitBonusPerLevel,
             isEvolutionMaterial,
             evolutionRarityFrom,
@@ -396,8 +418,14 @@ router.put('/:id', async (req, res) => {
         if (moonShopPrice !== undefined && (!Number.isFinite(Number(moonShopPrice)) || Number(moonShopPrice) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giá Nguyệt Các không hợp lệ' })
         }
-        if (purchaseLimit !== undefined && (!Number.isFinite(Number(purchaseLimit)) || Number(purchaseLimit) < 0)) {
+        if (isInvalidPurchaseLimit(purchaseLimit)) {
             return res.status(400).json({ ok: false, message: 'Giới hạn mua không hợp lệ' })
+        }
+        if (isInvalidPurchaseLimit(itemShopPurchaseLimit)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua Shop vật phẩm không hợp lệ' })
+        }
+        if (isInvalidPurchaseLimit(moonShopPurchaseLimit)) {
+            return res.status(400).json({ ok: false, message: 'Giới hạn mua Shop Nguyệt Các không hợp lệ' })
         }
         if (vipPurchaseLimitBonusPerLevel !== undefined && (!Number.isFinite(Number(vipPurchaseLimitBonusPerLevel)) || Number(vipPurchaseLimitBonusPerLevel) < 0)) {
             return res.status(400).json({ ok: false, message: 'Giới hạn cộng thêm theo VIP không hợp lệ' })
@@ -463,7 +491,20 @@ router.put('/:id', async (req, res) => {
         if (moonShopPrice !== undefined) item.moonShopPrice = Math.max(0, Number(moonShopPrice) || 0)
         if (isMoonShopEnabled !== undefined) item.isMoonShopEnabled = toBoolean(isMoonShopEnabled, item.isMoonShopEnabled)
         if (isTradable !== undefined) item.isTradable = toBoolean(isTradable, item.isTradable)
-        if (purchaseLimit !== undefined) item.purchaseLimit = Math.max(0, Number(purchaseLimit) || 0)
+        const resolvedLegacyPurchaseLimit = Number.isFinite(Number(purchaseLimit))
+            ? Math.max(0, Number(purchaseLimit))
+            : undefined
+        if (purchaseLimit !== undefined) item.purchaseLimit = resolvedLegacyPurchaseLimit
+        if (itemShopPurchaseLimit !== undefined) {
+            item.itemShopPurchaseLimit = Math.max(0, Number(itemShopPurchaseLimit) || 0)
+        } else if (purchaseLimit !== undefined) {
+            item.itemShopPurchaseLimit = resolvedLegacyPurchaseLimit
+        }
+        if (moonShopPurchaseLimit !== undefined) {
+            item.moonShopPurchaseLimit = Math.max(0, Number(moonShopPurchaseLimit) || 0)
+        } else if (purchaseLimit !== undefined) {
+            item.moonShopPurchaseLimit = resolvedLegacyPurchaseLimit
+        }
         if (vipPurchaseLimitBonusPerLevel !== undefined) {
             item.vipPurchaseLimitBonusPerLevel = Math.max(0, Number(vipPurchaseLimitBonusPerLevel) || 0)
         }

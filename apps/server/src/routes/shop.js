@@ -50,8 +50,18 @@ const ITEM_MARKET_EFFECT_LABELS = Object.freeze({
 
 const resolveVipLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
 
-const computeEffectivePurchaseLimit = (item = null, vipLevel = 0) => {
-    const baseLimit = Math.max(0, Number(item?.purchaseLimit) || 0)
+const resolveBasePurchaseLimit = (item = null, shopType = SHOP_TYPE_ITEM) => {
+    const specificLimitField = shopType === SHOP_TYPE_MOON ? 'moonShopPurchaseLimit' : 'itemShopPurchaseLimit'
+    const specificLimit = item?.[specificLimitField]
+    if (specificLimit !== undefined && specificLimit !== null) {
+        return Math.max(0, Number(specificLimit) || 0)
+    }
+
+    return Math.max(0, Number(item?.purchaseLimit) || 0)
+}
+
+const computeEffectivePurchaseLimit = (item = null, vipLevel = 0, shopType = SHOP_TYPE_ITEM) => {
+    const baseLimit = resolveBasePurchaseLimit(item, shopType)
     if (baseLimit <= 0) {
         return 0
     }
@@ -175,7 +185,7 @@ router.get('/items', async (req, res) => {
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             User.findById(userId).select('vipTierLevel').lean(),
             Item.find(query)
-                .select('name type rarity imageUrl description shopPrice purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description shopPrice purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .sort({ shopPrice: 1, nameLower: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -210,7 +220,7 @@ router.get('/items', async (req, res) => {
 
         const mappedItems = items.map((entry) => {
             const purchasedQuantity = purchasedByItemId.get(String(entry?._id || '')) || 0
-            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel)
+            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel, SHOP_TYPE_ITEM)
             const remainingPurchaseLimit = effectivePurchaseLimit > 0
                 ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
                 : 0
@@ -252,7 +262,7 @@ router.get('/items/:itemId', async (req, res) => {
 
         const [item, playerState, inventoryEntry, user] = await Promise.all([
             Item.findById(itemId)
-                .select('name type rarity imageUrl description shopPrice isShopEnabled purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description shopPrice isShopEnabled purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .lean(),
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
@@ -280,7 +290,7 @@ router.get('/items/:itemId', async (req, res) => {
             },
         ])
         const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
-        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user), SHOP_TYPE_ITEM)
         const remainingPurchaseLimit = effectivePurchaseLimit > 0 ? Math.max(0, effectivePurchaseLimit - purchasedQuantity) : 0
 
         res.json({
@@ -319,7 +329,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
             isShopEnabled: true,
             shopPrice: { $gt: 0 },
         })
-            .select('name shopPrice purchaseLimit vipPurchaseLimitBonusPerLevel')
+            .select('name shopPrice purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel')
             .lean()
 
         if (!item) {
@@ -352,7 +362,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
         }
 
         const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
-        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user), SHOP_TYPE_ITEM)
         if (effectivePurchaseLimit > 0 && (purchasedQuantity + quantity) > effectivePurchaseLimit) {
             const remainingPurchaseLimit = Math.max(0, effectivePurchaseLimit - purchasedQuantity)
             return res.status(400).json({
@@ -418,7 +428,7 @@ router.post('/items/:itemId/buy', async (req, res) => {
             },
             limit: {
                 period: 'week',
-                purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
+                purchaseLimit: resolveBasePurchaseLimit(item, SHOP_TYPE_ITEM),
                 effectivePurchaseLimit,
                 purchasedQuantity: purchasedQuantity + quantity,
                 remainingPurchaseLimit: effectivePurchaseLimit > 0
@@ -455,7 +465,7 @@ router.get('/moon-items', async (req, res) => {
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             User.findById(userId).select('vipTierLevel').lean(),
             Item.find(query)
-                .select('name type rarity imageUrl description moonShopPrice purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description moonShopPrice purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .sort({ moonShopPrice: 1, nameLower: 1, _id: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -490,7 +500,7 @@ router.get('/moon-items', async (req, res) => {
 
         const mappedItems = items.map((entry) => {
             const purchasedQuantity = purchasedByItemId.get(String(entry?._id || '')) || 0
-            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel)
+            const effectivePurchaseLimit = computeEffectivePurchaseLimit(entry, vipLevel, SHOP_TYPE_MOON)
             const remainingPurchaseLimit = effectivePurchaseLimit > 0
                 ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
                 : 0
@@ -533,7 +543,7 @@ router.get('/moon-items/:itemId', async (req, res) => {
 
         const [item, playerState, inventoryEntry, user] = await Promise.all([
             Item.findById(itemId)
-                .select('name type rarity imageUrl description moonShopPrice isMoonShopEnabled purchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description moonShopPrice isMoonShopEnabled purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
                 .lean(),
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
@@ -562,7 +572,7 @@ router.get('/moon-items/:itemId', async (req, res) => {
         ])
 
         const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
-        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user), SHOP_TYPE_MOON)
         const remainingPurchaseLimit = effectivePurchaseLimit > 0
             ? Math.max(0, effectivePurchaseLimit - purchasedQuantity)
             : 0
@@ -603,7 +613,7 @@ router.post('/moon-items/:itemId/buy', async (req, res) => {
             isMoonShopEnabled: true,
             moonShopPrice: { $gt: 0 },
         })
-            .select('name moonShopPrice purchaseLimit vipPurchaseLimitBonusPerLevel')
+            .select('name moonShopPrice purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel')
             .lean()
 
         if (!item) {
@@ -636,7 +646,7 @@ router.post('/moon-items/:itemId/buy', async (req, res) => {
         }
 
         const purchasedQuantity = Math.max(0, Number(purchasedQuantityAgg?.[0]?.totalQuantity) || 0)
-        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user))
+        const effectivePurchaseLimit = computeEffectivePurchaseLimit(item, resolveVipLevel(user), SHOP_TYPE_MOON)
         if (effectivePurchaseLimit > 0 && (purchasedQuantity + quantity) > effectivePurchaseLimit) {
             const remainingPurchaseLimit = Math.max(0, effectivePurchaseLimit - purchasedQuantity)
             return res.status(400).json({
@@ -702,7 +712,7 @@ router.post('/moon-items/:itemId/buy', async (req, res) => {
             },
             limit: {
                 period: 'week',
-                purchaseLimit: Math.max(0, Number(item.purchaseLimit) || 0),
+                purchaseLimit: resolveBasePurchaseLimit(item, SHOP_TYPE_MOON),
                 effectivePurchaseLimit,
                 purchasedQuantity: purchasedQuantity + quantity,
                 remainingPurchaseLimit: effectivePurchaseLimit > 0

@@ -42,6 +42,15 @@ const buildEffectSummary = (item = {}) => {
     return '--'
 }
 
+const resolveLimitValue = (item = {}, fieldName = 'itemShopPurchaseLimit') => {
+    const directValue = item?.[fieldName]
+    if (directValue !== undefined && directValue !== null) {
+        return Math.max(0, Number(directValue) || 0)
+    }
+
+    return Math.max(0, Number(item?.purchaseLimit) || 0)
+}
+
 export default function ItemListPage() {
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
@@ -238,7 +247,8 @@ export default function ItemListPage() {
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[140px]">Tiến hóa</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[180px]">Hiệu ứng</th>
                                             <th className="px-4 py-3 text-left text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giao dịch</th>
-                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">Giới hạn mua</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[150px]">GH Shop vật phẩm</th>
+                                            <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[150px]">GH Shop Nguyệt</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[130px]">+VIP / cấp</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Shop</th>
                                             <th className="px-4 py-3 text-right text-blue-900 font-bold uppercase text-xs min-w-[120px]">Giá Nguyệt</th>
@@ -313,7 +323,10 @@ export default function ItemListPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-slate-700 font-bold">
-                                                    {Number(item.purchaseLimit || 0) > 0 ? Number(item.purchaseLimit || 0).toLocaleString('vi-VN') : '∞'}
+                                                    {resolveLimitValue(item, 'itemShopPurchaseLimit') > 0 ? resolveLimitValue(item, 'itemShopPurchaseLimit').toLocaleString('vi-VN') : '∞'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-slate-700 font-bold">
+                                                    {resolveLimitValue(item, 'moonShopPurchaseLimit') > 0 ? resolveLimitValue(item, 'moonShopPurchaseLimit').toLocaleString('vi-VN') : '∞'}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-slate-700 font-bold">
                                                     {Number(item.vipPurchaseLimitBonusPerLevel || 0).toLocaleString('vi-VN')}
@@ -342,7 +355,7 @@ export default function ItemListPage() {
                                         ))}
                                         {items.length === 0 && (
                                             <tr>
-                                                <td colSpan="14" className="px-4 py-8 text-center text-slate-500 italic">
+                                                <td colSpan="15" className="px-4 py-8 text-center text-slate-500 italic">
                                                     Chưa có vật phẩm nào.
                                                 </td>
                                             </tr>

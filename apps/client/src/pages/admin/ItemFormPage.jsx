@@ -82,6 +82,15 @@ const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurati
     return 'Không có hiệu ứng'
 }
 
+const resolveLimitValue = (item = {}, fieldName = 'itemShopPurchaseLimit') => {
+    const directValue = item?.[fieldName]
+    if (directValue !== undefined && directValue !== null) {
+        return Math.max(0, Number(directValue) || 0)
+    }
+
+    return Math.max(0, Number(item?.purchaseLimit) || 0)
+}
+
 export default function ItemFormPage() {
     const { id } = useParams()
     const navigate = useNavigate()
@@ -99,7 +108,8 @@ export default function ItemFormPage() {
         isShopEnabled: false,
         isMoonShopEnabled: false,
         isTradable: false,
-        purchaseLimit: 0,
+        itemShopPurchaseLimit: 0,
+        moonShopPurchaseLimit: 0,
         vipPurchaseLimitBonusPerLevel: 0,
         isEvolutionMaterial: false,
         evolutionRarityFrom: 'd',
@@ -131,7 +141,8 @@ export default function ItemFormPage() {
                 isShopEnabled: Boolean(data.item.isShopEnabled),
                 isMoonShopEnabled: Boolean(data.item.isMoonShopEnabled),
                 isTradable: Boolean(data.item.isTradable),
-                purchaseLimit: Math.max(0, Number(data.item.purchaseLimit) || 0),
+                itemShopPurchaseLimit: resolveLimitValue(data.item, 'itemShopPurchaseLimit'),
+                moonShopPurchaseLimit: resolveLimitValue(data.item, 'moonShopPurchaseLimit'),
                 vipPurchaseLimitBonusPerLevel: Math.max(0, Number(data.item.vipPurchaseLimitBonusPerLevel) || 0),
                 isEvolutionMaterial: Boolean(data.item.isEvolutionMaterial),
                 evolutionRarityFrom: data.item.evolutionRarityFrom || 'd',
@@ -177,7 +188,8 @@ export default function ItemFormPage() {
                 description: String(formData.description || '').trim(),
                 shopPrice: Math.max(0, Number(formData.shopPrice) || 0),
                 moonShopPrice: Math.max(0, Number(formData.moonShopPrice) || 0),
-                purchaseLimit: Math.max(0, Number(formData.purchaseLimit) || 0),
+                itemShopPurchaseLimit: Math.max(0, Number(formData.itemShopPurchaseLimit) || 0),
+                moonShopPurchaseLimit: Math.max(0, Number(formData.moonShopPurchaseLimit) || 0),
                 vipPurchaseLimitBonusPerLevel: Math.max(0, Number(formData.vipPurchaseLimitBonusPerLevel) || 0),
                 effectValue: Math.max(0, Number(formData.effectValue) || 0),
                 effectValueMp: Math.max(0, Number(formData.effectValueMp) || 0),
@@ -343,13 +355,24 @@ export default function ItemFormPage() {
                                         </label>
                                     </div>
                                     <div>
-                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giới Hạn Mua (0 = Không giới hạn)</label>
+                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giới hạn mua Shop vật phẩm (0 = Không giới hạn)</label>
                                         <input
                                             type="number"
                                             min="0"
                                             step="1"
-                                            value={formData.purchaseLimit}
-                                            onChange={(e) => setFormData({ ...formData, purchaseLimit: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                            value={formData.itemShopPurchaseLimit}
+                                            onChange={(e) => setFormData({ ...formData, itemShopPurchaseLimit: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">Giới hạn mua Shop Nguyệt Các (0 = Không giới hạn)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={formData.moonShopPurchaseLimit}
+                                            onChange={(e) => setFormData({ ...formData, moonShopPurchaseLimit: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
                                         />
                                     </div>
