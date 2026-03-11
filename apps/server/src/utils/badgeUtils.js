@@ -140,7 +140,7 @@ const describeMission = (badge) => {
 
     if (missionType === 'collect_same_name_different_type_count') {
         const pokemonName = String(missionConfig?.pokemonName || '').trim() || 'pokemon'
-        return `Sưu tập ${requiredCount} biến thể hệ khác nhau của Pokémon tên ${pokemonName.toUpperCase()}`
+        return `Sưu tập ${requiredCount} dạng (form) khác nhau của Pokémon tên ${pokemonName.toUpperCase()}`
     }
 
     if (missionType === 'collect_total_count') {
@@ -257,7 +257,7 @@ const computeMissionProgress = (badge, context = {}) => {
     } else if (missionType === 'collect_type_distinct_count') {
         currentValue = Math.max(0, Number(context?.ownedDistinctTypeCounts?.[missionConfig?.pokemonType] || 0))
     } else if (missionType === 'collect_same_name_different_type_count') {
-        currentValue = Math.max(0, Number(context?.ownedDifferentTypeCountByName?.[missionConfig?.pokemonName] || 0))
+        currentValue = Math.max(0, Number(context?.ownedDifferentFormCountByName?.[missionConfig?.pokemonName] || 0))
     } else if (missionType === 'collect_total_count') {
         currentValue = Math.max(0, Number(context?.ownedTotalCount || 0))
     } else if (missionType === 'vip_tier_reached') {
@@ -308,21 +308,21 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
 
     const ownedTypeCounts = {}
     const ownedDistinctTypeCounts = {}
-    const ownedDifferentTypeSetByName = {}
+    const ownedDifferentFormSetByName = {}
     const uniqueSpeciesFormKeys = new Set()
     for (const row of ownedPokemonRows) {
         const speciesId = String(row?.pokemonId?._id || '').trim()
         const speciesName = normalizePokemonName(row?.pokemonId?.name)
         const types = Array.isArray(row?.pokemonId?.types) ? row.pokemonId.types : []
-        const normalizedTypeSignature = [...new Set(types.map((type) => normalizePokemonType(type)).filter(Boolean))]
-            .sort()
-            .join('/')
+        const normalizedFormId = String(row?.formId || row?.pokemonId?.defaultFormId || 'normal')
+            .trim()
+            .toLowerCase()
 
-        if (speciesName && normalizedTypeSignature) {
-            if (!ownedDifferentTypeSetByName[speciesName]) {
-                ownedDifferentTypeSetByName[speciesName] = new Set()
+        if (speciesName && normalizedFormId) {
+            if (!ownedDifferentFormSetByName[speciesName]) {
+                ownedDifferentFormSetByName[speciesName] = new Set()
             }
-            ownedDifferentTypeSetByName[speciesName].add(normalizedTypeSignature)
+            ownedDifferentFormSetByName[speciesName].add(normalizedFormId)
         }
 
         for (const type of types) {
@@ -331,8 +331,8 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
             ownedTypeCounts[normalizedType] = (ownedTypeCounts[normalizedType] || 0) + 1
         }
 
-        const normalizedFormId = String(row?.formId || row?.pokemonId?.defaultFormId || 'default').trim() || 'default'
-        const uniqueSpeciesFormKey = speciesId ? `${speciesId}:${normalizedFormId}` : ''
+        const distinctFormId = String(row?.formId || row?.pokemonId?.defaultFormId || 'default').trim() || 'default'
+        const uniqueSpeciesFormKey = speciesId ? `${speciesId}:${distinctFormId}` : ''
         if (!uniqueSpeciesFormKey || uniqueSpeciesFormKeys.has(uniqueSpeciesFormKey)) continue
         uniqueSpeciesFormKeys.add(uniqueSpeciesFormKey)
 
@@ -350,15 +350,15 @@ export const buildBadgeOverviewForUser = async (userId, options = {}) => {
         .map((entry) => String(entry || '').trim())
         .filter(Boolean))
     const onlineHoursCount = getTotalOnlineHours(userDoc)
-    const ownedDifferentTypeCountByName = Object.fromEntries(
-        Object.entries(ownedDifferentTypeSetByName).map(([name, typeSet]) => [name, typeSet.size])
+    const ownedDifferentFormCountByName = Object.fromEntries(
+        Object.entries(ownedDifferentFormSetByName).map(([name, formSet]) => [name, formSet.size])
     )
 
     const context = {
         isAdmin: String(userDoc?.role || '').trim().toLowerCase() === 'admin',
         ownedTypeCounts,
         ownedDistinctTypeCounts,
-        ownedDifferentTypeCountByName,
+        ownedDifferentFormCountByName,
         ownedTotalCount: ownedPokemonRows.length,
         vipTierLevel: Math.max(0, Number.parseInt(userDoc?.vipTierLevel, 10) || 0),
         platinumCoinsOwned: Math.max(0, Number(playerStateDoc?.gold || 0)),
@@ -424,7 +424,7 @@ export const validateBadgeUpsertPayload = (payload = {}) => {
         throw new Error('Nhiệm vụ sưu tầm theo hệ cần chọn hệ Pokémon')
     }
     if (missionType === 'collect_same_name_different_type_count' && !missionConfig.pokemonName) {
-        throw new Error('Nhiệm vụ cùng tên khác hệ cần nhập tên Pokémon')
+        throw new Error('Nhiệm vụ cùng tên khác dạng cần nhập tên Pokémon')
     }
 
     const rewardEffects = normalizeBadgeRewardEffects(payload?.rewardEffects)

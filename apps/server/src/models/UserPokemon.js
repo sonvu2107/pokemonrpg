@@ -1,4 +1,6 @@
 import mongoose from 'mongoose'
+import UserPokedexEntry from './UserPokedexEntry.js'
+import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
 const { Schema } = mongoose
 const USER_POKEMON_MAX_LEVEL = 2000
@@ -108,6 +110,34 @@ UserPokemonSchema.pre('validate', function (next) {
     }
 
     next()
+})
+
+UserPokemonSchema.post('save', async function (doc) {
+    try {
+        const normalizedUserId = String(doc?.userId || '').trim()
+        const normalizedPokemonId = String(doc?.pokemonId || '').trim()
+        if (!normalizedUserId || !normalizedPokemonId) return
+
+        const resolvedObtainedAt = doc?.obtainedAt instanceof Date ? doc.obtainedAt : new Date(doc?.obtainedAt || Date.now())
+        await UserPokedexEntry.updateOne(
+            {
+                userId: normalizedUserId,
+                pokemonId: normalizedPokemonId,
+                formId: normalizeFormId(doc?.formId || 'normal'),
+            },
+            {
+                $setOnInsert: {
+                    firstObtainedAt: resolvedObtainedAt,
+                },
+                $max: {
+                    lastObtainedAt: resolvedObtainedAt,
+                },
+            },
+            { upsert: true }
+        )
+    } catch (error) {
+        console.error('UserPokemon post-save pokedex sync error:', error)
+    }
 })
 
 const UserPokemon = mongoose.model('UserPokemon', UserPokemonSchema)

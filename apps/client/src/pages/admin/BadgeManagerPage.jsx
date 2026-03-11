@@ -8,7 +8,7 @@ const MISSION_OPTIONS = [
     { value: 'admin_role', label: 'Chỉ dành cho Admin' },
     { value: 'collect_type_count', label: 'Sở hữu theo hệ (tính trùng, tính form)' },
     { value: 'collect_type_distinct_count', label: 'Sở hữu theo hệ (không trùng, tính form)' },
-    { value: 'collect_same_name_different_type_count', label: 'Cùng tên nhưng khác hệ (tính form)' },
+    { value: 'collect_same_name_different_type_count', label: 'Cùng tên nhưng khác dạng (form)' },
     { value: 'collect_total_count', label: 'Tổng số Pokémon đã sở hữu (có trùng, tính form)' },
     { value: 'vip_tier_reached', label: 'Đạt mốc VIP' },
     { value: 'platinum_coins_owned_count', label: 'Sở hữu Xu Bạch Kim' },

@@ -18,6 +18,7 @@ import {
 import { authMiddleware } from '../middleware/auth.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { getUserPokedexFormSet } from '../services/userPokedexService.js'
 
 const router = express.Router()
 
@@ -724,17 +725,7 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
         const showIncomplete = toBoolean(req.query.incomplete)
 
         const userId = req.user.userId
-        const ownedEntries = await UserPokemon.find(withActiveUserPokemonFilter({ userId }))
-            .select('pokemonId formId')
-            .lean()
-
-        const ownedFormSet = new Set()
-        for (const entry of ownedEntries) {
-            const speciesId = String(entry?.pokemonId || '').trim()
-            if (!speciesId) continue
-            const normalizedFormId = normalizeFormId(entry?.formId || 'normal')
-            ownedFormSet.add(`${speciesId}:${normalizedFormId}`)
-        }
+        const ownedFormSet = await getUserPokedexFormSet(userId, { syncCurrentOwned: true })
 
         const allSpeciesRows = await loadPokedexSpeciesRows()
         const normalizedSearch = String(search || '').trim().toLowerCase()
