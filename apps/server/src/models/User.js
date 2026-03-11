@@ -177,6 +177,15 @@ const userSchema = new mongoose.Schema(
             type: Date,
             default: Date.now,
         },
+        activeSessionId: {
+            type: String,
+            default: '',
+            trim: true,
+        },
+        activeSessionIssuedAt: {
+            type: Date,
+            default: null,
+        },
         avatar: {
             type: String,
             default: '',

@@ -12,7 +12,7 @@ export const authMiddleware = async (req, res, next) => {
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
                 ok: false,
-                message: 'No token provided',
+                message: 'Bạn chưa đăng nhập.',
             })
         }
 
@@ -20,16 +20,29 @@ export const authMiddleware = async (req, res, next) => {
 
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
+        const isInternalToken = decoded?.tokenType === 'internal'
+        const sessionId = String(decoded?.sid || '').trim()
 
         const dbUser = await User.findById(decoded.userId)
-            .select('role adminPermissions isBanned banReason bannedUntil vipTierLevel vipExpiresAt vipTierId vipTierCode vipBenefits')
+            .select('role adminPermissions isBanned banReason bannedUntil vipTierLevel vipExpiresAt vipTierId vipTierCode vipBenefits activeSessionId')
             .lean()
 
         if (!dbUser) {
             return res.status(401).json({
                 ok: false,
-                message: 'User not found',
+                message: 'Không tìm thấy tài khoản.',
             })
+        }
+
+        if (!isInternalToken) {
+            const activeSessionId = String(dbUser.activeSessionId || '').trim()
+            if (!sessionId || !activeSessionId || sessionId !== activeSessionId) {
+                return res.status(401).json({
+                    ok: false,
+                    code: 'SESSION_REPLACED',
+                    message: 'Phiên đăng nhập đã được sử dụng ở nơi khác.',
+                })
+            }
         }
 
         const now = Date.now()
@@ -78,6 +91,7 @@ export const authMiddleware = async (req, res, next) => {
         // Attach user info to request
         req.user = {
             ...decoded,
+            sessionId,
             role: dbUser.role,
             adminPermissions: dbUser.adminPermissions,
             vipTierLevel: Math.max(0, Number.parseInt(dbUser.vipTierLevel, 10) || 0),
@@ -88,18 +102,18 @@ export const authMiddleware = async (req, res, next) => {
         if (error.name === 'JsonWebTokenError') {
             return res.status(401).json({
                 ok: false,
-                message: 'Invalid token',
+                message: 'Phiên đăng nhập không hợp lệ.',
             })
         }
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({
                 ok: false,
-                message: 'Token expired',
+                message: 'Phiên đăng nhập đã hết hạn.',
             })
         }
         return res.status(500).json({
             ok: false,
-            message: 'Authentication error',
+            message: 'Không thể xác thực tài khoản.',
         })
     }
 }

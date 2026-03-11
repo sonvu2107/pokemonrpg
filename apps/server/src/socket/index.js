@@ -160,16 +160,41 @@ export const initSocket = (server) => {
 
             if (!token) {
                 console.error('Socket auth failed: No token provided')
-                return next(new Error('Authentication error: No token provided'))
+                return next(new Error('Bạn chưa đăng nhập.'))
             }
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET)
-            socket.userId = decoded.userId
-            console.log('Socket auth success:', decoded.userId)
-            next()
+            if (decoded?.tokenType === 'internal') {
+                return next(new Error('Phiên đăng nhập không hợp lệ.'))
+            }
+
+            const userId = normalizeUserId(decoded?.userId)
+            const sessionId = String(decoded?.sid || '').trim()
+            if (!userId || !sessionId) {
+                return next(new Error('Phiên đăng nhập đã được sử dụng ở nơi khác.'))
+            }
+
+            User.findById(userId)
+                .select('activeSessionId')
+                .lean()
+                .then((user) => {
+                    const activeSessionId = String(user?.activeSessionId || '').trim()
+                    if (!activeSessionId || activeSessionId !== sessionId) {
+                        return next(new Error('Phiên đăng nhập đã được sử dụng ở nơi khác.'))
+                    }
+
+                    socket.userId = userId
+                    socket.sessionId = sessionId
+                    console.log('Socket auth success:', userId)
+                    next()
+                })
+                .catch((error) => {
+                    console.error('Socket auth db error:', error.message)
+                    next(new Error('Phiên đăng nhập không hợp lệ.'))
+                })
         } catch (error) {
             console.error('Socket auth error:', error.message)
-            next(new Error('Authentication error: Invalid token'))
+            next(new Error('Phiên đăng nhập không hợp lệ.'))
         }
     })
 
@@ -226,6 +251,31 @@ export const emitToUser = (userId, eventName, payload = {}) => {
     const normalizedUserId = normalizeUserId(userId)
     if (!normalizedUserId || !eventName) return
     io.to(normalizedUserId).emit(eventName, payload)
+}
+
+export const disconnectUserSockets = (userId, reason = 'session-replaced') => {
+    const normalizedUserId = normalizeUserId(userId)
+    if (!io || !normalizedUserId) return 0
+
+    const socketSet = activeSocketsByUser.get(normalizedUserId)
+    if (!socketSet || socketSet.size === 0) return 0
+
+    const socketIds = Array.from(socketSet)
+    let disconnectedCount = 0
+
+    for (const socketId of socketIds) {
+        const existingSocket = io.sockets.sockets.get(socketId)
+        if (existingSocket) {
+            existingSocket.emit('session:replaced', { reason })
+            existingSocket.disconnect(true)
+            disconnectedCount += 1
+            continue
+        }
+
+        removeUserSocket(normalizedUserId, socketId)
+    }
+
+    return disconnectedCount
 }
 
 export const getLiveSocketPresenceSnapshot = ({ includeSocketIds = false } = {}) => {

@@ -41,11 +41,11 @@ export default function AppShell() {
     const vipTitle = getVipTitle(user)
     const vipBadgeLabel = getVipBadgeLabel(user)
     const blockTitle = blockReason === 'session-replaced'
-        ? 'Tai khoan dang choi o noi khac'
-        : 'Game dang mo o tab khac'
+        ? 'Tài khoản đang chơi ở nơi khác'
+        : 'Game đang mở ở tab khác'
     const blockMessage = blockReason === 'session-replaced'
-        ? 'Phien choi hien tai da duoc thay the. Hay quay lai noi dang choi hoac dang nhap lai tai day.'
-        : 'He thong chi cho phep 1 tab choi cho moi tai khoan. Dong tab chinh hoac quay lai tab dang choi de tiep tuc.'
+        ? 'Phiên hiện tại đã bị thay thế. Hãy quay lại nơi đang chơi hoặc đăng nhập lại để tiếp tục hành trình.'
+        : 'Hệ thống chỉ cho phép 1 tab chơi cho mỗi tài khoản. Hãy đóng tab chính hoặc quay lại tab đang chơi để tiếp tục.'
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
             <GlobalNotification />
@@ -123,26 +123,54 @@ export default function AppShell() {
                             <div className="p-3">
                                 {isPlayTabBlocked ? (
                                     <div className="mx-auto flex min-h-[420px] max-w-2xl items-center justify-center">
-                                        <div className="w-full rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-6 text-center shadow-lg">
-                                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-3xl">
-                                                !
+                                        <div className="relative w-full overflow-hidden rounded-[28px] border-[3px] border-slate-800 bg-sky-100 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
+                                            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-sky-300 via-sky-200 to-transparent" />
+                                            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-lime-200 via-emerald-100 to-transparent" />
+                                            <div className="absolute -left-8 top-16 h-24 w-24 rounded-full bg-white/50 blur-2xl" />
+                                            <div className="relative border-b-[3px] border-slate-800 bg-gradient-to-r from-red-500 via-rose-500 to-orange-400 px-6 py-4 text-center">
+                                                <div className="text-[11px] font-black uppercase tracking-[0.35em] text-white/80">Pokémon Trainer Alert</div>
+                                                <div className="mt-1 text-2xl font-black uppercase tracking-[0.18em] text-white drop-shadow-sm">{blockTitle}</div>
                                             </div>
-                                            <h2 className="text-2xl font-black uppercase tracking-wide text-amber-700">{blockTitle}</h2>
-                                            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">{blockMessage}</p>
-                                            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                                            <div className="relative px-6 py-8 text-center">
+                                                <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full border-[6px] border-slate-900 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.18)]">
+                                                    <div className="relative h-full w-full overflow-hidden rounded-full">
+                                                        <div className="absolute inset-x-0 top-0 h-1/2 bg-red-500" />
+                                                        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-white" />
+                                                        <div className="absolute left-0 right-0 top-1/2 h-[6px] -translate-y-1/2 bg-slate-900" />
+                                                        <div className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px] border-slate-900 bg-white" />
+                                                        <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-300" />
+                                                    </div>
+                                                </div>
+                                                <div className="mx-auto inline-flex items-center gap-2 rounded-full border-2 border-slate-800 bg-yellow-300 px-4 py-1 text-xs font-black uppercase tracking-[0.2em] text-slate-800 shadow-sm">
+                                                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                                                    Phiên chơi bị khóa
+                                                </div>
+                                                <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-slate-700">{blockMessage}</p>
+                                                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                                                    <div className="rounded-2xl border-2 border-slate-800 bg-white/80 px-4 py-3 text-left shadow-sm">
+                                                        <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-700">Luật hiện tại</div>
+                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Mỗi tài khoản chỉ có 1 phiên chơi hoạt động trên toàn hệ thống.</div>
+                                                    </div>
+                                                    <div className="rounded-2xl border-2 border-slate-800 bg-white/80 px-4 py-3 text-left shadow-sm">
+                                                        <div className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-700">Gợi ý</div>
+                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Đóng tab đang chơi hoặc đăng nhập lại ở thiết bị bạn muốn sử dụng.</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="relative flex flex-wrap items-center justify-center gap-3 border-t-[3px] border-slate-800 bg-white/90 px-6 py-5">
                                                 <button
                                                     type="button"
                                                     onClick={() => window.location.reload()}
-                                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600"
+                                                    className="rounded-full border-2 border-slate-900 bg-gradient-to-b from-yellow-300 to-amber-400 px-5 py-2 text-sm font-black uppercase tracking-wide text-slate-900 shadow-sm transition-transform hover:-translate-y-0.5"
                                                 >
-                                                    Tai lai tab nay
+                                                    Tải lại tab này
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={logout}
-                                                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                                                    className="rounded-full border-2 border-slate-900 bg-gradient-to-b from-slate-100 to-slate-200 px-5 py-2 text-sm font-black uppercase tracking-wide text-slate-800 shadow-sm transition-transform hover:-translate-y-0.5"
                                                 >
-                                                    Dang xuat
+                                                    Đăng xuất
                                                 </button>
                                             </div>
                                         </div>

@@ -41,7 +41,7 @@ export const getValidTokenFromStorage = () => {
     if (!token) return null
 
     if (isTokenExpired(token)) {
-        clearAuthSession('Token expired')
+        clearAuthSession('Phiên đăng nhập đã hết hạn')
         return null
     }
 

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { useAuth } from './AuthContext'
 import { usePlayTab } from './PlayTabContext'
 import { io } from 'socket.io-client'
+import { clearAuthSession } from '../utils/authSession'
 
 const ChatContext = createContext()
 const MAX_MESSAGES = 200
@@ -58,7 +59,7 @@ export function ChatProvider({ children }) {
       setTypingUsers([])
       setIsConnected(false)
       if (isPlayTabBlocked) {
-        setError('Tab nay dang bi khoa vi tai khoan da mo o tab khac')
+        setError('Tab này đang bị khóa vì tài khoản đã mở ở tab khác.')
       }
       return
     }
@@ -116,12 +117,20 @@ export function ChatProvider({ children }) {
 
     newSocket.on('connect_error', (err) => {
       debugError('ChatContext: Socket connection error:', err.message)
+      const normalizedMessage = String(err?.message || '').trim().toLowerCase()
+      if (normalizedMessage.includes('sử dụng ở nơi khác') || normalizedMessage.includes('su dung o noi khac')) {
+        clearAuthSession('Phiên đăng nhập đã được sử dụng ở nơi khác.')
+        markSessionTakenOver()
+        setError('Tài khoản đang được chơi ở nơi khác.')
+        setIsConnected(false)
+        return
+      }
       setError('Không thể kết nối đến chat server')
       setIsConnected(false)
     })
 
     newSocket.on('session:replaced', () => {
-      setError('Tai khoan dang duoc choi o noi khac')
+      setError('Tài khoản đang được chơi ở nơi khác.')
       markSessionTakenOver()
       newSocket.disconnect()
     })

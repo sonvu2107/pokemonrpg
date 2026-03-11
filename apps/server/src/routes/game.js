@@ -108,7 +108,7 @@ import {
     getMaxCatchAttempts,
 } from '../utils/autoTrainerUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
-import { mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
+import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { getCachedActiveBadgeBonuses, resolveBattleBadgeBonusState } from '../utils/badgeUtils.js'
 import autoSearchRoutes from './game/autoSearch.js'
@@ -309,6 +309,17 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const attackerSpecies = activePokemon?.pokemonId || {}
         const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves)
         const normalizedKnownMoves = new Set(knownMoves.map((item) => normalizeMoveName(item)))
+        const knownMoveLookupMap = await buildMoveLookupByName(knownMoves)
+        const authoritativeMovePpState = buildMovePpStateFromMoves({
+            moveNames: knownMoves,
+            movePpState: activePokemon.movePpState,
+            moveLookupMap: knownMoveLookupMap,
+        })
+        const authoritativeMovePpStateMap = new Map(
+            authoritativeMovePpState
+                .map((entry) => [normalizeMoveName(entry?.moveName), entry])
+                .filter(([key]) => Boolean(key))
+        )
 
         let selectedMoveName = String(moveName || move?.name || knownMoves[0] || 'Struggle').trim()
         if (!selectedMoveName) selectedMoveName = 'Struggle'
@@ -388,18 +399,25 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         let playerMovePpStatePayload = []
 
         if (!isStruggleMove) {
+            const storedMovePpEntry = authoritativeMovePpStateMap.get(normalizeMoveName(selectedMoveName)) || null
             const fallbackMaxPpRaw = Number(moveDoc?.pp)
+            const storedMaxPpRaw = Number(storedMovePpEntry?.maxPp)
             const payloadMaxPpRaw = Number(move?.maxPp)
-            const maxPp = Number.isFinite(payloadMaxPpRaw) && payloadMaxPpRaw > 0
-                ? Math.max(1, Math.floor(payloadMaxPpRaw))
-                : (Number.isFinite(fallbackMaxPpRaw) && fallbackMaxPpRaw > 0
-                    ? Math.max(1, Math.floor(fallbackMaxPpRaw))
-                    : 10)
+            const maxPp = Number.isFinite(storedMaxPpRaw) && storedMaxPpRaw > 0
+                ? Math.max(1, Math.floor(storedMaxPpRaw))
+                : (Number.isFinite(payloadMaxPpRaw) && payloadMaxPpRaw > 0
+                    ? Math.max(1, Math.floor(payloadMaxPpRaw))
+                    : (Number.isFinite(fallbackMaxPpRaw) && fallbackMaxPpRaw > 0
+                        ? Math.max(1, Math.floor(fallbackMaxPpRaw))
+                        : 10))
 
+            const storedCurrentPpRaw = Number(storedMovePpEntry?.currentPp)
             const clientReportedPpRaw = Number(move?.currentPp ?? move?.pp)
-            let currentPp = Number.isFinite(clientReportedPpRaw)
-                ? Math.max(0, Math.min(maxPp, Math.floor(clientReportedPpRaw)))
-                : maxPp
+            let currentPp = Number.isFinite(storedCurrentPpRaw)
+                ? Math.max(0, Math.min(maxPp, Math.floor(storedCurrentPpRaw)))
+                : (Number.isFinite(clientReportedPpRaw)
+                    ? Math.max(0, Math.min(maxPp, Math.floor(clientReportedPpRaw)))
+                    : maxPp)
 
             if (currentPp <= 0) {
                 moveFallbackReason = 'OUT_OF_PP'
@@ -2112,7 +2130,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             }
         }
 
-        const currentMovePpState = Array.isArray(activePokemon.movePpState) ? activePokemon.movePpState : []
+        const currentMovePpState = authoritativeMovePpState
         const mergedMovePpState = mergeMovePpStateEntries(currentMovePpState, playerMovePpStatePayload)
         if (!isMovePpStateEqual(currentMovePpState, mergedMovePpState)) {
             activePokemon.movePpState = mergedMovePpState
@@ -2329,7 +2347,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     damageGuards: playerDamageGuards,
                     wasDamagedLastTurn: playerWasDamagedLastTurn,
                     volatileState: playerVolatileState,
-                    movePpState: playerMovePpStatePayload,
+                    movePpState: mergedMovePpState,
                 },
                 opponent: trainerState,
                 targetState: {

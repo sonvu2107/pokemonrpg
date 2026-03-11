@@ -2,6 +2,7 @@ import Move from '../models/Move.js'
 import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { normalizeVolatileState, resolveActionAvailabilityByStatus } from '../battle/battleState.js'
+import { syncTrainerSessionActivePlayerToParty } from './trainerBattlePlayerStateService.js'
 import {
     appendTurnPhaseEvent,
     appendTurnPhaseLines,
@@ -354,6 +355,7 @@ export const applyTrainerPenaltyTurn = async ({
     const normalizedPlayerCurrentHp = clamp(Math.floor(Number(playerCurrentHp) || 0), 0, normalizedPlayerMaxHp)
     if (normalizedPlayerCurrentHp <= 0) {
         activeBattleSession.playerCurrentHp = 0
+        syncTrainerSessionActivePlayerToParty(activeBattleSession)
         await activeBattleSession.save()
         appendTurnPhaseEvent(turnTimeline, {
             phaseKey: 'faint_resolution',
@@ -391,6 +393,7 @@ export const applyTrainerPenaltyTurn = async ({
         || opponentStatusCheck.reason === 'thaw'
     )
     if (shouldSkipPenaltyTurnAction) {
+        syncTrainerSessionActivePlayerToParty(activeBattleSession)
         await activeBattleSession.save()
         appendTurnPhaseLines(turnTimeline, {
             phaseKey: opponentPhaseKeys.preAction,
@@ -464,6 +467,7 @@ export const applyTrainerPenaltyTurn = async ({
     activeBattleSession.playerStatus = nextStatus
     activeBattleSession.playerStatusTurns = nextStatusTurns
     activeBattleSession.playerVolatileState = nextPlayerVolatileState
+    syncTrainerSessionActivePlayerToParty(activeBattleSession)
     await activeBattleSession.save()
 
     const effectivenessText = didHit ? resolveEffectivenessText(selectedMove.effectiveness?.multiplier) : ''

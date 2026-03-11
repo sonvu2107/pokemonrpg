@@ -2405,11 +2405,11 @@ export function BattlePage() {
             }
             appendBattleTurnPhases(serverTurnPhases, fallbackLogLines)
 
-            if (switchedAfterDefeat) {
+            if (switchedAfterDefeat && !defeatedAll) {
                 return
             }
 
-            if (nextPlayerHp <= 0) {
+            if (nextPlayerHp <= 0 && !defeatedAll) {
                 if (activeBattleMode === 'duel' || activeBattleMode === 'online') {
                     const defeatedTargetName = target?.name || battleOpponent?.trainerName || (activeBattleMode === 'online' ? 'đối thủ online' : 'Đối thủ BXH')
                     appendBattleLog([activeBattleMode === 'online'

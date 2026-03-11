@@ -269,10 +269,25 @@ const toDisplayMovePpState = (entries = []) => (Array.isArray(entries) ? entries
     })
     .filter((entry) => entry.moveName)
 
-const toExplicitMoveList = (moves = [], limit = 4) => (Array.isArray(moves) ? moves : [])
-    .map((entry) => String(entry || '').trim())
-    .filter(Boolean)
-    .slice(0, Math.max(0, Number(limit) || 4))
+const toMoveName = (entry) => {
+    if (typeof entry === 'string') return String(entry || '').trim()
+    return String(entry?.moveName || entry?.name || '').trim()
+}
+
+const toExplicitMoveList = (moves = [], limit = 4) => {
+    const normalizedLimit = Math.max(0, Number(limit) || 4)
+    const normalizedMoves = (Array.isArray(moves) ? moves : [])
+        .map((entry) => toMoveName(entry))
+        .filter(Boolean)
+
+    return [...new Set(normalizedMoves)].slice(0, normalizedLimit)
+}
+
+const resolveKnownMoveList = ({ moves = [], movePpState = [] } = {}, limit = 4) => {
+    const explicitMoves = toExplicitMoveList(moves, limit)
+    if (explicitMoves.length > 0) return explicitMoves
+    return toExplicitMoveList(movePpState, limit)
+}
 
 const getOffTypeSkillAllowance = (userPokemonLike = null) => {
     const explicitAllowance = Math.max(0, Number.parseInt(userPokemonLike?.offTypeSkillAllowance, 10) || 0)
@@ -1066,10 +1081,13 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Thiếu dữ liệu gốc của Pokemon' })
         }
 
+        const ownerUserId = String(userPokemon?.userId?._id || userPokemon?.userId || '').trim()
+        const canViewMoves = Boolean(viewerUserId && ownerUserId && viewerUserId === ownerUserId)
+
         // Calculate actual stats based on level, rarity, (and potentially IVs/EVs in future)
         const level = userPokemon.level || 1
         const rarity = basePokemon.rarity
-        const mergedMoves = toExplicitMoveList(userPokemon.moves, 4)
+        const mergedMoves = resolveKnownMoveList(userPokemon, 4)
         const moveLookupMap = await buildMoveLookupByName(mergedMoves)
         const movePpState = buildMovePpStateFromMoves({
             moveNames: mergedMoves,
@@ -1120,9 +1138,10 @@ router.get('/:id', async (req, res) => {
             ...userPokemon,
             offTypeSkillAllowance: getOffTypeSkillAllowance(userPokemon),
             allowOffTypeSkills: getOffTypeSkillAllowance(userPokemon) > 0,
-            moves: mergedMoves,
-            moveDetails,
-            movePpState: toDisplayMovePpState(movePpState),
+            canViewMoves,
+            moves: canViewMoves ? mergedMoves : [],
+            moveDetails: canViewMoves ? moveDetails : [],
+            movePpState: canViewMoves ? toDisplayMovePpState(movePpState) : [],
             stats: {
                 ...stats,
                 maxHp,
@@ -1185,7 +1204,6 @@ router.get('/:id', async (req, res) => {
                     rarityFrom: String(itemDoc.evolutionRarityFrom || 'd').trim().toLowerCase() || 'd',
                     rarityTo: String(itemDoc.evolutionRarityTo || 'sss+').trim().toLowerCase() || 'sss+',
                 }
-                const ownerUserId = String(userPokemon?.userId?._id || userPokemon?.userId || '').trim()
                 if (ownerUserId) {
                     const inventoryEntry = await UserInventory.findOne({
                         userId: ownerUserId,
@@ -1295,7 +1313,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
         const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
-            .select('moves pokemonId level allowOffTypeSkills offTypeSkillAllowance')
+            .select('moves movePpState pokemonId level allowOffTypeSkills offTypeSkillAllowance')
             .populate('pokemonId', 'types rarity levelUpMoves')
             .lean()
 
@@ -1303,7 +1321,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
         }
 
-        const knownMoves = toExplicitMoveList(userPokemon.moves, 4)
+        const knownMoves = resolveKnownMoveList(userPokemon, 4)
         const knownMoveSet = new Set(knownMoves.map((entry) => normalizeMoveName(entry)))
 
         const inventoryEntries = await UserMoveInventory.find({
@@ -1528,7 +1546,7 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Bạn không có kỹ năng này trong kho' })
         }
 
-        const currentMoves = toExplicitMoveList(userPokemon.moves, 4)
+        const currentMoves = resolveKnownMoveList(userPokemon, 4)
 
         const moveName = String(move.name || '').trim()
         const moveKey = normalizeMoveName(moveName)
@@ -1652,7 +1670,7 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
         }
 
-        const currentMoves = toExplicitMoveList(userPokemon.moves, 4)
+        const currentMoves = resolveKnownMoveList(userPokemon, 4)
 
         let moveIndex = -1
         if (rawMoveName) {

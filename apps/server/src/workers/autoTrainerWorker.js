@@ -43,7 +43,7 @@ const createInternalToken = (userId) => {
     if (!jwtSecret) {
         throw new Error('JWT_SECRET chưa được cấu hình')
     }
-    return jwt.sign({ userId: String(userId) }, jwtSecret, { expiresIn: '30m' })
+    return jwt.sign({ userId: String(userId), tokenType: 'internal' }, jwtSecret, { expiresIn: '30m' })
 }
 
 const buildUrl = (path) => {

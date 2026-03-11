@@ -130,6 +130,7 @@ export default function PokemonInfoPage() {
     const viewerId = String(user?.id || user?._id || '').trim()
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
+    const canViewMoves = pokemon?.canViewMoves !== false
     const offTypeSkillAllowance = Math.max(0, Number(pokemon?.offTypeSkillAllowance || 0)) || (pokemon?.allowOffTypeSkills ? 1 : 0)
     const hasOffTypeSkillAccess = offTypeSkillAllowance > 0
 
@@ -924,7 +925,7 @@ export default function PokemonInfoPage() {
                             </div>
                         </div>
                         <div className="flex border-b border-blue-200 last:border-0 text-xs text-center">
-                            {moveDisplaySlots.map((slot, index) => {
+                            {canViewMoves ? moveDisplaySlots.map((slot, index) => {
                                 const isLast = index === moveDisplaySlots.length - 1
                                 return (
                                     <div
@@ -950,7 +951,11 @@ export default function PokemonInfoPage() {
                                         )}
                                     </div>
                                 )
-                            })}
+                            }) : (
+                                <div className="w-full p-3 font-bold text-slate-400">
+                                    Kỹ năng đang mặc đã được ẩn
+                                </div>
+                            )}
                         </div>
                         {isOwnerViewing && (
                             <div className="p-2 bg-slate-50 border-t border-blue-200 text-center space-y-2">

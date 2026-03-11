@@ -126,21 +126,27 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             Math.max(1, Number(targetPokemon.level || 1)),
             targetPokemon?.pokemonId?.rarity || 'd'
         )
-        const resolvedMaxHp = clamp(
+        const requestedMaxHp = clamp(
             Math.floor(Number.isFinite(Number(playerMaxHp)) ? Number(playerMaxHp) : calculatedMaxHp),
             1,
             calculatedMaxHp
         )
-        const resolvedCurrentHp = clamp(
-            Math.floor(Number.isFinite(Number(playerCurrentHp)) ? Number(playerCurrentHp) : resolvedMaxHp),
+        const requestedCurrentHp = clamp(
+            Math.floor(Number.isFinite(Number(playerCurrentHp)) ? Number(playerCurrentHp) : requestedMaxHp),
             0,
-            resolvedMaxHp
+            requestedMaxHp
         )
 
         syncTrainerSessionActivePlayerToParty(trainerSession)
         setTrainerSessionActivePlayerByIndex(trainerSession, targetPartyIndex)
-        trainerSession.playerMaxHp = Math.max(1, Number(targetPartyEntry?.maxHp || resolvedMaxHp || 1))
-        trainerSession.playerCurrentHp = Math.max(0, Number(targetPartyEntry?.currentHp || 0))
+        const authoritativePlayerMaxHp = Math.max(1, Number(targetPartyEntry?.maxHp || requestedMaxHp || 1))
+        const authoritativePlayerCurrentHp = clamp(
+            Math.floor(Number(targetPartyEntry?.currentHp ?? requestedCurrentHp ?? authoritativePlayerMaxHp) || 0),
+            0,
+            authoritativePlayerMaxHp
+        )
+        trainerSession.playerMaxHp = authoritativePlayerMaxHp
+        trainerSession.playerCurrentHp = authoritativePlayerCurrentHp
         syncTrainerSessionActivePlayerToParty(trainerSession)
 
         const activeTrainerOpponent = team[currentIndex] || null
@@ -150,8 +156,8 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             activeTrainerOpponent,
             targetPokemon,
             trainerSpecies: trainerTeamEntry?.pokemonId || null,
-            playerCurrentHp: resolvedCurrentHp,
-            playerMaxHp: resolvedMaxHp,
+            playerCurrentHp: authoritativePlayerCurrentHp,
+            playerMaxHp: authoritativePlayerMaxHp,
             reason: 'switch',
         })
 

@@ -1,4 +1,5 @@
 import express from 'express'
+import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcrypt'
@@ -12,6 +13,7 @@ import { getEffectiveAdminPermissions } from '../constants/adminPermissions.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser, invalidateCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 import { extractClientIp } from '../utils/ipUtils.js'
 import { closeOnlineSession, getTotalOnlineHours, startOnlineSession } from '../utils/onlineTime.js'
+import { disconnectUserSockets } from '../socket/index.js'
 
 const router = express.Router()
 const RECOVERY_PIN_REGEX = /^\d{6}$/
@@ -114,6 +116,34 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
     }
 }
+
+const createSessionId = () => {
+    if (typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+    }
+    return crypto.randomBytes(16).toString('hex')
+}
+
+const rotateUserSession = (userLike) => {
+    const sessionId = createSessionId()
+    if (userLike && typeof userLike === 'object') {
+        userLike.activeSessionId = sessionId
+        userLike.activeSessionIssuedAt = new Date()
+    }
+    return sessionId
+}
+
+const signAuthToken = (userLike, sessionId) => jwt.sign(
+    {
+        userId: userLike._id,
+        email: userLike.email,
+        role: userLike.role,
+        adminPermissions: getEffectiveAdminPermissions(userLike),
+        sid: String(sessionId || '').trim(),
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+)
 
 const getRewardGrantedAt = (rewardLike = {}) => {
     const rewardedAt = new Date(rewardLike?.rewardedAt || rewardLike?.createdAt || 0)
@@ -290,6 +320,7 @@ router.post('/register', registerLimiter, async (req, res, next) => {
         const normalizedUsername = String(username || '').trim()
         const normalizedRecoveryPin = normalizeRecoveryPin(recoveryPin)
         const loginIp = extractClientIp(req)
+        const sessionId = createSessionId()
 
         // Validate input
         if (!normalizedEmail || !password || !normalizedRecoveryPin) {
@@ -357,17 +388,15 @@ router.post('/register', registerLimiter, async (req, res, next) => {
             recoveryPinUpdatedAt: new Date(),
             lastLoginIp: loginIp,
             registrationIp: loginIp,
+            activeSessionId: sessionId,
+            activeSessionIssuedAt: new Date(),
         })
 
         // Create initial player state
         await PlayerState.create({ userId: user._id })
 
         // Generate JWT with role
-        const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role, adminPermissions: getEffectiveAdminPermissions(user) },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        )
+        const token = signAuthToken(user, sessionId)
 
         res.status(201).json({
             ok: true,
@@ -440,14 +469,12 @@ router.post('/login', async (req, res, next) => {
         // Set user as online and roll playtime session
         startOnlineSession(user, new Date())
         user.lastLoginIp = loginIp
+        const sessionId = rotateUserSession(user)
         await user.save()
+        disconnectUserSockets(user._id, 'session-replaced')
 
         // Generate JWT with role
-        const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role, adminPermissions: getEffectiveAdminPermissions(user) },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        )
+        const token = signAuthToken(user, sessionId)
 
         res.json({
             ok: true,
@@ -639,7 +666,10 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
         }
 
         closeOnlineSession(user, new Date())
+        user.activeSessionId = ''
+        user.activeSessionIssuedAt = null
         await user.save()
+        disconnectUserSockets(user._id, 'logout')
 
         res.json({
             ok: true,
