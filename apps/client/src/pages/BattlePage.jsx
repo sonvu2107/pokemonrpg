@@ -301,9 +301,7 @@ const normalizeMoveList = (moves = []) => {
         .filter(Boolean)
 
     if (mapped.length > 0) {
-        const limited = mapped.slice(0, 4)
-        const hasStruggle = limited.some((entry) => normalizeMoveNameKey(entry?.name) === 'struggle')
-        return hasStruggle ? limited : [...limited, struggleMove]
+        return mapped.slice(0, 4)
     }
 
     return [struggleMove]

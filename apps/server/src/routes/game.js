@@ -305,6 +305,36 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
         }
 
+        if (normalizedTrainerId && Boolean(resetTrainerSession)) {
+            const allPartyMoveNames = [...new Set(
+                party.flatMap((entry) => mergeKnownMovesWithFallback(entry?.moves))
+            )]
+            const battleStartMoveLookupMap = await buildMoveLookupByName(allPartyMoveNames)
+            const refillSaveTasks = []
+
+            party.forEach((entry) => {
+                const entryMoveNames = mergeKnownMovesWithFallback(entry?.moves)
+                const refilledMovePpState = buildMovePpStateFromMoves({
+                    moveNames: entryMoveNames,
+                    movePpState: [],
+                    moveLookupMap: battleStartMoveLookupMap,
+                }).map((moveEntry) => ({
+                    moveName: moveEntry.moveName,
+                    currentPp: Math.max(1, Number(moveEntry?.maxPp) || 1),
+                    maxPp: Math.max(1, Number(moveEntry?.maxPp) || 1),
+                }))
+
+                if (!isMovePpStateEqual(entry.movePpState, refilledMovePpState)) {
+                    entry.movePpState = refilledMovePpState
+                    refillSaveTasks.push(entry.save())
+                }
+            })
+
+            if (refillSaveTasks.length > 0) {
+                await Promise.all(refillSaveTasks)
+            }
+        }
+
         const attackerLevel = Math.max(1, Number(activePokemon.level) || 1)
         const attackerSpecies = activePokemon?.pokemonId || {}
         const knownMoves = mergeKnownMovesWithFallback(activePokemon.moves)
