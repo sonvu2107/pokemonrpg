@@ -40,6 +40,34 @@ const removeUserSocket = (userId, socketId) => {
     return socketSet.size
 }
 
+const disconnectOtherUserSockets = (userId, currentSocketId) => {
+    const normalizedUserId = normalizeUserId(userId)
+    const normalizedCurrentSocketId = String(currentSocketId || '').trim()
+    if (!io || !normalizedUserId || !normalizedCurrentSocketId) return 0
+
+    const socketSet = activeSocketsByUser.get(normalizedUserId)
+    if (!socketSet || socketSet.size <= 1) return 0
+
+    const otherSocketIds = Array.from(socketSet).filter((socketId) => socketId && socketId !== normalizedCurrentSocketId)
+    let disconnectedCount = 0
+
+    for (const socketId of otherSocketIds) {
+        const existingSocket = io.sockets.sockets.get(socketId)
+        if (existingSocket) {
+            existingSocket.emit('session:replaced', {
+                reason: 'single-tab-enforced',
+            })
+            existingSocket.disconnect(true)
+            disconnectedCount += 1
+            continue
+        }
+
+        removeUserSocket(normalizedUserId, socketId)
+    }
+
+    return disconnectedCount
+}
+
 const emitFriendsPresenceChanged = async (userId, isOnline, lastActiveValue = new Date()) => {
     if (!io) return
 
@@ -89,8 +117,14 @@ const setUserPresenceState = async (userId, isOnline) => {
 
 const handleSocketConnected = async (userId, socketId) => {
     const totalSockets = addUserSocket(userId, socketId)
-    if (totalSockets === 1) {
+    const disconnectedCount = disconnectOtherUserSockets(userId, socketId)
+    if (totalSockets === 1 || disconnectedCount > 0) {
         await setUserPresenceState(userId, true)
+    }
+
+    return {
+        totalSockets: Math.max(1, totalSockets - disconnectedCount),
+        disconnectedCount,
     }
 }
 
@@ -148,7 +182,11 @@ export const initSocket = (server) => {
         // Join room based on userId for player state updates
         socket.join(userId)
 
-        handleSocketConnected(userId, socket.id).catch((error) => {
+        handleSocketConnected(userId, socket.id).then((result) => {
+            if (result?.disconnectedCount > 0) {
+                console.log(`Socket replaced previous sessions for user ${userId}: ${result.disconnectedCount}`)
+            }
+        }).catch((error) => {
             console.error('Socket presence update error (connect):', error)
         })
 

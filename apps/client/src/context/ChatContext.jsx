@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from './AuthContext'
+import { usePlayTab } from './PlayTabContext'
 import { io } from 'socket.io-client'
 
 const ChatContext = createContext()
@@ -29,6 +30,7 @@ export const useChat = () => {
 
 export function ChatProvider({ children }) {
   const { user, token } = useAuth()
+  const { isPlayTabBlocked, markSessionTakenOver } = usePlayTab()
   const [socket, setSocket] = useState(null)
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -43,7 +45,7 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     debugLog('ChatContext: useEffect triggered', { hasUser: !!user, hasToken: !!token })
     
-    if (!user || !token) {
+    if (!user || !token || isPlayTabBlocked) {
       debugLog('ChatContext: No user or token, cleaning up')
       // Cleanup if user logs out
       if (socket) {
@@ -52,7 +54,12 @@ export function ChatProvider({ children }) {
       }
       setMessages([])
       setUnreadCount(0)
+      setOnlineCount(0)
+      setTypingUsers([])
       setIsConnected(false)
+      if (isPlayTabBlocked) {
+        setError('Tab nay dang bi khoa vi tai khoan da mo o tab khac')
+      }
       return
     }
 
@@ -113,6 +120,12 @@ export function ChatProvider({ children }) {
       setIsConnected(false)
     })
 
+    newSocket.on('session:replaced', () => {
+      setError('Tai khoan dang duoc choi o noi khac')
+      markSessionTakenOver()
+      newSocket.disconnect()
+    })
+
     // Chat events
     newSocket.on('chat:new_message', (message) => {
       setMessages((prev) => {
@@ -164,7 +177,7 @@ export function ChatProvider({ children }) {
       clearAllTypingTimeouts()
       newSocket.disconnect()
     }
-  }, [user, token])
+  }, [user, token, isPlayTabBlocked])
 
   // Load initial message history
   useEffect(() => {

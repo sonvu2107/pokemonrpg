@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import { usePlayTab } from "../context/PlayTabContext"
 import VipAvatar from "../components/VipAvatar"
 import { isVipRole, isAdminRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
@@ -13,6 +14,7 @@ const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master
 
 export default function AppShell() {
     const { user, logout } = useAuth()
+    const { isPlayTabBlocked, blockReason } = usePlayTab()
     const { data: profilePayload } = useProfileQuery({ enabled: Boolean(user) })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [mobileProfile, setMobileProfile] = useState({
@@ -38,6 +40,12 @@ export default function AppShell() {
     }, [user?.id, user?.avatar, user?.level, user?.playerState?.level, profilePayload?.user?.avatar, profilePayload?.playerState?.level])
     const vipTitle = getVipTitle(user)
     const vipBadgeLabel = getVipBadgeLabel(user)
+    const blockTitle = blockReason === 'session-replaced'
+        ? 'Tai khoan dang choi o noi khac'
+        : 'Game dang mo o tab khac'
+    const blockMessage = blockReason === 'session-replaced'
+        ? 'Phien choi hien tai da duoc thay the. Hay quay lai noi dang choi hoac dang nhap lai tai day.'
+        : 'He thong chi cho phep 1 tab choi cho moi tai khoan. Dong tab chinh hoac quay lai tab dang choi de tiep tuc.'
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
             <GlobalNotification />
@@ -113,7 +121,35 @@ export default function AppShell() {
                                 </div>
                             </div>
                             <div className="p-3">
-                                <Outlet />
+                                {isPlayTabBlocked ? (
+                                    <div className="mx-auto flex min-h-[420px] max-w-2xl items-center justify-center">
+                                        <div className="w-full rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-6 text-center shadow-lg">
+                                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-3xl">
+                                                !
+                                            </div>
+                                            <h2 className="text-2xl font-black uppercase tracking-wide text-amber-700">{blockTitle}</h2>
+                                            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">{blockMessage}</p>
+                                            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => window.location.reload()}
+                                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600"
+                                                >
+                                                    Tai lai tab nay
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={logout}
+                                                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                                                >
+                                                    Dang xuat
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <Outlet />
+                                )}
                             </div>
                         </div>
                     </section>
@@ -199,7 +235,7 @@ export default function AppShell() {
                     </div>
                 </div>
             )}
-            <GlobalChatPopup />
+            {!isPlayTabBlocked ? <GlobalChatPopup /> : null}
         </div>
     )
 }
