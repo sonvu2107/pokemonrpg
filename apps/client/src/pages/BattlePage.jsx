@@ -3585,6 +3585,54 @@ export function BattlePage() {
         </div>
     )
 
+    const trainerAttackChallengeModal = activeBattleMode === 'trainer' && trainerAttackChallenge && (
+        <Modal
+            isOpen
+            onClose={() => {}}
+            title="Xác minh thao tác"
+            maxWidth="sm"
+            showCloseButton={false}
+        >
+            <div className="space-y-4" key={trainerAttackChallenge.id}>
+                <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-3 text-center">
+                    <div className="text-[11px] font-black uppercase tracking-wide text-blue-700">Kiểm tra anti auto click</div>
+                    <div className="mt-2 text-sm font-bold text-slate-800">{trainerAttackChallenge.prompt}</div>
+                    <div className="mt-1 text-xs text-slate-600">Nhập đáp án đúng để tiếp tục trận đấu.</div>
+                </div>
+
+                <form
+                    className="space-y-2"
+                    onSubmit={(event) => {
+                        event.preventDefault()
+                        handleTrainerAttackChallengeAnswer()
+                    }}
+                >
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={trainerAttackChallengeInput}
+                        onChange={(event) => setTrainerAttackChallengeInput(event.target.value)}
+                        className="w-full rounded border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
+                        placeholder="Nhập kết quả"
+                        autoFocus
+                    />
+                    <button
+                        type="submit"
+                        className="w-full rounded border-2 border-blue-400 bg-blue-500 py-2 text-sm font-bold text-white hover:bg-blue-600"
+                    >
+                        Xác nhận
+                    </button>
+                </form>
+
+                {trainerAttackChallengeError && (
+                    <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">
+                        {trainerAttackChallengeError}
+                    </div>
+                )}
+            </div>
+        </Modal>
+    )
+
     const challengeModeReady = isRankedChallengeRequested
         ? activeBattleMode === 'duel'
         : (isOnlineChallengeRequested ? activeBattleMode === 'online' : true)
@@ -3640,53 +3688,7 @@ export function BattlePage() {
                     allowAttackSpamClicks={activeBattleMode === 'trainer'}
                     attackButtonOffset={activeBattleMode === 'trainer' ? trainerAttackButtonOffset : { x: 0, y: 0 }}
                 />
-                {activeBattleMode === 'trainer' && trainerAttackChallenge && (
-                    <Modal
-                        isOpen
-                        onClose={() => {}}
-                        title="Xác minh thao tác"
-                        maxWidth="sm"
-                        showCloseButton={false}
-                    >
-                        <div className="space-y-4" key={trainerAttackChallenge.id}>
-                            <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-3 text-center">
-                                <div className="text-[11px] font-black uppercase tracking-wide text-blue-700">Kiểm tra anti auto click</div>
-                                <div className="mt-2 text-sm font-bold text-slate-800">{trainerAttackChallenge.prompt}</div>
-                                <div className="mt-1 text-xs text-slate-600">Nhập đáp án đúng để tiếp tục trận đấu.</div>
-                            </div>
-
-                            <form
-                                className="space-y-2"
-                                onSubmit={(event) => {
-                                    event.preventDefault()
-                                    handleTrainerAttackChallengeAnswer()
-                                }}
-                            >
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={trainerAttackChallengeInput}
-                                    onChange={(event) => setTrainerAttackChallengeInput(event.target.value)}
-                                    className="w-full rounded border-2 border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-400"
-                                    placeholder="Nhập kết quả"
-                                    autoFocus
-                                />
-                                <button
-                                    type="submit"
-                                    className="w-full rounded border-2 border-blue-400 bg-blue-500 py-2 text-sm font-bold text-white hover:bg-blue-600"
-                                >
-                                    Xác nhận
-                                </button>
-                            </form>
-
-                            {trainerAttackChallengeError && (
-                                <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">
-                                    {trainerAttackChallengeError}
-                                </div>
-                            )}
-                        </div>
-                    </Modal>
-                )}
+                {trainerAttackChallengeModal}
                 {(activeBattleMode === 'duel' || activeBattleMode === 'online') && duelResultModal && (
                     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                         <div className="bg-white border-2 border-slate-300 rounded w-[440px] max-w-[90%] shadow-lg">
@@ -4113,6 +4115,8 @@ export function BattlePage() {
                     </div>
                 </>
             )}
+
+            {trainerAttackChallengeModal}
 
         </div>
     )
