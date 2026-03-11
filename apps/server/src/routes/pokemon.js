@@ -274,44 +274,52 @@ const toExplicitMoveList = (moves = [], limit = 4) => (Array.isArray(moves) ? mo
     .filter(Boolean)
     .slice(0, Math.max(0, Number(limit) || 4))
 
+const getOffTypeSkillAllowance = (userPokemonLike = null) => {
+    const explicitAllowance = Math.max(0, Number.parseInt(userPokemonLike?.offTypeSkillAllowance, 10) || 0)
+    if (explicitAllowance > 0) return explicitAllowance
+    return userPokemonLike?.allowOffTypeSkills ? 1 : 0
+}
+
 const evaluateMoveLearnRestriction = (move, pokemonSpecies, userPokemonLike = null) => {
     const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
     const speciesId = String(pokemonSpecies?._id || '').trim()
     const speciesTypes = normalizeStringSet(pokemonSpecies?.types)
     const speciesRarity = String(pokemonSpecies?.rarity || '').trim().toLowerCase()
-    const allowOffTypeSkills = Boolean(userPokemonLike?.allowOffTypeSkills)
+    const offTypeSkillAllowance = getOffTypeSkillAllowance(userPokemonLike)
 
     if (learnScope === 'all') {
-        return { canLearn: true, reason: '' }
+        return { canLearn: true, reason: '', usesOffTypeAllowance: false }
     }
 
     if (learnScope === 'move_type') {
-        if (allowOffTypeSkills) {
-            return { canLearn: true, reason: '' }
-        }
         const moveType = String(move?.type || '').trim().toLowerCase()
         if (!moveType || !speciesTypes.has(moveType)) {
+            if (offTypeSkillAllowance > 0) {
+                return { canLearn: true, reason: '', usesOffTypeAllowance: true }
+            }
             return {
                 canLearn: false,
                 reason: 'Kỹ năng này chỉ học được bởi Pokemon cùng hệ với kỹ năng',
+                usesOffTypeAllowance: false,
             }
         }
-        return { canLearn: true, reason: '' }
+        return { canLearn: true, reason: '', usesOffTypeAllowance: false }
     }
 
     if (learnScope === 'type') {
-        if (allowOffTypeSkills) {
-            return { canLearn: true, reason: '' }
-        }
         const allowedTypeSet = normalizeStringSet(move?.allowedTypes)
         const intersects = [...speciesTypes].some((entry) => allowedTypeSet.has(entry))
         if (!intersects) {
+            if (offTypeSkillAllowance > 0) {
+                return { canLearn: true, reason: '', usesOffTypeAllowance: true }
+            }
             return {
                 canLearn: false,
                 reason: 'Kỹ năng này chỉ học được bởi Pokemon đúng hệ yêu cầu',
+                usesOffTypeAllowance: false,
             }
         }
-        return { canLearn: true, reason: '' }
+        return { canLearn: true, reason: '', usesOffTypeAllowance: false }
     }
 
     if (learnScope === 'species') {
@@ -325,9 +333,10 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies, userPokemonLike = nu
             return {
                 canLearn: false,
                 reason: 'Kỹ năng này chỉ dành cho một số Pokemon đặc biệt',
+                usesOffTypeAllowance: false,
             }
         }
-        return { canLearn: true, reason: '' }
+        return { canLearn: true, reason: '', usesOffTypeAllowance: false }
     }
 
     if (learnScope === 'rarity') {
@@ -336,12 +345,13 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies, userPokemonLike = nu
             return {
                 canLearn: false,
                 reason: 'Kỹ năng này chỉ học được bởi Pokemon huyền thoại/thần thoại',
+                usesOffTypeAllowance: false,
             }
         }
-        return { canLearn: true, reason: '' }
+        return { canLearn: true, reason: '', usesOffTypeAllowance: false }
     }
 
-    return { canLearn: true, reason: '' }
+    return { canLearn: true, reason: '', usesOffTypeAllowance: false }
 }
 
 const resolveEvolutionRule = (species, currentFormId) => {
@@ -1108,7 +1118,8 @@ router.get('/:id', async (req, res) => {
         // Enhance response with calculated stats
         const responseData = {
             ...userPokemon,
-            allowOffTypeSkills: Boolean(userPokemon.allowOffTypeSkills),
+            offTypeSkillAllowance: getOffTypeSkillAllowance(userPokemon),
+            allowOffTypeSkills: getOffTypeSkillAllowance(userPokemon) > 0,
             moves: mergedMoves,
             moveDetails,
             movePpState: toDisplayMovePpState(movePpState),
@@ -1284,7 +1295,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
         const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
-            .select('moves pokemonId level allowOffTypeSkills')
+            .select('moves pokemonId level allowOffTypeSkills offTypeSkillAllowance')
             .populate('pokemonId', 'types rarity levelUpMoves')
             .lean()
 
@@ -1325,6 +1336,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
                     quantity: Number(entry.quantity || 0),
                     canLearn,
                     reason,
+                    usesOffTypeAllowance: Boolean(restrictionResult.usesOffTypeAllowance),
                     move: {
                         _id: move._id,
                         name: moveName,
@@ -1363,7 +1375,8 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
             pokemon: {
                 _id: req.params.id,
                 moves: knownMoves,
-                allowOffTypeSkills: Boolean(userPokemon.allowOffTypeSkills),
+                offTypeSkillAllowance: getOffTypeSkillAllowance(userPokemon),
+                allowOffTypeSkills: getOffTypeSkillAllowance(userPokemon) > 0,
             },
             skills,
         })
@@ -1573,6 +1586,11 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
 
         userPokemon.moves = nextMoves
         userPokemon.movePpState = nextMovePpState
+        if (restrictionResult.usesOffTypeAllowance) {
+            const remainingOffTypeAllowance = Math.max(0, getOffTypeSkillAllowance(userPokemon) - 1)
+            userPokemon.offTypeSkillAllowance = remainingOffTypeAllowance
+            userPokemon.allowOffTypeSkills = remainingOffTypeAllowance > 0
+        }
         await userPokemon.save()
 
         if (consumedEntry.quantity <= 0) {
@@ -1588,6 +1606,8 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
                 _id: userPokemon._id,
                 moves: userPokemon.moves,
                 movePpState: toDisplayMovePpState(userPokemon.movePpState),
+                offTypeSkillAllowance: getOffTypeSkillAllowance(userPokemon),
+                allowOffTypeSkills: getOffTypeSkillAllowance(userPokemon) > 0,
             },
             taughtMove: {
                 _id: move._id,

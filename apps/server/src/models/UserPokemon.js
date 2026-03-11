@@ -3,7 +3,7 @@ import UserPokedexEntry from './UserPokedexEntry.js'
 import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
 const { Schema } = mongoose
-export const USER_POKEMON_MAX_LEVEL = 2000
+export const USER_POKEMON_MAX_LEVEL = 3000
 
 const MovePpStateSchema = new Schema(
     {
@@ -68,6 +68,7 @@ const UserPokemonSchema = new Schema(
         friendship: { type: Number, default: 70, min: 0, max: 255 },
         originalTrainer: { type: String, default: '' },
         obtainedMapName: { type: String, default: '', trim: true },
+        obtainedVipMapLevel: { type: Number, default: 0, min: 0 },
         obtainedAt: { type: Date, default: Date.now },
 
         // Item held
@@ -75,6 +76,7 @@ const UserPokemonSchema = new Schema(
 
         // Special unlocks
         allowOffTypeSkills: { type: Boolean, default: false },
+        offTypeSkillAllowance: { type: Number, default: 0, min: 0 },
 
         // Lifecycle status - 'released' means soft-deleted into ValleyPokemon
         status: {
@@ -108,8 +110,17 @@ UserPokemonSchema.pre('validate', function (next) {
     const experience = Number.parseInt(this.experience, 10)
     this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
 
+    const offTypeSkillAllowance = Number.parseInt(this.offTypeSkillAllowance, 10)
+    this.offTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0 ? offTypeSkillAllowance : 0
+
     if (this.level >= USER_POKEMON_MAX_LEVEL) {
         this.experience = 0
+    }
+
+    if (this.offTypeSkillAllowance > 0) {
+        this.allowOffTypeSkills = true
+    } else if (!this.allowOffTypeSkills) {
+        this.allowOffTypeSkills = false
     }
 
     next()

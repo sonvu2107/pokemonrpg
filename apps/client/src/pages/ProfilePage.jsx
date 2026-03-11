@@ -5,6 +5,7 @@ import { api } from '../services/api'
 import { gameApi } from '../services/gameApi'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import SmartImage from '../components/SmartImage'
+import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import { getPublicRoleLabel } from '../utils/vip'
@@ -402,11 +403,14 @@ export default function ProfilePage() {
                                                 {species.name || '???'}
                                             </span>
                                             {p.nickname && p.nickname !== species.name ? (
-                                                <span className="font-bold text-blue-900 text-xs truncate max-w-[80px] text-center group-hover:text-blue-600 transition-colors">
-                                                    {p.nickname}
+                                                <span className="inline-flex max-w-[90px] items-center justify-center gap-1 text-xs font-bold text-center text-blue-900 transition-colors group-hover:text-blue-600">
+                                                    <span className="truncate">{p.nickname}</span>
+                                                    <VipCaughtStar level={p.obtainedVipMapLevel} className="text-[10px] shrink-0" />
                                                 </span>
                                             ) : (
-                                                <span className="invisible text-xs">-</span>
+                                                <span className="inline-flex items-center gap-1 text-xs text-blue-900">
+                                                    <VipCaughtStar level={p.obtainedVipMapLevel} className="text-[10px]" />
+                                                </span>
                                             )}
                                             <div className="relative w-20 h-20 flex items-center justify-center my-1">
                                                 <SmartImage

@@ -231,7 +231,7 @@ router.post('/claim', async (req, res) => {
             }
 
             const safeQuantity = clamp(amount, 1, 100)
-            const safeLevel = clamp(Number.parseInt(reward?.pokemonConfig?.level, 10) || 5, 1, 2000)
+            const safeLevel = clamp(Number.parseInt(reward?.pokemonConfig?.level, 10) || 5, 1, 3000)
             const requestedFormId = normalizeFormId(reward?.pokemonConfig?.formId || pokemonDoc.defaultFormId || 'normal')
             const availableForms = new Set(
                 (Array.isArray(pokemonDoc.forms) ? pokemonDoc.forms : [])

@@ -6,7 +6,7 @@ import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level formId isShiny location obtainedAt createdAt'
+const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level formId isShiny location obtainedAt createdAt obtainedVipMapLevel'
 const BOX_POKEMON_SELECT = '_id name pokedexNumber rarity imageUrl sprites defaultFormId forms evolution'
 
 router.use(authMiddleware)

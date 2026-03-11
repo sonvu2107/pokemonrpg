@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import VipCaughtStar from '../components/VipCaughtStar'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 
 const SectionHeader = ({ title }) => (
@@ -123,7 +124,10 @@ export default function ChangePartyPage() {
                         {escrowedPokemon.map((entry) => (
                             <Link key={entry._id} to="/auctions/manage" className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100">
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide border border-amber-200">Đang giữ cho đấu giá</span>
-                                <span>{entry.nickname ? `${entry.nickname} - ${entry.name}` : entry.name}</span>
+                                <span className="inline-flex items-center gap-1">
+                                    <span>{entry.nickname ? `${entry.nickname} - ${entry.name}` : entry.name}</span>
+                                    <VipCaughtStar level={entry.obtainedVipMapLevel} className="text-[11px]" />
+                                </span>
                                 <span>Lv.{Number(entry.level || 1).toLocaleString('vi-VN')}</span>
                             </Link>
                         ))}
@@ -248,8 +252,9 @@ function PartySlot({ index, data, label, onSwap, onPickSwap, onRemove, swapSourc
                 />
             </Link>
 
-            <div className="text-sm font-bold text-blue-900">
-                {data.nickname || species.name}
+            <div className="inline-flex items-center gap-1 text-sm font-bold text-blue-900">
+                <span>{data.nickname || species.name}</span>
+                <VipCaughtStar level={data.obtainedVipMapLevel} className="text-[12px]" />
             </div>
             {formId !== 'normal' && (
                 <div className="text-[10px] font-bold text-sky-700 uppercase">

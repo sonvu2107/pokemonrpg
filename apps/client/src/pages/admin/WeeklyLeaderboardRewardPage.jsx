@@ -1138,7 +1138,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                         <input
                                             type="number"
                                             min="1"
-                                            max="2000"
+                                            max="3000"
                                             value={rewardPokemonLevel}
                                             onChange={(e) => setRewardPokemonLevel(e.target.value)}
                                             className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

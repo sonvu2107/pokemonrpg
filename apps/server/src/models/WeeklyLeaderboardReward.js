@@ -82,7 +82,7 @@ const weeklyLeaderboardRewardSchema = new mongoose.Schema(
             type: Number,
             default: 5,
             min: 1,
-            max: 2000,
+            max: 3000,
         },
         rewardPokemonIsShiny: {
             type: Boolean,

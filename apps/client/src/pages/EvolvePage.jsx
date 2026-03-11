@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
+import VipCaughtStar from '../components/VipCaughtStar'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { getRarityStyle } from '../utils/rarityStyles'
 
@@ -254,7 +255,10 @@ export default function EvolvePage() {
                                         >
                                             <div className="flex items-start justify-between gap-2 mb-1">
                                                 <div className="min-w-0">
-                                                    <div className="font-bold text-slate-900 truncate">{displayName}</div>
+                                                    <div className="inline-flex max-w-full items-center gap-1 font-bold text-slate-900">
+                                                        <span className="truncate">{displayName}</span>
+                                                        <VipCaughtStar level={entry.obtainedVipMapLevel} className="text-[11px] shrink-0" />
+                                                    </div>
                                                     {baseName && baseName !== displayName && (
                                                         <div className="text-xs text-slate-500 truncate">{baseName}</div>
                                                     )}

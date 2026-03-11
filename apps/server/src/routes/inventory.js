@@ -595,6 +595,11 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 }
 
                 const obtainedMapName = String(encounterMap?.name || '').trim()
+                const obtainedVipMapLevel = Math.max(
+                    0,
+                    Number(encounterMap?.requiredVipLevel || 0) || 0,
+                    Number(encounterMap?.vipVisibilityLevel || 0) || 0
+                )
 
                 await UserPokemon.create({
                     userId,
@@ -606,6 +611,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     formId: encounter.formId || 'normal',
                     isShiny: encounter.isShiny,
                     obtainedMapName,
+                    obtainedVipMapLevel,
                     location: 'box',
                 })
 
@@ -757,10 +763,6 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon mục tiêu' })
             }
 
-            if (targetPokemon.allowOffTypeSkills) {
-                return res.status(400).json({ ok: false, message: 'Pokemon này đã được mở khóa dùng kỹ năng khác hệ' })
-            }
-
             const consumedEntry = await UserInventory.findOneAndUpdate(
                 {
                     userId,
@@ -775,7 +777,9 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
             }
 
-            targetPokemon.allowOffTypeSkills = true
+            const nextOffTypeSkillAllowance = Math.max(0, Number.parseInt(targetPokemon.offTypeSkillAllowance, 10) || 0) + 1
+            targetPokemon.offTypeSkillAllowance = nextOffTypeSkillAllowance
+            targetPokemon.allowOffTypeSkills = nextOffTypeSkillAllowance > 0
 
             try {
                 await targetPokemon.save()
@@ -799,13 +803,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             return res.json({
                 ok: true,
-                message: `${targetPokemonName} đã mở khóa dùng kỹ năng khác hệ.`,
+                message: `${targetPokemonName} nhận 1 lượt học skill khác hệ.`,
                 itemId: normalizedItemId,
                 quantity: qty,
                 effect: {
                     type: 'allowOffTypeSkills',
                     targetPokemonId: targetPokemon._id,
-                    allowOffTypeSkills: true,
+                    allowOffTypeSkills: nextOffTypeSkillAllowance > 0,
+                    offTypeSkillAllowance: nextOffTypeSkillAllowance,
                 },
             })
         }

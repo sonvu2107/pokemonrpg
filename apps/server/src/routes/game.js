@@ -223,7 +223,7 @@ const buildEffectiveBattleStats = ({
 }
 
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
-const USER_POKEMON_MAX_LEVEL = 2000
+const USER_POKEMON_MAX_LEVEL = 3000
 
 const battleAttackActionGuard = createActionGuard({
     actionKey: 'game:battle-attack',

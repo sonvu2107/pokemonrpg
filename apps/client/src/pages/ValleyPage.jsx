@@ -4,6 +4,7 @@ import { gameApi } from '../services/gameApi'
 import { getRarityStyle } from '../utils/rarityStyles'
 import { useToast } from '../context/ToastContext'
 import SmartImage from '../components/SmartImage'
+import VipCaughtStar from '../components/VipCaughtStar'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -341,8 +342,9 @@ function ValleyBrowseTab() {
                                             fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                         />
 
-                                        <div className={`mt-1 text-[10px] font-bold truncate w-full text-center ${style.text}`}>
-                                            {item.nickname || speciesName}
+                                        <div className={`mt-1 flex w-full items-center justify-center gap-1 text-[10px] font-bold ${style.text}`}>
+                                            <span className="truncate">{item.nickname || speciesName}</span>
+                                            <VipCaughtStar level={item.obtainedVipMapLevel} className="text-[10px] shrink-0" />
                                         </div>
 
                                         <div className="flex flex-wrap items-center justify-center gap-1 mt-0.5 text-center w-full">
@@ -509,8 +511,9 @@ function ValleyReleaseTab() {
                                             fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                         />
 
-                                        <div className={`mt-1 text-[10px] font-bold truncate w-full text-center ${style.text}`}>
-                                            {p.nickname || speciesName}
+                                        <div className={`mt-1 flex w-full items-center justify-center gap-1 text-[10px] font-bold ${style.text}`}>
+                                            <span className="truncate">{p.nickname || speciesName}</span>
+                                            <VipCaughtStar level={p.obtainedVipMapLevel} className="text-[10px] shrink-0" />
                                         </div>
 
                                         <div className="flex flex-wrap items-center justify-center gap-1 mt-0.5 text-center w-full">

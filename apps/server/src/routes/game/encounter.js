@@ -38,7 +38,7 @@ import { toDailyDateKey, trackDailyActivity } from '../../services/mapProgressio
 const router = express.Router()
 
 const WILD_POKEMON_EXP_SCALE = 0.8
-const USER_POKEMON_MAX_LEVEL = 2000
+const USER_POKEMON_MAX_LEVEL = 3000
 const WILD_COUNTER_MOVE = {
     name: 'Tackle',
     type: 'normal',
@@ -409,6 +409,11 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
             }
 
             const obtainedMapName = String(encounterMap?.name || '').trim()
+            const obtainedVipMapLevel = Math.max(
+                0,
+                Number(encounterMap?.requiredVipLevel || 0) || 0,
+                Number(encounterMap?.vipVisibilityLevel || 0) || 0
+            )
 
             await UserPokemon.create({
                 userId,
@@ -420,6 +425,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                 formId: encounter.formId || 'normal',
                 isShiny: encounter.isShiny,
                 obtainedMapName,
+                obtainedVipMapLevel,
                 location: 'box',
             })
 

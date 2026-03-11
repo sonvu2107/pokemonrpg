@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
+import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import { useAuth } from '../context/AuthContext'
@@ -129,7 +130,8 @@ export default function PokemonInfoPage() {
     const viewerId = String(user?.id || user?._id || '').trim()
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
-    const hasOffTypeSkillAccess = Boolean(pokemon?.allowOffTypeSkills)
+    const offTypeSkillAllowance = Math.max(0, Number(pokemon?.offTypeSkillAllowance || 0)) || (pokemon?.allowOffTypeSkills ? 1 : 0)
+    const hasOffTypeSkillAccess = offTypeSkillAllowance > 0
 
     const loadPokemon = async () => {
         try {
@@ -484,6 +486,8 @@ export default function PokemonInfoPage() {
                     moves: nextMoves,
                     movePpState: nextMovePpState,
                     moveDetails: nextMoveDetails,
+                    offTypeSkillAllowance: Math.max(0, Number(data?.pokemon?.offTypeSkillAllowance || prev.offTypeSkillAllowance || 0)),
+                    allowOffTypeSkills: Boolean(data?.pokemon?.allowOffTypeSkills),
                 }
             })
             window.alert(data?.message || 'Pokemon đã học kỹ năng mới.')
@@ -820,12 +824,14 @@ export default function PokemonInfoPage() {
                         </div>
                         <h2 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
                             {base.name}
+                            <VipCaughtStar level={pokemon?.obtainedVipMapLevel} className="text-sm" />
                             {pokemon.isShiny && <span className="text-amber-500 text-sm">★</span>}
                         </h2>
 
                         {hasCustomNickname && (
-                            <div className="mt-1 text-sm font-semibold text-slate-600">
-                                {nicknameDisplay}
+                            <div className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-slate-600">
+                                <span>{nicknameDisplay}</span>
+                                <VipCaughtStar level={pokemon?.obtainedVipMapLevel} className="text-[11px]" />
                             </div>
                         )}
                         {resolvedFormId !== 'normal' && (
@@ -856,7 +862,7 @@ export default function PokemonInfoPage() {
                         </div>
                         {hasOffTypeSkillAccess && (
                             <div className="mt-2 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800">
-                                Đã mở khóa dùng skill khác hệ
+                                Còn {offTypeSkillAllowance} lượt học skill khác hệ
                             </div>
                         )}
                     </div>
@@ -951,10 +957,11 @@ export default function PokemonInfoPage() {
                                 <div className={`rounded border px-3 py-2 text-left ${hasOffTypeSkillAccess ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
                                     <div className="text-[11px] font-bold uppercase">Skill khác hệ</div>
                                     {hasOffTypeSkillAccess ? (
-                                        <div className="mt-1 text-xs font-semibold">Pokemon này đã được mở khóa học skill khác hệ.</div>
+                                        <div className="mt-1 text-xs font-semibold">Pokemon này còn {offTypeSkillAllowance} lượt học skill khác hệ.</div>
                                     ) : offTypeSkillItemsLoading ? (
                                         <div className="mt-1 text-xs">Đang tải vật phẩm hỗ trợ...</div>
-                                    ) : offTypeSkillItems.length > 0 ? (
+                                    ) : null}
+                                    {offTypeSkillItemsLoading ? null : offTypeSkillItems.length > 0 ? (
                                         <div className="mt-2 flex flex-col sm:flex-row gap-2">
                                             <select
                                                 value={selectedOffTypeSkillItemId}
@@ -977,7 +984,7 @@ export default function PokemonInfoPage() {
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="mt-1 text-xs">Bạn chưa có vật phẩm mở khóa skill khác hệ trong túi đồ.</div>
+                                        <div className="mt-2 text-xs">Bạn chưa có vật phẩm mở khóa skill khác hệ trong túi đồ.</div>
                                     )}
                                 </div>
                                 <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sky-800">
@@ -1344,7 +1351,7 @@ export default function PokemonInfoPage() {
                                 <>
                                     {hasOffTypeSkillAccess && (
                                         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                                            Pokemon này đang được mở khóa học skill khác hệ.
+                                            Pokemon này còn {offTypeSkillAllowance} lượt học skill khác hệ.
                                         </div>
                                     )}
                                     <div className="space-y-2">
@@ -1371,6 +1378,9 @@ export default function PokemonInfoPage() {
                                                             <div className="text-xs text-slate-600 mt-1">
                                                                 {String(entry.move?.type || '').toUpperCase()} • {String(entry.move?.category || '').toUpperCase()} • Pow {entry.move?.power ?? '--'} • PP {entry.move?.pp ?? '--'}
                                                             </div>
+                                                            {entry.canLearn && entry.usesOffTypeAllowance && (
+                                                                <div className="text-[11px] text-fuchsia-700 font-semibold mt-1">Học kỹ năng này sẽ tốn 1 lượt skill khác hệ.</div>
+                                                            )}
                                                             {!entry.canLearn && (
                                                                 <div className="text-[11px] text-amber-700 font-semibold mt-1">{entry.reason || 'Không thể học kỹ năng này'}</div>
                                                             )}

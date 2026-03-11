@@ -146,7 +146,7 @@ export default function DailyRewardManagerPage() {
                 pokemonId: reward.rewardType === 'pokemon' ? reward.pokemonId : null,
                 formId: reward.rewardType === 'pokemon' ? normalizeFormId(reward.pokemonFormId || 'normal') : 'normal',
                 pokemonLevel: reward.rewardType === 'pokemon'
-                    ? Math.max(1, Math.min(2000, Number.parseInt(reward.pokemonLevel, 10) || 5))
+                    ? Math.max(1, Math.min(3000, Number.parseInt(reward.pokemonLevel, 10) || 5))
                     : 5,
                 isShiny: reward.rewardType === 'pokemon' ? Boolean(reward.isShiny) : false,
                 title: String(reward.title || '').trim(),
@@ -331,7 +331,7 @@ export default function DailyRewardManagerPage() {
                                                 <input
                                                     type="number"
                                                     min="1"
-                                                    max="2000"
+                                                    max="3000"
                                                     value={reward.pokemonLevel}
                                                     onChange={(e) => updateLocalReward(reward.day, { pokemonLevel: e.target.value })}
                                                     className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

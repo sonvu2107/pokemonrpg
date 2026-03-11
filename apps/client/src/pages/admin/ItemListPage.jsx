@@ -40,7 +40,7 @@ const buildEffectSummary = (item = {}) => {
         return `VIP ${Math.max(1, Number(item?.effectValue || 1))} / ${Math.max(1, Number(item?.effectValueMp || 1))} ${durationUnit}`
     }
     if (effectType === 'allowOffTypeSkills') {
-        return 'Mo khoa skill khac he'
+        return '+1 lượt skill khác hệ'
     }
     if (effectType === 'grantPokemonExp') {
         return `+${Number(item?.effectValue || 0).toLocaleString('vi-VN')} EXP`

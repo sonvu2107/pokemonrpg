@@ -7,6 +7,7 @@ import { getRarityStyle } from '../utils/rarityStyles'
 import { useToast } from '../context/ToastContext'
 import { useAuth } from '../context/AuthContext'
 import SmartImage from '../components/SmartImage'
+import VipCaughtStar from '../components/VipCaughtStar'
 import { useProfileQuery } from '../hooks/queries/gameQueries'
 
 const SectionHeader = ({ title }) => (
@@ -383,8 +384,9 @@ export default function PokemonBoxPage() {
                                                         fallback="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png"
                                                     />
                                                 </div>
-                                                <div className={`mt-1 text-[10px] font-bold truncate w-full text-center ${style.text}`}>
-                                                    {name}
+                                                <div className={`mt-1 flex w-full items-center justify-center gap-1 text-[10px] font-bold ${style.text}`}>
+                                                    <span className="truncate">{name}</span>
+                                                    <VipCaughtStar level={p.obtainedVipMapLevel} className="text-[10px] shrink-0" />
                                                 </div>
                                                 <div className="flex flex-wrap items-center justify-center gap-1 mt-1 text-center w-full">
                                                     <span className="text-[10px] bg-white/80 px-1.5 py-0.5 rounded text-slate-700 font-bold border border-slate-200">

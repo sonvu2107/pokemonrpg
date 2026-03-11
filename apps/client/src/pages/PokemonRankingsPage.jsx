@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import SmartImage from '../components/SmartImage'
+import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import TrainerProfileModal from '../components/TrainerProfileModal'
@@ -270,7 +271,10 @@ export default function PokemonRankingsPage() {
                                                         </Link>
                                                         <div className="min-w-0 flex-1">
                                                             <Link to={`/pokemon/${detailId}`} className="font-bold text-slate-800 hover:underline block truncate">
-                                                                {displayName}
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <span className="truncate">{displayName}</span>
+                                                                    <VipCaughtStar level={entry.obtainedVipMapLevel} className="text-[11px] shrink-0" />
+                                                                </span>
                                                             </Link>
                                                             <div className="text-xs text-slate-500">#{numberFormat(entry.pokemon?.pokedexNumber || 0)}</div>
                                                             {detailId && (

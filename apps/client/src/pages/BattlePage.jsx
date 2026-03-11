@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { gameApi } from '../services/gameApi'
 import Modal from '../components/Modal'
 import SmartImage from '../components/SmartImage'
+import VipCaughtStar from '../components/VipCaughtStar'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
@@ -3781,7 +3782,10 @@ export function BattlePage() {
                                             <div className="w-10 h-10 bg-white rounded border border-rose-200" />
                                         )}
                                         <div className="text-left">
-                                            <div className="font-bold text-sm text-rose-700">{battleResults.pokemon?.name || 'Pokemon'}</div>
+                                            <div className="inline-flex items-center gap-1 font-bold text-sm text-rose-700">
+                                                <span>{battleResults.pokemon?.name || 'Pokemon'}</span>
+                                                <VipCaughtStar level={battleResults.pokemon?.obtainedVipMapLevel} className="text-[11px]" />
+                                            </div>
                                             <div className="text-rose-600">Đã kiệt sức</div>
                                         </div>
                                     </div>
@@ -3804,7 +3808,10 @@ export function BattlePage() {
                                                             <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200" />
                                                         )}
                                                         <div className="text-left">
-                                                            <div className="font-bold text-sm">{reward.name}</div>
+                                                            <div className="inline-flex items-center gap-1 font-bold text-sm">
+                                                                <span>{reward.name}</span>
+                                                                <VipCaughtStar level={reward.obtainedVipMapLevel} className="text-[11px]" />
+                                                            </div>
                                                             <div>Hạ gục: {reward.defeatedCount || 0} Pokemon</div>
                                                             <div>+{reward.levelsGained || 0} cấp</div>
                                                             <div>+{reward.happinessGained || 0} Hạnh phúc</div>

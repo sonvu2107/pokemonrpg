@@ -44,7 +44,7 @@ const router = express.Router()
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
-const USER_POKEMON_MAX_LEVEL = 2000
+const USER_POKEMON_MAX_LEVEL = 3000
 
 router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => {
     try {
@@ -417,6 +417,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
 
             pokemonRewards.push({
                 userPokemonId: participantPokemon._id,
+                obtainedVipMapLevel: Math.max(0, Number(participantPokemon.obtainedVipMapLevel || 0) || 0),
                 defeatedCount: expParticipant.defeatedCount,
                 baseExp: expParticipant.baseExp,
                 finalExp,
@@ -451,6 +452,7 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
                 levelsGained: 0,
                 happiness: activePokemon.friendship,
                 happinessGained: 0,
+                obtainedVipMapLevel: Math.max(0, Number(activePokemon.obtainedVipMapLevel || 0) || 0),
                 defeatedCount: 0,
                 baseExp: 0,
                 finalExp: 0,

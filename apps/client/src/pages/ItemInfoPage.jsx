@@ -64,7 +64,7 @@ const resolveEffectSummary = (item) => {
         return `Dùng để kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
     }
     if (effectType === 'allowOffTypeSkills') {
-        return 'Dùng lên 1 Pokemon để mở khóa học và dùng skill khác hệ'
+        return 'Dùng lên 1 Pokemon để thêm 1 lượt học skill khác hệ'
     }
     if (effectType === 'grantPokemonExp') {
         return `Dùng lên 1 Pokemon để cộng ${formatNumber(item?.effectValue)} EXP`
