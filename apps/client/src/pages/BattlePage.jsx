@@ -2426,7 +2426,7 @@ export function BattlePage() {
                     const trainerLevelForLog = trainerLevels.length > 0
                         ? Math.max(1, Math.round(trainerLevels.reduce((sum, level) => sum + level, 0) / trainerLevels.length))
                         : Math.max(1, Number(currentBattleState?.level || 1))
-                    const autoWinLog = `Đã đánh bại huấn luyện viên ${trainerNameForLog} Lv ${trainerLevelForLog}.`
+                    const autoWinLog = `Đã đánh bại huấn luyện viên ${trainerNameForLog}.`
                     setAutoTrainerServerStatus(autoWinLog)
                     const normalizedCompletedId = normalizeEntityId(entry?.id)
                     const nextCompletedIds = new Set(

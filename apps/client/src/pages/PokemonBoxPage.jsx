@@ -302,15 +302,6 @@ export default function PokemonBoxPage() {
                                     />
                                     Theo Ngày Bắt
                                 </label>
-                                <label className="flex items-center gap-1 cursor-pointer hover:text-blue-600">
-                                    <input
-                                        type="radio"
-                                        name="sort"
-                                        checked={sort === 'type'}
-                                        onChange={() => setSort('type')}
-                                    />
-                                    Theo Hệ
-                                </label>
                             </div>
 
                             <div className="flex items-center gap-2">
