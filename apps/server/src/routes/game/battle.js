@@ -15,6 +15,19 @@ import {
 } from '../../services/trainerBattleSessionService.js'
 import { serializeTrainerBattleState } from '../../services/trainerBattleStateService.js'
 import { applyTrainerPenaltyTurn } from '../../services/trainerPenaltyTurnService.js'
+import {
+    appendTurnPhaseEvent,
+    createTurnTimeline,
+    finalizeTurnTimeline,
+    flattenTurnPhaseLines,
+} from '../../battle/turnTimeline.js'
+import {
+    applyTrainerSessionForcedPlayerSwitch,
+    ensureTrainerSessionPlayerParty,
+    serializeTrainerPlayerPartyState,
+    setTrainerSessionActivePlayerByIndex,
+    syncTrainerSessionActivePlayerToParty,
+} from '../../services/trainerBattlePlayerStateService.js'
 import { resolveEffectiveVipBonusBenefits } from '../../services/vipBenefitService.js'
 import {
     distributeExpByDefeats,
@@ -67,6 +80,11 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
         }
 
         const resolvedTrainerId = String(trainerSession.trainerId || normalizedTrainerId).trim()
+        await ensureTrainerSessionPlayerParty({
+            trainerSession,
+            userId,
+            preferredActivePokemonId: normalizedActivePokemonId,
+        })
 
         const team = Array.isArray(trainerSession.team) ? trainerSession.team : []
         const currentIndex = Math.max(0, Number(trainerSession.currentIndex) || 0)
@@ -92,6 +110,17 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon để đổi ra sân.' })
         }
 
+        const targetPartyIndex = Array.isArray(trainerSession.playerTeam)
+            ? trainerSession.playerTeam.findIndex((entry) => String(entry?.userPokemonId || '') === normalizedActivePokemonId)
+            : -1
+        if (targetPartyIndex === -1) {
+            return res.status(404).json({ ok: false, message: 'Pokemon này không có trong đội hình battle hiện tại.' })
+        }
+        if (Number(trainerSession.playerTeam?.[targetPartyIndex]?.currentHp || 0) <= 0) {
+            return res.status(400).json({ ok: false, message: 'Pokemon này đã bại trận và không thể vào sân.' })
+        }
+        const targetPartyEntry = trainerSession.playerTeam[targetPartyIndex]
+
         const calculatedMaxHp = calcMaxHp(
             Number(targetPokemon?.pokemonId?.baseStats?.hp || 1),
             Math.max(1, Number(targetPokemon.level || 1)),
@@ -108,9 +137,11 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             resolvedMaxHp
         )
 
-        trainerSession.playerPokemonId = targetPokemon._id
-        trainerSession.playerMaxHp = resolvedMaxHp
-        trainerSession.playerCurrentHp = resolvedCurrentHp
+        syncTrainerSessionActivePlayerToParty(trainerSession)
+        setTrainerSessionActivePlayerByIndex(trainerSession, targetPartyIndex)
+        trainerSession.playerMaxHp = Math.max(1, Number(targetPartyEntry?.maxHp || resolvedMaxHp || 1))
+        trainerSession.playerCurrentHp = Math.max(0, Number(targetPartyEntry?.currentHp || 0))
+        syncTrainerSessionActivePlayerToParty(trainerSession)
 
         const activeTrainerOpponent = team[currentIndex] || null
         const trainerTeamEntry = Array.isArray(resolvedTrainerDoc?.team) ? resolvedTrainerDoc.team[currentIndex] : null
@@ -124,15 +155,66 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
             reason: 'switch',
         })
 
+        let playerForcedSwitch = null
+        if (counterAttack?.defeatedPlayer) {
+            syncTrainerSessionActivePlayerToParty(trainerSession)
+            playerForcedSwitch = applyTrainerSessionForcedPlayerSwitch(trainerSession)
+            await trainerSession.save()
+        }
+
+        const turnTimeline = createTurnTimeline({ playerActsFirst: true })
+        appendTurnPhaseEvent(turnTimeline, {
+            phaseKey: 'turn_start',
+            actor: 'system',
+            kind: 'manual_switch',
+            line: `${targetPokemon.nickname || targetPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`,
+            target: 'player',
+        })
+        ;(Array.isArray(counterAttack?.turnPhases) ? counterAttack.turnPhases : []).forEach((phase) => {
+            ;(Array.isArray(phase?.events) ? phase.events : []).forEach((event) => {
+                appendTurnPhaseEvent(turnTimeline, {
+                    phaseKey: phase.key,
+                    actor: event?.actor || phase.actor || 'system',
+                    kind: event?.kind || 'message',
+                    line: event?.line || '',
+                    ...event,
+                })
+            })
+        })
+        if (playerForcedSwitch?.switched && playerForcedSwitch?.nextEntry) {
+            appendTurnPhaseEvent(turnTimeline, {
+                phaseKey: 'forced_switch',
+                actor: 'system',
+                kind: 'forced_switch',
+                line: `${playerForcedSwitch.nextEntry.name || 'Pokemon'} vào sân thay thế.`,
+                target: 'player',
+                nextPokemonName: playerForcedSwitch.nextEntry.name || 'Pokemon',
+                nextIndex: playerForcedSwitch.nextIndex,
+            })
+        }
+        const turnPhases = finalizeTurnTimeline(turnTimeline)
+        const logLines = flattenTurnPhaseLines(turnPhases)
+
         return res.json({
             ok: true,
             message: `${targetPokemon.nickname || targetPokemon?.pokemonId?.name || 'Pokemon'} vào sân và bị đối thủ phản công!`,
             player: {
-                pokemonId: targetPokemon._id,
+                pokemonId: trainerSession.playerPokemonId || targetPokemon._id,
                 currentHp: Math.max(0, Number(trainerSession.playerCurrentHp || 0)),
                 maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
-                effectiveStats: res?.counterAttack?.player?.effectiveStats || null,
+                effectiveStats: counterAttack?.player?.effectiveStats || null,
             },
+            playerParty: serializeTrainerPlayerPartyState(trainerSession),
+            forcedSwitch: playerForcedSwitch?.switched
+                ? {
+                    target: 'player',
+                    nextIndex: playerForcedSwitch.nextIndex,
+                    nextPokemonId: playerForcedSwitch?.nextEntry?.userPokemonId || null,
+                    nextPokemonName: playerForcedSwitch?.nextEntry?.name || null,
+                }
+                : null,
+            turnPhases,
+            logLines,
             counterAttack,
             opponent: serializeTrainerBattleState(trainerSession),
         })

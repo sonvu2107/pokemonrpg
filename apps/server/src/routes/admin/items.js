@@ -310,6 +310,18 @@ router.post('/', async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có thời hạn tối thiểu 1 tháng' })
             }
         }
+        if (resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel') {
+            const effectAmount = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
+            if (effectAmount < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm tăng trưởng Pokemon phải có giá trị từ 1 trở lên' })
+            }
+        }
+        if (resolvedEffectType === 'transferPokemonLevel') {
+            const transferFlag = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 1
+            if (transferFlag < 0) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm chuyển level Pokemon không hợp lệ' })
+            }
+        }
 
         const existing = await Item.findOne({ name })
 
@@ -355,8 +367,16 @@ router.post('/', async (req, res) => {
             effectType: resolvedEffectType,
             effectValue: resolvedEffectType === 'catchMultiplier'
                 ? Math.min(100, Math.max(0, Number(effectValue) || 0))
-                : (effectValue !== undefined ? Number(effectValue) : 0),
-            effectValueMp: effectValueMp !== undefined ? Number(effectValueMp) : 0,
+                : (resolvedEffectType === 'allowOffTypeSkills'
+                    ? 0
+                    : (resolvedEffectType === 'transferPokemonLevel'
+                        ? 0
+                    : ((resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel')
+                        ? Math.max(1, Math.floor(Number(effectValue) || 0))
+                        : (effectValue !== undefined ? Number(effectValue) : 0)))),
+            effectValueMp: (resolvedEffectType === 'allowOffTypeSkills' || resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel' || resolvedEffectType === 'transferPokemonLevel')
+                ? 0
+                : (effectValueMp !== undefined ? Number(effectValueMp) : 0),
             effectDurationUnit: ['month', 'week'].includes(String(effectDurationUnit || '').trim().toLowerCase())
                 ? String(effectDurationUnit).trim().toLowerCase()
                 : 'month',
@@ -460,6 +480,18 @@ router.put('/:id', async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Vật phẩm VIP phải có thời hạn tối thiểu 1 tháng' })
             }
         }
+        if (nextEffectType === 'grantPokemonExp' || nextEffectType === 'grantPokemonLevel') {
+            const effectAmount = effectValue !== undefined ? Number(effectValue) : Number(item.effectValue)
+            if (!Number.isFinite(effectAmount) || effectAmount < 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm tăng trưởng Pokemon phải có giá trị từ 1 trở lên' })
+            }
+        }
+        if (nextEffectType === 'transferPokemonLevel') {
+            const transferFlag = effectValue !== undefined ? Number(effectValue) : Number(item.effectValue)
+            if (!Number.isFinite(transferFlag) || transferFlag < 0) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm chuyển level Pokemon không hợp lệ' })
+            }
+        }
 
         if (name && name !== item.name) {
             const conflict = await Item.findOne({ _id: { $ne: item._id }, name })
@@ -514,14 +546,24 @@ router.put('/:id', async (req, res) => {
         if (evolutionRarityFrom !== undefined) item.evolutionRarityFrom = nextEvolutionRarityFrom
         if (evolutionRarityTo !== undefined) item.evolutionRarityTo = nextEvolutionRarityTo
         if (effectType !== undefined) item.effectType = effectType
-        if (effectValue !== undefined) {
+        if (nextEffectType === 'allowOffTypeSkills' || nextEffectType === 'transferPokemonLevel') {
+            item.effectValue = 0
+            item.effectValueMp = 0
+        } else if (nextEffectType === 'grantPokemonExp' || nextEffectType === 'grantPokemonLevel') {
+            if (effectValue !== undefined) {
+                item.effectValue = Math.max(1, Math.floor(Number(effectValue) || 0))
+            } else {
+                item.effectValue = Math.max(1, Math.floor(Number(item.effectValue) || 0))
+            }
+            item.effectValueMp = 0
+        } else if (effectValue !== undefined) {
             item.effectValue = nextEffectType === 'catchMultiplier'
                 ? Math.min(100, Math.max(0, Number(effectValue) || 0))
                 : Number(effectValue)
         } else if (nextEffectType === 'catchMultiplier') {
             item.effectValue = Math.min(100, Math.max(0, Number(item.effectValue) || 0))
         }
-        if (effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
+        if (!['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'].includes(nextEffectType) && effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
         if (effectDurationUnit !== undefined) item.effectDurationUnit = String(effectDurationUnit || '').trim().toLowerCase() || 'month'
 
         await item.save()

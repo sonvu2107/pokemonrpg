@@ -19,42 +19,32 @@ export default function AppShell() {
         avatar: '',
         level: 1,
     })
-
     useEffect(() => {
         const fallbackAvatar = String(user?.avatar || '').trim()
         const fallbackLevel = Math.max(1, Number(user?.level || user?.playerState?.level || 1))
-
         if (!user) {
             setMobileProfile({ avatar: '', level: 1 })
             return
         }
-
         const resolvedAvatar = String(profilePayload?.user?.avatar || fallbackAvatar).trim()
         const resolvedLevel = Math.max(
             1,
             Number(profilePayload?.playerState?.level || fallbackLevel || 1)
         )
-
         setMobileProfile({
             avatar: resolvedAvatar,
             level: resolvedLevel,
         })
     }, [user?.id, user?.avatar, user?.level, user?.playerState?.level, profilePayload?.user?.avatar, profilePayload?.playerState?.level])
-
     const vipTitle = getVipTitle(user)
     const vipBadgeLabel = getVipBadgeLabel(user)
-
-
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
             <GlobalNotification />
-
-            {/* Header / Banner */}
             <header className="border-b border-blue-400 bg-white/95 sticky top-0 z-50 backdrop-blur-md shadow-sm">
                 <div className="mx-auto max-w-[1280px] px-3 py-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            {/* Mobile Menu Button */}
                             <button
                                 onClick={() => setIsMenuOpen(true)}
                                 className="lg:hidden p-1 text-slate-300 hover:text-white"
@@ -63,15 +53,11 @@ export default function AppShell() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
                                 </svg>
                             </button>
-
                             <Link to="/" className="text-blue-700 font-bold tracking-wide text-lg drop-shadow-sm hover:text-blue-800 transition-colors">
                                 <img src="/vnpet.png" alt="Thú Ảo VNPET" className="hidden sm:block h-8 w-auto scale-[3] origin-left" />
                             </Link>
                         </div>
-
                         <div className="flex items-center gap-3">
-
-
                             {user ? (
                                 <div className="flex items-center gap-4">
                                     <div className="hidden md:flex items-baseline gap-2 text-slate-700">
@@ -114,16 +100,11 @@ export default function AppShell() {
                     </div>
                 </div>
             </header>
-
-            {/* Main Content Grid */}
             <main className="mx-auto max-w-[1280px] w-full px-3 py-4 flex-1 overflow-y-auto custom-scrollbar">
                 <div className="flex flex-col lg:flex-row gap-4 items-start justify-center">
-                    {/* Left Column (Desktop) */}
                     <aside className="hidden lg:block w-[260px] flex-shrink-0 sticky top-20 self-start mt-20">
                         <LeftColumn />
                     </aside>
-
-                    {/* Main Content Area */}
                     <section className="flex-1 min-w-0 w-full">
                         <div className="rounded border border-blue-400 bg-white shadow-sm min-h-[500px]">
                             <div className="border-b border-blue-400 bg-gradient-to-t from-blue-600 to-cyan-500 px-3 py-1.5 flex justify-center">
@@ -136,20 +117,15 @@ export default function AppShell() {
                             </div>
                         </div>
                     </section>
-
-                    {/* Right Column (Desktop) */}
                     <aside className="hidden lg:block w-[260px] flex-shrink-0 sticky top-20 self-start mt-12">
                         <RightColumn />
                     </aside>
                 </div>
             </main>
-
-            {/* Mobile Menu Drawer (Left) */}
             {isMenuOpen && (
                 <div className="fixed inset-0 z-[60] lg:hidden">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)} />
                     <div className="absolute left-0 top-0 bottom-0 w-[300px] bg-white border-r border-blue-400 shadow-xl flex flex-col">
-                        {/* Drawer Header */}
                         <div className="flex items-center justify-between p-4 border-b border-blue-200 bg-white z-10">
                             <h2 className="text-lg font-bold text-blue-800 uppercase tracking-widest">Menu</h2>
                             <button
@@ -161,14 +137,9 @@ export default function AppShell() {
                                 </svg>
                             </button>
                         </div>
-
-                        {/* Scrollable Content */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-6" onClick={(e) => {
-                            // Prevent closing when clicking scrollbar or empty space, but allow links to close it
                             if (e.target.tagName === 'A') setIsMenuOpen(false);
                         }}>
-
-                            {/* User Profile Summary */}
                             {user && (
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
                                     <div className="flex items-center gap-3 mb-3">
@@ -201,7 +172,6 @@ export default function AppShell() {
                                             )}
                                         </div>
                                     </div>
-
                                     <button
                                         onClick={() => {
                                             logout();
@@ -216,14 +186,10 @@ export default function AppShell() {
                                     </button>
                                 </div>
                             )}
-
-                            {/* Main Navigation (Left Column) */}
                             <div className="space-y-2">
                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Chức năng chính</div>
                                 <LeftColumn />
                             </div>
-
-                            {/* Secondary Navigation (Right Column) */}
                             <div className="space-y-2">
                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Thông tin khác</div>
                                 <RightColumn />
@@ -233,10 +199,7 @@ export default function AppShell() {
                     </div>
                 </div>
             )}
-
-            {/* Global Chat Popup */}
             <GlobalChatPopup />
-
         </div>
     )
 }

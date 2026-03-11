@@ -85,6 +85,14 @@ import {
     resolveMovePriority,
 } from '../battle/moveHelpers.js'
 import {
+    appendTurnPhaseEvent,
+    appendTurnPhaseLines,
+    createTurnTimeline,
+    finalizeTurnTimeline,
+    flattenTurnPhaseLines,
+    resolveTurnActorPhaseKeys,
+} from '../battle/turnTimeline.js'
+import {
     getMaxCatchAttempts,
 } from '../utils/autoTrainerUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
@@ -113,6 +121,12 @@ import {
 import {
     resolveEffectiveVipBonusBenefits,
 } from '../services/vipBenefitService.js'
+import {
+    applyTrainerSessionForcedPlayerSwitch,
+    ensureTrainerSessionPlayerParty,
+    serializeTrainerPlayerPartyState,
+    syncTrainerSessionActivePlayerToParty,
+} from '../services/trainerBattlePlayerStateService.js'
 import {
     calcWildRewardPlatinumCoins,
     formatWildPlayerBattleState,
@@ -272,7 +286,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
 
-        const activePokemon = normalizedActivePokemonId
+        let activePokemon = normalizedActivePokemonId
             ? (party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null)
             : (party.find(Boolean) || null)
         if (!activePokemon) {
@@ -563,17 +577,31 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 trainerSessionDirty = true
             }
 
+            await ensureTrainerSessionPlayerParty({
+                trainerSession,
+                userId,
+                preferredActivePokemonId: activePokemon._id,
+            })
+
             const activePokemonIdString = String(activePokemon._id)
+            const activePlayerPartyEntry = Array.isArray(trainerSession.playerTeam)
+                ? trainerSession.playerTeam.find((entry) => String(entry?.userPokemonId || '') === activePokemonIdString)
+                : null
+            if (activePlayerPartyEntry) {
+                trainerSession.playerPokemonId = activePlayerPartyEntry.userPokemonId
+                trainerSession.playerMaxHp = Math.max(1, Number(activePlayerPartyEntry.maxHp || playerMaxHp))
+                trainerSession.playerCurrentHp = Math.max(0, Number(activePlayerPartyEntry.currentHp || 0))
+                trainerSession.playerStatus = normalizeBattleStatus(activePlayerPartyEntry.status)
+                trainerSession.playerStatusTurns = normalizeStatusTurns(activePlayerPartyEntry.statusTurns)
+            }
+
             if (String(trainerSession.playerPokemonId || '') !== activePokemonIdString) {
                 trainerSession.playerPokemonId = activePokemon._id
                 trainerSession.playerMaxHp = playerMaxHp
                 trainerSession.playerCurrentHp = requestedPlayerCurrentHp
                 trainerSession.playerStatus = requestedPlayerStatus
                 trainerSession.playerStatusTurns = requestedPlayerStatusTurns
-                trainerSession.playerStatStages = requestedPlayerStatStages
-                trainerSession.playerDamageGuards = requestedPlayerDamageGuards
-                trainerSession.playerWasDamagedLastTurn = requestedPlayerWasDamagedLastTurn
-                trainerSession.playerVolatileState = requestedPlayerVolatileState
+                syncTrainerSessionActivePlayerToParty(trainerSession)
                 trainerSessionDirty = true
             }
 
@@ -928,7 +956,6 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             )
         }
 
-        const battleExtraLogs = []
         const defaultOpponentMovePower = clamp(Math.floor(35 + targetLevel * 1.2), 25, 120)
         let selectedOpponentMove = selectedCounterMoveInput
         let selectedOpponentMoveName = String(selectedOpponentMove?.name || '').trim()
@@ -1007,10 +1034,86 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const playerActsFirst = turnOrder.playerActsFirst
         const turnOrderReason = turnOrder.reason
         const battleTurnOrder = playerActsFirst ? 'player-first' : 'opponent-first'
+        const turnTimeline = createTurnTimeline({ playerActsFirst })
+        const playerTurnPhaseKeys = resolveTurnActorPhaseKeys(turnTimeline, 'player')
+        const opponentTurnPhaseKeys = resolveTurnActorPhaseKeys(turnTimeline, 'opponent')
+        const appendPhaseEvent = (phaseKey, actor, kind, line, payload = {}) => appendTurnPhaseEvent(turnTimeline, {
+            phaseKey,
+            actor,
+            kind,
+            line,
+            ...payload,
+        })
+        const appendPhaseLines = (phaseKey, actor, kind, lines, payload = {}) => appendTurnPhaseLines(turnTimeline, {
+            phaseKey,
+            actor,
+            kind,
+            lines,
+            ...payload,
+        })
+        if (moveFallbackReason === 'OUT_OF_PP') {
+            appendPhaseEvent(
+                playerTurnPhaseKeys.preAction,
+                'player',
+                'move_fallback',
+                `Chiêu ${moveFallbackFrom || 'đã chọn'} đã hết PP, hệ thống tự chuyển sang Struggle.`,
+                {
+                    moveName: moveFallbackFrom || selectedMoveName,
+                    fallbackMoveName: 'Struggle',
+                }
+            )
+        }
+        if (turnOrderReason === 'speed') {
+            appendPhaseEvent(
+                'turn_start',
+                'system',
+                'turn_order_decided',
+                playerActsFirst
+                    ? `Bạn có tốc độ cao hơn (${playerEffectiveSpeed} > ${opponentEffectiveSpeed}) nên được ra đòn trước.`
+                    : `Đối thủ có tốc độ cao hơn (${opponentEffectiveSpeed} > ${playerEffectiveSpeed}) nên được ra đòn trước.`,
+                {
+                    reason: 'speed',
+                    firstActor: playerActsFirst ? 'player' : 'opponent',
+                    playerSpeed: playerEffectiveSpeed,
+                    opponentSpeed: opponentEffectiveSpeed,
+                }
+            )
+        } else if (turnOrderReason === 'priority') {
+            appendPhaseEvent(
+                'turn_start',
+                'system',
+                'turn_order_decided',
+                playerActsFirst
+                    ? `Chiêu của bạn có ưu tiên cao hơn (${movePriority} > ${opponentMovePriority}) nên được ra đòn trước.`
+                    : `Chiêu của đối thủ có ưu tiên cao hơn (${opponentMovePriority} > ${movePriority}) nên đối thủ ra đòn trước.`,
+                {
+                    reason: 'priority',
+                    firstActor: playerActsFirst ? 'player' : 'opponent',
+                    playerPriority: movePriority,
+                    opponentPriority: opponentMovePriority,
+                }
+            )
+        } else if (turnOrderReason === 'speed-tie') {
+            appendPhaseEvent(
+                'turn_start',
+                'system',
+                'turn_order_decided',
+                'Hai ben co cung do uu tien va toc do, thu tu ra don duoc quyet dinh ngau nhien.',
+                {
+                    reason: 'speed-tie',
+                    firstActor: playerActsFirst ? 'player' : 'opponent',
+                    playerSpeed: playerEffectiveSpeed,
+                    opponentSpeed: opponentEffectiveSpeed,
+                    playerPriority: movePriority,
+                    opponentPriority: opponentMovePriority,
+                }
+            )
+        }
         const playerTurnStartHp = playerCurrentHp
         const opponentTurnStartHp = targetCurrentHp
         let counterAttack = null
         let resultingPlayerHp = playerCurrentHp
+        let playerForcedSwitchInfo = null
 
         const executeOpponentTurn = (currentOpponentHp = targetCurrentHp) => {
             if (currentOpponentHp <= 0 || playerCurrentHp <= 0) {
@@ -1036,7 +1139,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 if (!opponentVolatileState.rechargeTurns) {
                     delete opponentVolatileState.rechargeTurns
                 }
-                battleExtraLogs.push(`${targetName} cần hồi sức nên không thể hành động.`)
+                appendPhaseEvent(opponentTurnPhaseKeys.preAction, 'opponent', 'cannot_act', `${targetName} cần hồi sức nên không thể hành động.`, {
+                    reason: 'recharge',
+                    target: 'opponent',
+                })
             }
             const opponentStatusMoveBlockTurns = normalizeStatusTurns(opponentVolatileState?.statusMoveBlockTurns)
             if (opponentStatusMoveBlockTurns > 0) {
@@ -1050,7 +1156,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             }
             const canOpponentAct = Boolean(opponentTurnStatusCheck.canAct) && canOpponentActByVolatile
             if (opponentTurnStatusCheck.log) {
-                battleExtraLogs.push(`${targetName}: ${opponentTurnStatusCheck.log}`)
+                appendPhaseEvent(opponentTurnPhaseKeys.preAction, 'opponent', 'status_check', `${targetName}: ${opponentTurnStatusCheck.log}`, {
+                    reason: String(opponentTurnStatusCheck.reason || '').trim().toLowerCase(),
+                    target: 'opponent',
+                    status: opponentStatus,
+                })
             }
 
             const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
@@ -1062,7 +1172,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 && playerCritBlockTurns <= 0
                 && Math.random() < opponentMoveCriticalChance
             if (canOpponentAct && didOpponentMoveHit && playerCritBlockTurns > 0) {
-                battleExtraLogs.push('Pokemon của bạn được bảo vệ khỏi đòn chí mạng.')
+                appendPhaseEvent(opponentTurnPhaseKeys.postAction, 'system', 'critical_blocked', 'Pokemon của bạn được bảo vệ khỏi đòn chí mạng.', {
+                    target: 'player',
+                })
             }
             const opponentCriticalMultiplier = didOpponentCritical ? 1.5 : 1
             const opponentAttackStage = opponentMoveCategory === 'special' ? opponentStatStages?.spatk : opponentStatStages?.atk
@@ -1092,7 +1204,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 : scaledCounterDamage
             const counterDamage = applyDamageGuardsToDamage(normalizedCounterDamage, opponentMoveCategory, playerDamageGuards)
             if (counterDamage < normalizedCounterDamage) {
-                battleExtraLogs.push('Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.')
+                appendPhaseEvent(opponentTurnPhaseKeys.postAction, 'system', 'damage_reduced', 'Pokemon của bạn giảm sát thương nhờ hiệu ứng phòng thủ.', {
+                    target: 'player',
+                })
             }
             const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
             resultingPlayerHp = nextPlayerHp
@@ -1140,7 +1254,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 },
                 damagePercent: trainerPokemonDamagePercent,
                 log: !canOpponentAct
-                    ? `${targetName} không thể hành động.`
+                    ? ''
                     : buildBattleActionLog({
                         actorName: targetName,
                         moveName: selectedOpponentMoveName,
@@ -1249,14 +1363,20 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             if (!playerVolatileState.rechargeTurns) {
                 delete playerVolatileState.rechargeTurns
             }
-            battleExtraLogs.push('Pokemon của bạn cần hồi sức nên không thể hành động.')
+            appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'cannot_act', 'Pokemon của bạn cần hồi sức nên không thể hành động.', {
+                reason: 'recharge',
+                target: 'player',
+            })
         }
 
         const lockedRepeatMoveName = String(playerVolatileState?.lockedRepeatMoveName || '').trim()
         const lockedRepeatMoveKey = normalizeMoveName(lockedRepeatMoveName)
         if (canPlayerActByVolatile && lockedRepeatMoveKey && normalizeMoveName(selectedMoveName) === lockedRepeatMoveKey) {
             canPlayerActByVolatile = false
-            battleExtraLogs.push(`Chiêu ${selectedMoveName} không thể dùng liên tiếp.`)
+            appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'move_blocked', `Chiêu ${selectedMoveName} không thể dùng liên tiếp.`, {
+                reason: 'repeat_lock',
+                moveName: selectedMoveName,
+            })
         }
         if (canPlayerActByVolatile && lockedRepeatMoveName && normalizeMoveName(selectedMoveName) !== lockedRepeatMoveKey) {
             const nextVolatileState = { ...playerVolatileState }
@@ -1275,7 +1395,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             }
             if (canPlayerActByVolatile && isStatusMove) {
                 canPlayerActByVolatile = false
-                battleExtraLogs.push('Pokemon của bạn bị khiêu khích nên không thể dùng chiêu trạng thái.')
+                appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'move_blocked', 'Pokemon của bạn bị khiêu khích nên không thể dùng chiêu trạng thái.', {
+                    reason: 'status_move_block',
+                    moveName: selectedMoveName,
+                })
             }
         }
 
@@ -1283,7 +1406,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const canPlayerAct = playerCurrentHp > 0 && Boolean(playerTurnStatusCheck.canAct) && canPlayerActByVolatile
 
         if (moveBlockedByTerrainRequirement) {
-            battleExtraLogs.push('Chiêu này thất bại vì sân đấu không có địa hình phù hợp.')
+            appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'move_failed', 'Chiêu này thất bại vì sân đấu không có địa hình phù hợp.', {
+                reason: 'terrain_requirement',
+                moveName: selectedMoveName,
+            })
         }
         const pendingAlwaysCrit = Boolean(playerVolatileState?.pendingAlwaysCrit)
         const pendingNeverMiss = Boolean(playerVolatileState?.pendingNeverMiss)
@@ -1303,7 +1429,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         }
 
         if (playerTurnStatusCheck.log) {
-            battleExtraLogs.push(`Pokemon của bạn: ${playerTurnStatusCheck.log}`)
+            appendPhaseEvent(playerTurnPhaseKeys.preAction, 'player', 'status_check', `Pokemon của bạn: ${playerTurnStatusCheck.log}`, {
+                reason: String(playerTurnStatusCheck.reason || '').trim().toLowerCase(),
+                target: 'player',
+                status: playerStatus,
+            })
         }
 
         const beforeAccuracyEffects = canPlayerAct
@@ -1325,7 +1455,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             && opponentCritBlockTurns <= 0
             && Math.random() < moveCriticalChance
         if (!isStatusMove && canPlayerAct && didPlayerMoveHit && opponentCritBlockTurns > 0) {
-            battleExtraLogs.push(`${targetName} được bảo vệ khỏi đòn chí mạng.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'critical_blocked', `${targetName} được bảo vệ khỏi đòn chí mạng.`, {
+                target: 'opponent',
+            })
         }
         const playerCriticalMultiplier = didPlayerCritical ? 1.5 : 1
         const playerDamageModifier = playerStabMultiplier
@@ -1385,7 +1517,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             ? rawSingleHitDamage
             : applyDamageGuardsToDamage(rawSingleHitDamage, moveCategory, opponentDamageGuards)
         if (singleHitDamage < rawSingleHitDamage) {
-            battleExtraLogs.push(`${targetName} giảm sát thương nhờ hiệu ứng phòng thủ.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'damage_reduced', `${targetName} giảm sát thương nhờ hiệu ứng phòng thủ.`, {
+                target: 'opponent',
+            })
         }
         let damage = Math.max(0, singleHitDamage * hitCount)
         if (shouldUseUserCurrentHpAsDamage && didPlayerMoveHit && !isStatusMove) {
@@ -1457,7 +1591,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             const incomingSelfStatus = normalizeBattleStatus(effectSelfPatches?.status)
             const nextSelfStatus = incomingSelfStatus && selfStatusShieldTurns > 0 ? '' : effectSelfPatches?.status
             if (incomingSelfStatus && selfStatusShieldTurns > 0) {
-                battleExtraLogs.push('Lá chắn trạng thái bảo vệ Pokemon của bạn khỏi hiệu ứng bất lợi.')
+                appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'status_blocked', 'Lá chắn trạng thái bảo vệ Pokemon của bạn khỏi hiệu ứng bất lợi.', {
+                    target: 'player',
+                })
             }
             const patchedSelfStatus = applyStatusPatch({
                 currentStatus: playerStatus,
@@ -1477,7 +1613,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             const incomingOpponentStatus = normalizeBattleStatus(effectOpponentPatches?.status)
             const nextOpponentStatus = incomingOpponentStatus && opponentStatusShieldTurns > 0 ? '' : effectOpponentPatches?.status
             if (incomingOpponentStatus && opponentStatusShieldTurns > 0) {
-                battleExtraLogs.push(`${targetName} được lá chắn trạng thái bảo vệ.`)
+                appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'status_blocked', `${targetName} được lá chắn trạng thái bảo vệ.`, {
+                    target: 'opponent',
+                })
             }
             const patchedOpponentStatus = applyStatusPatch({
                 currentStatus: opponentStatus,
@@ -1493,10 +1631,14 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const filteredSelfStatDelta = filterNegativeStatStageDeltas(effectSelfPatches?.statStages, selfStatDropShieldTurns)
         const filteredOpponentStatDelta = filterNegativeStatStageDeltas(effectOpponentPatches?.statStages, opponentStatDropShieldTurns)
         if (selfStatDropShieldTurns > 0 && Object.keys(normalizeStatStages(effectSelfPatches?.statStages)).length > Object.keys(filteredSelfStatDelta).length) {
-            battleExtraLogs.push('Lá chắn chỉ số ngăn Pokemon của bạn bị giảm chỉ số.')
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'stat_drop_blocked', 'Lá chắn chỉ số ngăn Pokemon của bạn bị giảm chỉ số.', {
+                target: 'player',
+            })
         }
         if (opponentStatDropShieldTurns > 0 && Object.keys(normalizeStatStages(effectOpponentPatches?.statStages)).length > Object.keys(filteredOpponentStatDelta).length) {
-            battleExtraLogs.push(`${targetName} được lá chắn chỉ số bảo vệ khỏi giảm chỉ số.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'stat_drop_blocked', `${targetName} được lá chắn chỉ số bảo vệ khỏi giảm chỉ số.`, {
+                target: 'opponent',
+            })
         }
 
         playerStatStages = combineStatStageDeltas(playerStatStages, filteredSelfStatDelta)
@@ -1541,7 +1683,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
         const selfHealHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.healHp) || 0))
         if (selfHealHp > 0 && selfHealBlockTurns > 0) {
-            battleExtraLogs.push('Pokemon của bạn bị chặn hồi máu.')
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'heal_blocked', 'Pokemon của bạn bị chặn hồi máu.', {
+                target: 'player',
+            })
         } else if (selfHealHp > 0) {
             playerCurrentHp = Math.min(playerMaxHp, playerCurrentHp + selfHealHp)
             if (trainerSession) {
@@ -1553,7 +1697,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
         const opponentHealHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.opponent?.healHp) || 0))
         if (opponentHealHp > 0 && currentHp > 0 && opponentHealBlockTurns > 0) {
-            battleExtraLogs.push(`${targetName} bị chặn hồi máu.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'heal_blocked', `${targetName} bị chặn hồi máu.`, {
+                target: 'opponent',
+            })
         } else if (opponentHealHp > 0 && currentHp > 0) {
             currentHp = Math.min(targetMaxHp, currentHp + opponentHealHp)
         }
@@ -1565,7 +1711,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         if (!didPlayerMoveHit && !isStatusMove && crashDamageOnMissFraction > 0 && playerCurrentHp > 0) {
             const crashDamage = Math.max(1, Math.floor(playerMaxHp * crashDamageOnMissFraction))
             playerCurrentHp = Math.max(0, playerCurrentHp - crashDamage)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${crashDamage} sát thương do đòn trượt.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'player', 'self_damage', `Pokemon của bạn chịu ${crashDamage} sát thương do đòn trượt.`, {
+                amount: crashDamage,
+                target: 'player',
+            })
             if (trainerSession) {
                 trainerSession.playerCurrentHp = playerCurrentHp
                 trainerSession.expiresAt = getBattleSessionExpiryDate()
@@ -1576,7 +1725,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const selfRecoilHp = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.recoilHp) || 0))
         if (selfRecoilHp > 0) {
             playerCurrentHp = Math.max(0, playerCurrentHp - selfRecoilHp)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${selfRecoilHp} sát thương phản lực.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'player', 'recoil_damage', `Pokemon của bạn chịu ${selfRecoilHp} sát thương phản lực.`, {
+                amount: selfRecoilHp,
+                target: 'player',
+            })
             if (trainerSession) {
                 trainerSession.playerCurrentHp = playerCurrentHp
                 trainerSession.expiresAt = getBattleSessionExpiryDate()
@@ -1587,7 +1739,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         const selfHpCost = Math.max(0, Math.floor(Number(combinedEffectResult?.statePatches?.self?.selfHpCost) || 0))
         if (selfHpCost > 0 && playerCurrentHp > 0) {
             playerCurrentHp = Math.max(1, playerCurrentHp - selfHpCost)
-            battleExtraLogs.push(`Pokemon của bạn tiêu hao ${selfHpCost} HP để kích hoạt hiệu ứng.`)
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'player', 'hp_cost', `Pokemon của bạn tiêu hao ${selfHpCost} HP để kích hoạt hiệu ứng.`, {
+                amount: selfHpCost,
+                target: 'player',
+            })
             if (trainerSession) {
                 trainerSession.playerCurrentHp = playerCurrentHp
                 trainerSession.expiresAt = getBattleSessionExpiryDate()
@@ -1597,7 +1752,9 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
         if (combinedEffectResult?.statePatches?.self?.selfFaint && playerCurrentHp > 0) {
             playerCurrentHp = 0
-            battleExtraLogs.push('Pokemon của bạn bị ngất do tác dụng của chiêu.')
+            appendPhaseEvent(playerTurnPhaseKeys.postAction, 'player', 'self_faint_effect', 'Pokemon của bạn bị ngất do tác dụng của chiêu.', {
+                target: 'player',
+            })
             if (trainerSession) {
                 trainerSession.playerCurrentHp = playerCurrentHp
                 trainerSession.expiresAt = getBattleSessionExpiryDate()
@@ -1623,7 +1780,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             playerStatusTurns = normalizeStatusTurns(playerDrowsyResult.statusTurnsAfter)
             playerVolatileState = normalizeVolatileState(playerDrowsyResult.volatileStateAfter)
             if (playerDrowsyResult.fellAsleep) {
-                battleExtraLogs.push(`Pokemon của bạn ${String(playerDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`)
+                appendPhaseEvent('turn_end', 'system', 'status_applied', `Pokemon của bạn ${String(playerDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`, {
+                    target: 'player',
+                    status: 'sleep',
+                    source: 'drowsy',
+                })
             }
         }
 
@@ -1640,7 +1801,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             opponentStatusTurns = normalizeStatusTurns(opponentDrowsyResult.statusTurnsAfter)
             opponentVolatileState = normalizeVolatileState(opponentDrowsyResult.volatileStateAfter)
             if (opponentDrowsyResult.fellAsleep) {
-                battleExtraLogs.push(`${targetName} ${String(opponentDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`)
+                appendPhaseEvent('turn_end', 'system', 'status_applied', `${targetName} ${String(opponentDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`, {
+                    target: 'opponent',
+                    status: 'sleep',
+                    source: 'drowsy',
+                })
             }
         }
 
@@ -1652,7 +1817,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             : 0
         if (playerResidualDamage > 0) {
             resultingPlayerHp = Math.max(0, resultingPlayerHp - playerResidualDamage)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${playerResidualDamage} sát thương do ${formatBattleStatusLabel(playerStatus)}.`)
+            appendPhaseEvent('turn_end', 'system', 'residual_damage', `Pokemon của bạn chịu ${playerResidualDamage} sát thương do ${formatBattleStatusLabel(playerStatus)}.`, {
+                target: 'player',
+                amount: playerResidualDamage,
+                status: playerStatus,
+            })
         }
 
         const opponentResidualDamage = currentHp > 0
@@ -1663,7 +1832,11 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             : 0
         if (opponentResidualDamage > 0) {
             currentHp = Math.max(0, currentHp - opponentResidualDamage)
-            battleExtraLogs.push(`${targetName} chịu ${opponentResidualDamage} sát thương do ${formatBattleStatusLabel(opponentStatus)}.`)
+            appendPhaseEvent('turn_end', 'system', 'residual_damage', `${targetName} chịu ${opponentResidualDamage} sát thương do ${formatBattleStatusLabel(opponentStatus)}.`, {
+                target: 'opponent',
+                amount: opponentResidualDamage,
+                status: opponentStatus,
+            })
         }
 
         const playerBindTurns = normalizeStatusTurns(playerVolatileState?.bindTurns)
@@ -1671,7 +1844,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         if (resultingPlayerHp > 0 && playerBindTurns > 0) {
             const bindDamage = Math.max(1, Math.floor(playerMaxHp * playerBindFraction))
             resultingPlayerHp = Math.max(0, resultingPlayerHp - bindDamage)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${bindDamage} sát thương do bị trói.`)
+            appendPhaseEvent('turn_end', 'system', 'bind_damage', `Pokemon của bạn chịu ${bindDamage} sát thương do bị trói.`, {
+                target: 'player',
+                amount: bindDamage,
+            })
             if (playerBindTurns > 1) {
                 playerVolatileState = {
                     ...playerVolatileState,
@@ -1691,7 +1867,10 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         if (currentHp > 0 && opponentBindTurns > 0) {
             const bindDamage = Math.max(1, Math.floor(targetMaxHp * opponentBindFraction))
             currentHp = Math.max(0, currentHp - bindDamage)
-            battleExtraLogs.push(`${targetName} chịu ${bindDamage} sát thương do bị trói.`)
+            appendPhaseEvent('turn_end', 'system', 'bind_damage', `${targetName} chịu ${bindDamage} sát thương do bị trói.`, {
+                target: 'opponent',
+                amount: bindDamage,
+            })
             if (opponentBindTurns > 1) {
                 opponentVolatileState = {
                     ...opponentVolatileState,
@@ -1710,12 +1889,20 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
         if ((activeWeather === 'hail' || activeWeather === 'sandstorm') && resultingPlayerHp > 0 && !isImmuneToWeatherChip(activeWeather, attackerTypes)) {
             const weatherDamage = Math.max(1, Math.floor(playerMaxHp / 16))
             resultingPlayerHp = Math.max(0, resultingPlayerHp - weatherDamage)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${weatherDamage} sát thương từ ${activeWeather}.`)
+            appendPhaseEvent('turn_end', 'system', 'weather_damage', `Pokemon của bạn chịu ${weatherDamage} sát thương từ ${activeWeather}.`, {
+                target: 'player',
+                amount: weatherDamage,
+                weather: activeWeather,
+            })
         }
         if ((activeWeather === 'hail' || activeWeather === 'sandstorm') && currentHp > 0 && !isImmuneToWeatherChip(activeWeather, targetTypes)) {
             const weatherDamage = Math.max(1, Math.floor(targetMaxHp / 16))
             currentHp = Math.max(0, currentHp - weatherDamage)
-            battleExtraLogs.push(`${targetName} chịu ${weatherDamage} sát thương từ ${activeWeather}.`)
+            appendPhaseEvent('turn_end', 'system', 'weather_damage', `${targetName} chịu ${weatherDamage} sát thương từ ${activeWeather}.`, {
+                target: 'opponent',
+                amount: weatherDamage,
+                weather: activeWeather,
+            })
         }
 
         if (String(battleFieldState?.terrain || '').trim().toLowerCase() === 'grassy') {
@@ -1724,21 +1911,33 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
             if (resultingPlayerHp > 0) {
                 if (playerHealBlockNow > 0) {
-                    battleExtraLogs.push('Pokemon của bạn không thể hồi máu do bị chặn hồi máu.')
+                    appendPhaseEvent('turn_end', 'system', 'heal_blocked', 'Pokemon của bạn không thể hồi máu do bị chặn hồi máu.', {
+                        target: 'player',
+                    })
                 } else {
                     const healAmount = Math.max(1, Math.floor(playerMaxHp / 16))
                     resultingPlayerHp = Math.min(playerMaxHp, resultingPlayerHp + healAmount)
-                    battleExtraLogs.push(`Pokemon của bạn hồi ${healAmount} HP nhờ địa hình cỏ.`)
+                    appendPhaseEvent('turn_end', 'system', 'heal', `Pokemon của bạn hồi ${healAmount} HP nhờ địa hình cỏ.`, {
+                        target: 'player',
+                        amount: healAmount,
+                        source: 'grassy-terrain',
+                    })
                 }
             }
 
             if (currentHp > 0) {
                 if (opponentHealBlockNow > 0) {
-                    battleExtraLogs.push(`${targetName} không thể hồi máu do bị chặn hồi máu.`)
+                    appendPhaseEvent('turn_end', 'system', 'heal_blocked', `${targetName} không thể hồi máu do bị chặn hồi máu.`, {
+                        target: 'opponent',
+                    })
                 } else {
                     const healAmount = Math.max(1, Math.floor(targetMaxHp / 16))
                     currentHp = Math.min(targetMaxHp, currentHp + healAmount)
-                    battleExtraLogs.push(`${targetName} hồi ${healAmount} HP nhờ địa hình cỏ.`)
+                    appendPhaseEvent('turn_end', 'system', 'heal', `${targetName} hồi ${healAmount} HP nhờ địa hình cỏ.`, {
+                        target: 'opponent',
+                        amount: healAmount,
+                        source: 'grassy-terrain',
+                    })
                 }
             }
         }
@@ -1775,12 +1974,33 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
 
         if (trainerSession) {
             trainerSession.playerCurrentHp = resultingPlayerHp
+            trainerSession.playerMaxHp = playerMaxHp
             trainerSession.playerStatus = playerStatus
             trainerSession.playerStatusTurns = playerStatusTurns
-            trainerSession.playerStatStages = playerStatStages
-            trainerSession.playerDamageGuards = playerDamageGuards
-            trainerSession.playerWasDamagedLastTurn = playerWasDamagedLastTurn
-            trainerSession.playerVolatileState = playerVolatileState
+            syncTrainerSessionActivePlayerToParty(trainerSession)
+
+            if (resultingPlayerHp <= 0) {
+                playerForcedSwitchInfo = applyTrainerSessionForcedPlayerSwitch(trainerSession)
+                if (playerForcedSwitchInfo?.switched && playerForcedSwitchInfo?.nextEntry) {
+                    appendPhaseEvent('forced_switch', 'system', 'forced_switch', `${playerForcedSwitchInfo.nextEntry.name || 'Pokemon'} vào sân thay thế.`, {
+                        target: 'player',
+                        nextPokemonName: playerForcedSwitchInfo.nextEntry.name || 'Pokemon',
+                        nextIndex: playerForcedSwitchInfo.nextIndex,
+                    })
+                }
+            }
+        }
+
+        if (trainerSession) {
+            if (!playerForcedSwitchInfo?.switched) {
+                trainerSession.playerCurrentHp = resultingPlayerHp
+                trainerSession.playerStatus = playerStatus
+                trainerSession.playerStatusTurns = playerStatusTurns
+                trainerSession.playerStatStages = playerStatStages
+                trainerSession.playerDamageGuards = playerDamageGuards
+                trainerSession.playerWasDamagedLastTurn = playerWasDamagedLastTurn
+                trainerSession.playerVolatileState = playerVolatileState
+            }
             trainerSession.fieldState = battleFieldState
             if (activeTrainerOpponent) {
                 const didDefeatOpponent = targetCurrentHp > 0 && currentHp <= 0
@@ -1923,10 +2143,99 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 })),
             }
             : null
+        const serializedPlayerParty = trainerSession
+            ? serializeTrainerPlayerPartyState(trainerSession)
+            : null
+
+        const playerActionLog = (!playerActsFirst && playerTurnStartHp > 0 && playerCurrentHp <= 0)
+            ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} đã ngã xuống trước khi kịp ra đòn.`
+            : !canPlayerAct
+            ? ''
+            : (didPlayerMoveHit
+            ? buildBattleActionLog({
+                actorName: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn',
+                moveName: selectedMoveName,
+                didHit: true,
+                damage,
+                hitCount,
+                isStatusMove,
+                effectivenessText: playerEffectivenessText,
+                suffix: moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.)' : '',
+            })
+            : (moveBlockedByTerrainRequirement
+                ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại vì sân đấu không có địa hình phù hợp.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
+                : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`))
+
+        appendPhaseEvent(
+            playerTurnPhaseKeys.action,
+            'player',
+            canPlayerAct ? 'move_used' : 'action_skipped',
+            playerActionLog,
+            {
+                moveName: selectedMoveName,
+                didHit: didPlayerMoveHit,
+                damage,
+                targetCurrentHpAfter: currentHp,
+            }
+        )
+
+        appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'effect_log', combinedEffectResult.logs, {
+            source: 'move_effects',
+            target: 'opponent',
+        })
+
+        if (counterAttack?.log) {
+            appendPhaseEvent(
+                opponentTurnPhaseKeys.action,
+                'opponent',
+                counterAttack?.move?.canAct === false ? 'action_skipped' : 'move_used',
+                counterAttack.log,
+                {
+                    moveName: counterAttack?.move?.name || '',
+                    didHit: counterAttack?.hit !== false,
+                    damage: Number(counterAttack?.damage || 0),
+                    targetCurrentHpAfter: Number(counterAttack?.currentHp || 0),
+                }
+            )
+        }
+
+        if (resultingPlayerHp <= 0) {
+            appendPhaseEvent('faint_resolution', 'system', 'faint', `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} đã bại trận.`, {
+                target: 'player',
+            })
+        }
+        if (currentHp <= 0) {
+            appendPhaseEvent('faint_resolution', 'system', 'faint', `${targetName} đã bại trận.`, {
+                target: 'opponent',
+            })
+        }
+        if (trainerState && currentHp <= 0 && !trainerState.defeatedAll && Number.isInteger(trainerState.currentIndex) && trainerState.currentIndex !== activeOpponentIndex) {
+            const nextOpponentEntry = trainerState.team?.[trainerState.currentIndex] || null
+            const nextOpponentName = String(nextOpponentEntry?.name || 'Pokemon').trim() || 'Pokemon'
+            appendPhaseEvent('forced_switch', 'system', 'forced_switch', `${nextOpponentName} vào sân thay thế.`, {
+                target: 'opponent',
+                nextPokemonName: nextOpponentName,
+                nextIndex: trainerState.currentIndex,
+            })
+        }
+
+        const turnPhases = finalizeTurnTimeline(turnTimeline)
+        const flattenedBattleLogLines = flattenTurnPhaseLines(turnPhases)
 
         res.json({
             ok: true,
             battle: {
+                turnPhases,
+                logLines: flattenedBattleLogLines,
+                playerParty: serializedPlayerParty,
+                forcedSwitch: playerForcedSwitchInfo?.switched
+                    ? {
+                        target: 'player',
+                        nextIndex: playerForcedSwitchInfo.nextIndex,
+                        nextPokemonId: playerForcedSwitchInfo?.nextEntry?.userPokemonId || null,
+                        nextPokemonName: playerForcedSwitchInfo?.nextEntry?.name || null,
+                    }
+                    : null,
                 turnOrder: battleTurnOrder,
                 turnOrderReason,
                 playerActsFirst,
@@ -1986,29 +2295,12 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 opponentMoveState: opponentMoveStatePayload,
                 effects: {
                     logs: combinedEffectResult.logs,
-                    extraLogs: battleExtraLogs,
+                    extraLogs: [],
                     appliedOps: combinedEffectResult.appliedEffects.map((entry) => String(entry?.op || '').trim()).filter(Boolean),
                     statePatches: combinedEffectResult.statePatches,
                 },
                 fieldState: battleFieldState,
-                log: (!playerActsFirst && playerTurnStartHp > 0 && playerCurrentHp <= 0)
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} đã ngã xuống trước khi kịp ra đòn.`
-                    : !canPlayerAct
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} không thể hành động.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
-                    : (didPlayerMoveHit
-                    ? buildBattleActionLog({
-                        actorName: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn',
-                        moveName: selectedMoveName,
-                        didHit: true,
-                        damage,
-                        hitCount,
-                        isStatusMove,
-                        effectivenessText: playerEffectivenessText,
-                        suffix: moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.)' : '',
-                    })
-                    : (moveBlockedByTerrainRequirement
-                        ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại vì sân đấu không có địa hình phù hợp.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
-                        : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
+                log: flattenedBattleLogLines.join('\n'),
             },
         })
     } catch (error) {
@@ -2029,6 +2321,11 @@ export const __battleEffectInternals = {
     decrementDamageGuards,
     applyStatStageToValue,
     resolveBattleTurnOrder,
+    createTurnTimeline,
+    resolveTurnActorPhaseKeys,
+    appendTurnPhaseEvent,
+    finalizeTurnTimeline,
+    flattenTurnPhaseLines,
 }
 
 export default router

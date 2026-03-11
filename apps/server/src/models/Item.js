@@ -111,7 +111,7 @@ const itemSchema = new Schema(
         },
         effectType: {
             type: String,
-            enum: ['none', 'catchMultiplier', 'heal', 'healAmount', 'grantVipTier'],
+            enum: ['none', 'catchMultiplier', 'heal', 'healAmount', 'grantVipTier', 'allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'],
             default: 'none',
         },
         effectValue: {

@@ -3,7 +3,7 @@ import UserPokedexEntry from './UserPokedexEntry.js'
 import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
 const { Schema } = mongoose
-const USER_POKEMON_MAX_LEVEL = 2000
+export const USER_POKEMON_MAX_LEVEL = 2000
 
 const MovePpStateSchema = new Schema(
     {
@@ -73,7 +73,10 @@ const UserPokemonSchema = new Schema(
         // Item held
         heldItem: { type: String, default: null },
 
-        // Lifecycle status — 'released' means soft-deleted into ValleyPokemon
+        // Special unlocks
+        allowOffTypeSkills: { type: Boolean, default: false },
+
+        // Lifecycle status - 'released' means soft-deleted into ValleyPokemon
         status: {
             type: String,
             enum: ['active', 'released'],

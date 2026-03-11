@@ -39,6 +39,18 @@ const buildEffectSummary = (item = {}) => {
         const durationUnit = String(item?.effectDurationUnit || 'month') === 'week' ? 'tuan' : 'thang'
         return `VIP ${Math.max(1, Number(item?.effectValue || 1))} / ${Math.max(1, Number(item?.effectValueMp || 1))} ${durationUnit}`
     }
+    if (effectType === 'allowOffTypeSkills') {
+        return 'Mo khoa skill khac he'
+    }
+    if (effectType === 'grantPokemonExp') {
+        return `+${Number(item?.effectValue || 0).toLocaleString('vi-VN')} EXP`
+    }
+    if (effectType === 'grantPokemonLevel') {
+        return `+${Number(item?.effectValue || 0).toLocaleString('vi-VN')} Lv`
+    }
+    if (effectType === 'transferPokemonLevel') {
+        return 'Chuyen level Pokemon'
+    }
     return '--'
 }
 

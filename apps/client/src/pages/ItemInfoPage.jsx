@@ -63,6 +63,18 @@ const resolveEffectSummary = (item) => {
         const durationUnit = String(item?.effectDurationUnit || 'month') === 'week' ? 'tuần' : 'tháng'
         return `Dùng để kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
     }
+    if (effectType === 'allowOffTypeSkills') {
+        return 'Dùng lên 1 Pokemon để mở khóa học và dùng skill khác hệ'
+    }
+    if (effectType === 'grantPokemonExp') {
+        return `Dùng lên 1 Pokemon để cộng ${formatNumber(item?.effectValue)} EXP`
+    }
+    if (effectType === 'grantPokemonLevel') {
+        return `Dùng lên 1 Pokemon để tăng ${formatNumber(item?.effectValue)} cấp`
+    }
+    if (effectType === 'transferPokemonLevel') {
+        return 'Dùng lên 1 Pokemon để nhận level từ 1 Pokemon khác, Pokemon nguồn sẽ về Lv. 1'
+    }
     return 'Không có hiệu ứng'
 }
 
@@ -228,6 +240,11 @@ export default function ItemInfoPage() {
                     Mở Cửa Hàng Vật Phẩm
                 </Link>
             </div>
+            {['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'].includes(String(item?.effectType || '')) && inventoryQuantity > 0 && (
+                <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
+                    Vật phẩm này dùng tại trang chi tiết Pokemon để áp dụng lên Pokemon bạn chọn.
+                </div>
+            )}
         </div>
     )
 }

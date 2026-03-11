@@ -51,7 +51,6 @@ const SidebarLink = ({ to, children, isSpecial, onClick }) => {
             </button>
         )
     }
-
     return (
         <NavLink
             to={to}
@@ -173,14 +172,12 @@ export default function RightColumn() {
                 <SidebarLink to="/promo">Nhập Giftcode</SidebarLink>
                 <SidebarLink to="/daily">Quà Hằng Ngày</SidebarLink>
             </SidebarSection>
-
             <SidebarSection title="Xếp Hạng" iconId={215}>
                 <SidebarLink to="/rankings/pokemon">BXH Pokémon</SidebarLink>
                 <SidebarLink to="/rankings/rarity">Bảng Độ Hiếm</SidebarLink>
                 <SidebarLink to="/rankings/overall">BXH Tổng</SidebarLink>
                 <SidebarLink to="/rankings/daily">BXH Ngày</SidebarLink>
             </SidebarSection>
-
             <SidebarSection title="Kinh Tế" iconId={304}>
                 <SidebarLink to="/shop/buy">Mua Pokémon</SidebarLink>
                 <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>

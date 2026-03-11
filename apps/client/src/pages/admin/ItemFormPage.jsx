@@ -57,6 +57,10 @@ const EFFECT_TYPE_OPTIONS = [
     { value: 'heal', label: 'Hồi HP/PP' },
     { value: 'healAmount', label: 'Hồi HP/PP (Legacy)' },
     { value: 'grantVipTier', label: 'Kích hoạt VIP theo tháng' },
+    { value: 'allowOffTypeSkills', label: 'Cho Pokemon dùng skill khác hệ' },
+    { value: 'grantPokemonExp', label: 'Cộng EXP cho Pokemon' },
+    { value: 'grantPokemonLevel', label: 'Tăng cấp cho Pokemon' },
+    { value: 'transferPokemonLevel', label: 'Chuyển level giữa Pokemon' },
 ]
 
 const VIP_DURATION_UNIT_OPTIONS = [
@@ -78,6 +82,18 @@ const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurati
         const durationValue = Math.max(1, Number(effectValueMp) || 1)
         const durationUnit = String(effectDurationUnit || 'month') === 'week' ? 'tuần' : 'tháng'
         return `Kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
+    }
+    if (effectType === 'allowOffTypeSkills') {
+        return 'Dùng lên 1 Pokemon để mở khóa học skill khác hệ'
+    }
+    if (effectType === 'grantPokemonExp') {
+        return `Cộng ${Math.max(1, Math.floor(Number(effectValue) || 0)).toLocaleString('vi-VN')} EXP cho 1 Pokemon`
+    }
+    if (effectType === 'grantPokemonLevel') {
+        return `Tăng ${Math.max(1, Math.floor(Number(effectValue) || 0)).toLocaleString('vi-VN')} cấp cho 1 Pokemon`
+    }
+    if (effectType === 'transferPokemonLevel') {
+        return 'Chuyển toàn bộ level của Pokemon nguồn sang Pokemon đích, Pokemon nguồn về Lv. 1'
     }
     return 'Không có hiệu ứng'
 }
@@ -201,6 +217,21 @@ export default function ItemFormPage() {
                 payload.effectValueMp = 0
             }
 
+            if (payload.effectType === 'allowOffTypeSkills') {
+                payload.effectValue = 0
+                payload.effectValueMp = 0
+            }
+
+            if (payload.effectType === 'grantPokemonExp' || payload.effectType === 'grantPokemonLevel') {
+                payload.effectValue = Math.max(1, Math.floor(Number(payload.effectValue) || 0))
+                payload.effectValueMp = 0
+            }
+
+            if (payload.effectType === 'transferPokemonLevel') {
+                payload.effectValue = 0
+                payload.effectValueMp = 0
+            }
+
             if (payload.effectType === 'catchMultiplier') {
                 payload.effectValue = Math.min(100, Math.max(0, Number(payload.effectValue) || 0))
             }
@@ -229,6 +260,11 @@ export default function ItemFormPage() {
 
     const isHealEffect = formData.effectType === 'heal' || formData.effectType === 'healAmount'
     const isVipGrantEffect = formData.effectType === 'grantVipTier'
+    const isOffTypeSkillEffect = formData.effectType === 'allowOffTypeSkills'
+    const isPokemonExpEffect = formData.effectType === 'grantPokemonExp'
+    const isPokemonLevelEffect = formData.effectType === 'grantPokemonLevel'
+    const isPokemonGrowthEffect = isPokemonExpEffect || isPokemonLevelEffect
+    const isTransferPokemonLevelEffect = formData.effectType === 'transferPokemonLevel'
 
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm max-w-5xl mx-auto mb-10">
@@ -444,29 +480,63 @@ export default function ItemFormPage() {
                                             ))}
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
-                                            {formData.effectType === 'catchMultiplier'
-                                                ? 'Tỉ lệ bắt (%)'
-                                                : (isVipGrantEffect ? 'Cấp VIP nhận được' : 'Giá trị HP')}
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min={isVipGrantEffect ? '1' : '0'}
-                                            max={formData.effectType === 'catchMultiplier' ? 100 : undefined}
-                                            step={formData.effectType === 'catchMultiplier' ? '0.1' : '1'}
-                                            value={formData.effectValue}
-                                            onChange={(e) => {
-                                                const nextValue = Number(e.target.value) || 0
-                                                const normalizedValue = formData.effectType === 'catchMultiplier'
-                                                    ? Math.min(100, Math.max(0, nextValue))
-                                                    : (isVipGrantEffect ? Math.max(1, Math.floor(nextValue || 0)) : nextValue)
-                                                setFormData({ ...formData, effectValue: normalizedValue })
-                                            }}
-                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                        />
-                                    </div>
+                                    {isOffTypeSkillEffect ? (
+                                        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                                            Dùng vật phẩm này lên 1 Pokemon để mở khóa cho Pokemon đó học được các skill khác hệ.
+                                        </div>
+                                    ) : isTransferPokemonLevelEffect ? (
+                                        <div className="rounded border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-sm text-fuchsia-800">
+                                            Dùng vật phẩm này tại trang chi tiết Pokemon để chọn 1 Pokemon nguồn, chuyển level của Pokemon nguồn sang Pokemon đích và đưa Pokemon nguồn về Lv. 1.
+                                        </div>
+                                    ) : isPokemonGrowthEffect ? (
+                                        <div>
+                                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
+                                                {isPokemonExpEffect ? 'Số EXP nhận được' : 'Số cấp tăng'}
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                value={formData.effectValue}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    effectValue: Math.max(1, Math.floor(Number(e.target.value) || 0)),
+                                                })}
+                                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
+                                                {formData.effectType === 'catchMultiplier'
+                                                    ? 'Tỉ lệ bắt (%)'
+                                                    : (isVipGrantEffect ? 'Cấp VIP nhận được' : 'Giá trị HP')}
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min={isVipGrantEffect ? '1' : '0'}
+                                                max={formData.effectType === 'catchMultiplier' ? 100 : undefined}
+                                                step={formData.effectType === 'catchMultiplier' ? '0.1' : '1'}
+                                                value={formData.effectValue}
+                                                onChange={(e) => {
+                                                    const nextValue = Number(e.target.value) || 0
+                                                    const normalizedValue = formData.effectType === 'catchMultiplier'
+                                                        ? Math.min(100, Math.max(0, nextValue))
+                                                        : (isVipGrantEffect ? Math.max(1, Math.floor(nextValue || 0)) : nextValue)
+                                                    setFormData({ ...formData, effectValue: normalizedValue })
+                                                }}
+                                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
+                                {(isPokemonGrowthEffect || isTransferPokemonLevelEffect) && (
+                                    <div className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                                        {isTransferPokemonLevelEffect
+                                            ? 'Dùng vật phẩm này tại trang chi tiết Pokemon để chọn Pokemon nguồn và chuyển level sang Pokemon đang xem.'
+                                            : `Dùng vật phẩm này tại trang chi tiết Pokemon để cộng ${isPokemonExpEffect ? 'EXP' : 'cấp'} theo giá trị đã nhập.`}
+                                    </div>
+                                )}
                                 {(isHealEffect || isVipGrantEffect) && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                         <div>

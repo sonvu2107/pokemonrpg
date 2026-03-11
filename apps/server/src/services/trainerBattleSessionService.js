@@ -68,6 +68,7 @@ export const buildTrainerBattleSessionPayload = ({ userId, trainerId, trainer, a
     userId,
     trainerId,
     team: buildTrainerBattleTeam(trainer),
+    playerTeam: [],
     knockoutCounts: [],
     currentIndex: 0,
     playerPokemonId: activePokemonId || null,
@@ -99,6 +100,7 @@ export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer
     if (!isActive) {
         const payload = buildTrainerBattleSessionPayload({ userId, trainerId, trainer, activePokemonId })
         session.team = payload.team
+        session.playerTeam = payload.playerTeam
         session.knockoutCounts = payload.knockoutCounts
         session.currentIndex = payload.currentIndex
         session.playerPokemonId = payload.playerPokemonId
@@ -126,6 +128,7 @@ export const buildCompletedTrainerBattleSessionPayload = ({ userId, trainer, act
         userId,
         trainerId: resolvedTrainerId,
         team,
+        playerTeam: [],
         knockoutCounts: activePokemonId
             ? [{ userPokemonId: activePokemonId, defeatedCount: Math.max(1, team.length) }]
             : [],

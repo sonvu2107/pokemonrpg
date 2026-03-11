@@ -75,21 +75,17 @@ export default function LeftColumn() {
     const [notificationPosts, setNotificationPosts] = useState([])
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
-
     const [comingSoonModalOpen, setComingSoonModalOpen] = useState(false)
     const [comingSoonFeature, setComingSoonFeature] = useState('')
-
     const handleFeatureClick = (e, featureName) => {
         e.preventDefault()
         setComingSoonFeature(featureName)
         setComingSoonModalOpen(true)
     }
-
     const resolveNewsTarget = (post) => {
         if (post?._id) return `/news/${post._id}`
         return '/'
     }
-
     const sortPostsByDate = (posts) => {
         return [...posts].sort((a, b) => {
             const aTime = new Date(a?.createdAt || 0).getTime()
@@ -97,7 +93,6 @@ export default function LeftColumn() {
             return bTime - aTime
         })
     }
-
     const sortByDisplayOrder = (maps) => {
         return maps
             .map((map, index) => ({ ...map, __originalIndex: index }))
@@ -114,7 +109,6 @@ export default function LeftColumn() {
 
     useEffect(() => {
         let isCancelled = false
-
         const loadLegendaryMaps = async () => {
             if (!user) {
                 if (!isCancelled) {
@@ -124,7 +118,6 @@ export default function LeftColumn() {
                 }
                 return
             }
-
             try {
                 if (!isCancelled) {
                     setLoadingMaps(true)
@@ -172,7 +165,6 @@ export default function LeftColumn() {
                     newsApi.getNews({ limit: 10, type: 'news' }),
                     newsApi.getNews({ limit: 5, type: 'update' }),
                 ])
-
                 const mergedUpdates = sortPostsByDate([
                     ...(newsRes?.ok ? (newsRes.posts || []) : []),
                     ...(updateRes?.ok ? (updateRes.posts || []) : []),
@@ -208,15 +200,11 @@ export default function LeftColumn() {
                     )}
                 </SidebarSection>
             )}
-
-            {/* NEWS HUB */}
             <SidebarSection title="Tin Tức" iconId={89}>
                 <SidebarLink to="/event-maps" isSpecial>Danh sách bản đồ sự kiện</SidebarLink>
                 <SidebarLink to="/notifications" isSpecial>Danh sách thông báo</SidebarLink>
                 <SidebarLink to="/news-list" isSpecial>Danh sách tin tức</SidebarLink>
             </SidebarSection>
-
-            {/* GENERAL */}
             <SidebarSection title="Chung" iconId={81}>
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tin Nhắn')}>Tin Nhắn</SidebarLink>
@@ -227,16 +215,12 @@ export default function LeftColumn() {
                     Đăng Xuất
                 </button>
             </SidebarSection>
-
-            {/* MISCELLANEOUS */}
             <SidebarSection title="Khác" iconId={121}>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tìm Người Chơi')}>Tìm Người Chơi</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tùy Chọn')}>Tùy Chọn</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Giới Thiệu')}>Giới Thiệu</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Nghe Nhạc')}>Nghe Nhạc</SidebarLink>
             </SidebarSection>
-
-            {/* EXPLORE */}
             <SidebarSection title="Khám Phá" iconId={138}>
                 <SidebarLink to="/battle">Khu Vực Chiến Đấu</SidebarLink>
                 <SidebarLink to="/valley">Thung Lũng Pokémon</SidebarLink>
@@ -244,8 +228,6 @@ export default function LeftColumn() {
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Trung Tâm Pokemon')}>Trung Tâm Pokemon</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Minigame')}>Minigame</SidebarLink>
             </SidebarSection>
-
-            {/* LEGENDARY AREAS */}
             {legendaryMaps.length > 0 && (
                 <SidebarSection title="Khu Vực Săn Bắt" iconId={legendaryMaps[0]?.iconId || 385}>
                     {loadingMaps ? (

@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
+const LEVEL_TRANSFER_MODAL_PAGE_SIZE = 12
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
         {title}
@@ -46,6 +47,16 @@ const resolvePokemonCombatPower = (pokemonLike, statsLike = {}) => {
 }
 
 const normalizeMoveKey = (value = '') => String(value || '').trim().toLowerCase()
+const resolvePokemonDisplaySprite = (pokemonLike = {}, formId = 'normal', isShiny = false) => {
+    const species = pokemonLike && typeof pokemonLike === 'object' ? pokemonLike : {}
+    const forms = Array.isArray(species?.forms) ? species.forms : []
+    const requestedFormId = normalizeFormId(formId || species?.defaultFormId || 'normal')
+    const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === requestedFormId) || null
+    const baseNormal = species?.imageUrl || species?.sprites?.normal || species?.sprites?.icon || ''
+    const formNormal = resolvedForm?.imageUrl || resolvedForm?.sprites?.normal || resolvedForm?.sprites?.icon || baseNormal
+    const shinySprite = resolvedForm?.sprites?.shiny || species?.sprites?.shiny || formNormal
+    return (isShiny ? shinySprite : formNormal) || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/0.png'
+}
 const InfoRow = ({ label, value, valueClass = '' }) => (
     <div className="flex border-b border-blue-200 last:border-0 text-xs">
         <div className="w-1/3 bg-slate-50 p-2 font-bold text-blue-800 border-r border-blue-200 flex items-center">
@@ -92,10 +103,33 @@ export default function PokemonInfoPage() {
     const [replaceMoveIndex, setReplaceMoveIndex] = useState(-1)
     const [teachingSkill, setTeachingSkill] = useState(false)
     const [removingSkillName, setRemovingSkillName] = useState('')
+    const [offTypeSkillItems, setOffTypeSkillItems] = useState([])
+    const [offTypeSkillItemsLoading, setOffTypeSkillItemsLoading] = useState(false)
+    const [selectedOffTypeSkillItemId, setSelectedOffTypeSkillItemId] = useState('')
+    const [usingOffTypeSkillItem, setUsingOffTypeSkillItem] = useState(false)
+    const [pokemonGrowthItems, setPokemonGrowthItems] = useState([])
+    const [selectedGrowthItemId, setSelectedGrowthItemId] = useState('')
+    const [usingGrowthItem, setUsingGrowthItem] = useState(false)
+    const [pokemonLevelTransferItems, setPokemonLevelTransferItems] = useState([])
+    const [levelTransferCandidates, setLevelTransferCandidates] = useState([])
+    const [levelTransferCandidatesLoading, setLevelTransferCandidatesLoading] = useState(false)
+    const [levelTransferModalOpen, setLevelTransferModalOpen] = useState(false)
+    const [levelTransferSearchTerm, setLevelTransferSearchTerm] = useState('')
+    const [levelTransferPage, setLevelTransferPage] = useState(1)
+    const [levelTransferPagination, setLevelTransferPagination] = useState({ page: 1, limit: LEVEL_TRANSFER_MODAL_PAGE_SIZE, total: 0, totalPages: 1 })
+    const [selectedLevelTransferItemId, setSelectedLevelTransferItemId] = useState('')
+    const [selectedLevelTransferSourceId, setSelectedLevelTransferSourceId] = useState('')
+    const [selectedLevelTransferSourceEntry, setSelectedLevelTransferSourceEntry] = useState(null)
+    const [usingLevelTransferItem, setUsingLevelTransferItem] = useState(false)
 
     useEffect(() => {
         loadPokemon()
     }, [id])
+
+    const viewerId = String(user?.id || user?._id || '').trim()
+    const ownerId = String(pokemon?.userId?._id || '').trim()
+    const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
+    const hasOffTypeSkillAccess = Boolean(pokemon?.allowOffTypeSkills)
 
     const loadPokemon = async () => {
         try {
@@ -133,10 +167,226 @@ export default function PokemonInfoPage() {
         }
     }
 
+    const loadPokemonTargetItems = async () => {
+        if (!isOwnerViewing) {
+            setOffTypeSkillItems([])
+            setSelectedOffTypeSkillItemId('')
+            setPokemonGrowthItems([])
+            setSelectedGrowthItemId('')
+            setPokemonLevelTransferItems([])
+            setSelectedLevelTransferItemId('')
+            setLevelTransferCandidates([])
+            setSelectedLevelTransferSourceId('')
+            setSelectedLevelTransferSourceEntry(null)
+            setLevelTransferPagination({ page: 1, limit: LEVEL_TRANSFER_MODAL_PAGE_SIZE, total: 0, totalPages: 1 })
+            setOffTypeSkillItemsLoading(false)
+            return
+        }
+
+        try {
+            setOffTypeSkillItemsLoading(true)
+            const data = await gameApi.getInventory()
+            const nextItems = (Array.isArray(data?.inventory) ? data.inventory : [])
+                .map((entry) => ({
+                    itemId: String(entry?.item?._id || '').trim(),
+                    name: String(entry?.item?.name || 'Vật phẩm').trim() || 'Vật phẩm',
+                    quantity: Math.max(0, Number(entry?.quantity || 0)),
+                    effectType: String(entry?.item?.effectType || '').trim(),
+                    effectValue: Math.max(0, Number(entry?.item?.effectValue || 0)),
+                }))
+                .filter((entry) => entry.itemId && entry.quantity > 0)
+
+            const nextOffTypeItems = nextItems.filter((entry) => entry.effectType === 'allowOffTypeSkills')
+            const nextGrowthItems = nextItems.filter((entry) => ['grantPokemonExp', 'grantPokemonLevel'].includes(entry.effectType))
+            const nextLevelTransferItems = nextItems.filter((entry) => entry.effectType === 'transferPokemonLevel')
+
+            setOffTypeSkillItems(nextOffTypeItems)
+            setSelectedOffTypeSkillItemId((current) => {
+                if (nextOffTypeItems.some((entry) => entry.itemId === current)) return current
+                return nextOffTypeItems[0]?.itemId || ''
+            })
+            setPokemonGrowthItems(nextGrowthItems)
+            setSelectedGrowthItemId((current) => {
+                if (nextGrowthItems.some((entry) => entry.itemId === current)) return current
+                return nextGrowthItems[0]?.itemId || ''
+            })
+            setPokemonLevelTransferItems(nextLevelTransferItems)
+            setSelectedLevelTransferItemId((current) => {
+                if (nextLevelTransferItems.some((entry) => entry.itemId === current)) return current
+                return nextLevelTransferItems[0]?.itemId || ''
+            })
+        } catch (err) {
+            console.error(err)
+            setOffTypeSkillItems([])
+            setSelectedOffTypeSkillItemId('')
+            setPokemonGrowthItems([])
+            setSelectedGrowthItemId('')
+            setPokemonLevelTransferItems([])
+            setSelectedLevelTransferItemId('')
+        } finally {
+            setOffTypeSkillItemsLoading(false)
+        }
+    }
+
+    const loadLevelTransferCandidates = async (page = 1, search = '') => {
+        if (!isOwnerViewing) {
+            setLevelTransferCandidates([])
+            setSelectedLevelTransferSourceId('')
+            setSelectedLevelTransferSourceEntry(null)
+            setLevelTransferPagination({ page: 1, limit: LEVEL_TRANSFER_MODAL_PAGE_SIZE, total: 0, totalPages: 1 })
+            return
+        }
+
+        try {
+            setLevelTransferCandidatesLoading(true)
+            const data = await gameApi.getPokemonLevelTransferCandidates(id, {
+                page,
+                limit: LEVEL_TRANSFER_MODAL_PAGE_SIZE,
+                search,
+            })
+            const nextCandidates = Array.isArray(data?.candidates) ? data.candidates : []
+            const nextPagination = {
+                page: Math.max(1, Number(data?.pagination?.page || page)),
+                limit: Math.max(1, Number(data?.pagination?.limit || LEVEL_TRANSFER_MODAL_PAGE_SIZE)),
+                total: Math.max(0, Number(data?.pagination?.total || 0)),
+                totalPages: Math.max(1, Number(data?.pagination?.totalPages || 1)),
+            }
+            const persistedSelectedId = String(selectedLevelTransferSourceId || '').trim()
+            const fallbackSelectedId = persistedSelectedId || String(nextCandidates[0]?._id || '')
+            const matchedSelectedCandidate = nextCandidates.find((entry) => String(entry?._id) === fallbackSelectedId) || null
+            setLevelTransferCandidates(nextCandidates)
+            setLevelTransferPagination(nextPagination)
+            if (nextPagination.page !== page) {
+                setLevelTransferPage(nextPagination.page)
+            }
+            setSelectedLevelTransferSourceId(fallbackSelectedId)
+            if (matchedSelectedCandidate) {
+                setSelectedLevelTransferSourceEntry(matchedSelectedCandidate)
+            } else if (!persistedSelectedId) {
+                setSelectedLevelTransferSourceEntry(nextCandidates[0] || null)
+            }
+        } catch (err) {
+            console.error(err)
+            setLevelTransferCandidates([])
+            setSelectedLevelTransferSourceId('')
+            setSelectedLevelTransferSourceEntry(null)
+            setLevelTransferPagination({ page: 1, limit: LEVEL_TRANSFER_MODAL_PAGE_SIZE, total: 0, totalPages: 1 })
+        } finally {
+            setLevelTransferCandidatesLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        loadPokemonTargetItems()
+    }, [id, isOwnerViewing])
+
+    useEffect(() => {
+        if (!levelTransferModalOpen) return
+        loadLevelTransferCandidates(levelTransferPage, levelTransferSearchTerm)
+    }, [id, isOwnerViewing, levelTransferModalOpen, levelTransferPage, levelTransferSearchTerm])
+
     const openSkillModal = async () => {
         setSkillModalOpen(true)
         setReplaceMoveIndex(-1)
         await loadSkillInventory()
+    }
+
+    const openLevelTransferModal = () => {
+        setLevelTransferSearchTerm('')
+        setLevelTransferModalOpen(true)
+        setLevelTransferPage(1)
+    }
+
+    const handleUseOffTypeSkillItem = async () => {
+        if (!pokemon?._id || !selectedOffTypeSkillItemId) return
+
+        const selectedItem = offTypeSkillItems.find((entry) => entry.itemId === selectedOffTypeSkillItemId)
+        if (!selectedItem) {
+            window.alert('Không tìm thấy vật phẩm phù hợp.')
+            return
+        }
+
+        const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+        const confirmed = window.confirm(`Dùng ${selectedItem.name} cho ${targetName}?`)
+        if (!confirmed) return
+
+        try {
+            setUsingOffTypeSkillItem(true)
+            const data = await gameApi.useItem(selectedItem.itemId, 1, null, pokemon._id)
+            window.alert(data?.message || 'Đã dùng vật phẩm thành công.')
+            await loadPokemon()
+            await loadPokemonTargetItems()
+            if (skillModalOpen) {
+                await loadSkillInventory()
+            }
+        } catch (err) {
+            window.alert(err.message || 'Không thể dùng vật phẩm.')
+        } finally {
+            setUsingOffTypeSkillItem(false)
+        }
+    }
+
+    const handleUseGrowthItem = async () => {
+        if (!pokemon?._id || !selectedGrowthItemId) return
+
+        const selectedItem = pokemonGrowthItems.find((entry) => entry.itemId === selectedGrowthItemId)
+        if (!selectedItem) {
+            window.alert('Không tìm thấy vật phẩm phù hợp.')
+            return
+        }
+
+        const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+        const effectLabel = selectedItem.effectType === 'grantPokemonLevel'
+            ? `tăng ${selectedItem.effectValue} cấp`
+            : `cộng ${selectedItem.effectValue} EXP`
+        const confirmed = window.confirm(`Dùng ${selectedItem.name} để ${effectLabel} cho ${targetName}?`)
+        if (!confirmed) return
+
+        try {
+            setUsingGrowthItem(true)
+            const data = await gameApi.useItem(selectedItem.itemId, 1, null, pokemon._id)
+            window.alert(data?.message || 'Đã dùng vật phẩm thành công.')
+            await loadPokemon()
+            await loadPokemonTargetItems()
+        } catch (err) {
+            window.alert(err.message || 'Không thể dùng vật phẩm.')
+        } finally {
+            setUsingGrowthItem(false)
+        }
+    }
+
+    const handleUseLevelTransferItem = async () => {
+        if (!pokemon?._id || !selectedLevelTransferItemId || !selectedLevelTransferSourceId) return
+
+        const selectedItem = pokemonLevelTransferItems.find((entry) => entry.itemId === selectedLevelTransferItemId)
+        const selectedSource = selectedLevelTransferSourceEntry
+        if (!selectedItem || !selectedSource) {
+            window.alert('Không tìm thấy dữ liệu chuyển level phù hợp.')
+            return
+        }
+
+        const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+        const sourceName = String(selectedSource?.nickname || selectedSource?.pokemon?.name || 'Pokemon').trim() || 'Pokemon'
+        const transferableLevels = Math.max(0, Number(selectedSource?.level || 1) - 1)
+        const confirmed = window.confirm(`Dùng ${selectedItem.name} để chuyển ${transferableLevels} cấp từ ${sourceName} sang ${targetName}? ${sourceName} sẽ về Lv. 1.`)
+        if (!confirmed) return
+
+        try {
+            setUsingLevelTransferItem(true)
+            const data = await gameApi.useItem(selectedItem.itemId, 1, null, pokemon._id, '', null, selectedSource._id)
+            window.alert(data?.message || 'Đã dùng vật phẩm thành công.')
+            setSelectedLevelTransferSourceId('')
+            setSelectedLevelTransferSourceEntry(null)
+            setLevelTransferModalOpen(false)
+            await Promise.all([
+                loadPokemon(),
+                loadPokemonTargetItems(),
+            ])
+        } catch (err) {
+            window.alert(err.message || 'Không thể dùng vật phẩm.')
+        } finally {
+            setUsingLevelTransferItem(false)
+        }
     }
 
     const handleTeachSkill = async () => {
@@ -419,9 +669,6 @@ export default function PokemonInfoPage() {
         return 0
     })
     const moveDisplaySlots = Array.from({ length: 4 }, (_, index) => orderedMoveDetails[index] || null)
-    const viewerId = String(user?.id || user?._id || '').trim()
-    const ownerId = String(pokemon?.userId?._id || '').trim()
-    const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
     const forms = Array.isArray(base?.forms) ? base.forms : []
     const resolvedFormId = normalizeFormId(pokemon.formId || base?.defaultFormId || 'normal')
     const resolvedForm = forms.find((entry) => normalizeFormId(entry?.formId) === resolvedFormId) || null
@@ -437,6 +684,17 @@ export default function PokemonInfoPage() {
     const ownerUsername = String(ownerInfo?.username || 'Không rõ').trim() || 'Không rõ'
     const ownerIdLabel = String(ownerInfo?._id || '').trim()
     const ownerAvatar = String(ownerInfo?.avatar || '').trim() || DEFAULT_AVATAR
+    const selectedLevelTransferSource = selectedLevelTransferSourceEntry
+    const levelTransferSelectedSourceName = String(selectedLevelTransferSource?.nickname || selectedLevelTransferSource?.pokemon?.name || '').trim()
+    const levelTransferSelectedSourceSprite = selectedLevelTransferSource
+        ? resolvePokemonDisplaySprite(selectedLevelTransferSource?.pokemon, selectedLevelTransferSource?.formId, selectedLevelTransferSource?.isShiny)
+        : ''
+    const levelTransferTotal = Math.max(0, Number(levelTransferPagination?.total || 0))
+    const levelTransferPageSize = Math.max(1, Number(levelTransferPagination?.limit || LEVEL_TRANSFER_MODAL_PAGE_SIZE))
+    const levelTransferCurrentPage = Math.max(1, Number(levelTransferPagination?.page || levelTransferPage || 1))
+    const levelTransferTotalPages = Math.max(1, Number(levelTransferPagination?.totalPages || 1))
+    const levelTransferStart = levelTransferTotal > 0 ? ((levelTransferCurrentPage - 1) * levelTransferPageSize) + 1 : 0
+    const levelTransferEnd = levelTransferTotal > 0 ? Math.min(levelTransferTotal, levelTransferStart + levelTransferCandidates.length - 1) : 0
     const parseTrainerOrigin = (value = '') => {
         const raw = String(value || '').trim()
         if (!raw) return { token: '', payload: '' }
@@ -596,6 +854,11 @@ export default function PokemonInfoPage() {
                                 <span className="text-[10px] text-slate-400">Chưa có dữ liệu hệ</span>
                             )}
                         </div>
+                        {hasOffTypeSkillAccess && (
+                            <div className="mt-2 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800">
+                                Đã mở khóa dùng skill khác hệ
+                            </div>
+                        )}
                     </div>
                     <div className="border border-blue-300 rounded mb-4 overflow-hidden">
                         <div className="bg-blue-100/50 p-1 text-center text-xs font-bold text-blue-800 border-b border-blue-200">
@@ -685,6 +948,132 @@ export default function PokemonInfoPage() {
                         </div>
                         {isOwnerViewing && (
                             <div className="p-2 bg-slate-50 border-t border-blue-200 text-center space-y-2">
+                                <div className={`rounded border px-3 py-2 text-left ${hasOffTypeSkillAccess ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                                    <div className="text-[11px] font-bold uppercase">Skill khác hệ</div>
+                                    {hasOffTypeSkillAccess ? (
+                                        <div className="mt-1 text-xs font-semibold">Pokemon này đã được mở khóa học skill khác hệ.</div>
+                                    ) : offTypeSkillItemsLoading ? (
+                                        <div className="mt-1 text-xs">Đang tải vật phẩm hỗ trợ...</div>
+                                    ) : offTypeSkillItems.length > 0 ? (
+                                        <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                                            <select
+                                                value={selectedOffTypeSkillItemId}
+                                                onChange={(e) => setSelectedOffTypeSkillItemId(e.target.value)}
+                                                className="flex-1 px-3 py-2 border border-amber-200 rounded text-sm bg-white text-slate-700"
+                                            >
+                                                {offTypeSkillItems.map((entry) => (
+                                                    <option key={entry.itemId} value={entry.itemId}>
+                                                        {entry.name} x{entry.quantity}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={handleUseOffTypeSkillItem}
+                                                disabled={!selectedOffTypeSkillItemId || usingOffTypeSkillItem}
+                                                className="px-3 py-2 text-xs font-bold rounded bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-60"
+                                            >
+                                                {usingOffTypeSkillItem ? 'Đang dùng...' : 'Dùng vật phẩm'}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-1 text-xs">Bạn chưa có vật phẩm mở khóa skill khác hệ trong túi đồ.</div>
+                                    )}
+                                </div>
+                                <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-left text-sky-800">
+                                    <div className="text-[11px] font-bold uppercase">Tăng trưởng Pokemon</div>
+                                    {offTypeSkillItemsLoading ? (
+                                        <div className="mt-1 text-xs">Đang tải vật phẩm tăng trưởng...</div>
+                                    ) : pokemonGrowthItems.length > 0 ? (
+                                        <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                                            <select
+                                                value={selectedGrowthItemId}
+                                                onChange={(e) => setSelectedGrowthItemId(e.target.value)}
+                                                className="flex-1 px-3 py-2 border border-sky-200 rounded text-sm bg-white text-slate-700"
+                                            >
+                                                {pokemonGrowthItems.map((entry) => (
+                                                    <option key={entry.itemId} value={entry.itemId}>
+                                                        {entry.name} x{entry.quantity}
+                                                        {entry.effectType === 'grantPokemonLevel'
+                                                            ? ` (+${entry.effectValue} Lv)`
+                                                            : ` (+${entry.effectValue} EXP)`}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={handleUseGrowthItem}
+                                                disabled={!selectedGrowthItemId || usingGrowthItem}
+                                                className="px-3 py-2 text-xs font-bold rounded bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-60"
+                                            >
+                                                {usingGrowthItem ? 'Đang dùng...' : 'Dùng tăng trưởng'}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-1 text-xs">Bạn chưa có vật phẩm cộng EXP hoặc tăng cấp trong túi đồ.</div>
+                                    )}
+                                </div>
+                                <div className="rounded border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-left text-fuchsia-800">
+                                    <div className="text-[11px] font-bold uppercase">Chuyển level Pokemon</div>
+                                    {offTypeSkillItemsLoading ? (
+                                        <div className="mt-1 text-xs">Đang tải vật phẩm chuyển level...</div>
+                                    ) : pokemonLevelTransferItems.length === 0 ? (
+                                        <div className="mt-1 text-xs">Bạn chưa có vật phẩm chuyển level Pokemon trong túi đồ.</div>
+                                    ) : (
+                                        <div className="mt-2 space-y-2">
+                                            <select
+                                                value={selectedLevelTransferItemId}
+                                                onChange={(e) => setSelectedLevelTransferItemId(e.target.value)}
+                                                className="w-full px-3 py-2 border border-fuchsia-200 rounded text-sm bg-white text-slate-700"
+                                            >
+                                                {pokemonLevelTransferItems.map((entry) => (
+                                                    <option key={entry.itemId} value={entry.itemId}>
+                                                        {entry.name} x{entry.quantity}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <div className="rounded border border-fuchsia-200 bg-white px-3 py-2">
+                                                <div className="text-[11px] font-bold uppercase text-fuchsia-700">Chọn Pokemon</div>
+                                                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                                    {selectedLevelTransferSource ? (
+                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                            <img
+                                                                src={levelTransferSelectedSourceSprite}
+                                                                alt={levelTransferSelectedSourceName || 'Pokemon'}
+                                                                className="w-12 h-12 object-contain pixelated rounded border border-fuchsia-100 bg-fuchsia-50"
+                                                            />
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="text-sm font-bold text-slate-800 truncate">
+                                                                    {levelTransferSelectedSourceName || 'Pokemon'}
+                                                                </div>
+                                                                <div className="text-xs text-slate-500 truncate">
+                                                                    {selectedLevelTransferSource?.pokemon?.name || 'Không rõ'} • Lv. {selectedLevelTransferSource?.level || 1} • Chuyển {Math.max(0, Number(selectedLevelTransferSource?.level || 1) - 1)} cấp
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-slate-500 min-w-0 flex-1">Chưa chọn Pokemon.</div>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={openLevelTransferModal}
+                                                        className="w-full sm:w-auto sm:min-w-[190px] px-3 py-2 text-xs font-bold rounded border border-fuchsia-300 bg-white text-fuchsia-700 hover:bg-fuchsia-50"
+                                                    >
+                                                        Chọn Pokemon
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleUseLevelTransferItem}
+                                                disabled={!selectedLevelTransferItemId || !selectedLevelTransferSourceId || usingLevelTransferItem}
+                                                className="px-3 py-2 text-xs font-bold rounded bg-fuchsia-600 hover:bg-fuchsia-700 text-white disabled:opacity-60"
+                                            >
+                                                {usingLevelTransferItem ? 'Đang chuyển...' : 'Chuyển level'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 <button
                                     type="button"
                                     onClick={openSkillModal}
@@ -698,20 +1087,20 @@ export default function PokemonInfoPage() {
                                             (() => {
                                                 const isProtectedMove = isProtectedMoveName(moveName)
                                                 return (
-                                            <button
-                                                key={`${moveName}-${index}-remove`}
-                                                type="button"
-                                                onClick={() => handleRemoveSkill(moveName)}
-                                                disabled={removingSkillName === moveName || isProtectedMove}
-                                                className={`px-2 py-1 text-[11px] font-bold rounded border ${isProtectedMove
-                                                    ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed'
-                                                    : 'bg-white border-red-300 text-red-700 hover:bg-red-50'} disabled:opacity-60 disabled:cursor-not-allowed`}
-                                                title={isProtectedMove ? 'Kỹ năng mặc định không thể gỡ' : ''}
-                                            >
-                                                {isProtectedMove
-                                                    ? `${moveName} (mặc định)`
-                                                    : (removingSkillName === moveName ? 'Đang gỡ...' : `Gỡ ${moveName}`)}
-                                            </button>
+                                                    <button
+                                                        key={`${moveName}-${index}-remove`}
+                                                        type="button"
+                                                        onClick={() => handleRemoveSkill(moveName)}
+                                                        disabled={removingSkillName === moveName || isProtectedMove}
+                                                        className={`px-2 py-1 text-[11px] font-bold rounded border ${isProtectedMove
+                                                            ? 'bg-slate-100 border-slate-300 text-slate-500 cursor-not-allowed'
+                                                            : 'bg-white border-red-300 text-red-700 hover:bg-red-50'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                                                        title={isProtectedMove ? 'Kỹ năng mặc định không thể gỡ' : ''}
+                                                    >
+                                                        {isProtectedMove
+                                                            ? `${moveName} (mặc định)`
+                                                            : (removingSkillName === moveName ? 'Đang gỡ...' : `Gỡ ${moveName}`)}
+                                                    </button>
                                                 )
                                             })()
                                         ))}
@@ -829,6 +1218,105 @@ export default function PokemonInfoPage() {
                 </div>
             </div>
 
+            {levelTransferModalOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/70 p-4 flex items-center justify-center" onClick={() => setLevelTransferModalOpen(false)}>
+                    <div className="w-full max-w-2xl bg-white border border-fuchsia-300 rounded-lg shadow-xl overflow-hidden" onClick={(event) => event.stopPropagation()}>
+                        <div className="bg-gradient-to-t from-fuchsia-600 to-pink-500 px-4 py-2 flex items-center justify-between border-b border-fuchsia-600">
+                            <h3 className="text-sm sm:text-base font-bold text-white uppercase">Chọn Pokemon</h3>
+                            <button
+                                type="button"
+                                onClick={() => setLevelTransferModalOpen(false)}
+                                className="text-white text-xs font-bold px-2 py-1 rounded hover:bg-white/20"
+                            >
+                                Đóng
+                            </button>
+                        </div>
+
+                        <div className="p-4 space-y-4 max-h-[75vh] overflow-y-auto">
+                            <div>
+                                <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokemon</label>
+                                <input
+                                    type="text"
+                                    value={levelTransferSearchTerm}
+                                    onChange={(event) => {
+                                        setLevelTransferSearchTerm(event.target.value)
+                                        setLevelTransferPage(1)
+                                    }}
+                                    placeholder="Nhập tên hoặc biệt danh Pokemon"
+                                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm"
+                                />
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                                {levelTransferCandidatesLoading ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải Pokemon...</div>
+                                ) : levelTransferCandidates.length === 0 ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Không có Pokemon phù hợp. Pokemon cần từ Lv. 2 trở lên.</div>
+                                ) : (
+                                    levelTransferCandidates.map((entry) => {
+                                        const sourceId = String(entry?._id || '')
+                                        const isSelected = sourceId === selectedLevelTransferSourceId
+                                        const sourceName = String(entry?.nickname || entry?.pokemon?.name || 'Pokemon').trim() || 'Pokemon'
+                                        const sourceSpeciesName = String(entry?.pokemon?.name || 'Không rõ').trim() || 'Không rõ'
+                                        const transferableLevels = Math.max(0, Number(entry?.level || 1) - 1)
+                                        const sourceSprite = resolvePokemonDisplaySprite(entry?.pokemon, entry?.formId, entry?.isShiny)
+
+                                        return (
+                                            <button
+                                                key={sourceId}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedLevelTransferSourceId(sourceId)
+                                                    setSelectedLevelTransferSourceEntry(entry)
+                                                    setLevelTransferModalOpen(false)
+                                                }}
+                                                className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-fuchsia-50' : 'hover:bg-slate-50'}`}
+                                            >
+                                                <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                    <img src={sourceSprite} alt={sourceName} className="w-8 h-8 object-contain pixelated" />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="font-semibold text-slate-700 truncate">{sourceName}</span>
+                                                        <span className="text-xs text-slate-500">Lv.{entry.level}</span>
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 truncate mt-0.5">
+                                                        {sourceSpeciesName} • Chuyển {transferableLevels} cấp • {entry.location === 'party' ? 'Trong đội hình' : 'Trong kho'}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>Hiển thị {levelTransferStart}-{levelTransferEnd} / {levelTransferTotal} Pokemon</span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setLevelTransferPage((prev) => Math.max(1, prev - 1))}
+                                        disabled={levelTransferCurrentPage <= 1}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Trước
+                                    </button>
+                                    <span className="font-semibold text-slate-600">Trang {levelTransferCurrentPage}/{levelTransferTotalPages}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLevelTransferPage((prev) => Math.min(levelTransferTotalPages, prev + 1))}
+                                        disabled={levelTransferCurrentPage >= levelTransferTotalPages}
+                                        className="px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {skillModalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/70 p-4 flex items-center justify-center">
                     <div className="w-full max-w-2xl bg-white border border-blue-300 rounded-lg shadow-xl overflow-hidden">
@@ -854,6 +1342,11 @@ export default function PokemonInfoPage() {
                                 </div>
                             ) : (
                                 <>
+                                    {hasOffTypeSkillAccess && (
+                                        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                            Pokemon này đang được mở khóa học skill khác hệ.
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
                                         {skillInventory.map((entry) => {
                                             const selected = String(selectedSkillId) === String(entry.moveId)

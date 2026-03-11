@@ -216,6 +216,12 @@ const capitalizeWords = (value = '') => String(value || '')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ')
 
+const buildPokedexEntryKey = (pokemonId, formId = 'normal') => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) return ''
+    return `${normalizedPokemonId}:${normalizeFormId(formId || 'normal')}`
+}
+
 const buildPokemonEncounterFallback = (mapLike = null, dropRateEntries = []) => {
     const encounterRate = Math.max(0, Math.min(1, Number(mapLike?.encounterRate) || 0))
     const totalWeight = dropRateEntries.reduce((sum, entry) => sum + (Number(entry?.weight) > 0 ? Number(entry.weight) : 0), 0)
@@ -269,6 +275,7 @@ export default function MapPage() {
     const [dropRates, setDropRates] = useState([])
     const [pokemonEncounters, setPokemonEncounters] = useState([])
     const [itemDropRates, setItemDropRates] = useState([])
+    const [ownedPokedexEntryKeys, setOwnedPokedexEntryKeys] = useState(() => new Set())
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [unlockInfo, setUnlockInfo] = useState(null)
@@ -554,6 +561,52 @@ export default function MapPage() {
             setLoading(false)
         }
     }
+
+    useEffect(() => {
+        let cancelled = false
+
+        const loadPokedexStatuses = async () => {
+            const source = pokemonEncounters.length > 0 ? pokemonEncounters : buildPokemonEncounterFallback(map, dropRates)
+            const entries = [...new Map(
+                source
+                    .map((entry) => {
+                        const pokemon = entry?.pokemonId || {}
+                        const key = buildPokedexEntryKey(pokemon?._id, entry?.formId || pokemon?.defaultFormId || 'normal')
+                        if (!key) return null
+                        return [key, { pokemonId: String(pokemon?._id || '').trim(), formId: normalizeFormId(entry?.formId || pokemon?.defaultFormId || 'normal') }]
+                    })
+                    .filter(Boolean)
+            ).values()]
+
+            if (entries.length === 0) {
+                setOwnedPokedexEntryKeys(new Set())
+                return
+            }
+
+            try {
+                const response = await gameApi.getPokedexStatus(entries)
+                if (cancelled) return
+                setOwnedPokedexEntryKeys(new Set(Array.isArray(response?.ownedKeys) ? response.ownedKeys : []))
+            } catch (_err) {
+                if (!cancelled) {
+                    setOwnedPokedexEntryKeys(new Set())
+                }
+            }
+        }
+
+        if (!map?._id) {
+            setOwnedPokedexEntryKeys(new Set())
+            return () => {
+                cancelled = true
+            }
+        }
+
+        loadPokedexStatuses()
+
+        return () => {
+            cancelled = true
+        }
+    }, [map?._id, pokemonEncounters, dropRates, map])
 
     const loadInventory = async ({ force = false } = {}) => {
         try {
@@ -1454,6 +1507,8 @@ export default function MapPage() {
                                                 ) : paginatedPokemonEncounters.map((entry) => {
                                                     const pokemon = entry?.pokemonId || {}
                                                     const rarityMeta = getRarityStyle(pokemon?.rarity)
+                                                    const pokedexEntryKey = buildPokedexEntryKey(pokemon?._id, entry?.formId || pokemon?.defaultFormId || 'normal')
+                                                    const isMissingFromPokedex = pokedexEntryKey ? !ownedPokedexEntryKeys.has(pokedexEntryKey) : false
                                                     const formName = String(entry?.form?.formName || entry?.formId || '').trim().toLowerCase() !== 'normal'
                                                         ? (entry?.form?.formName || entry?.formId)
                                                         : ''
@@ -1465,7 +1520,14 @@ export default function MapPage() {
                                                                 <div className="flex items-center gap-3">
                                                                     <img src={entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || ''} alt={pokemon?.name || 'Pokemon'} className="h-12 w-12 object-contain pixelated" />
                                                                     <div>
-                                                                        <div className="font-bold text-slate-800">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <div className="font-bold text-slate-800">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
+                                                                            {isMissingFromPokedex && (
+                                                                                <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                                                                                    Chưa có
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                         <div className="text-[11px] text-slate-500">#{pokemon?.pokedexNumber || '-'}</div>
                                                                     </div>
                                                                 </div>

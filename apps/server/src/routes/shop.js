@@ -46,6 +46,10 @@ const ITEM_MARKET_EFFECT_LABELS = Object.freeze({
     heal: 'Hồi phục',
     healAmount: 'Hồi phục',
     grantVipTier: 'VIP',
+    allowOffTypeSkills: 'Skill khác hệ',
+    grantPokemonExp: 'EXP Pokemon',
+    grantPokemonLevel: 'Tăng cấp Pokemon',
+    transferPokemonLevel: 'Chuyển level Pokemon',
 })
 
 const resolveVipLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
@@ -128,6 +132,141 @@ const resolvePokemonSpriteByForm = (pokemon = null, formId = null) => {
         || pokemon?.sprites?.normal
         || pokemon?.sprites?.front_default
         || ''
+}
+
+const buildAvailableSellPokemonPipeline = ({ userIdObject, page = 1, limit = 24, search = '' }) => {
+    const safePage = toSafePage(page)
+    const safeLimit = toSafeLimit(limit)
+    const normalizedSearch = String(search || '').trim()
+
+    return [
+        {
+            $match: withActiveUserPokemonFilter({
+                userId: userIdObject,
+                location: 'box',
+            }),
+        },
+        {
+            $lookup: {
+                from: 'marketlistings',
+                let: { userPokemonId: '$_id' },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ['$userPokemonId', '$$userPokemonId'] },
+                                    { $eq: ['$status', 'active'] },
+                                ],
+                            },
+                        },
+                    },
+                    { $project: { _id: 1 } },
+                ],
+                as: 'activeListing',
+            },
+        },
+        {
+            $match: {
+                activeListing: { $eq: [] },
+            },
+        },
+        {
+            $lookup: {
+                from: 'pokemons',
+                localField: 'pokemonId',
+                foreignField: '_id',
+                as: 'pokemon',
+            },
+        },
+        {
+            $unwind: {
+                path: '$pokemon',
+                preserveNullAndEmptyArrays: true,
+            },
+        },
+        ...(normalizedSearch
+            ? [{
+                $match: {
+                    $or: [
+                        { nickname: { $regex: escapeRegExp(normalizedSearch), $options: 'i' } },
+                        { formId: { $regex: escapeRegExp(normalizedSearch), $options: 'i' } },
+                        { 'pokemon.name': { $regex: escapeRegExp(normalizedSearch), $options: 'i' } },
+                        { 'pokemon.forms.formName': { $regex: escapeRegExp(normalizedSearch), $options: 'i' } },
+                    ],
+                },
+            }]
+            : []),
+        { $sort: { updatedAt: -1, _id: -1 } },
+        {
+            $facet: {
+                rows: [
+                    { $skip: (safePage - 1) * safeLimit },
+                    { $limit: safeLimit },
+                    {
+                        $project: {
+                            _id: 1,
+                            nickname: 1,
+                            level: 1,
+                            formId: 1,
+                            pokemon: {
+                                name: '$pokemon.name',
+                                types: '$pokemon.types',
+                                imageUrl: '$pokemon.imageUrl',
+                                sprites: '$pokemon.sprites',
+                                forms: '$pokemon.forms',
+                                defaultFormId: '$pokemon.defaultFormId',
+                            },
+                        },
+                    },
+                ],
+                total: [
+                    { $count: 'count' },
+                ],
+            },
+        },
+    ]
+}
+
+const mapAvailableSellPokemonEntry = (entry = null) => {
+    const resolvedForm = resolvePokemonForm(entry?.pokemon, entry?.formId)
+    return {
+        id: entry?._id,
+        pokemonName: entry?.nickname || entry?.pokemon?.name || 'Pokemon',
+        speciesName: entry?.pokemon?.name || 'Pokemon',
+        level: entry?.level || 1,
+        formId: resolvedForm.formId,
+        formName: resolvedForm.form?.formName || resolvedForm.formId,
+        sprite: resolvePokemonSpriteByForm(entry?.pokemon, resolvedForm.formId),
+        type: entry?.pokemon?.types || [],
+    }
+}
+
+const fetchAvailableSellPokemon = async ({ userId, page = 1, limit = 24, search = '' }) => {
+    const safePage = toSafePage(page)
+    const safeLimit = toSafeLimit(limit)
+    const facetRows = await UserPokemon.aggregate(
+        buildAvailableSellPokemonPipeline({
+            userIdObject: new mongoose.Types.ObjectId(userId),
+            page: safePage,
+            limit: safeLimit,
+            search,
+        })
+    ).allowDiskUse(true)
+
+    const facet = facetRows?.[0] || {}
+    const rows = facet.rows || []
+    const total = facet.total?.[0]?.count || 0
+
+    return {
+        rows: rows.map(mapAvailableSellPokemonEntry),
+        pagination: {
+            page: safePage,
+            limit: safeLimit,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+        },
+    }
 }
 
 const buildItemEffectCategory = (itemLike = {}) => {
@@ -262,7 +401,7 @@ router.get('/items/:itemId', async (req, res) => {
 
         const [item, playerState, inventoryEntry, user] = await Promise.all([
             Item.findById(itemId)
-                .select('name type rarity imageUrl description shopPrice isShopEnabled purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp')
+                .select('name type rarity imageUrl description shopPrice isShopEnabled purchaseLimit itemShopPurchaseLimit moonShopPurchaseLimit vipPurchaseLimitBonusPerLevel effectType effectValue effectValueMp effectDurationUnit')
                 .lean(),
             PlayerState.findOne({ userId }).select('gold moonPoints').lean(),
             UserInventory.findOne({ userId, itemId }).select('quantity').lean(),
@@ -1188,6 +1327,26 @@ router.get('/sell', async (req, res) => {
     } catch (error) {
         console.error('GET /api/shop/sell error:', error)
         res.status(500).json({ ok: false, message: 'Không thể tải dữ liệu cửa hàng bán' })
+    }
+})
+
+router.get('/sell/available-pokemon', async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const page = toSafePage(req.query.page)
+        const limit = toSafeLimit(req.query.limit || 24)
+        const search = String(req.query.search || '').trim()
+
+        const result = await fetchAvailableSellPokemon({ userId, page, limit, search })
+
+        res.json({
+            ok: true,
+            availablePokemon: result.rows,
+            pagination: result.pagination,
+        })
+    } catch (error) {
+        console.error('GET /api/shop/sell/available-pokemon error:', error)
+        res.status(500).json({ ok: false, message: 'Không thể tải Pokemon khả dụng để đăng bán' })
     }
 })
 

@@ -429,6 +429,19 @@ export const gameApi = {
         return res.json()
     },
 
+    // GET /api/pokemon/:id/level-transfer-candidates
+    async getPokemonLevelTransferCandidates(id, params = {}) {
+        const searchParams = new URLSearchParams(params)
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/pokemon/${id}/level-transfer-candidates${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải danh sách Pokemon nguồn')
+        }
+        return res.json()
+    },
+
     // POST /api/pokemon/:id/teach-skill
     async teachPokemonSkill(id, payload) {
         const res = await fetch(`${API_URL}/pokemon/${id}/teach-skill`, {
@@ -555,6 +568,22 @@ export const gameApi = {
         return res.json()
     },
 
+    async getPokedexStatus(entries = []) {
+        const res = await fetch(`${API_URL}/pokemon/pokedex/status`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({ entries }),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể tải trạng thái Pokedex')
+        }
+        return res.json()
+    },
+
     // GET /api/battle-trainers
     async getBattleTrainers() {
         const res = await fetch(`${API_URL}/battle-trainers`)
@@ -566,14 +595,14 @@ export const gameApi = {
     },
 
     // POST /api/inventory/use
-    async useItem(itemId, quantity = 1, encounterId = null, activePokemonId = null, moveName = '', context = null) {
+    async useItem(itemId, quantity = 1, encounterId = null, activePokemonId = null, moveName = '', context = null, sourcePokemonId = null) {
         const res = await fetch(`${API_URL}/inventory/use`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
             },
-            body: JSON.stringify({ itemId, quantity, encounterId, activePokemonId, moveName, context }),
+            body: JSON.stringify({ itemId, quantity, encounterId, activePokemonId, moveName, context, sourcePokemonId }),
         })
         if (!res.ok) {
             const err = await res.json()
@@ -864,6 +893,23 @@ export const gameApi = {
         })
         if (!res.ok) {
             await throwApiError(res, 'Không thể tải dữ liệu bán')
+        }
+        return res.json()
+    },
+
+    async getAvailableSellPokemon(params = {}) {
+        const searchParams = new URLSearchParams()
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value))
+            }
+        })
+        const query = searchParams.toString()
+        const res = await fetch(`${API_URL}/shop/sell/available-pokemon${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải Pokemon khả dụng để đăng bán')
         }
         return res.json()
     },

@@ -2,7 +2,7 @@ import express from 'express'
 import UserInventory from '../models/UserInventory.js'
 import PlayerState from '../models/PlayerState.js'
 import Encounter from '../models/Encounter.js'
-import UserPokemon from '../models/UserPokemon.js'
+import UserPokemon, { USER_POKEMON_MAX_LEVEL } from '../models/UserPokemon.js'
 import MapModel from '../models/Map.js'
 import BattleSession from '../models/BattleSession.js'
 import BattleTrainer from '../models/BattleTrainer.js'
@@ -12,10 +12,24 @@ import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
-import { calcMaxHp } from '../utils/gameUtils.js'
+import { calcMaxHp, expToNext } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
+import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
 import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
+import {
+    appendTurnPhaseEvent,
+    createTurnTimeline,
+    finalizeTurnTimeline,
+    flattenTurnPhaseLines,
+} from '../battle/turnTimeline.js'
+import {
+    applyTrainerSessionForcedPlayerSwitch,
+    ensureTrainerSessionPlayerParty,
+    serializeTrainerPlayerPartyState,
+    setTrainerSessionActivePlayerByIndex,
+    syncTrainerSessionActivePlayerToParty,
+} from '../services/trainerBattlePlayerStateService.js'
 import { addOneMonth } from '../utils/vipStatus.js'
 
 const router = express.Router()
@@ -163,6 +177,85 @@ const getHealAmounts = (item) => {
         return { hpAmount, ppAmount }
     }
     return { hpAmount: 0, ppAmount: 0 }
+}
+
+const applyExperienceGainToUserPokemon = (userPokemon, expAmount = 0) => {
+    const safeExpAmount = Math.max(0, Math.floor(Number(expAmount) || 0))
+    const expBefore = Math.max(0, Math.floor(Number(userPokemon?.experience) || 0))
+    let levelsGained = 0
+
+    if (userPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+        userPokemon.level = USER_POKEMON_MAX_LEVEL
+        userPokemon.experience = 0
+        return {
+            expBefore,
+            expAfter: 0,
+            expGained: 0,
+            levelsGained: 0,
+            level: userPokemon.level,
+            expToNext: 0,
+        }
+    }
+
+    userPokemon.experience = expBefore + safeExpAmount
+    while (
+        userPokemon.level < USER_POKEMON_MAX_LEVEL
+        && userPokemon.experience >= expToNext(userPokemon.level)
+    ) {
+        userPokemon.experience -= expToNext(userPokemon.level)
+        userPokemon.level += 1
+        levelsGained += 1
+    }
+
+    if (userPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+        userPokemon.level = USER_POKEMON_MAX_LEVEL
+        userPokemon.experience = 0
+    }
+
+    return {
+        expBefore,
+        expAfter: Math.max(0, Math.floor(Number(userPokemon.experience) || 0)),
+        expGained: safeExpAmount,
+        levelsGained,
+        level: Math.max(1, Math.floor(Number(userPokemon.level) || 1)),
+        expToNext: userPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(userPokemon.level),
+    }
+}
+
+const applyLevelGainToUserPokemon = (userPokemon, levelAmount = 0) => {
+    const safeLevelAmount = Math.max(0, Math.floor(Number(levelAmount) || 0))
+    const levelBefore = Math.max(1, Math.floor(Number(userPokemon?.level) || 1))
+    const expBefore = Math.max(0, Math.floor(Number(userPokemon?.experience) || 0))
+
+    if (levelBefore >= USER_POKEMON_MAX_LEVEL) {
+        userPokemon.level = USER_POKEMON_MAX_LEVEL
+        userPokemon.experience = 0
+        return {
+            levelBefore,
+            levelAfter: USER_POKEMON_MAX_LEVEL,
+            levelsGained: 0,
+            expBefore,
+            expAfter: 0,
+            expToNext: 0,
+        }
+    }
+
+    const levelsGained = Math.max(0, Math.min(safeLevelAmount, USER_POKEMON_MAX_LEVEL - levelBefore))
+    userPokemon.level = levelBefore + levelsGained
+
+    if (userPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+        userPokemon.level = USER_POKEMON_MAX_LEVEL
+        userPokemon.experience = 0
+    }
+
+    return {
+        levelBefore,
+        levelAfter: Math.max(1, Math.floor(Number(userPokemon.level) || 1)),
+        levelsGained,
+        expBefore,
+        expAfter: Math.max(0, Math.floor(Number(userPokemon.experience) || 0)),
+        expToNext: userPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(userPokemon.level),
+    }
 }
 
 const sanitizeObjectIdToken = (value) => {
@@ -391,12 +484,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             encounterId,
             activePokemonId = null,
             moveName = '',
+            sourcePokemonId = null,
         } = requestBody
         const qty = Number(quantity)
         const userId = req.user.userId
         const normalizedItemId = normalizeObjectIdInput(itemId)
         const normalizedEncounterId = normalizeObjectIdInput(encounterId)
         const normalizedActivePokemonId = normalizeObjectIdInput(activePokemonId)
+        const normalizedSourcePokemonId = normalizeObjectIdInput(sourcePokemonId)
         const itemUseContext = normalizeItemUseContext(requestBody)
 
         if (!normalizedItemId || !isValidObjectIdLike(normalizedItemId) || !Number.isFinite(qty) || !Number.isInteger(qty) || qty <= 0) {
@@ -639,6 +734,297 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
         }
 
+        if (item.effectType === 'allowOffTypeSkills') {
+            if (qty !== 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm này chỉ được dùng từng cái một' })
+            }
+
+            if (itemUseContext.mode === 'trainer' || itemUseContext.mode === 'duel' || itemUseContext.mode === 'online') {
+                return res.status(403).json({ ok: false, message: 'Không thể dùng vật phẩm này trong battle' })
+            }
+
+            if (!normalizedActivePokemonId || !isValidObjectIdLike(normalizedActivePokemonId)) {
+                return res.status(400).json({ ok: false, message: 'Cần chọn Pokemon để dùng vật phẩm này' })
+            }
+
+            const targetPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({
+                _id: normalizedActivePokemonId,
+                userId,
+            }))
+                .populate('pokemonId', 'name')
+
+            if (!targetPokemon) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon mục tiêu' })
+            }
+
+            if (targetPokemon.allowOffTypeSkills) {
+                return res.status(400).json({ ok: false, message: 'Pokemon này đã được mở khóa dùng kỹ năng khác hệ' })
+            }
+
+            const consumedEntry = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: normalizedItemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedEntry) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+
+            targetPokemon.allowOffTypeSkills = true
+
+            try {
+                await targetPokemon.save()
+            } catch (saveError) {
+                await UserInventory.findOneAndUpdate(
+                    { userId, itemId: normalizedItemId },
+                    {
+                        $setOnInsert: { userId, itemId: normalizedItemId },
+                        $inc: { quantity: qty },
+                    },
+                    { upsert: true, new: true }
+                )
+                throw saveError
+            }
+
+            if (consumedEntry.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
+            }
+
+            const targetPokemonName = String(targetPokemon?.nickname || targetPokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+
+            return res.json({
+                ok: true,
+                message: `${targetPokemonName} đã mở khóa dùng kỹ năng khác hệ.`,
+                itemId: normalizedItemId,
+                quantity: qty,
+                effect: {
+                    type: 'allowOffTypeSkills',
+                    targetPokemonId: targetPokemon._id,
+                    allowOffTypeSkills: true,
+                },
+            })
+        }
+
+        if (item.effectType === 'grantPokemonExp' || item.effectType === 'grantPokemonLevel') {
+            if (itemUseContext.mode === 'trainer' || itemUseContext.mode === 'duel' || itemUseContext.mode === 'online') {
+                return res.status(403).json({ ok: false, message: 'Không thể dùng vật phẩm này trong battle' })
+            }
+
+            if (!normalizedActivePokemonId || !isValidObjectIdLike(normalizedActivePokemonId)) {
+                return res.status(400).json({ ok: false, message: 'Cần chọn Pokemon để dùng vật phẩm này' })
+            }
+
+            const targetPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({
+                _id: normalizedActivePokemonId,
+                userId,
+            }))
+                .populate('pokemonId', 'name')
+
+            if (!targetPokemon) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon mục tiêu' })
+            }
+
+            const effectValue = Math.max(1, Math.floor(Number(item.effectValue) || 0))
+            const totalEffectValue = Math.max(1, effectValue * qty)
+            const isExpItem = item.effectType === 'grantPokemonExp'
+
+            if (targetPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                return res.status(400).json({ ok: false, message: 'Pokemon này đã đạt cấp tối đa' })
+            }
+
+            const consumedEntry = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: normalizedItemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedEntry) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+
+            const result = isExpItem
+                ? applyExperienceGainToUserPokemon(targetPokemon, totalEffectValue)
+                : applyLevelGainToUserPokemon(targetPokemon, totalEffectValue)
+
+            try {
+                await targetPokemon.save()
+            } catch (saveError) {
+                await UserInventory.findOneAndUpdate(
+                    { userId, itemId: normalizedItemId },
+                    {
+                        $setOnInsert: { userId, itemId: normalizedItemId },
+                        $inc: { quantity: qty },
+                    },
+                    { upsert: true, new: true }
+                )
+                throw saveError
+            }
+
+            if (consumedEntry.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
+            }
+
+            const targetPokemonName = String(targetPokemon?.nickname || targetPokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+
+            return res.json({
+                ok: true,
+                message: isExpItem
+                    ? `${targetPokemonName} nhận ${result.expGained} EXP.`
+                    : `${targetPokemonName} tăng ${result.levelsGained} cấp.`,
+                itemId: normalizedItemId,
+                quantity: qty,
+                effect: isExpItem
+                    ? {
+                        type: 'grantPokemonExp',
+                        targetPokemonId: targetPokemon._id,
+                        expGained: result.expGained,
+                        expBefore: result.expBefore,
+                        expAfter: result.expAfter,
+                        levelsGained: result.levelsGained,
+                        level: result.level,
+                        expToNext: result.expToNext,
+                    }
+                    : {
+                        type: 'grantPokemonLevel',
+                        targetPokemonId: targetPokemon._id,
+                        levelsGained: result.levelsGained,
+                        levelBefore: result.levelBefore,
+                        levelAfter: result.levelAfter,
+                        expBefore: result.expBefore,
+                        expAfter: result.expAfter,
+                        expToNext: result.expToNext,
+                    },
+            })
+        }
+
+        if (item.effectType === 'transferPokemonLevel') {
+            if (qty !== 1) {
+                return res.status(400).json({ ok: false, message: 'Vật phẩm này chỉ được dùng từng cái một' })
+            }
+
+            if (itemUseContext.mode === 'trainer' || itemUseContext.mode === 'duel' || itemUseContext.mode === 'online') {
+                return res.status(403).json({ ok: false, message: 'Không thể dùng vật phẩm này trong battle' })
+            }
+
+            if (!normalizedActivePokemonId || !isValidObjectIdLike(normalizedActivePokemonId)) {
+                return res.status(400).json({ ok: false, message: 'Cần chọn Pokemon đích để dùng vật phẩm này' })
+            }
+
+            if (!normalizedSourcePokemonId || !isValidObjectIdLike(normalizedSourcePokemonId)) {
+                return res.status(400).json({ ok: false, message: 'Cần chọn Pokemon nguồn để chuyển level' })
+            }
+
+            if (normalizedSourcePokemonId === normalizedActivePokemonId) {
+                return res.status(400).json({ ok: false, message: 'Pokemon nguồn và đích phải khác nhau' })
+            }
+
+            const [targetPokemon, sourcePokemon] = await Promise.all([
+                UserPokemon.findOne(withActiveUserPokemonFilter({
+                    _id: normalizedActivePokemonId,
+                    userId,
+                })).populate('pokemonId', 'name'),
+                UserPokemon.findOne(withActiveUserPokemonFilter({
+                    _id: normalizedSourcePokemonId,
+                    userId,
+                })).populate('pokemonId', 'name'),
+            ])
+
+            if (!targetPokemon) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon đích' })
+            }
+            if (!sourcePokemon) {
+                return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon nguồn' })
+            }
+            if (targetPokemon.level >= USER_POKEMON_MAX_LEVEL) {
+                return res.status(400).json({ ok: false, message: 'Pokemon đích đã đạt cấp tối đa' })
+            }
+
+            const transferableLevels = Math.max(0, Math.floor(Number(sourcePokemon.level) || 1) - 1)
+            if (transferableLevels <= 0) {
+                return res.status(400).json({ ok: false, message: 'Pokemon nguồn phải từ cấp 2 trở lên' })
+            }
+
+            const consumedEntry = await UserInventory.findOneAndUpdate(
+                {
+                    userId,
+                    itemId: normalizedItemId,
+                    quantity: { $gte: qty },
+                },
+                { $inc: { quantity: -qty } },
+                { new: true }
+            )
+
+            if (!consumedEntry) {
+                return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
+            }
+
+            const sourceLevelBefore = Math.max(1, Math.floor(Number(sourcePokemon.level) || 1))
+            const sourceExpBefore = Math.max(0, Math.floor(Number(sourcePokemon.experience) || 0))
+            const targetResult = applyLevelGainToUserPokemon(targetPokemon, transferableLevels)
+
+            sourcePokemon.level = 1
+            sourcePokemon.experience = 0
+
+            try {
+                await Promise.all([
+                    targetPokemon.save(),
+                    sourcePokemon.save(),
+                ])
+            } catch (saveError) {
+                await UserInventory.findOneAndUpdate(
+                    { userId, itemId: normalizedItemId },
+                    {
+                        $setOnInsert: { userId, itemId: normalizedItemId },
+                        $inc: { quantity: qty },
+                    },
+                    { upsert: true, new: true }
+                )
+                throw saveError
+            }
+
+            if (consumedEntry.quantity <= 0) {
+                await UserInventory.deleteOne({ _id: consumedEntry._id, quantity: { $lte: 0 } })
+            }
+
+            const targetPokemonName = String(targetPokemon?.nickname || targetPokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+            const sourcePokemonName = String(sourcePokemon?.nickname || sourcePokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+
+            return res.json({
+                ok: true,
+                message: `Đã chuyển ${transferableLevels} cấp từ ${sourcePokemonName} sang ${targetPokemonName}.`,
+                itemId: normalizedItemId,
+                quantity: qty,
+                effect: {
+                    type: 'transferPokemonLevel',
+                    targetPokemonId: targetPokemon._id,
+                    sourcePokemonId: sourcePokemon._id,
+                    transferredLevels: transferableLevels,
+                    target: {
+                        levelBefore: targetResult.levelBefore,
+                        levelAfter: targetResult.levelAfter,
+                        expBefore: targetResult.expBefore,
+                        expAfter: targetResult.expAfter,
+                        expToNext: targetResult.expToNext,
+                    },
+                    source: {
+                        levelBefore: sourceLevelBefore,
+                        levelAfter: 1,
+                        expBefore: sourceExpBefore,
+                        expAfter: 0,
+                    },
+                },
+            })
+        }
+
         if (item.type === 'healing') {
             const { hpAmount, ppAmount } = getHealAmounts(item)
             if (hpAmount <= 0 && ppAmount <= 0) {
@@ -698,6 +1084,12 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     })
                     return res.status(409).json({ ok: false, message: 'Không tìm thấy phiên battle trainer. Vui lòng vào lại trận.' })
                 }
+
+                await ensureTrainerSessionPlayerParty({
+                    trainerSession: activeBattleSession,
+                    userId,
+                    preferredActivePokemonId: targetPokemon?._id || activeBattleSession.playerPokemonId,
+                })
 
                 const team = Array.isArray(activeBattleSession.team) ? activeBattleSession.team : []
                 const currentIndex = Math.max(0, Number(activeBattleSession.currentIndex) || 0)
@@ -774,15 +1166,23 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     const resolvedCurrentHpRaw = Number.isFinite(itemUseContext.playerCurrentHp)
                         ? itemUseContext.playerCurrentHp
                         : fallbackCurrentHpRaw
+                    const targetPartyIndex = Array.isArray(activeBattleSession.playerTeam)
+                        ? activeBattleSession.playerTeam.findIndex((entry) => String(entry?.userPokemonId || '') === String(targetPokemon?._id || ''))
+                        : -1
 
-                    if (!isSameTrainerBattlePokemon) {
-                        activeBattleSession.playerPokemonId = targetPokemon._id
+                    if (targetPartyIndex !== -1 && !isSameTrainerBattlePokemon) {
+                        syncTrainerSessionActivePlayerToParty(activeBattleSession)
+                        setTrainerSessionActivePlayerByIndex(activeBattleSession, targetPartyIndex)
+                    }
+
+                    if (targetPartyIndex !== -1) {
                         activeBattleSession.playerMaxHp = Math.max(1, Math.floor(resolvedMaxHp))
                         activeBattleSession.playerCurrentHp = clampChance(
                             Math.floor(resolvedCurrentHpRaw),
                             0,
                             activeBattleSession.playerMaxHp
                         )
+                        syncTrainerSessionActivePlayerToParty(activeBattleSession)
                     } else {
                         const sessionMaxHp = Math.max(1, Number(activeBattleSession.playerMaxHp || calculatedMaxHp))
                         const normalizedRequestedMaxHp = Number.isFinite(itemUseContext.playerMaxHp)
@@ -800,6 +1200,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
                         activeBattleSession.playerMaxHp = reconciledMaxHp
                         activeBattleSession.playerCurrentHp = Math.min(sessionCurrentHp, normalizedRequestedCurrentHp)
+                        syncTrainerSessionActivePlayerToParty(activeBattleSession)
                     }
                 }
 
@@ -892,6 +1293,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             if (hpContext === 'battle' && activeBattleSession) {
                 activeBattleSession.playerCurrentHp = nextHp
+                syncTrainerSessionActivePlayerToParty(activeBattleSession)
                 await activeBattleSession.save()
                 if (isTrainerBattleContext) {
                     console.info('inventory_use_trainer_heal_applied', {
@@ -928,6 +1330,54 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     playerMaxHp: maxHp,
                     reason: 'item',
                 })
+                let playerForcedSwitch = null
+                if (trainerCounterAttack?.defeatedPlayer) {
+                    syncTrainerSessionActivePlayerToParty(activeBattleSession)
+                    playerForcedSwitch = applyTrainerSessionForcedPlayerSwitch(activeBattleSession)
+                    await activeBattleSession.save()
+                }
+                const turnTimeline = createTurnTimeline({ playerActsFirst: true })
+                appendTurnPhaseEvent(turnTimeline, {
+                    phaseKey: 'turn_start',
+                    actor: 'player',
+                    kind: 'item_used',
+                    line: `Bạn dùng ${item.name || 'vật phẩm'} cho ${targetPokemon.nickname || targetPokemon?.pokemonId?.name || 'Pokemon'}.`,
+                    itemId: normalizedItemId,
+                })
+                ;(Array.isArray(trainerCounterAttack?.turnPhases) ? trainerCounterAttack.turnPhases : []).forEach((phase) => {
+                    ;(Array.isArray(phase?.events) ? phase.events : []).forEach((event) => {
+                        appendTurnPhaseEvent(turnTimeline, {
+                            phaseKey: phase.key,
+                            actor: event?.actor || phase.actor || 'system',
+                            kind: event?.kind || 'message',
+                            line: event?.line || '',
+                            ...event,
+                        })
+                    })
+                })
+                if (playerForcedSwitch?.switched && playerForcedSwitch?.nextEntry) {
+                    appendTurnPhaseEvent(turnTimeline, {
+                        phaseKey: 'forced_switch',
+                        actor: 'system',
+                        kind: 'forced_switch',
+                        line: `${playerForcedSwitch.nextEntry.name || 'Pokemon'} vào sân thay thế.`,
+                        target: 'player',
+                        nextPokemonName: playerForcedSwitch.nextEntry.name || 'Pokemon',
+                        nextIndex: playerForcedSwitch.nextIndex,
+                    })
+                }
+                const turnPhases = finalizeTurnTimeline(turnTimeline)
+                trainerCounterAttack.turnPhases = turnPhases
+                trainerCounterAttack.logLines = flattenTurnPhaseLines(turnPhases)
+                trainerCounterAttack.playerParty = serializeTrainerPlayerPartyState(activeBattleSession)
+                trainerCounterAttack.forcedSwitch = playerForcedSwitch?.switched
+                    ? {
+                        target: 'player',
+                        nextIndex: playerForcedSwitch.nextIndex,
+                        nextPokemonId: playerForcedSwitch?.nextEntry?.userPokemonId || null,
+                        nextPokemonName: playerForcedSwitch?.nextEntry?.name || null,
+                    }
+                    : null
             }
 
             if (targetPokemon) {

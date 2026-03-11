@@ -2,6 +2,14 @@ import Move from '../models/Move.js'
 import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { normalizeVolatileState, resolveActionAvailabilityByStatus } from '../battle/battleState.js'
+import {
+    appendTurnPhaseEvent,
+    appendTurnPhaseLines,
+    createTurnTimeline,
+    finalizeTurnTimeline,
+    flattenTurnPhaseLines,
+    resolveTurnActorPhaseKeys,
+} from '../battle/turnTimeline.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const clampStatStage = (value) => clamp(Math.floor(Number(value) || 0), -6, 6)
@@ -40,6 +48,28 @@ const formatStatusLabel = (value = '') => {
     if (normalized === 'flinch') return 'choáng'
     if (normalized === 'drowsy') return 'buồn ngủ'
     return String(value || '').trim().toLowerCase()
+}
+
+const buildBattleActionLog = ({
+    actorName = 'Pokemon',
+    moveName = 'Chiêu thức',
+    didHit = false,
+    damage = 0,
+    isStatusMove = false,
+    effectivenessText = '',
+    missReason = 'trượt',
+    suffix = '',
+} = {}) => {
+    const resolvedActorName = String(actorName || 'Pokemon').trim() || 'Pokemon'
+    const resolvedMoveName = String(moveName || 'Chiêu thức').trim() || 'Chiêu thức'
+    const trimmedSuffix = String(suffix || '').trim()
+    if (!didHit) {
+        return `${resolvedActorName} dùng ${resolvedMoveName} nhưng ${missReason}.${trimmedSuffix ? ` ${trimmedSuffix}` : ''}`.trim()
+    }
+    if (isStatusMove) {
+        return `${resolvedActorName} dùng ${resolvedMoveName}!${trimmedSuffix ? ` ${trimmedSuffix}` : ''}`.trim()
+    }
+    return `${resolvedActorName} dùng ${resolvedMoveName}! Gây ${damage} sát thương.${trimmedSuffix ? ` ${trimmedSuffix}` : ''}${effectivenessText ? ` ${effectivenessText}` : ''}`.trim()
 }
 
 const TYPE_EFFECTIVENESS_CHART = {
@@ -309,6 +339,9 @@ export const applyTrainerPenaltyTurn = async ({
 } = {}) => {
     if (!activeBattleSession || !activeTrainerOpponent || !targetPokemon) return null
 
+    const turnTimeline = createTurnTimeline({ playerActsFirst: false })
+    const opponentPhaseKeys = resolveTurnActorPhaseKeys(turnTimeline, 'opponent')
+
     const opponentStatusCheck = resolveActionAvailabilityByStatus({
         status: activeTrainerOpponent?.status,
         statusTurns: activeTrainerOpponent?.statusTurns,
@@ -322,6 +355,14 @@ export const applyTrainerPenaltyTurn = async ({
     if (normalizedPlayerCurrentHp <= 0) {
         activeBattleSession.playerCurrentHp = 0
         await activeBattleSession.save()
+        appendTurnPhaseEvent(turnTimeline, {
+            phaseKey: 'faint_resolution',
+            actor: 'system',
+            kind: 'faint',
+            line: 'Pokemon của bạn đã kiệt sức.',
+            target: 'player',
+        })
+        const turnPhases = finalizeTurnTimeline(turnTimeline)
         return {
             damage: 0,
             currentHp: 0,
@@ -329,6 +370,8 @@ export const applyTrainerPenaltyTurn = async ({
             defeatedPlayer: true,
             move: { name: 'Counter Strike', type: 'normal', category: 'physical' },
             log: 'Pokemon của bạn đã kiệt sức.',
+            turnPhases,
+            logLines: flattenTurnPhaseLines(turnPhases),
             reason,
             effects: { logs: [] },
             player: {
@@ -349,13 +392,30 @@ export const applyTrainerPenaltyTurn = async ({
     )
     if (shouldSkipPenaltyTurnAction) {
         await activeBattleSession.save()
+        appendTurnPhaseLines(turnTimeline, {
+            phaseKey: opponentPhaseKeys.preAction,
+            actor: 'opponent',
+            kind: 'status_check',
+            lines: preActionLogs.length > 0 ? preActionLogs : [`${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'}: ${opponentStatusCheck.log || 'Không thể hành động.'}`],
+            target: 'opponent',
+        })
+        appendTurnPhaseEvent(turnTimeline, {
+            phaseKey: opponentPhaseKeys.action,
+            actor: 'opponent',
+            kind: 'action_skipped',
+            line: '',
+            target: 'opponent',
+        })
+        const turnPhases = finalizeTurnTimeline(turnTimeline)
         return {
             damage: 0,
             currentHp: normalizedPlayerCurrentHp,
             maxHp: normalizedPlayerMaxHp,
             defeatedPlayer: false,
             move: { name: '', type: 'normal', category: 'status', accuracy: 100, effectiveness: 1, stabMultiplier: 1, hit: false },
-            log: `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'}: ${opponentStatusCheck.log || 'Không thể hành động.'}`,
+            log: preActionLogs[0] || `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'}: ${opponentStatusCheck.log || 'Không thể hành động.'}`,
+            turnPhases,
+            logLines: flattenTurnPhaseLines(turnPhases),
             reason,
             effects: { logs: preActionLogs },
             player: {
@@ -407,9 +467,49 @@ export const applyTrainerPenaltyTurn = async ({
     await activeBattleSession.save()
 
     const effectivenessText = didHit ? resolveEffectivenessText(selectedMove.effectiveness?.multiplier) : ''
-    const baseLog = didHit
-        ? `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'} dùng ${selectedMove.name} khi bạn ${reason === 'switch' ? 'đổi Pokemon' : 'dùng vật phẩm'} và gây ${damage} sát thương.${effectivenessText ? ` ${effectivenessText}` : ''}`
-        : `${String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ'} dùng ${selectedMove.name} khi bạn ${reason === 'switch' ? 'đổi Pokemon' : 'dùng vật phẩm'} nhưng trượt.`
+    const baseLog = buildBattleActionLog({
+        actorName: String(activeTrainerOpponent?.name || 'Pokemon đối thủ').trim() || 'Pokemon đối thủ',
+        moveName: selectedMove.name,
+        didHit,
+        damage,
+        isStatusMove: selectedMove.category === 'status',
+        effectivenessText,
+        suffix: `khi bạn ${reason === 'switch' ? 'đổi Pokemon' : 'dùng vật phẩm'}`,
+    })
+    appendTurnPhaseLines(turnTimeline, {
+        phaseKey: opponentPhaseKeys.preAction,
+        actor: 'opponent',
+        kind: 'status_check',
+        lines: preActionLogs,
+        target: 'opponent',
+    })
+    appendTurnPhaseEvent(turnTimeline, {
+        phaseKey: opponentPhaseKeys.action,
+        actor: 'opponent',
+        kind: 'move_used',
+        line: baseLog,
+        moveName: selectedMove.name,
+        didHit,
+        damage,
+        target: 'player',
+    })
+    appendTurnPhaseLines(turnTimeline, {
+        phaseKey: opponentPhaseKeys.postAction,
+        actor: 'system',
+        kind: 'effect_log',
+        lines: effectLogs,
+        target: 'player',
+    })
+    if (nextHp <= 0) {
+        appendTurnPhaseEvent(turnTimeline, {
+            phaseKey: 'faint_resolution',
+            actor: 'system',
+            kind: 'faint',
+            line: `${playerBattleStats.name} đã bại trận.`,
+            target: 'player',
+        })
+    }
+    const turnPhases = finalizeTurnTimeline(turnTimeline)
 
     return {
         damage,
@@ -427,6 +527,8 @@ export const applyTrainerPenaltyTurn = async ({
             hit: didHit,
         },
         log: baseLog,
+        turnPhases,
+        logLines: flattenTurnPhaseLines(turnPhases),
         reason,
         effects: { logs: [...preActionLogs, ...effectLogs] },
         player: {

@@ -21,7 +21,7 @@ const STATUS_ALIASES = {
 }
 
 const DEFAULT_STATUS_TURN_RANGES = {
-    sleep: [1, 3],
+    sleep: [2, 4],
     freeze: [2, 4],
     confuse: [2, 4],
     flinch: [1, 1],

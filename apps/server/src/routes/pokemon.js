@@ -274,17 +274,21 @@ const toExplicitMoveList = (moves = [], limit = 4) => (Array.isArray(moves) ? mo
     .filter(Boolean)
     .slice(0, Math.max(0, Number(limit) || 4))
 
-const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
+const evaluateMoveLearnRestriction = (move, pokemonSpecies, userPokemonLike = null) => {
     const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
     const speciesId = String(pokemonSpecies?._id || '').trim()
     const speciesTypes = normalizeStringSet(pokemonSpecies?.types)
     const speciesRarity = String(pokemonSpecies?.rarity || '').trim().toLowerCase()
+    const allowOffTypeSkills = Boolean(userPokemonLike?.allowOffTypeSkills)
 
     if (learnScope === 'all') {
         return { canLearn: true, reason: '' }
     }
 
     if (learnScope === 'move_type') {
+        if (allowOffTypeSkills) {
+            return { canLearn: true, reason: '' }
+        }
         const moveType = String(move?.type || '').trim().toLowerCase()
         if (!moveType || !speciesTypes.has(moveType)) {
             return {
@@ -296,6 +300,9 @@ const evaluateMoveLearnRestriction = (move, pokemonSpecies) => {
     }
 
     if (learnScope === 'type') {
+        if (allowOffTypeSkills) {
+            return { canLearn: true, reason: '' }
+        }
         const allowedTypeSet = normalizeStringSet(move?.allowedTypes)
         const intersects = [...speciesTypes].some((entry) => allowedTypeSet.has(entry))
         if (!intersects) {
@@ -780,6 +787,33 @@ router.get('/pokedex', authMiddleware, async (req, res) => {
     }
 })
 
+// POST /api/pokemon/pokedex/status (protected)
+router.post('/pokedex/status', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const entries = Array.isArray(req.body?.entries) ? req.body.entries : []
+        const requestedKeys = [...new Set(entries
+            .map((entry) => {
+                const pokemonId = String(entry?.pokemonId || '').trim()
+                if (!pokemonId) return ''
+                return `${pokemonId}:${normalizeFormId(entry?.formId || 'normal')}`
+            })
+            .filter(Boolean))]
+
+        if (requestedKeys.length === 0) {
+            return res.json({ ok: true, ownedKeys: [] })
+        }
+
+        const ownedFormSet = await getUserPokedexFormSet(userId, { syncCurrentOwned: true })
+        const ownedKeys = requestedKeys.filter((key) => ownedFormSet.has(key))
+
+        res.json({ ok: true, ownedKeys })
+    } catch (error) {
+        console.error('POST /api/pokemon/pokedex/status error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
 // GET /api/pokemon/evolution-zone (protected)
 router.get('/evolution-zone', authMiddleware, async (req, res) => {
     try {
@@ -1074,6 +1108,7 @@ router.get('/:id', async (req, res) => {
         // Enhance response with calculated stats
         const responseData = {
             ...userPokemon,
+            allowOffTypeSkills: Boolean(userPokemon.allowOffTypeSkills),
             moves: mergedMoves,
             moveDetails,
             movePpState: toDisplayMovePpState(movePpState),
@@ -1249,7 +1284,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.userId
         const userPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
-            .select('moves pokemonId level')
+            .select('moves pokemonId level allowOffTypeSkills')
             .populate('pokemonId', 'types rarity levelUpMoves')
             .lean()
 
@@ -1274,7 +1309,7 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
                 if (!move || move.isActive === false) return null
                 const moveName = String(move.name || '').trim()
                 const moveKey = normalizeMoveName(moveName)
-                const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId)
+                const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId, userPokemon)
 
                 let canLearn = Boolean(moveName) && !knownMoveSet.has(moveKey)
                 let reason = canLearn ? '' : 'Pokemon đã biết kỹ năng này'
@@ -1328,11 +1363,108 @@ router.get('/:id/skills', authMiddleware, async (req, res) => {
             pokemon: {
                 _id: req.params.id,
                 moves: knownMoves,
+                allowOffTypeSkills: Boolean(userPokemon.allowOffTypeSkills),
             },
             skills,
         })
     } catch (error) {
         console.error('GET /api/pokemon/:id/skills error:', error)
+        res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
+    }
+})
+
+// GET /api/pokemon/:id/level-transfer-candidates (protected)
+router.get('/:id/level-transfer-candidates', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const page = Math.max(1, Number.parseInt(req.query?.page, 10) || 1)
+        const limit = Math.min(24, Math.max(1, Number.parseInt(req.query?.limit, 10) || 12))
+        const skip = (page - 1) * limit
+        const search = String(req.query?.search || '').trim()
+        const targetPokemon = await UserPokemon.findOne(withActiveUserPokemonFilter({ _id: req.params.id, userId }))
+            .select('_id')
+            .lean()
+
+        if (!targetPokemon) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon của bạn' })
+        }
+
+        const query = withActiveUserPokemonFilter({
+            userId,
+            _id: { $ne: req.params.id },
+            level: { $gt: 1 },
+        })
+
+        if (search) {
+            const searchRegex = new RegExp(escapeRegExp(search), 'i')
+            const numericSearch = Number.parseInt(search, 10)
+            const speciesSearchQuery = Number.isFinite(numericSearch)
+                ? {
+                    $or: [
+                        { name: searchRegex },
+                        { pokedexNumber: numericSearch },
+                    ],
+                }
+                : { name: searchRegex }
+
+            const speciesRows = await Pokemon.find(speciesSearchQuery)
+                .select('_id')
+                .lean()
+
+            const speciesIds = speciesRows
+                .map((entry) => entry?._id)
+                .filter(Boolean)
+
+            query.$or = [
+                { nickname: searchRegex },
+                { pokemonId: { $in: speciesIds } },
+            ]
+        }
+
+        const total = await UserPokemon.countDocuments(query)
+        const normalizedPage = total > 0 ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : 1
+        const normalizedSkip = (normalizedPage - 1) * limit
+
+        const candidates = await UserPokemon.find(query)
+            .select('_id pokemonId nickname level experience location formId isShiny updatedAt')
+            .populate('pokemonId', 'name pokedexNumber imageUrl sprites forms defaultFormId')
+            .sort({ level: -1, updatedAt: -1, _id: -1 })
+            .skip(normalizedSkip)
+            .limit(limit)
+            .lean()
+
+        res.json({
+            ok: true,
+            candidates: candidates.map((entry) => ({
+                _id: entry._id,
+                nickname: String(entry?.nickname || '').trim(),
+                level: Math.max(1, Number.parseInt(entry?.level, 10) || 1),
+                experience: Math.max(0, Number.parseInt(entry?.experience, 10) || 0),
+                location: String(entry?.location || 'box').trim() || 'box',
+                formId: String(entry?.formId || 'normal').trim().toLowerCase() || 'normal',
+                isShiny: Boolean(entry?.isShiny),
+                pokemon: {
+                    _id: entry?.pokemonId?._id || null,
+                    name: String(entry?.pokemonId?.name || '').trim(),
+                    pokedexNumber: Number(entry?.pokemonId?.pokedexNumber || 0),
+                    imageUrl: String(entry?.pokemonId?.imageUrl || '').trim(),
+                    sprites: entry?.pokemonId?.sprites || {},
+                    forms: Array.isArray(entry?.pokemonId?.forms) ? entry.pokemonId.forms : [],
+                    defaultFormId: String(entry?.pokemonId?.defaultFormId || 'normal').trim().toLowerCase() || 'normal',
+                },
+            })),
+            pagination: {
+                page: normalizedPage,
+                limit,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / limit)),
+            },
+            filters: {
+                search,
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon/:id/level-transfer-candidates error:', error)
         res.status(500).json({ ok: false, message: 'Lỗi máy chủ' })
     }
 })
@@ -1366,7 +1498,7 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
             return res.status(404).json({ ok: false, message: 'Kỹ năng không tồn tại hoặc đã bị vô hiệu hóa' })
         }
 
-        const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId)
+        const restrictionResult = evaluateMoveLearnRestriction(move, userPokemon.pokemonId, userPokemon)
         if (!restrictionResult.canLearn) {
             return res.status(400).json({ ok: false, message: restrictionResult.reason })
         }

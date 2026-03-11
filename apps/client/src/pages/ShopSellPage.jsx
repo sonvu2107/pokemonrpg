@@ -34,6 +34,12 @@ export default function ShopSellPage() {
     const [marketTab, setMarketTab] = useState('pokemon')
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [availablePokemon, setAvailablePokemon] = useState([])
+    const [availablePokemonPagination, setAvailablePokemonPagination] = useState({
+        page: 1,
+        limit: SELL_POKEMON_MODAL_PAGE_SIZE,
+        total: 0,
+        totalPages: 1,
+    })
     const toast = useToast()
     const [activeListings, setActiveListings] = useState([])
     const [soldListings, setSoldListings] = useState([])
@@ -48,10 +54,11 @@ export default function ShopSellPage() {
     const [error, setError] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [cancellingId, setCancellingId] = useState('')
-    const [loadedAvailable, setLoadedAvailable] = useState(false)
+    const [availablePokemonLoading, setAvailablePokemonLoading] = useState(false)
     const [showPokemonPickerModal, setShowPokemonPickerModal] = useState(false)
     const [pokemonPickerSearchTerm, setPokemonPickerSearchTerm] = useState('')
     const [pokemonPickerPage, setPokemonPickerPage] = useState(1)
+    const [selectedPokemon, setSelectedPokemon] = useState(null)
     const [detailPokemon, setDetailPokemon] = useState(null)
     const [detailTitle, setDetailTitle] = useState('Chi tiết Pokémon')
     const [availableItems, setAvailableItems] = useState([])
@@ -67,82 +74,102 @@ export default function ShopSellPage() {
     const soldPage = pagination?.sold?.page || 1
 
     useEffect(() => {
-        loadSellData(activePage, soldPage, { includeAvailable: !loadedAvailable })
+        loadSellData(activePage, soldPage)
     }, [activePage, soldPage])
 
     useEffect(() => {
         loadItemSellData(itemPagination?.active?.page || 1, itemPagination?.sold?.page || 1, { includeAvailable: true })
     }, [marketTab])
 
-    const selectedPokemon = useMemo(
-        () => availablePokemon.find((entry) => entry.id === selectedPokemonId) || null,
-        [availablePokemon, selectedPokemonId]
-    )
-
-    const pokemonPickerRows = useMemo(() => {
-        const normalizedSearch = String(pokemonPickerSearchTerm || '').trim().toLowerCase()
-        if (!normalizedSearch) return availablePokemon
-        return availablePokemon.filter((entry) => {
-            const pokemonName = String(entry?.pokemonName || '').toLowerCase()
-            const speciesName = String(entry?.speciesName || '').toLowerCase()
-            const formName = String(entry?.formName || '').toLowerCase()
-            const formId = String(entry?.formId || '').toLowerCase()
-            return pokemonName.includes(normalizedSearch)
-                || speciesName.includes(normalizedSearch)
-                || formName.includes(normalizedSearch)
-                || formId.includes(normalizedSearch)
-        })
-    }, [availablePokemon, pokemonPickerSearchTerm])
     const selectedItem = useMemo(() => availableItems.find((entry) => String(entry.itemId) === String(selectedItemId)) || null, [availableItems, selectedItemId])
-    const pokemonPickerTotal = pokemonPickerRows.length
-    const pokemonPickerTotalPages = Math.max(1, Math.ceil(pokemonPickerTotal / SELL_POKEMON_MODAL_PAGE_SIZE))
+    const pokemonPickerLimit = Number(availablePokemonPagination?.limit || SELL_POKEMON_MODAL_PAGE_SIZE)
+    const pokemonPickerTotal = Number(availablePokemonPagination?.total || 0)
+    const pokemonPickerTotalPages = Math.max(1, Number(availablePokemonPagination?.totalPages || 1))
     const normalizedPokemonPickerPage = Math.min(pokemonPickerPage, pokemonPickerTotalPages)
-    const pokemonPickerPageStartIndex = (normalizedPokemonPickerPage - 1) * SELL_POKEMON_MODAL_PAGE_SIZE
-    const pokemonPickerPageRows = pokemonPickerRows.slice(
-        pokemonPickerPageStartIndex,
-        pokemonPickerPageStartIndex + SELL_POKEMON_MODAL_PAGE_SIZE
-    )
+    const pokemonPickerPageStartIndex = (normalizedPokemonPickerPage - 1) * pokemonPickerLimit
+    const pokemonPickerPageRows = availablePokemon
     const pokemonPickerPageStart = pokemonPickerTotal > 0
         ? pokemonPickerPageStartIndex + 1
         : 0
     const pokemonPickerPageEnd = pokemonPickerTotal > 0
-        ? Math.min(pokemonPickerTotal, pokemonPickerPageStartIndex + SELL_POKEMON_MODAL_PAGE_SIZE)
+        ? Math.min(pokemonPickerTotal, pokemonPickerPageStartIndex + pokemonPickerLimit)
         : 0
 
-    const loadSellData = async (nextActivePage = 1, nextSoldPage = 1, options = {}) => {
+    useEffect(() => {
+        if (marketTab !== 'pokemon') return
+        loadAvailablePokemon(1, '')
+    }, [marketTab])
+
+    useEffect(() => {
+        if (!showPokemonPickerModal) return
+        loadAvailablePokemon(pokemonPickerPage, pokemonPickerSearchTerm)
+    }, [showPokemonPickerModal, pokemonPickerPage, pokemonPickerSearchTerm])
+
+    const loadSellData = async (nextActivePage = 1, nextSoldPage = 1) => {
         try {
             setLoading(true)
             setError('')
-            const includeAvailable = Boolean(options.includeAvailable)
             const data = await gameApi.getShopSellData({
                 activePage: nextActivePage,
                 soldPage: nextSoldPage,
                 limit: pagination.limit,
-                includeAvailable: includeAvailable ? 1 : 0,
+                includeAvailable: 0,
             })
 
             setWallet({
                 platinumCoins: Number(data?.wallet?.platinumCoins ?? 0),
                 moonPoints: Number(data?.wallet?.moonPoints || 0),
             })
-            if (Array.isArray(data.availablePokemon)) {
-                setAvailablePokemon(data.availablePokemon)
-                setLoadedAvailable(true)
-            }
             setActiveListings(data.activeListings || [])
             setSoldListings(data.soldListings || [])
             setPagination((prev) => ({
                 ...prev,
                 ...(data.pagination || {}),
             }))
-
-            if (selectedPokemonId && !(data.availablePokemon || []).some((entry) => entry.id === selectedPokemonId)) {
-                setSelectedPokemonId('')
-            }
         } catch (err) {
             setError(err.message || 'Không thể tải dữ liệu cửa hàng bán')
         } finally {
             setLoading(false)
+        }
+    }
+
+    const loadAvailablePokemon = async (page = 1, search = '') => {
+        try {
+            setAvailablePokemonLoading(true)
+            const data = await gameApi.getAvailableSellPokemon({
+                page,
+                limit: SELL_POKEMON_MODAL_PAGE_SIZE,
+                search,
+            })
+            const rows = data?.availablePokemon || []
+            const nextPage = Number(data?.pagination?.page || page)
+            const nextLimit = Number(data?.pagination?.limit || SELL_POKEMON_MODAL_PAGE_SIZE)
+            const nextTotal = Number(data?.pagination?.total || 0)
+            const nextTotalPages = Math.max(1, Number(data?.pagination?.totalPages || 1))
+
+            if (nextTotal > 0 && nextPage > nextTotalPages) {
+                setPokemonPickerPage(nextTotalPages)
+                return
+            }
+
+            setAvailablePokemon(rows)
+            setAvailablePokemonPagination({
+                page: nextPage,
+                limit: nextLimit,
+                total: nextTotal,
+                totalPages: nextTotalPages,
+            })
+
+            if (selectedPokemonId) {
+                const matchedSelectedPokemon = rows.find((entry) => entry.id === selectedPokemonId)
+                if (matchedSelectedPokemon) {
+                    setSelectedPokemon(matchedSelectedPokemon)
+                }
+            }
+        } catch (err) {
+            toast.showError(err.message || 'Không thể tải Pokemon khả dụng để đăng bán')
+        } finally {
+            setAvailablePokemonLoading(false)
         }
     }
 
@@ -176,8 +203,12 @@ export default function ShopSellPage() {
                 price: numericPrice,
             })
             setSelectedPokemonId('')
+            setSelectedPokemon(null)
             setPrice('')
-            await loadSellData(1, soldPage, { includeAvailable: true })
+            await Promise.all([
+                loadSellData(1, soldPage),
+                loadAvailablePokemon(1, ''),
+            ])
             toast.showSuccess('Đăng bán Pokemon thành công')
         } catch (err) {
             toast.showError(err.message || 'Đăng bán thất bại')
@@ -190,7 +221,10 @@ export default function ShopSellPage() {
         try {
             setCancellingId(listingId)
             await gameApi.cancelShopListing(listingId)
-            await loadSellData(activePage, soldPage, { includeAvailable: true })
+            await Promise.all([
+                loadSellData(activePage, soldPage),
+                loadAvailablePokemon(showPokemonPickerModal ? pokemonPickerPage : 1, showPokemonPickerModal ? pokemonPickerSearchTerm : ''),
+            ])
             toast.showSuccess('Hủy tin đăng thành công')
         } catch (err) {
             toast.showError(err.message || 'Hủy tin đăng thất bại')
@@ -238,8 +272,9 @@ export default function ShopSellPage() {
         setShowPokemonPickerModal(true)
     }
 
-    const handleSelectPokemonFromModal = (pokemonId) => {
-        setSelectedPokemonId(String(pokemonId || '').trim())
+    const handleSelectPokemonFromModal = (pokemonEntry) => {
+        setSelectedPokemonId(String(pokemonEntry?.id || '').trim())
+        setSelectedPokemon(pokemonEntry || null)
         setShowPokemonPickerModal(false)
     }
 
@@ -303,9 +338,9 @@ export default function ShopSellPage() {
                     </div>
 
                     <div className="p-4 space-y-3">
-                        {loading ? (
+                        {loading || (availablePokemonLoading && pokemonPickerTotal === 0) ? (
                             <div className="text-center text-slate-500 font-bold py-4">Đang tải danh sách Pokemon...</div>
-                        ) : availablePokemon.length === 0 ? (
+                        ) : pokemonPickerTotal === 0 ? (
                             <div className="text-center text-slate-500">Không có Pokemon khả dụng để đăng bán.</div>
                         ) : (
                             <>
@@ -560,7 +595,9 @@ export default function ShopSellPage() {
                             </div>
 
                             <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
-                                {pokemonPickerPageRows.length === 0 ? (
+                                {availablePokemonLoading ? (
+                                    <div className="px-3 py-4 text-sm text-slate-500 text-center">Đang tải Pokemon...</div>
+                                ) : pokemonPickerPageRows.length === 0 ? (
                                     <div className="px-3 py-4 text-sm text-slate-500 text-center">Không có Pokemon phù hợp</div>
                                 ) : (
                                     pokemonPickerPageRows.map((entry) => {
@@ -569,7 +606,7 @@ export default function ShopSellPage() {
                                             <button
                                                 key={entry.id}
                                                 type="button"
-                                                onClick={() => handleSelectPokemonFromModal(entry.id)}
+                                                onClick={() => handleSelectPokemonFromModal(entry)}
                                                 className={`w-full px-3 py-2 text-left flex items-center gap-3 transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                                             >
                                                 <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">

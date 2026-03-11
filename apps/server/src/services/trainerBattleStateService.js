@@ -45,6 +45,17 @@ export const serializeTrainerBattleState = (trainerSession = null) => {
         fieldState: trainerSession.fieldState && typeof trainerSession.fieldState === 'object'
             ? trainerSession.fieldState
             : {},
+        playerTeam: Array.isArray(trainerSession.playerTeam)
+            ? trainerSession.playerTeam.map((entry, index) => ({
+                slot: Math.max(0, Number(entry?.slot ?? index) || 0),
+                userPokemonId: entry?.userPokemonId || null,
+                name: String(entry?.name || `Pokemon ${index + 1}`).trim() || `Pokemon ${index + 1}`,
+                currentHp: Math.max(0, Number(entry?.currentHp || 0)),
+                maxHp: Math.max(1, Number(entry?.maxHp || 1)),
+                status: normalizeBattleStatus(entry?.status),
+                statusTurns: normalizeStatusTurns(entry?.statusTurns),
+            }))
+            : [],
         team: trainerSession.team.map((entry) => ({
             slot: Math.max(0, Number(entry?.slot) || 0),
             pokemonId: entry?.pokemonId || null,
