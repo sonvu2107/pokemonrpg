@@ -1,7 +1,7 @@
 import Move from '../models/Move.js'
 import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
-import { resolveActionAvailabilityByStatus } from '../battle/battleState.js'
+import { normalizeVolatileState, resolveActionAvailabilityByStatus } from '../battle/battleState.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const clampStatStage = (value) => clamp(Math.floor(Number(value) || 0), -6, 6)
@@ -27,6 +27,19 @@ const normalizeStatusTurns = (value = 0) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return 0
     return Math.max(0, Math.floor(parsed))
+}
+
+const formatStatusLabel = (value = '') => {
+    const normalized = normalizeBattleStatus(value)
+    if (normalized === 'burn') return 'bỏng'
+    if (normalized === 'poison') return 'trúng độc'
+    if (normalized === 'paralyze') return 'tê liệt'
+    if (normalized === 'freeze') return 'đóng băng'
+    if (normalized === 'sleep') return 'ngủ'
+    if (normalized === 'confuse') return 'rối loạn'
+    if (normalized === 'flinch') return 'choáng'
+    if (normalized === 'drowsy') return 'buồn ngủ'
+    return String(value || '').trim().toLowerCase()
 }
 
 const TYPE_EFFECTIVENESS_CHART = {
@@ -128,6 +141,9 @@ const extractStatusFromEffectSpecs = (effectSpecs = []) => {
             if (paramsStatus) return paramsStatus
             const sourceText = normalizeBattleStatus(entry?.sourceText)
             if (sourceText) return sourceText
+        }
+        if ((target === 'opponent' || !target) && (trigger === 'on_hit' || !trigger) && op === 'set_drowsy') {
+            return 'drowsy'
         }
     }
     return ''
@@ -366,11 +382,20 @@ export const applyTrainerPenaltyTurn = async ({
 
     let nextStatus = normalizeBattleStatus(activeBattleSession.playerStatus)
     let nextStatusTurns = normalizeStatusTurns(activeBattleSession.playerStatusTurns)
+    let nextPlayerVolatileState = normalizeVolatileState(activeBattleSession.playerVolatileState)
     const effectLogs = []
     if (didHit && !nextStatus && selectedMove.statusFromEffects) {
-        nextStatus = selectedMove.statusFromEffects
-        nextStatusTurns = ['sleep', 'freeze', 'confuse'].includes(nextStatus) ? 2 : 1
-        effectLogs.push(`${playerBattleStats.name} bị ${nextStatus}.`)
+        if (selectedMove.statusFromEffects === 'drowsy') {
+            nextPlayerVolatileState = {
+                ...nextPlayerVolatileState,
+                drowsyTurns: 2,
+            }
+            effectLogs.push(`${playerBattleStats.name} bắt đầu buồn ngủ.`)
+        } else {
+            nextStatus = selectedMove.statusFromEffects
+            nextStatusTurns = ['sleep', 'freeze', 'confuse'].includes(nextStatus) ? 2 : 1
+            effectLogs.push(`${playerBattleStats.name} bị ${formatStatusLabel(nextStatus)}.`)
+        }
     }
 
     activeBattleSession.playerPokemonId = targetPokemon._id
@@ -378,6 +403,7 @@ export const applyTrainerPenaltyTurn = async ({
     activeBattleSession.playerCurrentHp = nextHp
     activeBattleSession.playerStatus = nextStatus
     activeBattleSession.playerStatusTurns = nextStatusTurns
+    activeBattleSession.playerVolatileState = nextPlayerVolatileState
     await activeBattleSession.save()
 
     const effectivenessText = didHit ? resolveEffectivenessText(selectedMove.effectiveness?.multiplier) : ''

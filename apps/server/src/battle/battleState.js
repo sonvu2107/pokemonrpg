@@ -148,6 +148,7 @@ export const normalizeVolatileState = (value = {}) => {
     const rechargeTurns = normalizeStatusTurns(source.rechargeTurns)
     const bindTurns = normalizeStatusTurns(source.bindTurns)
     const bindFraction = clampFraction(source.bindFraction, 1 / 16)
+    const drowsyTurns = normalizeStatusTurns(source.drowsyTurns)
     const lockedRepeatMoveName = String(source.lockedRepeatMoveName || '').trim()
     const statusShieldTurns = normalizeStatusTurns(source.statusShieldTurns)
     const statDropShieldTurns = normalizeStatusTurns(source.statDropShieldTurns)
@@ -161,6 +162,7 @@ export const normalizeVolatileState = (value = {}) => {
         ...(rechargeTurns > 0 ? { rechargeTurns } : {}),
         ...(bindTurns > 0 ? { bindTurns } : {}),
         ...(bindTurns > 0 ? { bindFraction } : {}),
+        ...(drowsyTurns > 0 ? { drowsyTurns } : {}),
         ...(lockedRepeatMoveName ? { lockedRepeatMoveName } : {}),
         ...(statusShieldTurns > 0 ? { statusShieldTurns } : {}),
         ...(statDropShieldTurns > 0 ? { statDropShieldTurns } : {}),
@@ -527,6 +529,61 @@ export const resolveActionAvailabilityByStatus = ({ status = '', statusTurns = 0
         canAct: true,
         statusAfterCheck: normalizedStatus,
         statusTurnsAfterCheck: normalizedTurns,
+    }
+}
+
+export const resolveDrowsySleepAtEndTurn = ({ status = '', statusTurns = 0, volatileState = {}, random = Math.random } = {}) => {
+    const normalizedStatus = normalizeBattleStatus(status)
+    const normalizedTurns = normalizeStatusTurns(statusTurns)
+    const nextVolatileState = normalizeVolatileState(volatileState)
+    const drowsyTurns = normalizeStatusTurns(nextVolatileState.drowsyTurns)
+
+    if (drowsyTurns <= 0) {
+        return {
+            statusAfter: normalizedStatus,
+            statusTurnsAfter: normalizedTurns,
+            volatileStateAfter: nextVolatileState,
+            fellAsleep: false,
+            log: '',
+        }
+    }
+
+    if (normalizedStatus) {
+        delete nextVolatileState.drowsyTurns
+        return {
+            statusAfter: normalizedStatus,
+            statusTurnsAfter: normalizedTurns,
+            volatileStateAfter: normalizeVolatileState(nextVolatileState),
+            fellAsleep: false,
+            log: '',
+        }
+    }
+
+    if (drowsyTurns > 1) {
+        nextVolatileState.drowsyTurns = drowsyTurns - 1
+        return {
+            statusAfter: normalizedStatus,
+            statusTurnsAfter: normalizedTurns,
+            volatileStateAfter: normalizeVolatileState(nextVolatileState),
+            fellAsleep: false,
+            log: '',
+        }
+    }
+
+    delete nextVolatileState.drowsyTurns
+    const patchedSleepStatus = applyStatusPatch({
+        currentStatus: '',
+        currentTurns: 0,
+        nextStatus: 'sleep',
+        random,
+    })
+
+    return {
+        statusAfter: patchedSleepStatus.status,
+        statusTurnsAfter: patchedSleepStatus.statusTurns,
+        volatileStateAfter: normalizeVolatileState(nextVolatileState),
+        fellAsleep: true,
+        log: 'Rơi vào giấc ngủ.',
     }
 }
 

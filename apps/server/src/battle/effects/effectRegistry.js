@@ -61,6 +61,18 @@ const normalizeStatus = (value = '') => {
     return STATUS_ALIASES[normalized] || ''
 }
 
+const formatStatusLabel = (value = '') => {
+    const normalized = normalizeStatus(value)
+    if (normalized === 'burn') return 'bỏng'
+    if (normalized === 'poison') return 'trúng độc'
+    if (normalized === 'paralyze') return 'tê liệt'
+    if (normalized === 'freeze') return 'đóng băng'
+    if (normalized === 'sleep') return 'ngủ'
+    if (normalized === 'confuse') return 'rối loạn'
+    if (normalized === 'flinch') return 'choáng'
+    return String(value || '').trim().toLowerCase()
+}
+
 const normalizeWeather = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
     if (['sun', 'rain', 'sandstorm', 'hail'].includes(normalized)) return normalized
@@ -196,7 +208,7 @@ const handlers = {
         if (Number.isFinite(Number(effect?.params?.turns))) {
             result.statePatches[target].statusTurns = clampPositiveInt(effect?.params?.turns, 0)
         }
-        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${status}.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${formatStatusLabel(status)}.`)
         return result
     },
 
@@ -217,7 +229,7 @@ const handlers = {
 
         result.applied = true
         result.statePatches[target].status = chosenStatus
-        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${chosenStatus}.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${formatStatusLabel(chosenStatus)}.`)
         return result
     },
 
@@ -280,7 +292,21 @@ const handlers = {
         if (Number.isFinite(Number(effect?.params?.turns))) {
             result.statePatches[target].statusTurns = clampPositiveInt(effect?.params?.turns, 0)
         }
-        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${status} bởi điều kiện hiệu ứng.`)
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị ${formatStatusLabel(status)} bởi điều kiện hiệu ứng.`)
+        return result
+    },
+
+    set_drowsy: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        const turns = Math.max(2, clampPositiveInt(effect?.params?.turns, 2))
+        result.applied = true
+        result.statePatches[target].volatileState = {
+            drowsyTurns: turns,
+        }
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bắt đầu buồn ngủ.`)
         return result
     },
 

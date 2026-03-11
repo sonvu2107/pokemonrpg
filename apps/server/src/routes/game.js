@@ -71,6 +71,7 @@ import {
     normalizeVolatileState,
     resolveActionAvailabilityByStatus,
     resolveBattleTurnOrder,
+    resolveDrowsySleepAtEndTurn,
 } from '../battle/battleState.js'
 import {
     applyCounterMovePpConsumption,
@@ -139,6 +140,44 @@ import {
 import { hasOwnedPokemonForm } from '../services/userPokemonOwnershipService.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+const formatBattleStatusLabel = (value = '') => {
+    const normalized = normalizeBattleStatus(value)
+    if (normalized === 'burn') return 'bỏng'
+    if (normalized === 'poison') return 'trúng độc'
+    if (normalized === 'paralyze') return 'tê liệt'
+    if (normalized === 'freeze') return 'đóng băng'
+    if (normalized === 'sleep') return 'ngủ'
+    if (normalized === 'confuse') return 'rối loạn'
+    if (normalized === 'flinch') return 'choáng'
+    return String(value || '').trim().toLowerCase()
+}
+
+const buildBattleActionLog = ({
+    actorName = 'Pokemon',
+    moveName = 'Chiêu thức',
+    didHit = false,
+    damage = 0,
+    hitCount = 1,
+    isStatusMove = false,
+    effectivenessText = '',
+    missReason = 'trượt',
+    suffix = '',
+} = {}) => {
+    const resolvedActorName = String(actorName || 'Pokemon').trim() || 'Pokemon'
+    const resolvedMoveName = String(moveName || 'Chiêu thức').trim() || 'Chiêu thức'
+    const trimmedSuffix = String(suffix || '').trim()
+
+    if (!didHit) {
+        return `${resolvedActorName} dùng ${resolvedMoveName} nhưng ${missReason}.${trimmedSuffix ? ` ${trimmedSuffix}` : ''}`.trim()
+    }
+
+    if (isStatusMove) {
+        return `${resolvedActorName} dùng ${resolvedMoveName}!${trimmedSuffix ? ` ${trimmedSuffix}` : ''}`.trim()
+    }
+
+    return `${resolvedActorName} dùng ${resolvedMoveName}! Gây ${damage} sát thương${hitCount > 1 ? ` (${hitCount} đòn)` : ''}.${trimmedSuffix ? ` ${trimmedSuffix}` : ''}${effectivenessText ? ` ${effectivenessText}` : ''}`.trim()
+}
 
 const buildEffectiveBattleStats = ({
     baseStats = {},
@@ -1102,9 +1141,14 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 damagePercent: trainerPokemonDamagePercent,
                 log: !canOpponentAct
                     ? `${targetName} không thể hành động.`
-                    : (didOpponentMoveHit
-                    ? `${targetName} dùng ${selectedOpponentMoveName}! Gây ${counterDamage} sát thương. ${resolveEffectivenessText(opponentTypeEffectiveness.multiplier)}`.trim()
-                    : `${targetName} dùng ${selectedOpponentMoveName} nhưng trượt.`),
+                    : buildBattleActionLog({
+                        actorName: targetName,
+                        moveName: selectedOpponentMoveName,
+                        didHit: didOpponentMoveHit,
+                        damage: counterDamage,
+                        isStatusMove: opponentMoveCategory === 'status',
+                        effectivenessText: resolveEffectivenessText(opponentTypeEffectiveness.multiplier),
+                    }),
             }
         }
 
@@ -1566,6 +1610,40 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             executeOpponentTurn(currentHp)
         }
 
+        const playerDrowsyResult = resultingPlayerHp > 0
+            ? resolveDrowsySleepAtEndTurn({
+                status: playerStatus,
+                statusTurns: playerStatusTurns,
+                volatileState: playerVolatileState,
+                random: randomFn,
+            })
+            : null
+        if (playerDrowsyResult) {
+            playerStatus = normalizeBattleStatus(playerDrowsyResult.statusAfter)
+            playerStatusTurns = normalizeStatusTurns(playerDrowsyResult.statusTurnsAfter)
+            playerVolatileState = normalizeVolatileState(playerDrowsyResult.volatileStateAfter)
+            if (playerDrowsyResult.fellAsleep) {
+                battleExtraLogs.push(`Pokemon của bạn ${String(playerDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`)
+            }
+        }
+
+        const opponentDrowsyResult = currentHp > 0
+            ? resolveDrowsySleepAtEndTurn({
+                status: opponentStatus,
+                statusTurns: opponentStatusTurns,
+                volatileState: opponentVolatileState,
+                random: randomFn,
+            })
+            : null
+        if (opponentDrowsyResult) {
+            opponentStatus = normalizeBattleStatus(opponentDrowsyResult.statusAfter)
+            opponentStatusTurns = normalizeStatusTurns(opponentDrowsyResult.statusTurnsAfter)
+            opponentVolatileState = normalizeVolatileState(opponentDrowsyResult.volatileStateAfter)
+            if (opponentDrowsyResult.fellAsleep) {
+                battleExtraLogs.push(`${targetName} ${String(opponentDrowsyResult.log || 'rơi vào giấc ngủ.').trim().toLowerCase()}`)
+            }
+        }
+
         const playerResidualDamage = resultingPlayerHp > 0
             ? calcResidualStatusDamage({
                 status: playerStatus,
@@ -1574,7 +1652,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             : 0
         if (playerResidualDamage > 0) {
             resultingPlayerHp = Math.max(0, resultingPlayerHp - playerResidualDamage)
-            battleExtraLogs.push(`Pokemon của bạn chịu ${playerResidualDamage} sát thương do ${playerStatus}.`)
+            battleExtraLogs.push(`Pokemon của bạn chịu ${playerResidualDamage} sát thương do ${formatBattleStatusLabel(playerStatus)}.`)
         }
 
         const opponentResidualDamage = currentHp > 0
@@ -1585,7 +1663,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             : 0
         if (opponentResidualDamage > 0) {
             currentHp = Math.max(0, currentHp - opponentResidualDamage)
-            battleExtraLogs.push(`${targetName} chịu ${opponentResidualDamage} sát thương do ${opponentStatus}.`)
+            battleExtraLogs.push(`${targetName} chịu ${opponentResidualDamage} sát thương do ${formatBattleStatusLabel(opponentStatus)}.`)
         }
 
         const playerBindTurns = normalizeStatusTurns(playerVolatileState?.bindTurns)
@@ -1907,7 +1985,8 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 counterAttack,
                 opponentMoveState: opponentMoveStatePayload,
                 effects: {
-                    logs: [...combinedEffectResult.logs, ...battleExtraLogs],
+                    logs: combinedEffectResult.logs,
+                    extraLogs: battleExtraLogs,
                     appliedOps: combinedEffectResult.appliedEffects.map((entry) => String(entry?.op || '').trim()).filter(Boolean),
                     statePatches: combinedEffectResult.statePatches,
                 },
@@ -1917,7 +1996,16 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                     : !canPlayerAct
                     ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} không thể hành động.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
                     : (didPlayerMoveHit
-                    ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName}! Gây ${damage} sát thương${hitCount > 1 ? ` (${hitCount} đòn)` : ''}. ${moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.) ' : ''}${playerEffectivenessText}`.trim()
+                    ? buildBattleActionLog({
+                        actorName: activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn',
+                        moveName: selectedMoveName,
+                        didHit: true,
+                        damage,
+                        hitCount,
+                        isStatusMove,
+                        effectivenessText: playerEffectivenessText,
+                        suffix: moveFallbackReason === 'OUT_OF_PP' ? '(Chiêu đã hết PP nên tự dùng Struggle.)' : '',
+                    })
                     : (moveBlockedByTerrainRequirement
                         ? `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng thất bại vì sân đấu không có địa hình phù hợp.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`
                         : `${activePokemon.nickname || activePokemon?.pokemonId?.name || 'Pokemon của bạn'} dùng ${selectedMoveName} nhưng trượt.${moveFallbackReason === 'OUT_OF_PP' ? ' (Chiêu đã hết PP nên tự dùng Struggle.)' : ''}`)),
@@ -1935,6 +2023,7 @@ export const __battleEffectInternals = {
     mergeVolatileState,
     applyStatusPatch,
     resolveActionAvailabilityByStatus,
+    resolveDrowsySleepAtEndTurn,
     calcResidualStatusDamage,
     applyDamageGuardsToDamage,
     decrementDamageGuards,

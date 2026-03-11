@@ -453,12 +453,33 @@ const buildOpponentBattleMoves = (entry = null, prefix = 'op') => {
             id: `${prefix}-${index}-${String(item?.name || '').trim() || 'move'}`,
         }))
 }
-const resolveTurnOrderReasonLabel = (value = '') => {
-    const normalized = String(value || '').trim().toLowerCase()
-    if (normalized === 'priority') return 'do độ ưu tiên chiêu'
-    if (normalized === 'speed') return 'do tốc độ'
-    if (normalized === 'speed-tie') return 'do hòa tốc độ, ngẫu nhiên'
-    return 'đang chờ lượt đầu tiên'
+const classifyBattleExtraLogs = ({ logs = [], opponentName = '' } = {}) => {
+    const normalizedOpponentName = String(opponentName || '').trim().toLowerCase()
+
+    return (Array.isArray(logs) ? logs : []).reduce((acc, entry) => {
+        const line = String(entry || '').trim()
+        if (!line) return acc
+
+        const normalizedLine = line.toLowerCase()
+        const isPlayerPreActionLog = normalizedLine.startsWith('pokemon của bạn: ')
+            || normalizedLine.startsWith('pokemon của bạn cần hồi sức')
+            || normalizedLine.includes('không thể dùng liên tiếp')
+            || normalizedLine.includes('không thể dùng chiêu trạng thái')
+            || normalizedLine.includes('thất bại vì sân đấu không có địa hình phù hợp')
+        const isOpponentPreActionLog = Boolean(normalizedOpponentName)
+            && (normalizedLine.startsWith(`${normalizedOpponentName}: `)
+                || normalizedLine.startsWith(`${normalizedOpponentName} cần hồi sức`))
+
+        if (isPlayerPreActionLog) {
+            acc.prePlayer.push(line)
+        } else if (isOpponentPreActionLog) {
+            acc.preOpponent.push(line)
+        } else {
+            acc.postTurn.push(line)
+        }
+
+        return acc
+    }, { prePlayer: [], preOpponent: [], postTurn: [] })
 }
 const ProgressBar = ({ current, max, colorClass, label }) => {
     const safeMax = max > 0 ? max : 1
@@ -1971,8 +1992,11 @@ export function BattlePage() {
             const moveFallbackReason = String(battle?.move?.fallbackReason || '').trim()
             const moveFallbackFrom = String(battle?.move?.fallbackFrom || '').trim()
             const counterAttack = battle?.counterAttack || null
-            const effectLogs = Array.isArray(battle?.effects?.logs)
+            const moveEffectLogs = Array.isArray(battle?.effects?.logs)
                 ? battle.effects.logs.filter((entry) => Boolean(String(entry || '').trim()))
+                : []
+            const extraEffectLogs = Array.isArray(battle?.effects?.extraLogs)
+                ? battle.effects.extraLogs.filter((entry) => Boolean(String(entry || '').trim()))
                 : []
             const opponentMoveState = battle?.opponentMoveState && typeof battle.opponentMoveState === 'object'
                 ? battle.opponentMoveState
@@ -2216,6 +2240,10 @@ export function BattlePage() {
             ).trim()
             const preTurnLines = []
             const turnLogGroups = []
+            const splitExtraLogs = classifyBattleExtraLogs({
+                logs: extraEffectLogs,
+                opponentName: target.name || 'Đối thủ',
+            })
             if (turnOrderReason === 'speed') {
                 const playerSpeed = Math.max(1, Number(battle?.playerSpeed || 1))
                 const opponentSpeed = Math.max(1, Number(battle?.opponentSpeed || 1))
@@ -2260,14 +2288,22 @@ export function BattlePage() {
                     || `${target.name || 'Đối thủ'} dùng ${counterMoveName}! Gây ${counterDamage} sát thương.`
                 ).trim()
                 if (turnOrder === 'opponent-first') {
-                    if (counterTurnLog) turnLogGroups.push({ lines: [...preTurnLines, counterTurnLog] })
-                    if (playerTurnLog) turnLogGroups.push({ lines: [playerTurnLog] })
+                    if (counterTurnLog || preTurnLines.length > 0 || splitExtraLogs.preOpponent.length > 0) {
+                        turnLogGroups.push({ lines: [...preTurnLines, ...splitExtraLogs.preOpponent, counterTurnLog].filter(Boolean) })
+                    }
+                    if (playerTurnLog || splitExtraLogs.prePlayer.length > 0 || moveEffectLogs.length > 0) {
+                        turnLogGroups.push({ lines: [...splitExtraLogs.prePlayer, playerTurnLog, ...moveEffectLogs].filter(Boolean) })
+                    }
                 } else {
-                    if (playerTurnLog) turnLogGroups.push({ lines: [...preTurnLines, playerTurnLog] })
-                    if (counterTurnLog) turnLogGroups.push({ lines: [counterTurnLog] })
+                    if (playerTurnLog || preTurnLines.length > 0 || splitExtraLogs.prePlayer.length > 0 || moveEffectLogs.length > 0) {
+                        turnLogGroups.push({ lines: [...preTurnLines, ...splitExtraLogs.prePlayer, playerTurnLog, ...moveEffectLogs].filter(Boolean) })
+                    }
+                    if (counterTurnLog || splitExtraLogs.preOpponent.length > 0) {
+                        turnLogGroups.push({ lines: [...splitExtraLogs.preOpponent, counterTurnLog].filter(Boolean) })
+                    }
                 }
             } else if (playerTurnLog) {
-                turnLogGroups.push({ lines: [...preTurnLines, playerTurnLog] })
+                turnLogGroups.push({ lines: [...preTurnLines, ...splitExtraLogs.prePlayer, playerTurnLog, ...moveEffectLogs].filter(Boolean) })
             }
 
             if (Number.isFinite(authoritativePlayerHp)) {
@@ -2280,11 +2316,11 @@ export function BattlePage() {
                 })
             }
 
-            if (effectLogs.length > 0) {
+            if (splitExtraLogs.postTurn.length > 0) {
                 if (turnLogGroups.length > 0) {
-                    turnLogGroups[turnLogGroups.length - 1].lines.push(...effectLogs)
+                    turnLogGroups[turnLogGroups.length - 1].lines.push(...splitExtraLogs.postTurn)
                 } else {
-                    turnLogGroups.push({ lines: effectLogs })
+                    turnLogGroups.push({ lines: splitExtraLogs.postTurn })
                 }
             }
 

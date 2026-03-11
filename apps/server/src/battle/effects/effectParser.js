@@ -1102,7 +1102,7 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/infatuates opponents|makes opponents drowsy/.test(text)) {
+    if (/infatuates opponents/.test(text)) {
         maybePush(effects, makeEffect({
             op: 'no_op',
             trigger: 'on_hit',
@@ -1111,6 +1111,18 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
             params: { reason: 'infatuation_or_drowsy_unsupported' },
             sourceText,
             parserConfidence: 0.68,
+        }))
+    }
+
+    if (/makes opponents drowsy|makes the opponent drowsy|makes target drowsy|makes the target drowsy|fall asleep next turn|falls asleep next turn|fall asleep on the next turn|falls asleep on the next turn|causing it to fall asleep next turn/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_drowsy',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { turns: 2 },
+            sourceText,
+            parserConfidence: 0.92,
         }))
     }
 
@@ -4254,7 +4266,7 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         { regex: /may freeze opponent|may freeze opponents|freezes opponent|freezes opponents/, status: 'freeze' },
         { regex: /may confuse opponent|may confuse opponents|may confuse the opponent|may confuse target|may confuse the target|confuses opponent|confuses opponents|confuses the opponent|confuses all pok[eé]mon/, status: 'confuse' },
         { regex: /may cause flinching|may flinch|foe flinches/, status: 'flinch' },
-        { regex: /puts opponent to sleep|sleep/, status: 'sleep' },
+        { regex: /puts opponent to sleep|puts opponents to sleep|puts the opponent to sleep|puts target to sleep|puts the target to sleep|may put opponent to sleep|may put opponents to sleep|may put the opponent to sleep|may put target to sleep|may put the target to sleep|causes sleep|cause sleep/, status: 'sleep' },
     ]
 
     statusPatterns.forEach(({ regex, status }) => {
