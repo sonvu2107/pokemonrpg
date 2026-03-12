@@ -582,9 +582,11 @@ const getTotalDexEntries = async () => {
     return speciesRows.reduce((total, species) => total + countDexEntriesForSpecies(species), 0)
 }
 
-const getPokemonPowerMetaLookup = async () => {
+const getPokemonPowerMetaLookup = async (options = {}) => {
     const now = Date.now()
-    if (pokemonPowerMetaCache.byId.size > 0 && pokemonPowerMetaCache.expiresAt > now) {
+    const forceRefresh = options?.forceRefresh === true
+
+    if (!forceRefresh && pokemonPowerMetaCache.byId.size > 0 && pokemonPowerMetaCache.expiresAt > now) {
         return pokemonPowerMetaCache.byId
     }
 
@@ -616,8 +618,8 @@ const getPokemonPowerMetaLookup = async () => {
     return refreshPromise
 }
 
-const buildPowerRankingSnapshot = async (adminUserIds = []) => {
-    const pokemonLookup = await getPokemonPowerMetaLookup()
+const buildPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
+    const pokemonLookup = await getPokemonPowerMetaLookup(options)
     const baseMatch = {}
     if (Array.isArray(adminUserIds) && adminUserIds.length > 0) {
         baseMatch.userId = { $nin: adminUserIds }
@@ -686,7 +688,7 @@ const getPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
         return cached.inFlight
     }
 
-    const refreshPromise = buildPowerRankingSnapshot(adminUserIds)
+    const refreshPromise = buildPowerRankingSnapshot(adminUserIds, options)
         .then((snapshot) => {
             powerRankingSnapshotCache.set(cacheKey, {
                 snapshot,
