@@ -210,6 +210,16 @@ const normalizeOverallMode = (value = '') => {
     return 'wealth'
 }
 
+const resolveForceRefreshPermission = async (req, res) => {
+    const refreshRequested = String(req.query.refresh || '').trim().toLowerCase() === '1'
+    if (!refreshRequested) return false
+    if (!req.headers.authorization || !req.headers.authorization.startsWith('Bearer ')) return false
+
+    await authMiddleware(req, res, () => { })
+    if (res.headersSent) return null
+    return req.user?.role === 'admin'
+}
+
 const RARITY_KEYS = ['sss+', 'sss', 'ss', 's', 'a', 'b', 'c', 'd']
 
 const normalizeRarityKey = (value = '') => {
@@ -659,15 +669,16 @@ const buildPowerRankingSnapshot = async (adminUserIds = []) => {
     return normalizedRows.map(({ sortId, ...entry }) => entry)
 }
 
-const getPowerRankingSnapshot = async (adminUserIds = []) => {
+const getPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
     const normalizedAdminKeys = Array.isArray(adminUserIds)
         ? adminUserIds.map((entry) => String(entry || '').trim()).filter(Boolean).sort()
         : []
     const cacheKey = normalizedAdminKeys.join(',') || 'all-users'
     const now = Date.now()
     const cached = powerRankingSnapshotCache.get(cacheKey)
+    const forceRefresh = options?.forceRefresh === true
 
-    if (cached?.snapshot && cached.expiresAt > now) {
+    if (!forceRefresh && cached?.snapshot && cached.expiresAt > now) {
         return cached.snapshot
     }
 
@@ -1497,6 +1508,8 @@ router.get('/pokemon', async (req, res, next) => {
         const skip = (page - 1) * limit
         const adminUserIds = await getAdminUserIds()
         const rankingMode = normalizeRankingMode(req.query.mode)
+        const forceRefresh = await resolveForceRefreshPermission(req, res)
+        if (forceRefresh === null) return
 
         const baseMatch = {}
         if (adminUserIds.length > 0) {
@@ -1504,7 +1517,7 @@ router.get('/pokemon', async (req, res, next) => {
         }
 
         if (rankingMode === 'power') {
-            const sortedRows = await getPowerRankingSnapshot(adminUserIds)
+            const sortedRows = await getPowerRankingSnapshot(adminUserIds, { forceRefresh })
 
             const total = sortedRows.length
             const totalPages = Math.max(1, Math.ceil(total / limit))

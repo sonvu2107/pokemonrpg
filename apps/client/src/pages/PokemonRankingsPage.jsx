@@ -7,6 +7,7 @@ import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
+import { useAuth } from '../context/AuthContext'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold py-2 px-4 text-center border-b border-blue-700 shadow-sm">
@@ -17,17 +18,20 @@ const SectionHeader = ({ title }) => (
 const RANKINGS_CLIENT_CACHE_TTL_MS = 60 * 1000
 
 export default function PokemonRankingsPage() {
+    const { user } = useAuth()
     const [rankings, setRankings] = useState([])
     const [pagination, setPagination] = useState(null)
     const [totalSpecies, setTotalSpecies] = useState(0)
     const [rankingMode, setRankingMode] = useState('collection')
     const [loading, setLoading] = useState(true)
+    const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState('')
     const [currentPage, setCurrentPage] = useState(1)
     const rankingsCacheRef = useRef(new Map())
     const { openTrainerProfile, trainerModalProps } = useTrainerProfileModal({ defaultReturnTo: '/rankings/pokemon' })
 
     const isPowerMode = rankingMode === 'power'
+    const canRefreshRankings = user?.role === 'admin'
     const pageTitle = isPowerMode ? 'BXH Lực Chiến Pokémon' : 'BXH Pokédex'
     const sectionTitle = isPowerMode ? 'Xếp Hạng Lực Chiến Pokémon' : 'Xếp Hạng Pokédex'
 
@@ -41,10 +45,11 @@ export default function PokemonRankingsPage() {
         loadRankings(currentPage)
     }, [currentPage, rankingMode])
 
-    const loadRankings = async (page) => {
+    const loadRankings = async (page, options = {}) => {
+        const forceRefresh = options?.forceRefresh === true
         const cacheKey = `${rankingMode}:${page}`
         const cached = rankingsCacheRef.current.get(cacheKey)
-        if (cached && cached.expiresAt > Date.now()) {
+        if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
             setRankings(cached.rankings)
             setPagination(cached.pagination)
             setTotalSpecies(cached.totalSpecies)
@@ -54,9 +59,13 @@ export default function PokemonRankingsPage() {
         }
 
         try {
-            setLoading(true)
+            if (forceRefresh) {
+                setRefreshing(true)
+            } else {
+                setLoading(true)
+            }
             setError('')
-            const data = await gameApi.getPokemonRankings({ page, limit: 35, mode: rankingMode })
+            const data = await gameApi.getPokemonRankings({ page, limit: 35, mode: rankingMode, forceRefresh })
             const nextRankings = Array.isArray(data.rankings) ? data.rankings : []
             const nextPagination = data.pagination || null
             const nextTotalSpecies = Math.max(0, Number((data.totalDexEntries ?? data.totalSpecies) || 0))
@@ -73,8 +82,17 @@ export default function PokemonRankingsPage() {
         } catch (err) {
             setError(err.message || 'Không thể tải bảng xếp hạng Pokémon')
         } finally {
-            setLoading(false)
+            if (forceRefresh) {
+                setRefreshing(false)
+            } else {
+                setLoading(false)
+            }
         }
+    }
+
+    const handleRefresh = () => {
+        rankingsCacheRef.current.clear()
+        loadRankings(currentPage, { forceRefresh: true })
     }
 
     const renderPagination = () => {
@@ -189,6 +207,19 @@ export default function PokemonRankingsPage() {
                     >
                         Lực Chiến
                     </button>
+                    {canRefreshRankings && (
+                        <button
+                            type="button"
+                            onClick={handleRefresh}
+                            disabled={refreshing}
+                            className={`whitespace-nowrap px-3 py-1 rounded border ${refreshing
+                                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                                }`}
+                        >
+                            {refreshing ? 'Đang làm mới...' : 'Làm mới BXH'}
+                        </button>
+                    )}
                 </div>
             </div>
 

@@ -14,7 +14,7 @@ const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master
 
 export default function AppShell() {
     const { user, logout } = useAuth()
-    const { isPlayTabBlocked, blockReason } = usePlayTab()
+    const { isPlayTabBlocked, blockReason, maxAllowedTabs } = usePlayTab()
     const { data: profilePayload } = useProfileQuery({ enabled: Boolean(user) })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [mobileProfile, setMobileProfile] = useState({
@@ -45,7 +45,7 @@ export default function AppShell() {
         : 'Game đang mở ở tab khác'
     const blockMessage = blockReason === 'session-replaced'
         ? 'Phiên hiện tại đã bị thay thế. Hãy quay lại nơi đang chơi hoặc đăng nhập lại để tiếp tục hành trình.'
-        : 'Hệ thống chỉ cho phép 1 tab chơi cho mỗi tài khoản. Hãy đóng tab chính hoặc quay lại tab đang chơi để tiếp tục.'
+        : `Hệ thống chỉ cho phép tối đa ${maxAllowedTabs} tab chơi cho mỗi tài khoản trong cùng một phiên. Hãy đóng bớt tab đang mở rồi thử lại.`
     return (
         <div className="bg-white h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
             <GlobalNotification />
@@ -149,11 +149,11 @@ export default function AppShell() {
                                                 <div className="mt-6 grid gap-3 sm:grid-cols-2">
                                                     <div className="rounded-2xl border-2 border-slate-800 bg-white/80 px-4 py-3 text-left shadow-sm">
                                                         <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-700">Luật hiện tại</div>
-                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Mỗi tài khoản chỉ có 1 phiên chơi hoạt động trên toàn hệ thống.</div>
+                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Mỗi tài khoản có 1 phiên đăng nhập chính và tối đa {maxAllowedTabs} tab chơi trong cùng phiên đó.</div>
                                                     </div>
                                                     <div className="rounded-2xl border-2 border-slate-800 bg-white/80 px-4 py-3 text-left shadow-sm">
                                                         <div className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-700">Gợi ý</div>
-                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Đóng tab đang chơi hoặc đăng nhập lại ở thiết bị bạn muốn sử dụng.</div>
+                                                        <div className="mt-1 text-sm font-semibold text-slate-700">Đóng bớt tab đang chơi hoặc đăng nhập lại ở thiết bị bạn muốn sử dụng.</div>
                                                     </div>
                                                 </div>
                                             </div>

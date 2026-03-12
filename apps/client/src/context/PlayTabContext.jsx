@@ -6,6 +6,7 @@ const PlayTabContext = createContext(null)
 const LOCK_PREFIX = 'vnpet:play-tab:'
 const HEARTBEAT_MS = 2000
 const STALE_LOCK_MS = 6500
+const MAX_ALLOWED_TABS = 2
 
 const createTabId = () => {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -27,19 +28,44 @@ const readLockState = (lockKey) => {
         if (!raw) return null
 
         const parsed = JSON.parse(raw)
-        return {
-            tabId: String(parsed?.tabId || '').trim(),
-            lastSeen: Number(parsed?.lastSeen || 0),
+        if (Array.isArray(parsed?.tabs)) {
+            return {
+                tabs: parsed.tabs.map((entry) => ({
+                    tabId: String(entry?.tabId || '').trim(),
+                    lastSeen: Number(entry?.lastSeen || 0),
+                })),
+            }
         }
+
+        if (parsed?.tabId) {
+            return {
+                tabs: [{
+                    tabId: String(parsed?.tabId || '').trim(),
+                    lastSeen: Number(parsed?.lastSeen || 0),
+                }],
+            }
+        }
+
+        return { tabs: [] }
     } catch {
         return null
     }
 }
 
-const isLockStale = (lockState) => {
-    if (!lockState?.tabId) return true
-    if (!Number.isFinite(lockState.lastSeen) || lockState.lastSeen <= 0) return true
-    return (Date.now() - lockState.lastSeen) > STALE_LOCK_MS
+const isTabStale = (tabState) => {
+    if (!tabState?.tabId) return true
+    if (!Number.isFinite(tabState.lastSeen) || tabState.lastSeen <= 0) return true
+    return (Date.now() - tabState.lastSeen) > STALE_LOCK_MS
+}
+
+const sanitizeTabs = (lockState) => {
+    const tabs = Array.isArray(lockState?.tabs) ? lockState.tabs : []
+    return tabs
+        .map((entry) => ({
+            tabId: String(entry?.tabId || '').trim(),
+            lastSeen: Number(entry?.lastSeen || 0),
+        }))
+        .filter((entry) => !isTabStale(entry))
 }
 
 export const PlayTabProvider = ({ children }) => {
@@ -56,16 +82,17 @@ export const PlayTabProvider = ({ children }) => {
         if (!lockKey) return
 
         const currentLock = readLockState(lockKey)
-        if (currentLock?.tabId === tabIdRef.current) {
+        const remainingTabs = sanitizeTabs(currentLock).filter((entry) => entry.tabId !== tabIdRef.current)
+        if (remainingTabs.length === 0) {
             window.localStorage.removeItem(lockKey)
+            return
         }
+
+        window.localStorage.setItem(lockKey, JSON.stringify({ tabs: remainingTabs }))
     }
 
-    const writeOwnLock = (lockKey) => {
-        window.localStorage.setItem(lockKey, JSON.stringify({
-            tabId: tabIdRef.current,
-            lastSeen: Date.now(),
-        }))
+    const writeTabs = (lockKey, tabs) => {
+        window.localStorage.setItem(lockKey, JSON.stringify({ tabs }))
     }
 
     const syncLock = (lockKey) => {
@@ -75,16 +102,24 @@ export const PlayTabProvider = ({ children }) => {
         }
 
         const currentLock = readLockState(lockKey)
-        if (currentLock?.tabId === tabIdRef.current) {
-            writeOwnLock(lockKey)
+        const tabs = sanitizeTabs(currentLock)
+        const now = Date.now()
+        const existingIndex = tabs.findIndex((entry) => entry.tabId === tabIdRef.current)
+
+        if (existingIndex !== -1) {
+            const nextTabs = tabs.map((entry, index) => index === existingIndex
+                ? { ...entry, lastSeen: now }
+                : entry)
+            writeTabs(lockKey, nextTabs)
             setIsPrimaryPlayTab(true)
             return true
         }
 
-        if (!currentLock || isLockStale(currentLock)) {
-            writeOwnLock(lockKey)
-            const confirmedLock = readLockState(lockKey)
-            const won = confirmedLock?.tabId === tabIdRef.current
+        if (tabs.length < MAX_ALLOWED_TABS) {
+            const nextTabs = [...tabs, { tabId: tabIdRef.current, lastSeen: now }]
+            writeTabs(lockKey, nextTabs)
+            const confirmedTabs = sanitizeTabs(readLockState(lockKey))
+            const won = confirmedTabs.some((entry) => entry.tabId === tabIdRef.current)
             setIsPrimaryPlayTab(won)
             return won
         }
@@ -162,7 +197,8 @@ export const PlayTabProvider = ({ children }) => {
         isPrimaryPlayTab,
         isSessionTakenOver,
         isPlayTabBlocked: Boolean(token && userKey) && (!isPrimaryPlayTab || isSessionTakenOver),
-        blockReason: isSessionTakenOver ? 'session-replaced' : (!isPrimaryPlayTab ? 'secondary-tab' : null),
+        blockReason: isSessionTakenOver ? 'session-replaced' : (!isPrimaryPlayTab ? 'tab-limit-exceeded' : null),
+        maxAllowedTabs: MAX_ALLOWED_TABS,
         markSessionTakenOver,
         clearSessionTakenOver,
         releasePlayTabLock: releaseLock,

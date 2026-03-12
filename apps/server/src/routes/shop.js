@@ -34,12 +34,6 @@ const toSafePrice = (value) => Math.max(1, parseInt(value, 10) || 0)
 const toSafeQuantity = (value) => Math.min(999, Math.max(1, parseInt(value, 10) || 1))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const createRequestError = (status, message) => {
-    const error = new Error(message)
-    error.status = status
-    error.isRequestError = true
-    return error
-}
 const ITEM_MARKET_EFFECT_LABELS = Object.freeze({
     none: 'Khác',
     catchMultiplier: 'Bắt Pokemon',
@@ -1617,7 +1611,6 @@ router.get('/buy', async (req, res) => {
 
 // POST /api/shop/buy/:listingId
 router.post('/buy/:listingId', async (req, res) => {
-    const session = await mongoose.startSession()
     try {
         const buyerId = req.user.userId
         const listingId = String(req.params.listingId || '').trim()
@@ -1625,87 +1618,136 @@ router.post('/buy/:listingId', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'listingId không hợp lệ' })
         }
 
-        await session.withTransaction(async () => {
-            const preview = await MarketListing.findById(listingId)
-                .select('status sellerId reservedForUserId price userPokemonId')
-                .session(session)
-                .lean()
+        const preview = await MarketListing.findById(listingId)
+            .select('status sellerId reservedForUserId price userPokemonId')
+            .lean()
 
-            if (!preview) {
-                throw createRequestError(404, 'Không tìm thấy tin đăng')
-            }
-            if (preview.status !== 'active') {
-                throw createRequestError(409, 'Tin đăng không còn khả dụng')
-            }
-            if (String(preview.sellerId) === String(buyerId)) {
-                throw createRequestError(400, 'Bạn không thể mua tin đăng của chính mình')
-            }
-            if (preview.reservedForUserId && String(preview.reservedForUserId) !== String(buyerId)) {
-                throw createRequestError(403, 'Tin đăng này đã dành cho người chơi khác')
-            }
+        if (!preview) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy tin đăng' })
+        }
+        if (preview.status !== 'active') {
+            return res.status(409).json({ ok: false, message: 'Tin đăng không còn khả dụng' })
+        }
+        if (String(preview.sellerId) === String(buyerId)) {
+            return res.status(400).json({ ok: false, message: 'Bạn không thể mua tin đăng của chính mình' })
+        }
+        if (preview.reservedForUserId && String(preview.reservedForUserId) !== String(buyerId)) {
+            return res.status(403).json({ ok: false, message: 'Tin đăng này đã dành cho người chơi khác' })
+        }
 
-            const claimedListing = await MarketListing.findOneAndUpdate(
-                {
-                    _id: listingId,
-                    status: 'active',
-                    sellerId: { $ne: buyerId },
-                    ...(preview.reservedForUserId ? { reservedForUserId: buyerId } : {}),
+        const claimedListing = await MarketListing.findOneAndUpdate(
+            {
+                _id: listingId,
+                status: 'active',
+                sellerId: { $ne: buyerId },
+                ...(preview.reservedForUserId ? { reservedForUserId: buyerId } : {}),
+            },
+            {
+                $set: {
+                    status: 'sold',
+                    buyerId,
+                    soldAt: new Date(),
                 },
+            },
+            { new: true }
+        )
+
+        if (!claimedListing) {
+            return res.status(409).json({ ok: false, message: 'Tin đăng đã được mua' })
+        }
+
+        const restoreListing = async () => {
+            await MarketListing.updateOne(
+                { _id: claimedListing._id, status: 'sold', buyerId },
                 {
                     $set: {
-                        status: 'sold',
-                        buyerId,
-                        soldAt: new Date(),
+                        status: 'active',
+                        buyerId: null,
+                        soldAt: null,
                     },
-                },
-                { new: true, session }
+                }
             )
+        }
 
-            if (!claimedListing) {
-                throw createRequestError(409, 'Tin đăng đã được mua')
-            }
+        const refundBuyer = async () => {
+            await PlayerState.updateOne(
+                { userId: buyerId },
+                { $inc: { gold: claimedListing.price } }
+            )
+        }
 
-            const transferResult = await UserPokemon.updateOne(
+        const restorePokemonToSeller = async () => {
+            await UserPokemon.updateOne(
                 withActiveUserPokemonFilter({
                     _id: claimedListing.userPokemonId,
-                    userId: claimedListing.sellerId,
+                    userId: buyerId,
                 }),
                 {
                     $set: {
-                        userId: buyerId,
+                        userId: claimedListing.sellerId,
                         location: 'box',
                         partyIndex: null,
                         boxNumber: 1,
                         status: 'active',
                         updatedAt: new Date(),
                     },
+                }
+            )
+        }
+
+        const buyerState = await PlayerState.findOneAndUpdate(
+            { userId: buyerId, gold: { $gte: claimedListing.price } },
+            { $inc: { gold: -claimedListing.price } },
+            { new: true }
+        )
+
+        if (!buyerState) {
+            await restoreListing()
+            return res.status(400).json({ ok: false, message: 'Không đủ Xu Bạch Kim để mua Pokemon này' })
+        }
+
+        const transferResult = await UserPokemon.updateOne(
+            withActiveUserPokemonFilter({
+                _id: claimedListing.userPokemonId,
+                userId: claimedListing.sellerId,
+            }),
+            {
+                $set: {
+                    userId: buyerId,
+                    location: 'box',
+                    partyIndex: null,
+                    boxNumber: 1,
+                    status: 'active',
+                    updatedAt: new Date(),
                 },
-                { session }
-            )
-
-            if (!transferResult.modifiedCount) {
-                throw createRequestError(409, 'Chuyển Pokemon thất bại. Tin đăng đã được khôi phục.')
             }
+        )
 
-            const buyerState = await PlayerState.findOneAndUpdate(
-                { userId: buyerId, gold: { $gte: claimedListing.price } },
-                { $inc: { gold: -claimedListing.price } },
-                { new: true, session }
-            )
+        if (!transferResult.modifiedCount) {
+            await refundBuyer()
+            await restoreListing()
+            return res.status(409).json({ ok: false, message: 'Chuyển Pokemon thất bại. Tin đăng đã được khôi phục.' })
+        }
 
-            if (!buyerState) {
-                throw createRequestError(400, 'Không đủ Xu Bạch Kim để mua Pokemon này')
-            }
-
+        try {
             await PlayerState.findOneAndUpdate(
                 { userId: claimedListing.sellerId },
                 {
                     $setOnInsert: { userId: claimedListing.sellerId },
                     $inc: { gold: claimedListing.price },
                 },
-                { new: true, upsert: true, session }
+                { new: true, upsert: true }
             )
-        })
+        } catch (creditError) {
+            try {
+                await restorePokemonToSeller()
+                await refundBuyer()
+                await restoreListing()
+            } catch (rollbackError) {
+                console.error('POST /api/shop/buy/:listingId rollback error:', rollbackError)
+            }
+            throw creditError
+        }
 
         res.json({ ok: true, message: 'Mua Pokemon thành công!' })
     } catch (error) {
@@ -1714,8 +1756,6 @@ router.post('/buy/:listingId', async (req, res) => {
         }
         console.error('POST /api/shop/buy/:listingId error:', error)
         res.status(500).json({ ok: false, message: 'Hoàn tất mua thất bại' })
-    } finally {
-        await session.endSession()
     }
 })
 

@@ -31,7 +31,7 @@ export const useChat = () => {
 
 export function ChatProvider({ children }) {
   const { user, token } = useAuth()
-  const { isPlayTabBlocked, markSessionTakenOver } = usePlayTab()
+  const { isPlayTabBlocked, markSessionTakenOver, maxAllowedTabs } = usePlayTab()
   const [socket, setSocket] = useState(null)
   const [messages, setMessages] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -59,7 +59,7 @@ export function ChatProvider({ children }) {
       setTypingUsers([])
       setIsConnected(false)
       if (isPlayTabBlocked) {
-        setError('Tab này đang bị khóa vì tài khoản đã mở ở tab khác.')
+        setError(`Bạn đã mở quá ${maxAllowedTabs} tab chơi cho tài khoản này.`)
       }
       return
     }
@@ -186,7 +186,7 @@ export function ChatProvider({ children }) {
       clearAllTypingTimeouts()
       newSocket.disconnect()
     }
-  }, [user, token, isPlayTabBlocked])
+  }, [user, token, isPlayTabBlocked, maxAllowedTabs])
 
   // Load initial message history
   useEffect(() => {

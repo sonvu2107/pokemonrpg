@@ -6,6 +6,7 @@ import { attachChatHandlers } from './chatHandlers.js'
 
 let io = null
 const activeSocketsByUser = new Map()
+const MAX_ACTIVE_SOCKETS_PER_USER = 2
 
 const normalizeUserId = (value) => String(value || '').trim()
 
@@ -40,22 +41,23 @@ const removeUserSocket = (userId, socketId) => {
     return socketSet.size
 }
 
-const disconnectOtherUserSockets = (userId, currentSocketId) => {
+const disconnectExcessUserSockets = (userId, currentSocketId) => {
     const normalizedUserId = normalizeUserId(userId)
     const normalizedCurrentSocketId = String(currentSocketId || '').trim()
     if (!io || !normalizedUserId || !normalizedCurrentSocketId) return 0
 
     const socketSet = activeSocketsByUser.get(normalizedUserId)
-    if (!socketSet || socketSet.size <= 1) return 0
+    if (!socketSet || socketSet.size <= MAX_ACTIVE_SOCKETS_PER_USER) return 0
 
-    const otherSocketIds = Array.from(socketSet).filter((socketId) => socketId && socketId !== normalizedCurrentSocketId)
+    const orderedSocketIds = Array.from(socketSet).filter(Boolean)
+    const socketIdsToDisconnect = orderedSocketIds.slice(0, Math.max(0, orderedSocketIds.length - MAX_ACTIVE_SOCKETS_PER_USER))
     let disconnectedCount = 0
 
-    for (const socketId of otherSocketIds) {
+    for (const socketId of socketIdsToDisconnect) {
         const existingSocket = io.sockets.sockets.get(socketId)
         if (existingSocket) {
             existingSocket.emit('session:replaced', {
-                reason: 'single-tab-enforced',
+                reason: 'tab-limit-exceeded',
             })
             existingSocket.disconnect(true)
             disconnectedCount += 1
@@ -117,7 +119,7 @@ const setUserPresenceState = async (userId, isOnline) => {
 
 const handleSocketConnected = async (userId, socketId) => {
     const totalSockets = addUserSocket(userId, socketId)
-    const disconnectedCount = disconnectOtherUserSockets(userId, socketId)
+    const disconnectedCount = disconnectExcessUserSockets(userId, socketId)
     if (totalSockets === 1 || disconnectedCount > 0) {
         await setUserPresenceState(userId, true)
     }

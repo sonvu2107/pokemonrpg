@@ -697,14 +697,25 @@ export const gameApi = {
     // GET /api/rankings/pokemon - Pokemon collection leaderboard by user
     async getPokemonRankings(params = {}) {
         const searchParams = new URLSearchParams()
+        const shouldForceRefresh = params?.forceRefresh === true
         Object.entries(params).forEach(([key, value]) => {
             if (value !== undefined && value !== null && value !== '') {
+                if (key === 'forceRefresh') {
+                    if (value === true) {
+                        searchParams.append('refresh', '1')
+                    }
+                    return
+                }
                 searchParams.append(key, String(value))
             }
         })
+        if (shouldForceRefresh) {
+            searchParams.append('_ts', String(Date.now()))
+        }
         const query = searchParams.toString()
         const res = await fetch(`${API_URL}/rankings/pokemon${query ? `?${query}` : ''}`, {
             headers: getAuthHeader(),
+            cache: shouldForceRefresh ? 'no-store' : 'default',
         })
         if (!res.ok) {
             const err = await res.json()
