@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import BulkItemUseModal, { getBulkItemUseLimit } from '../components/BulkItemUseModal'
 import { gameApi } from '../services/gameApi'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import VipCaughtStar from '../components/VipCaughtStar'
@@ -10,6 +11,7 @@ import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const LEVEL_TRANSFER_MODAL_PAGE_SIZE = 12
+const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
         {title}
@@ -111,6 +113,7 @@ export default function PokemonInfoPage() {
     const [pokemonGrowthItems, setPokemonGrowthItems] = useState([])
     const [selectedGrowthItemId, setSelectedGrowthItemId] = useState('')
     const [usingGrowthItem, setUsingGrowthItem] = useState(false)
+    const [growthItemModalOpen, setGrowthItemModalOpen] = useState(false)
     const [pokemonLevelTransferItems, setPokemonLevelTransferItems] = useState([])
     const [levelTransferCandidates, setLevelTransferCandidates] = useState([])
     const [levelTransferCandidatesLoading, setLevelTransferCandidatesLoading] = useState(false)
@@ -128,11 +131,17 @@ export default function PokemonInfoPage() {
     }, [id])
 
     const viewerId = String(user?.id || user?._id || '').trim()
+    const currentVipTierLevel = Math.max(0, Number(user?.vipTierLevel || 0))
+    const growthBatchUseLimit = getBulkItemUseLimit(currentVipTierLevel)
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
     const canViewMoves = pokemon?.canViewMoves !== false
     const offTypeSkillAllowance = Math.max(0, Number(pokemon?.offTypeSkillAllowance || 0)) || (pokemon?.allowOffTypeSkills ? 1 : 0)
     const hasOffTypeSkillAccess = offTypeSkillAllowance > 0
+    const selectedGrowthItem = useMemo(
+        () => pokemonGrowthItems.find((entry) => entry.itemId === selectedGrowthItemId) || null,
+        [pokemonGrowthItems, selectedGrowthItemId]
+    )
 
     const loadPokemon = async () => {
         try {
@@ -329,7 +338,7 @@ export default function PokemonInfoPage() {
         }
     }
 
-    const handleUseGrowthItem = async () => {
+    const handleUseGrowthItem = async (quantity = 1) => {
         if (!pokemon?._id || !selectedGrowthItemId) return
 
         const selectedItem = pokemonGrowthItems.find((entry) => entry.itemId === selectedGrowthItemId)
@@ -338,17 +347,11 @@ export default function PokemonInfoPage() {
             return
         }
 
-        const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
-        const effectLabel = selectedItem.effectType === 'grantPokemonLevel'
-            ? `tăng ${selectedItem.effectValue} cấp`
-            : `cộng ${selectedItem.effectValue} EXP`
-        const confirmed = window.confirm(`Dùng ${selectedItem.name} để ${effectLabel} cho ${targetName}?`)
-        if (!confirmed) return
-
         try {
             setUsingGrowthItem(true)
-            const data = await gameApi.useItem(selectedItem.itemId, 1, null, pokemon._id)
+            const data = await gameApi.useItem(selectedItem.itemId, quantity, null, pokemon._id)
             window.alert(data?.message || 'Đã dùng vật phẩm thành công.')
+            setGrowthItemModalOpen(false)
             await loadPokemon()
             await loadPokemonTargetItems()
         } catch (err) {
@@ -356,6 +359,11 @@ export default function PokemonInfoPage() {
         } finally {
             setUsingGrowthItem(false)
         }
+    }
+
+    const openGrowthItemModal = () => {
+        if (!selectedGrowthItemId || !selectedGrowthItem) return
+        setGrowthItemModalOpen(true)
     }
 
     const handleUseLevelTransferItem = async () => {
@@ -1014,11 +1022,11 @@ export default function PokemonInfoPage() {
                                             </select>
                                             <button
                                                 type="button"
-                                                onClick={handleUseGrowthItem}
+                                                onClick={openGrowthItemModal}
                                                 disabled={!selectedGrowthItemId || usingGrowthItem}
                                                 className="px-3 py-2 text-xs font-bold rounded bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-60"
                                             >
-                                                {usingGrowthItem ? 'Đang dùng...' : 'Dùng tăng trưởng'}
+                                                {usingGrowthItem ? 'Đang dùng...' : `Dùng tăng trưởng${selectedGrowthItem ? ` (tối đa ${Math.min(Number(selectedGrowthItem.quantity || 0), growthBatchUseLimit)})` : ''}`}
                                             </button>
                                         </div>
                                     ) : (
@@ -1444,6 +1452,30 @@ export default function PokemonInfoPage() {
                     </div>
                 </div>
             )}
+
+            <BulkItemUseModal
+                isOpen={growthItemModalOpen}
+                onClose={() => setGrowthItemModalOpen(false)}
+                item={selectedGrowthItem}
+                inventoryQuantity={Number(selectedGrowthItem?.quantity || 0)}
+                vipTierLevel={currentVipTierLevel}
+                submitting={usingGrowthItem}
+                onConfirm={handleUseGrowthItem}
+                title="Dùng vật phẩm tăng trưởng"
+                extraContent={selectedGrowthItem && pokemon ? (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                        Áp dụng cho <span className="font-bold">{String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'}</span>.
+                    </div>
+                ) : null}
+                renderPreview={(item, quantity) => {
+                    if (!item || !pokemon) return ''
+                    const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+                    if (item.effectType === 'grantPokemonLevel') {
+                        return `${targetName} sẽ nhận tối đa ${formatNumber(Number(item.effectValue || 0) * quantity)} cấp.`
+                    }
+                    return `${targetName} sẽ nhận ${formatNumber(Number(item.effectValue || 0) * quantity)} EXP.`
+                }}
+            />
 
         </div>
     )

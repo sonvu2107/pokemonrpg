@@ -9,6 +9,7 @@ import UserPokemon from '../../models/UserPokemon.js'
 import WeeklyLeaderboardReward from '../../models/WeeklyLeaderboardReward.js'
 import LeaderboardCosmeticConfig from '../../models/LeaderboardCosmeticConfig.js'
 import upload from '../../middleware/upload.js'
+import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../../utils/mongoTransactions.js'
 import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 
 const router = express.Router()
@@ -736,8 +737,6 @@ router.post('/award', async (req, res) => {
 
 // POST /api/admin/leaderboard-rewards/revoke
 router.post('/revoke', async (req, res) => {
-    const session = await mongoose.startSession()
-
     try {
         await ensureRewardIndexesSynced()
 
@@ -757,7 +756,7 @@ router.post('/revoke', async (req, res) => {
 
         const rewardRows = await WeeklyLeaderboardReward.find({ weekStart, mode, userId: targetUserId })
             .sort({ rewardedAt: -1, _id: -1 })
-            .session(session)
+            .lean()
 
         if (rewardRows.length === 0) {
             return res.status(404).json({ ok: false, message: 'Người chơi này chưa có phần thưởng để thu hồi trong tuần đã chọn' })
@@ -765,31 +764,31 @@ router.post('/revoke', async (req, res) => {
 
         const warnings = []
 
-        await session.withTransaction(async () => {
+        await runWithOptionalTransaction(async (session) => {
             for (const rewardRow of rewardRows) {
                 const rewardType = normalizeRewardType(rewardRow?.rewardType)
                 const rewardAmount = Math.max(1, Number.parseInt(rewardRow?.rewardAmount, 10) || 1)
 
                 if (rewardType === 'platinumCoins' || rewardType === 'moonPoints') {
-                    const playerState = await PlayerState.findOne({ userId: targetUserId }).session(session)
+                    const playerState = await attachSession(PlayerState.findOne({ userId: targetUserId }), session)
                     if (playerState) {
                         const field = rewardType === 'platinumCoins' ? 'gold' : 'moonPoints'
                         const currentValue = Math.max(0, Number(playerState?.[field] || 0))
                         playerState[field] = Math.max(0, currentValue - rewardAmount)
-                        await playerState.save({ session })
+                        await playerState.save(getSessionOptions(session))
                     }
                 }
 
                 if (rewardType === 'item' && rewardRow?.rewardItemId) {
-                    const inventoryDoc = await UserInventory.findOne({ userId: targetUserId, itemId: rewardRow.rewardItemId }).session(session)
+                    const inventoryDoc = await attachSession(UserInventory.findOne({ userId: targetUserId, itemId: rewardRow.rewardItemId }), session)
                     if (inventoryDoc) {
                         const currentQuantity = Math.max(0, Number(inventoryDoc?.quantity || 0))
                         const nextQuantity = Math.max(0, currentQuantity - rewardAmount)
                         if (nextQuantity <= 0) {
-                            await inventoryDoc.deleteOne({ session })
+                            await inventoryDoc.deleteOne(getSessionOptions(session))
                         } else {
                             inventoryDoc.quantity = nextQuantity
-                            await inventoryDoc.save({ session })
+                            await inventoryDoc.save(getSessionOptions(session))
                         }
                     } else {
                         warnings.push(`Không tìm thấy vật phẩm đã trao để thu hồi: ${rewardRow.rewardItemNameSnapshot || 'Item'}`)
@@ -803,7 +802,7 @@ router.post('/revoke', async (req, res) => {
                         rewardedBy: rewardRow?.rewardedBy,
                     })
 
-                    const pokemonDocs = await UserPokemon.find({
+                    const pokemonDocs = UserPokemon.find({
                         userId: targetUserId,
                         pokemonId: rewardRow.rewardPokemonId,
                         formId: normalizeFormId(rewardRow.rewardPokemonFormId || 'normal'),
@@ -813,20 +812,21 @@ router.post('/revoke', async (req, res) => {
                     })
                         .sort({ createdAt: -1, _id: -1 })
                         .limit(rewardAmount)
-                        .session(session)
 
-                    if (pokemonDocs.length < rewardAmount) {
-                        warnings.push(`Chỉ tìm thấy ${pokemonDocs.length}/${rewardAmount} Pokemon để thu hồi: ${rewardRow.rewardPokemonNameSnapshot || 'Pokemon'}`)
+                    const resolvedPokemonDocs = await attachSession(pokemonDocs, session)
+
+                    if (resolvedPokemonDocs.length < rewardAmount) {
+                        warnings.push(`Chỉ tìm thấy ${resolvedPokemonDocs.length}/${rewardAmount} Pokemon để thu hồi: ${rewardRow.rewardPokemonNameSnapshot || 'Pokemon'}`)
                     }
 
-                    const pokemonIdsToDelete = pokemonDocs.map((entry) => entry?._id).filter(Boolean)
+                    const pokemonIdsToDelete = resolvedPokemonDocs.map((entry) => entry?._id).filter(Boolean)
                     if (pokemonIdsToDelete.length > 0) {
-                        await UserPokemon.deleteMany({ _id: { $in: pokemonIdsToDelete } }).session(session)
+                        await attachSession(UserPokemon.deleteMany({ _id: { $in: pokemonIdsToDelete } }), session)
                     }
                 }
             }
 
-            await WeeklyLeaderboardReward.deleteMany({ _id: { $in: rewardRows.map((entry) => entry._id) } }).session(session)
+            await attachSession(WeeklyLeaderboardReward.deleteMany({ _id: { $in: rewardRows.map((entry) => entry._id) } }), session)
         })
 
         return res.json({
@@ -838,8 +838,6 @@ router.post('/revoke', async (req, res) => {
     } catch (error) {
         console.error('POST /api/admin/leaderboard-rewards/revoke error:', error)
         return res.status(500).json({ ok: false, message: 'Thu hồi phần thưởng leaderboard thất bại' })
-    } finally {
-        await session.endSession()
     }
 })
 

@@ -22,6 +22,7 @@ import {
     serializeAuction,
     serializeAuctionBid,
 } from '../services/auctionService.js'
+import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../utils/mongoTransactions.js'
 
 const router = express.Router()
 
@@ -128,14 +129,13 @@ const loadParticipantCountMap = async (auctionIds = []) => {
 
 const reserveUserPokemonForAuction = async ({ userPokemonId, userId, session, allowAuctionLocation = false }) => {
     const locationMatch = allowAuctionLocation ? ['box', 'party', 'auction'] : ['box', 'party']
-    const userPokemon = await UserPokemon.findOne({
+    const userPokemon = await attachSession(UserPokemon.findOne({
         _id: userPokemonId,
         userId,
         status: 'active',
         location: { $in: locationMatch },
     })
-        .populate('pokemonId', 'name pokedexNumber imageUrl sprite sprites shinyImageUrl defaultFormId forms')
-        .session(session)
+        .populate('pokemonId', 'name pokedexNumber imageUrl sprite sprites shinyImageUrl defaultFormId forms'), session)
 
     if (!userPokemon || !userPokemon.pokemonId) {
         throw new Error('Không tìm thấy Pokémon thuộc sở hữu của bạn để đấu giá')
@@ -147,7 +147,7 @@ const reserveUserPokemonForAuction = async ({ userPokemonId, userId, session, al
         userPokemon.location = 'auction'
         userPokemon.boxNumber = Math.max(1, Number.parseInt(userPokemon.boxNumber, 10) || 1)
         userPokemon.partyIndex = null
-        await userPokemon.save({ session })
+        await userPokemon.save(getSessionOptions(session))
     }
 
     return rewardSnapshot
@@ -358,7 +358,6 @@ router.get('/manage/:id', async (req, res) => {
 
 // POST /api/auctions/manage
 router.post('/manage', async (req, res) => {
-    const session = await mongoose.startSession()
     try {
         if (!ensureVipAuctionCreator(req, res)) return
 
@@ -385,7 +384,7 @@ router.post('/manage', async (req, res) => {
         }
 
         let auctionId = null
-        await session.withTransaction(async () => {
+        await runWithOptionalTransaction(async (session) => {
             const rewardSnapshot = await reserveUserPokemonForAuction({
                 userPokemonId: rewardUserPokemonId,
                 userId: req.user.userId,
@@ -411,7 +410,7 @@ router.post('/manage', async (req, res) => {
                 settlementStatus: AUCTION_SETTLEMENT_STATUS.PENDING,
                 createdBy: req.user.userId,
                 updatedBy: req.user.userId,
-            }], { session })
+            }], getSessionOptions(session))
 
             auctionId = auction[0]?._id
         })
@@ -425,14 +424,11 @@ router.post('/manage', async (req, res) => {
     } catch (error) {
         console.error('POST /api/auctions/manage error:', error)
         return res.status(500).json({ ok: false, message: error?.message || 'Tạo phiên đấu giá thất bại' })
-    } finally {
-        await session.endSession()
     }
 })
 
 // PUT /api/auctions/manage/:id
 router.put('/manage/:id', async (req, res) => {
-    const session = await mongoose.startSession()
     try {
         if (!ensureVipAuctionCreator(req, res)) return
 
@@ -463,8 +459,8 @@ router.put('/manage/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Thoi gian ket thuc phai sau thoi gian bat dau' })
         }
 
-        await session.withTransaction(async () => {
-            const auction = await loadManagedAuction(auctionId, req.user.userId).session(session)
+        await runWithOptionalTransaction(async (session) => {
+            const auction = await attachSession(loadManagedAuction(auctionId, req.user.userId), session)
             if (!auction) {
                 throw new Error('Không tìm thấy phiên đấu giá của bạn')
             }
@@ -497,7 +493,7 @@ router.put('/manage/:id', async (req, res) => {
             auction.antiSnipingExtendSeconds = antiSnipingExtendSeconds
             auction.antiSnipingMaxExtensions = antiSnipingMaxExtensions
             auction.updatedBy = req.user.userId
-            await auction.save({ session })
+            await auction.save(getSessionOptions(session))
         })
 
         const auction = await loadManagedAuction(auctionId, req.user.userId).lean()
@@ -505,8 +501,6 @@ router.put('/manage/:id', async (req, res) => {
     } catch (error) {
         console.error('PUT /api/auctions/manage/:id error:', error)
         return res.status(500).json({ ok: false, message: error?.message || 'Cập nhật phiên đấu giá thất bại' })
-    } finally {
-        await session.endSession()
     }
 })
 
@@ -541,15 +535,14 @@ router.post('/manage/:id/publish', async (req, res) => {
 
 // POST /api/auctions/manage/:id/cancel
 router.post('/manage/:id/cancel', async (req, res) => {
-    const session = await mongoose.startSession()
     try {
         if (!ensureVipAuctionCreator(req, res)) return
 
         const auctionId = String(req.params.id || '').trim()
         const cancelReason = String(req.body?.cancelReason || '').trim().slice(0, 500)
 
-        await session.withTransaction(async () => {
-            const auction = await loadManagedAuction(auctionId, req.user.userId).session(session)
+        await runWithOptionalTransaction(async (session) => {
+            const auction = await attachSession(loadManagedAuction(auctionId, req.user.userId), session)
             if (!auction) {
                 throw new Error('Không tìm thấy phiên đấu giá của bạn')
             }
@@ -566,7 +559,7 @@ router.post('/manage/:id/cancel', async (req, res) => {
             auction.settlementStatus = auction.settlementStatus === AUCTION_SETTLEMENT_STATUS.PROCESSING
                 ? AUCTION_SETTLEMENT_STATUS.FAILED
                 : auction.settlementStatus
-            await auction.save({ session })
+            await auction.save(getSessionOptions(session))
         })
 
         const auction = await loadManagedAuction(auctionId, req.user.userId).lean()
@@ -574,8 +567,6 @@ router.post('/manage/:id/cancel', async (req, res) => {
     } catch (error) {
         console.error('POST /api/auctions/manage/:id/cancel error:', error)
         return res.status(500).json({ ok: false, message: error?.message || 'Hủy phiên đấu giá thất bại' })
-    } finally {
-        await session.endSession()
     }
 })
 

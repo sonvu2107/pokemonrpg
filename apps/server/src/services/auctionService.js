@@ -5,6 +5,7 @@ import AuctionSettlementLog from '../models/AuctionSettlementLog.js'
 import PlayerState from '../models/PlayerState.js'
 import UserInventory from '../models/UserInventory.js'
 import UserPokemon from '../models/UserPokemon.js'
+import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../utils/mongoTransactions.js'
 
 export const AUCTION_REWARD_TYPE_ITEM = 'item'
 export const AUCTION_REWARD_TYPE_POKEMON = 'pokemon'
@@ -141,7 +142,7 @@ export const restoreEscrowedAuctionPokemon = async (auctionLike = {}, options = 
                 partyIndex: null,
             },
         },
-        options?.session ? { session: options.session } : {}
+        getSessionOptions(options?.session)
     )
 
     return Number(result?.modifiedCount || 0) > 0
@@ -166,7 +167,7 @@ export const transferEscrowedAuctionPokemonToWinner = async (auctionLike = {}, w
                 obtainedAt: now,
             },
         },
-        options?.session ? { session: options.session } : {}
+        getSessionOptions(options?.session)
     )
 
     return Number(result?.modifiedCount || 0) > 0
@@ -413,19 +414,18 @@ export const settleAuctionById = async (auctionId, options = {}) => {
         return { ok: true, status: AUCTION_STATUS.COMPLETED, winnerId: null, finalBid: 0 }
     }
 
-    const session = await mongoose.startSession()
     try {
         let resultPayload = { ok: false, status: AUCTION_STATUS.SETTLEMENT_FAILED }
 
-        await session.withTransaction(async () => {
-            const auction = await Auction.findById(normalizedAuctionId).session(session)
+        await runWithOptionalTransaction(async (session) => {
+            const auction = await attachSession(Auction.findById(normalizedAuctionId), session)
             if (!auction) {
                 throw new Error('Auction không tồn tại khi settle')
             }
 
             const winnerId = auction.highestBidderId
             const finalBid = Math.max(0, Number(auction.highestBid || 0))
-            const winnerState = await PlayerState.findOne({ userId: winnerId }).session(session)
+            const winnerState = await attachSession(PlayerState.findOne({ userId: winnerId }), session)
             const sellerUserId = String(auction?.rewardSnapshot?.metadata?.sellerUserId || auction?.createdBy || '').trim()
 
             if (!winnerState || Math.max(0, Number(winnerState.gold || 0)) < finalBid) {
@@ -434,7 +434,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                 auction.settledAt = now
                 auction.winnerId = winnerId
                 auction.settlementError = 'INSUFFICIENT_BALANCE_AT_SETTLEMENT'
-                await auction.save({ session })
+                await auction.save(getSessionOptions(session))
 
                 await AuctionSettlementLog.create([{
                     auctionId: auction._id,
@@ -446,7 +446,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                     payloadSnapshot: {
                         rewardSnapshot: auction.rewardSnapshot,
                     },
-                }], { session })
+                }], getSessionOptions(session))
 
                 resultPayload = {
                     ok: true,
@@ -458,13 +458,13 @@ export const settleAuctionById = async (auctionId, options = {}) => {
             }
 
             winnerState.gold = Math.max(0, Number(winnerState.gold || 0) - finalBid)
-            await winnerState.save({ session })
+            await winnerState.save(getSessionOptions(session))
 
             if (sellerUserId && mongoose.Types.ObjectId.isValid(sellerUserId) && sellerUserId !== String(winnerId || '').trim()) {
                 await PlayerState.findOneAndUpdate(
                     { userId: sellerUserId },
                     { $inc: { gold: finalBid } },
-                    { session }
+                    getSessionOptions(session)
                 )
             }
 
@@ -488,7 +488,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                         obtainedMapName: 'Khu Dau Gia',
                         obtainedAt: now,
                     }))
-                    await UserPokemon.insertMany(pokemonDocs, { session })
+                    await UserPokemon.insertMany(pokemonDocs, getSessionOptions(session))
                 }
             } else {
                 await UserInventory.findOneAndUpdate(
@@ -502,7 +502,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                             quantity: Math.max(1, Number(auction.rewardSnapshot?.quantity || 1)),
                         },
                     },
-                    { session, upsert: true, new: true }
+                    getSessionOptions(session, { upsert: true, new: true })
                 )
             }
 
@@ -511,7 +511,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
             auction.settledAt = now
             auction.winnerId = winnerId
             auction.settlementError = ''
-            await auction.save({ session })
+            await auction.save(getSessionOptions(session))
 
             await AuctionSettlementLog.create([{
                 auctionId: auction._id,
@@ -521,7 +521,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                 payloadSnapshot: {
                     rewardSnapshot: auction.rewardSnapshot,
                 },
-            }], { session })
+            }], getSessionOptions(session))
 
             resultPayload = {
                 ok: true,
@@ -557,8 +557,6 @@ export const settleAuctionById = async (auctionId, options = {}) => {
             status: AUCTION_STATUS.SETTLEMENT_FAILED,
             error: error,
         }
-    } finally {
-        await session.endSession()
     }
 }
 
@@ -598,96 +596,91 @@ export const placeAuctionBid = async ({ auctionId, userId, amount }) => {
     }
 
     const now = new Date()
-    const session = await mongoose.startSession()
-    try {
-        let payload = null
-        await session.withTransaction(async () => {
-            const auction = await Auction.findById(normalizedAuctionId).session(session)
-            if (!auction) {
-                throw new Error('Không tìm thấy phiên đấu giá')
-            }
+    let payload = null
+    await runWithOptionalTransaction(async (session) => {
+        const auction = await attachSession(Auction.findById(normalizedAuctionId), session)
+        if (!auction) {
+            throw new Error('Không tìm thấy phiên đấu giá')
+        }
 
-            if (auction.status === AUCTION_STATUS.SCHEDULED && new Date(auction.startsAt).getTime() <= now.getTime() && new Date(auction.endsAt).getTime() > now.getTime()) {
-                auction.status = AUCTION_STATUS.ACTIVE
-                auction.settlementStatus = AUCTION_SETTLEMENT_STATUS.PENDING
-            }
+        if (auction.status === AUCTION_STATUS.SCHEDULED && new Date(auction.startsAt).getTime() <= now.getTime() && new Date(auction.endsAt).getTime() > now.getTime()) {
+            auction.status = AUCTION_STATUS.ACTIVE
+            auction.settlementStatus = AUCTION_SETTLEMENT_STATUS.PENDING
+        }
 
-            if (auction.status !== AUCTION_STATUS.ACTIVE) {
-                throw new Error('Phiên đấu giá hiện không ở trạng thái nhận giá')
-            }
-            if (String(auction.createdBy || '').trim() === normalizedUserId) {
-                throw new Error('Bạn không thể tự trả giá phiên đấu giá của mình')
-            }
-            if (new Date(auction.startsAt).getTime() > now.getTime()) {
-                throw new Error('Phiên đấu giá chưa bắt đầu')
-            }
-            if (new Date(auction.endsAt).getTime() <= now.getTime()) {
-                throw new Error('Phiên đấu giá đã kết thúc')
-            }
+        if (auction.status !== AUCTION_STATUS.ACTIVE) {
+            throw new Error('Phiên đấu giá hiện không ở trạng thái nhận giá')
+        }
+        if (String(auction.createdBy || '').trim() === normalizedUserId) {
+            throw new Error('Bạn không thể tự trả giá phiên đấu giá của mình')
+        }
+        if (new Date(auction.startsAt).getTime() > now.getTime()) {
+            throw new Error('Phiên đấu giá chưa bắt đầu')
+        }
+        if (new Date(auction.endsAt).getTime() <= now.getTime()) {
+            throw new Error('Phiên đấu giá đã kết thúc')
+        }
 
-            const buyerState = await PlayerState.findOne({ userId: normalizedUserId }).session(session)
-            const currentBalance = Math.max(0, Number(buyerState?.gold || 0))
-            if (currentBalance < bidAmount) {
-                throw new Error('Không đủ Xu Bạch Kim để đặt giá đấu này')
-            }
+        const buyerState = await attachSession(PlayerState.findOne({ userId: normalizedUserId }), session)
+        const currentBalance = Math.max(0, Number(buyerState?.gold || 0))
+        if (currentBalance < bidAmount) {
+            throw new Error('Không đủ Xu Bạch Kim để đặt giá đấu này')
+        }
 
-            const minNextBid = computeAuctionMinNextBid(auction)
-            if (bidAmount < minNextBid) {
-                throw new Error(`Giá đấu tối thiểu hiện tại là ${minNextBid.toLocaleString('vi-VN')} Xu Bạch Kim`) 
-            }
+        const minNextBid = computeAuctionMinNextBid(auction)
+        if (bidAmount < minNextBid) {
+            throw new Error(`Giá đấu tối thiểu hiện tại là ${minNextBid.toLocaleString('vi-VN')} Xu Bạch Kim`)
+        }
 
-            const previousHighestBid = Math.max(0, Number(auction.highestBid || 0))
-            const previousHighestBidderId = auction.highestBidderId || null
-            const antiSnipingResult = maybeExtendAuctionForAntiSniping(auction, now)
+        const previousHighestBid = Math.max(0, Number(auction.highestBid || 0))
+        const previousHighestBidderId = auction.highestBidderId || null
+        const antiSnipingResult = maybeExtendAuctionForAntiSniping(auction, now)
 
-            const updateResult = await Auction.findOneAndUpdate(
-                {
-                    _id: auction._id,
-                    status: AUCTION_STATUS.ACTIVE,
-                    settlementStatus: auction.settlementStatus,
-                    highestBid: previousHighestBid,
-                    bidCount: Math.max(0, Number(auction.bidCount || 0)),
-                    endsAt: auction.endsAt,
+        const updateResult = await Auction.findOneAndUpdate(
+            {
+                _id: auction._id,
+                status: AUCTION_STATUS.ACTIVE,
+                settlementStatus: auction.settlementStatus,
+                highestBid: previousHighestBid,
+                bidCount: Math.max(0, Number(auction.bidCount || 0)),
+                endsAt: auction.endsAt,
+            },
+            {
+                $set: {
+                    highestBid: bidAmount,
+                    highestBidderId: normalizedUserId,
+                    highestBidAt: now,
+                    endsAt: antiSnipingResult.nextEndsAt,
+                    updatedAt: now,
                 },
-                {
-                    $set: {
-                        highestBid: bidAmount,
-                        highestBidderId: normalizedUserId,
-                        highestBidAt: now,
-                        endsAt: antiSnipingResult.nextEndsAt,
-                        updatedAt: now,
-                    },
-                    $inc: {
-                        bidCount: 1,
-                        version: 1,
-                        ...(antiSnipingResult.didExtend ? { extensionCount: 1 } : {}),
-                    },
+                $inc: {
+                    bidCount: 1,
+                    version: 1,
+                    ...(antiSnipingResult.didExtend ? { extensionCount: 1 } : {}),
                 },
-                { new: true, session }
-            )
+            },
+            getSessionOptions(session, { new: true })
+        )
 
-            if (!updateResult) {
-                throw new Error('Phiên đấu giá vừa có người khác trả giá trước, vui lòng thử lại')
-            }
+        if (!updateResult) {
+            throw new Error('Phiên đấu giá vừa có người khác trả giá trước, vui lòng thử lại')
+        }
 
-            const [bidDoc] = await AuctionBid.create([{
-                auctionId: auction._id,
-                userId: normalizedUserId,
-                amount: bidAmount,
-                previousHighestBid,
-                previousHighestBidderId,
-                isWinningBid: true,
-            }], { session })
+        const [bidDoc] = await AuctionBid.create([{
+            auctionId: auction._id,
+            userId: normalizedUserId,
+            amount: bidAmount,
+            previousHighestBid,
+            previousHighestBidderId,
+            isWinningBid: true,
+        }], getSessionOptions(session))
 
-            payload = {
-                auction: updateResult,
-                bid: bidDoc,
-                antiSnipingExtended: antiSnipingResult.didExtend,
-            }
-        })
+        payload = {
+            auction: updateResult,
+            bid: bidDoc,
+            antiSnipingExtended: antiSnipingResult.didExtend,
+        }
+    })
 
-        return payload
-    } finally {
-        await session.endSession()
-    }
+    return payload
 }

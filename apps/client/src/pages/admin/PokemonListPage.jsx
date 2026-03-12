@@ -108,6 +108,9 @@ export default function PokemonListPage() {
     const [pokemonCsvImportText, setPokemonCsvImportText] = useState('')
     const [pokemonCsvImporting, setPokemonCsvImporting] = useState(false)
     const [pokemonCsvImportReport, setPokemonCsvImportReport] = useState(null)
+    const [syncingAllFormStats, setSyncingAllFormStats] = useState(false)
+    const [syncFormStatsMode, setSyncFormStatsMode] = useState('')
+    const [formStatsSyncReport, setFormStatsSyncReport] = useState(null)
     const [uploadingImageKey, setUploadingImageKey] = useState('')
     const [showQuickFormUploadModal, setShowQuickFormUploadModal] = useState(false)
     const [quickFormUploadPokemon, setQuickFormUploadPokemon] = useState(null)
@@ -255,6 +258,34 @@ export default function PokemonListPage() {
             setAllPokemon([...uniqueById.values()])
         } catch (err) {
             setError(err.message)
+        }
+    }
+
+    const handleSyncAllFormStats = async (mode = 'safe') => {
+        const isForceMode = mode === 'force'
+        const confirmed = window.confirm(
+            isForceMode
+                ? 'Chế độ Ghi đè tất cả sẽ xóa toàn bộ stat đang lưu trong các form để mọi form quay về kế thừa stat gốc hiện tại. Các form có stat custom riêng cũng sẽ bị cập nhật theo stat gốc. Tiếp tục?'
+                : 'Chế độ Đồng bộ an toàn chỉ dọn những form đang bám stat gốc hiện tại và giữ nguyên các form có stat custom riêng. Tiếp tục?'
+        )
+        if (!confirmed) return
+
+        try {
+            setError('')
+            setSyncingAllFormStats(true)
+            setSyncFormStatsMode(mode)
+            setFormStatsSyncReport(null)
+            const result = await pokemonApi.syncAllFormStatsWithBase({
+                forceOverride: isForceMode,
+                batchSize: 100,
+            })
+            setFormStatsSyncReport(result.summary || null)
+            await Promise.all([loadPokemon(), loadAllPokemon()])
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setSyncingAllFormStats(false)
+            setSyncFormStatsMode('')
         }
     }
 
@@ -1391,6 +1422,51 @@ export default function PokemonListPage() {
                             ? 'Đang lưu...'
                             : `Lưu nhanh (${dirtyEvolutionKeys.size})`}
                     </button>
+                </div>
+
+                <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-amber-900">Đồng Bộ Chỉ Số Form</p>
+                            <p className="mt-1 text-xs text-amber-800">
+                                Chọn 1 trong 2 chế độ để cập nhật form theo chỉ số gốc hiện tại sau khi bạn chỉnh base stat hàng loạt.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={() => handleSyncAllFormStats('safe')}
+                                disabled={syncingAllFormStats || evolutionImporting || pokemonCsvImporting || savingId === '__bulk__'}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-sm font-bold shadow-sm transition-colors"
+                            >
+                                {syncingAllFormStats && syncFormStatsMode === 'safe' ? 'Đang đồng bộ an toàn...' : 'Đồng bộ an toàn'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleSyncAllFormStats('force')}
+                                disabled={syncingAllFormStats || evolutionImporting || pokemonCsvImporting || savingId === '__bulk__'}
+                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded text-sm font-bold shadow-sm transition-colors"
+                            >
+                                {syncingAllFormStats && syncFormStatsMode === 'force' ? 'Đang ghi đè tất cả...' : 'Ghi đè tất cả'}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-[11px] text-amber-900 sm:grid-cols-2">
+                        <div className="rounded border border-emerald-200 bg-white/80 px-3 py-2">
+                            <span className="font-bold text-emerald-700">Đồng bộ an toàn:</span> chỉ dọn các form đang bám stat gốc, giữ nguyên form có stat custom riêng.
+                        </div>
+                        <div className="rounded border border-amber-200 bg-white/80 px-3 py-2">
+                            <span className="font-bold text-amber-700">Ghi đè tất cả:</span> xóa toàn bộ stat đang lưu trong form để mọi form quay về kế thừa stat gốc hiện tại.
+                        </div>
+                    </div>
+                    {formStatsSyncReport && (
+                        <div className="mt-2 rounded border border-amber-200 bg-white/80 px-3 py-2 text-xs text-amber-900">
+                            <div className="font-semibold mb-1">
+                                Chế độ: {formStatsSyncReport.mode === 'ghi_de_tat_ca' ? 'Ghi đè tất cả' : 'Đồng bộ an toàn'}
+                            </div>
+                            Đã quét {formStatsSyncReport.inspectedPokemon} Pokemon • Cập nhật {formStatsSyncReport.updatedPokemon} Pokemon • Đồng bộ {formStatsSyncReport.syncedForms} form • Bỏ qua {formStatsSyncReport.untouchedPokemon} Pokemon
+                        </div>
+                    )}
                 </div>
 
                 <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded p-3">

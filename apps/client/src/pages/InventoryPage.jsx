@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import BulkItemUseModal, { getBulkItemUseLimit } from '../components/BulkItemUseModal'
+import { useAuth } from '../context/AuthContext'
 import { gameApi } from '../services/gameApi'
 
 const SectionHeader = ({ title }) => (
@@ -9,31 +11,38 @@ const SectionHeader = ({ title }) => (
 )
 
 export default function InventoryPage() {
-    const [activeTab, setActiveTab] = useState('All Items')
+    const { user, token, login } = useAuth()
+    const [activeTab, setActiveTab] = useState('Tất Cả')
     const [inventory, setInventory] = useState([])
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [selectedUseItem, setSelectedUseItem] = useState(null)
+    const [usingItem, setUsingItem] = useState(false)
+
+    const currentVipTierLevel = Math.max(0, Number(user?.vipTierLevel || 0))
+    const currentBatchUseLimit = getBulkItemUseLimit(currentVipTierLevel)
+
+    const loadInventory = useCallback(async () => {
+        try {
+            setLoading(true)
+            setError('')
+            const data = await gameApi.getInventory()
+            setInventory(data.inventory || [])
+            setWallet({
+                platinumCoins: Number(data?.playerState?.platinumCoins ?? 0),
+                moonPoints: Number(data?.playerState?.moonPoints || 0),
+            })
+        } catch (err) {
+            setError(err.message)
+        } finally {
+            setLoading(false)
+        }
+    }, [])
 
     useEffect(() => {
-        const loadInventory = async () => {
-            try {
-                setLoading(true)
-                const data = await gameApi.getInventory()
-                setInventory(data.inventory || [])
-                setWallet({
-                    platinumCoins: Number(data?.playerState?.platinumCoins ?? 0),
-                    moonPoints: Number(data?.playerState?.moonPoints || 0),
-                })
-            } catch (err) {
-                setError(err.message)
-            } finally {
-                setLoading(false)
-            }
-        }
-
         loadInventory()
-    }, [])
+    }, [loadInventory])
 
     const items = useMemo(() => {
         return inventory.map((entry) => ({
@@ -43,8 +52,48 @@ export default function InventoryPage() {
             image: entry.item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png',
             type: entry.item?.type || 'misc',
             quantity: entry.quantity || 0,
+            effectType: entry.item?.effectType || '',
+            effectValue: entry.item?.effectValue || 0,
+            effectValueMp: entry.item?.effectValueMp || 0,
+            effectDurationUnit: entry.item?.effectDurationUnit || 'month',
         }))
     }, [inventory])
+
+    const syncAuthUser = (nextUserPartial) => {
+        if (!nextUserPartial || !token || typeof login !== 'function') return
+        login({
+            ...(user || {}),
+            ...nextUserPartial,
+            id: user?.id || nextUserPartial?.id || user?._id || null,
+        }, token)
+    }
+
+    const openBulkUseModal = (item) => {
+        if (!item || String(item.effectType || '') !== 'grantVipTier' || Number(item.quantity || 0) <= 0) return
+        setSelectedUseItem(item)
+    }
+
+    const closeBulkUseModal = () => {
+        if (usingItem) return
+        setSelectedUseItem(null)
+    }
+
+    const handleUseSelectedItem = async (quantity) => {
+        if (!selectedUseItem?.id) return
+
+        try {
+            setUsingItem(true)
+            const result = await gameApi.useItem(selectedUseItem.id, quantity)
+            syncAuthUser(result?.user)
+            alert(result?.message || 'Dùng vật phẩm thành công')
+            setSelectedUseItem(null)
+            await loadInventory()
+        } catch (err) {
+            alert(err.message || 'Không thể dùng vật phẩm')
+        } finally {
+            setUsingItem(false)
+        }
+    }
 
     const filteredItems = useMemo(() => {
         if (activeTab === 'Tất Cả') return items
@@ -133,6 +182,20 @@ export default function InventoryPage() {
                                                         </>
                                                     )}
                                                     <div className="text-xs sm:text-[10px] text-slate-500">x{item.quantity}</div>
+                                                    {item.effectType === 'grantVipTier' && item.quantity > 0 && (
+                                                        <>
+                                                            <div className="mt-1 text-[10px] font-bold text-amber-700 text-center">
+                                                                Tối đa hiện tại: {Math.min(Number(item.quantity || 0), currentBatchUseLimit)}/{currentBatchUseLimit} vật phẩm
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openBulkUseModal(item)}
+                                                                className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 transition-colors hover:bg-amber-100"
+                                                            >
+                                                                Dùng
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -148,6 +211,15 @@ export default function InventoryPage() {
                     </div>
                 </div>
             </div>
+            <BulkItemUseModal
+                isOpen={Boolean(selectedUseItem)}
+                onClose={closeBulkUseModal}
+                item={selectedUseItem}
+                inventoryQuantity={Number(selectedUseItem?.quantity || 0)}
+                vipTierLevel={currentVipTierLevel}
+                submitting={usingItem}
+                onConfirm={handleUseSelectedItem}
+            />
         </div>
     )
 }

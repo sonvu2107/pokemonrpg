@@ -327,6 +327,16 @@ const addWeeksFromBase = (baseValue = new Date(), weeks = 1) => {
     return nextDate
 }
 
+const resolveVipTierLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)
+const getInventoryBatchUseLimit = (userLike = null) => Math.max(1, resolveVipTierLevel(userLike) + 1)
+const supportsBatchInventoryUse = (itemLike = null) => {
+    const effectType = String(itemLike?.effectType || '').trim()
+    return itemLike?.type === 'healing'
+        || effectType === 'grantPokemonExp'
+        || effectType === 'grantPokemonLevel'
+        || effectType === 'grantVipTier'
+}
+
 const resetDailyAutoUsage = (userDoc) => {
     if (!userDoc || typeof userDoc !== 'object') return
 
@@ -509,6 +519,18 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
         if (!item) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy vật phẩm' })
+        }
+
+        if (qty > 1 && supportsBatchInventoryUse(item)) {
+            const batchLimitUser = await User.findById(userId).select('vipTierLevel').lean()
+            const maxBatchUseQuantity = getInventoryBatchUseLimit(batchLimitUser)
+
+            if (qty > maxBatchUseQuantity) {
+                return res.status(400).json({
+                    ok: false,
+                    message: `Bạn chỉ có thể dùng tối đa ${maxBatchUseQuantity} vật phẩm mỗi lần (mặc định 1, cộng thêm theo cấp VIP).`,
+                })
+            }
         }
 
         if (item.type === 'pokeball') {
@@ -1433,10 +1455,6 @@ router.post('/use', useItemActionGuard, async (req, res) => {
         }
 
         if (item.effectType === 'grantVipTier') {
-            if (qty !== 1) {
-                return res.status(400).json({ ok: false, message: 'Vật phẩm VIP chỉ được dùng từng cái một' })
-            }
-
             const targetVipLevel = Math.max(0, Number.parseInt(item.effectValue, 10) || 0)
             const vipDurationValue = Math.max(1, Number.parseInt(item.effectValueMp, 10) || 1)
             const vipDurationUnit = ['week', 'month'].includes(String(item.effectDurationUnit || '').trim().toLowerCase())
@@ -1472,10 +1490,11 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             }
 
             const baseDate = hasActiveVip && currentExpiresAt ? currentExpiresAt : now
+            const totalVipDurationValue = vipDurationValue * qty
             const nextExpiresAt = vipDurationUnit === 'week'
-                ? addWeeksFromBase(baseDate, vipDurationValue)
-                : addMonthsFromBase(baseDate, vipDurationValue)
-            const durationLabel = `${vipDurationValue} ${vipDurationUnit === 'week' ? 'tuần' : 'tháng'}`
+                ? addWeeksFromBase(baseDate, totalVipDurationValue)
+                : addMonthsFromBase(baseDate, totalVipDurationValue)
+            const durationLabel = `${totalVipDurationValue} ${vipDurationUnit === 'week' ? 'tuần' : 'tháng'}`
 
             const consumedVipItem = await UserInventory.findOneAndUpdate(
                 {
@@ -1531,7 +1550,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 effect: {
                     type: 'grantVipTier',
                     vipTierLevel: userDoc.vipTierLevel,
-                    vipDurationValue,
+                    vipDurationValue: totalVipDurationValue,
                     vipDurationUnit,
                     vipExpiresAt: nextExpiresAt,
                 },

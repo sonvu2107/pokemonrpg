@@ -216,6 +216,26 @@ export const pokemonApi = {
         return res.json()
     },
 
+    // POST /api/admin/pokemon/forms/sync-base-stats
+    async syncAllFormStatsWithBase(options = {}) {
+        const res = await fetch(`${API_URL}/admin/pokemon/forms/sync-base-stats`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify({
+                forceOverride: options?.forceOverride !== false,
+                batchSize: options?.batchSize,
+            }),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.message || 'Đồng bộ stat form hàng loạt thất bại')
+        }
+        return res.json()
+    },
+
     // POST /api/admin/pokemon/import/csv
     async importPokemonCsv(pokemon = []) {
         const res = await fetch(`${API_URL}/admin/pokemon/import/csv`, {

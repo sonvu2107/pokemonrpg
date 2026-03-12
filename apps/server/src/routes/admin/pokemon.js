@@ -59,6 +59,51 @@ const normalizeBaseStats = (stats) => {
     return normalized
 }
 
+const BASE_STAT_KEYS = Object.freeze(['hp', 'atk', 'def', 'spatk', 'spldef', 'spd'])
+
+const toComparableBaseStats = (stats = {}) => {
+    const normalized = normalizeBaseStats(stats || {}) || {}
+    return {
+        hp: Number.parseInt(normalized?.hp, 10) || 0,
+        atk: Number.parseInt(normalized?.atk, 10) || 0,
+        def: Number.parseInt(normalized?.def, 10) || 0,
+        spatk: Number.parseInt(normalized?.spatk, 10) || 0,
+        spldef: Number.parseInt(normalized?.spldef ?? normalized?.spdef, 10) || 0,
+        spd: Number.parseInt(normalized?.spd, 10) || 0,
+    }
+}
+
+const hasMeaningfulBaseStats = (stats = {}) => BASE_STAT_KEYS.some((key) => Number(stats?.[key] || 0) > 0)
+
+const areBaseStatsEqual = (left = {}, right = {}) => BASE_STAT_KEYS.every((key) => Number(left?.[key] || 0) === Number(right?.[key] || 0))
+
+const normalizeFormStatsForStorage = (stats = {}, options = {}) => {
+    const comparableStats = toComparableBaseStats(stats)
+    if (!hasMeaningfulBaseStats(comparableStats)) {
+        return {}
+    }
+
+    const previousBaseStats = options?.previousBaseStats ? toComparableBaseStats(options.previousBaseStats) : null
+    const nextBaseStats = options?.nextBaseStats ? toComparableBaseStats(options.nextBaseStats) : null
+
+    if (previousBaseStats && areBaseStatsEqual(comparableStats, previousBaseStats)) {
+        return {}
+    }
+
+    if (nextBaseStats && areBaseStatsEqual(comparableStats, nextBaseStats)) {
+        return {}
+    }
+
+    return {
+        hp: comparableStats.hp,
+        atk: comparableStats.atk,
+        def: comparableStats.def,
+        spatk: comparableStats.spatk,
+        spdef: comparableStats.spldef,
+        spd: comparableStats.spd,
+    }
+}
+
 const normalizeEvolutionTargetId = (value) => {
     if (!value) return null
     if (typeof value === 'object') {
@@ -203,7 +248,7 @@ const validateEvolutionTargetFormIds = ({ entries = [], targetPokemonById = new 
     return { ok: true }
 }
 
-const normalizeForms = (forms) => {
+const normalizeForms = (forms, options = {}) => {
     if (!Array.isArray(forms)) return []
     return forms
         .map((f) => ({
@@ -211,10 +256,49 @@ const normalizeForms = (forms) => {
             formName: String(f?.formName || '').trim(),
             imageUrl: String(f?.imageUrl || '').trim(),
             sprites: f?.sprites || {},
-            stats: f?.stats || {},
+            stats: normalizeFormStatsForStorage(f?.stats || {}, options),
             evolution: normalizeEvolutionPayload(f?.evolution),
         }))
         .filter(f => f.formId)
+}
+
+const syncFormsBaseStats = (forms = [], options = {}) => {
+    const forceOverride = options?.forceOverride === true
+    const previousBaseStats = options?.previousBaseStats ? toComparableBaseStats(options.previousBaseStats) : null
+    const nextBaseStats = options?.nextBaseStats ? toComparableBaseStats(options.nextBaseStats) : null
+    let syncedForms = 0
+    let changed = false
+
+    const nextForms = (Array.isArray(forms) ? forms : []).map((entry) => {
+        const currentStats = toComparableBaseStats(entry?.stats || {})
+        const hasCurrentStats = hasMeaningfulBaseStats(currentStats)
+        const nextStats = forceOverride
+            ? {}
+            : normalizeFormStatsForStorage(entry?.stats || {}, { previousBaseStats, nextBaseStats })
+        const comparableNextStats = toComparableBaseStats(nextStats)
+        const nextStatsChanged = hasCurrentStats !== hasMeaningfulBaseStats(comparableNextStats)
+            || !areBaseStatsEqual(currentStats, comparableNextStats)
+
+        if (nextStatsChanged) {
+            changed = true
+            syncedForms += 1
+        }
+
+        return {
+            formId: String(entry?.formId || '').trim(),
+            formName: String(entry?.formName || '').trim(),
+            imageUrl: String(entry?.imageUrl || '').trim(),
+            sprites: entry?.sprites || {},
+            stats: nextStats,
+            evolution: normalizeEvolutionPayload(entry?.evolution),
+        }
+    })
+
+    return {
+        forms: nextForms.filter((entry) => entry.formId),
+        changed,
+        syncedForms,
+    }
 }
 
 const normalizeLevelUpMovesInput = (entries) => {
@@ -809,6 +893,74 @@ router.post('/form-variants', async (req, res) => {
     }
 })
 
+// POST /api/admin/pokemon/forms/sync-base-stats - Force all forms to inherit current base stats
+router.post('/forms/sync-base-stats', async (req, res) => {
+    try {
+        const forceOverride = req.body?.forceOverride !== false
+        const batchSize = Math.min(500, Math.max(10, parseInt(req.body?.batchSize, 10) || 100))
+        const cursor = Pokemon.find({ 'forms.0': { $exists: true } })
+            .select('_id baseStats forms')
+            .lean()
+            .cursor()
+
+        let inspectedPokemon = 0
+        let updatedPokemon = 0
+        let syncedForms = 0
+        let pendingOperations = []
+
+        for await (const pokemon of cursor) {
+            inspectedPokemon += 1
+            const baseStats = normalizeBaseStats(pokemon?.baseStats || {})
+            const result = syncFormsBaseStats(pokemon?.forms || [], {
+                forceOverride,
+                previousBaseStats: baseStats,
+                nextBaseStats: baseStats,
+            })
+
+            if (!result.changed) {
+                continue
+            }
+
+            updatedPokemon += 1
+            syncedForms += result.syncedForms
+            pendingOperations.push({
+                updateOne: {
+                    filter: { _id: pokemon._id },
+                    update: { $set: { forms: result.forms } },
+                },
+            })
+
+            if (pendingOperations.length >= batchSize) {
+                await Pokemon.bulkWrite(pendingOperations, { ordered: false })
+                pendingOperations = []
+            }
+        }
+
+        if (pendingOperations.length > 0) {
+            await Pokemon.bulkWrite(pendingOperations, { ordered: false })
+        }
+
+        return res.json({
+            ok: true,
+            summary: {
+                mode: forceOverride ? 'ghi_de_tat_ca' : 'dong_bo_an_toan',
+                inspectedPokemon,
+                updatedPokemon,
+                untouchedPokemon: Math.max(0, inspectedPokemon - updatedPokemon),
+                syncedForms,
+            },
+            message: updatedPokemon > 0
+                ? (forceOverride
+                    ? `Đã ghi đè ${syncedForms} form của ${updatedPokemon} Pokemon theo stat gốc.`
+                    : `Đã đồng bộ an toàn ${syncedForms} form của ${updatedPokemon} Pokemon.`)
+                : 'Không có form nào cần đồng bộ.',
+        })
+    } catch (error) {
+        console.error('POST /api/admin/pokemon/forms/sync-base-stats error:', error)
+        return res.status(500).json({ ok: false, message: 'Đồng bộ stat form hàng loạt thất bại' })
+    }
+})
+
 // GET /api/admin/pokemon/:id - Get single Pokemon
 router.get('/:id', async (req, res) => {
     try {
@@ -829,9 +981,10 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
-        const forms = normalizeForms(req.body.forms)
+        const rawForms = normalizeForms(req.body.forms)
         const normalizedEvolution = normalizeEvolutionPayload(evolution)
-        const resolvedBaseStats = normalizeBaseStats(baseStats || forms[0]?.stats)
+        const resolvedBaseStats = normalizeBaseStats(baseStats || rawForms[0]?.stats)
+        const forms = normalizeForms(req.body.forms, { nextBaseStats: resolvedBaseStats })
         const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = await resolveLevelUpMovesFromCatalog(levelUpMoves || [])
 
         if (levelUpMovesError) {
@@ -934,7 +1087,6 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { pokedexNumber, name, baseStats, types, initialMoves, sprites, imageUrl, description, rarity, rarityWeight, defaultFormId, evolution, levelUpMoves, catchRate, baseExperience, growthRate } = req.body
-        const forms = 'forms' in req.body ? normalizeForms(req.body.forms) : null
         const normalizedEvolution = evolution !== undefined ? normalizeEvolutionPayload(evolution) : undefined
         const shouldUpdateLevelUpMoves = levelUpMoves !== undefined
         const { moves: resolvedLevelUpMoves, error: levelUpMovesError } = shouldUpdateLevelUpMoves
@@ -962,6 +1114,12 @@ router.put('/:id', async (req, res) => {
         if (!pokemon) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon' })
         }
+
+        const previousBaseStats = normalizeBaseStats(pokemon.baseStats)
+        const nextBaseStats = baseStats !== undefined ? normalizeBaseStats(baseStats) : previousBaseStats
+        const forms = 'forms' in req.body
+            ? normalizeForms(req.body.forms, { previousBaseStats, nextBaseStats })
+            : null
 
         const effectiveRarity = normalizeRarity(rarity !== undefined ? rarity : pokemon.rarity)
         const pendingRarityEntries = [

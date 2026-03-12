@@ -631,7 +631,7 @@ export default function PokemonFormPage() {
                         formName: fallbackFormId === 'normal' ? 'Normal' : fallbackFormId,
                         imageUrl: pokemon.imageUrl || '',
                         sprites: pokemon.sprites || {},
-                        stats: pokemon.baseStats || {},
+                        stats: {},
                     }]
 
                 const normalizedForms = resolvedForms.map((f) => ({

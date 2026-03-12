@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import BulkItemUseModal, { getBulkItemUseLimit } from '../components/BulkItemUseModal'
+import { useAuth } from '../context/AuthContext'
 import { gameApi } from '../services/gameApi'
 
 const ITEM_FALLBACK_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'
@@ -81,6 +83,7 @@ const resolveEffectSummary = (item) => {
 export default function ItemInfoPage() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const { user, token, login } = useAuth()
 
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
@@ -88,8 +91,9 @@ export default function ItemInfoPage() {
     const [wallet, setWallet] = useState({ platinumCoins: 0, moonPoints: 0 })
     const [inventoryQuantity, setInventoryQuantity] = useState(0)
     const [usingItem, setUsingItem] = useState(false)
+    const [bulkUseModalOpen, setBulkUseModalOpen] = useState(false)
 
-    const loadItemDetail = async () => {
+    const loadItemDetail = useCallback(async () => {
         try {
             setLoading(true)
             setError('')
@@ -106,26 +110,38 @@ export default function ItemInfoPage() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [id])
 
     useEffect(() => {
         loadItemDetail()
-    }, [id])
+    }, [loadItemDetail])
 
     const typeMeta = TYPE_META[item?.type] || TYPE_META.misc
     const rarityMeta = RARITY_META[item?.rarity] || RARITY_META.common
     const effectSummary = useMemo(() => resolveEffectSummary(item), [item])
     const isOnSale = Boolean(item?.isShopEnabled && Number(item?.shopPrice || 0) > 0)
     const canUseDirectly = String(item?.effectType || '') === 'grantVipTier' && inventoryQuantity > 0
+    const currentVipTierLevel = Math.max(0, Number(user?.vipTierLevel || 0))
+    const maxDirectUseQuantity = Math.min(inventoryQuantity, getBulkItemUseLimit(currentVipTierLevel))
 
-    const handleUseItem = async () => {
+    const syncAuthUser = (nextUserPartial) => {
+        if (!nextUserPartial || !token || typeof login !== 'function') return
+        login({
+            ...(user || {}),
+            ...nextUserPartial,
+            id: user?.id || nextUserPartial?.id || user?._id || null,
+        }, token)
+    }
+
+    const handleUseItem = async (quantity) => {
         if (!item?._id || !canUseDirectly) return
-        if (!confirm(`Dùng ${item.name} ngay bây giờ?`)) return
 
         try {
             setUsingItem(true)
-            const result = await gameApi.useItem(item._id, 1)
+            const result = await gameApi.useItem(item._id, quantity)
+            syncAuthUser(result?.user)
             alert(result?.message || 'Dùng vật phẩm thành công')
+            setBulkUseModalOpen(false)
             await loadItemDetail()
         } catch (err) {
             alert(err.message || 'Không thể dùng vật phẩm')
@@ -226,11 +242,11 @@ export default function ItemInfoPage() {
                 {canUseDirectly && (
                     <button
                         type="button"
-                        onClick={handleUseItem}
+                        onClick={() => setBulkUseModalOpen(true)}
                         disabled={usingItem}
                         className="px-4 py-2 bg-amber-100 border border-amber-200 hover:bg-amber-200 text-amber-800 rounded text-sm font-bold disabled:opacity-60"
                     >
-                        {usingItem ? 'Đang dùng...' : 'Dùng ngay'}
+                        {usingItem ? 'Đang dùng...' : `Dùng ngay${maxDirectUseQuantity > 1 ? ` (tối đa ${formatNumber(maxDirectUseQuantity)})` : ''}`}
                     </button>
                 )}
                 <Link
@@ -244,6 +260,17 @@ export default function ItemInfoPage() {
                 <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
                     Vật phẩm này dùng tại trang chi tiết Pokemon để áp dụng lên Pokemon bạn chọn.
                 </div>
+            )}
+            {canUseDirectly && (
+                <BulkItemUseModal
+                    isOpen={bulkUseModalOpen}
+                    onClose={() => setBulkUseModalOpen(false)}
+                    item={item}
+                    inventoryQuantity={inventoryQuantity}
+                    vipTierLevel={currentVipTierLevel}
+                    submitting={usingItem}
+                    onConfirm={handleUseItem}
+                />
             )}
         </div>
     )
