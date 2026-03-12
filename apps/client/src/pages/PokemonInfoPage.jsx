@@ -137,7 +137,7 @@ export default function PokemonInfoPage() {
     const ownerId = String(pokemon?.userId?._id || '').trim()
     const isOwnerViewing = Boolean(viewerId && ownerId && viewerId === ownerId)
     const canViewMoves = pokemon?.canViewMoves !== false
-    const offTypeSkillAllowance = Math.max(0, Number(pokemon?.offTypeSkillAllowance || 0)) || (pokemon?.allowOffTypeSkills ? 1 : 0)
+    const offTypeSkillAllowance = Math.max(0, Number(pokemon?.offTypeSkillAllowance ?? 0)) || (pokemon?.allowOffTypeSkills ? 1 : 0)
     const hasOffTypeSkillAccess = offTypeSkillAllowance > 0
     const selectedGrowthItem = useMemo(
         () => pokemonGrowthItems.find((entry) => entry.itemId === selectedGrowthItemId) || null,
@@ -496,7 +496,7 @@ export default function PokemonInfoPage() {
                     moves: nextMoves,
                     movePpState: nextMovePpState,
                     moveDetails: nextMoveDetails,
-                    offTypeSkillAllowance: Math.max(0, Number(data?.pokemon?.offTypeSkillAllowance || prev.offTypeSkillAllowance || 0)),
+                    offTypeSkillAllowance: Math.max(0, Number(data?.pokemon?.offTypeSkillAllowance ?? prev.offTypeSkillAllowance ?? 0)),
                     allowOffTypeSkills: Boolean(data?.pokemon?.allowOffTypeSkills),
                 }
             })

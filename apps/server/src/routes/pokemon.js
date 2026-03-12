@@ -1625,26 +1625,23 @@ router.post('/:id/teach-skill', authMiddleware, async (req, res) => {
 
         let persistedPokemon = null
         if (restrictionResult.usesOffTypeAllowance) {
+            const currentOffTypeSkillAllowance = getOffTypeSkillAllowance(userPokemon)
+            const nextOffTypeSkillAllowance = Math.max(0, currentOffTypeSkillAllowance - 1)
+
             persistedPokemon = await UserPokemon.findOneAndUpdate(
                 withActiveUserPokemonFilter({
                     _id: req.params.id,
                     userId,
-                    offTypeSkillAllowance: { $gte: 1 },
+                    offTypeSkillAllowance: currentOffTypeSkillAllowance,
                 }),
-                [
-                    {
-                        $set: {
-                            moves: nextMoves,
-                            movePpState: nextMovePpState,
-                            offTypeSkillAllowance: { $subtract: ['$offTypeSkillAllowance', 1] },
-                        },
+                {
+                    $set: {
+                        moves: nextMoves,
+                        movePpState: nextMovePpState,
+                        offTypeSkillAllowance: nextOffTypeSkillAllowance,
+                        allowOffTypeSkills: nextOffTypeSkillAllowance > 0,
                     },
-                    {
-                        $set: {
-                            allowOffTypeSkills: { $gt: ['$offTypeSkillAllowance', 0] },
-                        },
-                    },
-                ],
+                },
                 { new: true }
             )
 
