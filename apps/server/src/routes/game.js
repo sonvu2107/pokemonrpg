@@ -329,6 +329,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             trainerId = null,
             activePokemonId = null,
             resetTrainerSession = false,
+            resetMovePpState = false,
         } = req.body || {}
 
         const normalizedTrainerId = String(trainerId || '').trim()
@@ -346,7 +347,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
             return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
         }
 
-        if (normalizedTrainerId && Boolean(resetTrainerSession)) {
+        if (Boolean(resetMovePpState) || (normalizedTrainerId && Boolean(resetTrainerSession))) {
             const allPartyMoveNames = [...new Set(
                 party.flatMap((entry) => mergeKnownMovesWithFallback(entry?.moves))
             )]

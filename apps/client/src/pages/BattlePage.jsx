@@ -1119,6 +1119,7 @@ export function BattlePage() {
     const [battleOpponent, setBattleOpponent] = useState(null)
     const [actionMessage, setActionMessage] = useState('')
     const [battleResults, setBattleResults] = useState(null)
+    const [battlePpResetPending, setBattlePpResetPending] = useState(false)
     const [resolvingBattleResult, setResolvingBattleResult] = useState(false)
     const [battleResultRetryContext, setBattleResultRetryContext] = useState(null)
     const [masterPokemon, setMasterPokemon] = useState([])
@@ -1338,6 +1339,7 @@ export function BattlePage() {
         setBattleResults(null)
         setBattleResultRetryContext(null)
         setResolvingBattleResult(false)
+        setBattlePpResetPending(false)
         setView('lobby')
         setBattleLog([])
         setActionMessage('')
@@ -1897,6 +1899,7 @@ export function BattlePage() {
                 setBattleOpponent(null)
                 setBattlePlayerIndex(0)
                 setBattlePartyHpState([])
+                setBattlePpResetPending(false)
                 setActiveBattleMode('trainer')
                 setDuelOpponentMoves([])
                 setDuelOpponentMoveCursor(0)
@@ -1963,6 +1966,7 @@ export function BattlePage() {
 
             setBattlePlayerIndex(0)
             setBattlePartyHpState([])
+            setBattlePpResetPending(false)
             setActiveBattleMode('trainer')
             setDuelOpponentMoves([])
             setDuelOpponentMoveCursor(0)
@@ -2323,6 +2327,7 @@ export function BattlePage() {
                 move: selectedMove,
                 trainerId: resolvedTrainerId || null,
                 activePokemonId: activePokemon?._id || null,
+                resetMovePpState: battlePpResetPending,
                 fieldState: battleOpponent?.fieldState || {},
                 opponent: {
                     name: target.name,
@@ -2353,6 +2358,7 @@ export function BattlePage() {
             })
 
             const battle = res?.battle || {}
+            setBattlePpResetPending(false)
             const damage = Number.isFinite(battle.damage) ? battle.damage : 1
             const nextHp = Number.isFinite(battle.currentHp)
                 ? Math.max(0, battle.currentHp)
@@ -3095,6 +3101,7 @@ export function BattlePage() {
             setEncounter(null)
             setBattlePartyHpState([])
             setBattlePlayerIndex(0)
+            setBattlePpResetPending(false)
         } catch (err) {
             setActionMessage(err.message)
         }
@@ -3327,18 +3334,21 @@ export function BattlePage() {
                 trainerId: resolvedTrainerId,
                 activePokemonId: preferredActivePokemon._id,
             })
+            const refreshedParty = await gameApi.getParty()
             const normalizedServerPlayerPartyState = normalizeTrainerPlayerPartyState(res?.playerParty)
             if (!normalizedServerPlayerPartyState) {
                 throw new Error('Thiếu dữ liệu mở trận từ máy chủ. Vui lòng thử lại.')
             }
             const mergedOpponentState = mergeTrainerOpponentState(nextOpponent, res?.opponent)
-            const preparedParty = (Array.isArray(party) ? party : []).map((slot) => {
+            const battleSourceParty = Array.isArray(refreshedParty) && refreshedParty.length > 0
+                ? refreshedParty
+                : (Array.isArray(party) ? party : [])
+            const preparedParty = battleSourceParty.map((slot) => {
                 if (!slot) return slot
-                const refilledMoveData = buildRefilledBattleMoves(slot)
                 return {
                     ...slot,
-                    moves: refilledMoveData.moves,
-                    movePpState: refilledMoveData.movePpState,
+                    moves: normalizeMoveList(mergeBattleMoveNames(slot?.moves || [])),
+                    movePpState: Array.isArray(slot?.movePpState) ? slot.movePpState : [],
                     status: '',
                     statusTurns: 0,
                     statStages: {},
@@ -3359,6 +3369,7 @@ export function BattlePage() {
             setDuelOpponentMoves([])
             setDuelOpponentMoveCursor(0)
             setDuelResultModal(null)
+            setBattlePpResetPending(true)
             setOpponent(nextOpponent)
             setBattleOpponent(mergedOpponentState)
             setParty(mergeTrainerPlayerPartyIntoParty(preparedParty, normalizedServerPlayerPartyState))
@@ -3511,6 +3522,7 @@ export function BattlePage() {
             setSelectedMoveIndex(0)
             setActiveTab('fight')
             setActiveBattleMode('duel')
+            setBattlePpResetPending(true)
             setDuelResultModal(null)
             setOpponent(duelOpponent)
             setBattleOpponent(duelOpponent)
@@ -3640,6 +3652,7 @@ export function BattlePage() {
             setSelectedMoveIndex(0)
             setActiveTab('fight')
             setActiveBattleMode('online')
+            setBattlePpResetPending(true)
             setDuelResultModal(null)
             setOpponent(onlineOpponent)
             setBattleOpponent(onlineOpponent)
