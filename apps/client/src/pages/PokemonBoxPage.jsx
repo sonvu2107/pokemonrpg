@@ -31,6 +31,23 @@ const isRecentlyCaughtPokemon = (entry, nowMs = Date.now()) => {
     return nowMs - caughtAtMs <= NEW_POKEMON_TAG_TTL_MS
 }
 
+const buildPaginationItems = (currentPage, totalPages) => {
+    const safeCurrentPage = Math.max(1, Number(currentPage) || 1)
+    const safeTotalPages = Math.max(1, Number(totalPages) || 1)
+    const items = [1]
+    const start = Math.max(2, safeCurrentPage - 2)
+    const end = Math.min(safeTotalPages - 1, safeCurrentPage + 2)
+
+    if (start > 2) items.push('left-ellipsis')
+    for (let value = start; value <= end; value += 1) {
+        items.push(value)
+    }
+    if (end < safeTotalPages - 1) items.push('right-ellipsis')
+    if (safeTotalPages > 1) items.push(safeTotalPages)
+
+    return items
+}
+
 const resolvePokemonDisplay = (entry) => {
     const species = entry?.pokemonId || {}
     const forms = Array.isArray(species?.forms) ? species.forms : []
@@ -59,7 +76,7 @@ export default function PokemonBoxPage() {
     const [liveUser, setLiveUser] = useState(user)
     const [filter, setFilter] = useState('all')
     const [search, setSearch] = useState('')
-    const [sort, setSort] = useState('id')
+    const [sort, setSort] = useState('level')
     const [nowMs, setNowMs] = useState(() => Date.now())
     const [page, setPage] = useState(1)
     const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -114,9 +131,19 @@ export default function PokemonBoxPage() {
                 filter,
                 sort
             })
+            const nextPagination = {
+                page: Math.max(1, Number(data?.pagination?.page || 1)),
+                total: Math.max(0, Number(data?.pagination?.total || 0)),
+                pages: Math.max(1, Number(data?.pagination?.pages || 1)),
+                limit: Math.max(1, Number(data?.pagination?.limit || 28)),
+            }
+
             setPokemon(data.pokemon)
-            setPagination(data.pagination)
+            setPagination(nextPagination)
             setCounts(data.counts || { total: 0, box: 0, party: 0 })
+            if (nextPagination.page !== page) {
+                setPage(nextPagination.page)
+            }
         } catch (err) {
             console.error(err)
         } finally {
@@ -193,6 +220,8 @@ export default function PokemonBoxPage() {
         if (!evolvesTo || minLevel === null) return false
         return Number(pokemonEntry?.level || 0) >= minLevel
     }
+
+    const paginationItems = buildPaginationItems(page, pagination.pages)
 
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
@@ -293,6 +322,15 @@ export default function PokemonBoxPage() {
                                         onChange={() => setSort('id')}
                                     />
                                     Theo ID
+                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer hover:text-blue-600">
+                                    <input
+                                        type="radio"
+                                        name="sort"
+                                        checked={sort === 'rarity'}
+                                        onChange={() => setSort('rarity')}
+                                    />
+                                    Theo Độ Hiếm
                                 </label>
                                 <label className="flex items-center gap-1 cursor-pointer hover:text-blue-600">
                                     <input
@@ -458,22 +496,54 @@ export default function PokemonBoxPage() {
 
                     {/* Pagination Bottom */}
                     {pagination.pages > 1 && (
-                        <div className="bg-slate-50 border-t border-blue-200 p-3 text-center flex justify-center flex-wrap gap-1.5 opacity-90">
-                            {Array.from({ length: Math.min(pagination.pages, 10) }, (_, i) => i + 1).map(p => (
+                        <div className="bg-slate-50 border-t border-blue-200 p-3 text-center opacity-90 space-y-3">
+                            <div className="text-xs font-bold text-slate-600">
+                                Trang <span className="text-blue-700">{page}</span> / {pagination.pages} - Tổng <span className="text-blue-700">{pagination.total}</span> Pokémon trong kho
+                            </div>
+                            <div className="flex justify-center flex-wrap gap-1.5">
                                 <button
-                                    key={p}
                                     onClick={() => {
-                                        setPage(p)
+                                        setPage(Math.max(1, page - 1))
                                         window.scrollTo({ top: 0, behavior: 'smooth' })
                                     }}
-                                    className={`w-9 h-9 flex items-center justify-center text-xs font-bold rounded border shadow-sm transition-colors ${page === p
+                                    disabled={page <= 1}
+                                    className="px-3 h-9 flex items-center justify-center text-xs font-bold rounded border shadow-sm transition-colors bg-white border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Trước
+                                </button>
+                                {paginationItems.map((item, index) => item === 'left-ellipsis' || item === 'right-ellipsis' ? (
+                                    <span
+                                        key={`${item}-${index}`}
+                                        className="w-9 h-9 flex items-center justify-center text-xs font-bold text-slate-500"
+                                    >
+                                        ...
+                                    </span>
+                                ) : (
+                                <button
+                                    key={item}
+                                    onClick={() => {
+                                        setPage(item)
+                                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                                    }}
+                                    className={`w-9 h-9 flex items-center justify-center text-xs font-bold rounded border shadow-sm transition-colors ${page === item
                                         ? 'bg-blue-600 border-blue-700 text-white'
                                         : 'bg-white border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-400'
                                         }`}
                                 >
-                                    {p}
+                                    {item}
                                 </button>
-                            ))}
+                                ))}
+                                <button
+                                    onClick={() => {
+                                        setPage(Math.min(pagination.pages, page + 1))
+                                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                                    }}
+                                    disabled={page >= pagination.pages}
+                                    className="px-3 h-9 flex items-center justify-center text-xs font-bold rounded border shadow-sm transition-colors bg-white border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Sau
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

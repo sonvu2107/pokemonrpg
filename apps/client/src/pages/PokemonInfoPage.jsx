@@ -595,7 +595,7 @@ export default function PokemonInfoPage() {
         return (
             <div className="max-w-4xl mx-auto p-8 text-center">
                 <div className="text-red-500 font-bold text-lg mb-4">⚠️ {error || 'Pokemon không tồn tại'}</div>
-                <Link to="/box" className="text-blue-600 hover:underline">Quay lại Kho Pokemon</Link>
+                <Link to="/box" className="text-blue-600 hover:underline">Quay lại Kho Pokémon</Link>
             </div>
         )
     }

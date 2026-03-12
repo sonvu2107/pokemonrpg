@@ -2494,6 +2494,34 @@ router.post('/battle/trainer/start', authMiddleware, async (req, res, next) => {
             .populate('pokemonId')
             .sort({ partyIndex: 1 })
 
+        const allPartyMoveNames = [...new Set(
+            party.flatMap((entry) => mergeKnownMovesWithFallback(entry?.moves))
+        )]
+        const battleStartMoveLookupMap = await buildMoveLookupByName(allPartyMoveNames)
+        const refillSaveTasks = []
+
+        party.forEach((entry) => {
+            const entryMoveNames = mergeKnownMovesWithFallback(entry?.moves)
+            const refilledMovePpState = buildMovePpStateFromMoves({
+                moveNames: entryMoveNames,
+                movePpState: [],
+                moveLookupMap: battleStartMoveLookupMap,
+            }).map((moveEntry) => ({
+                moveName: moveEntry.moveName,
+                currentPp: Math.max(1, Number(moveEntry?.maxPp) || 1),
+                maxPp: Math.max(1, Number(moveEntry?.maxPp) || 1),
+            }))
+
+            if (!isMovePpStateEqual(entry.movePpState, refilledMovePpState)) {
+                entry.movePpState = refilledMovePpState
+                refillSaveTasks.push(entry.save())
+            }
+        })
+
+        if (refillSaveTasks.length > 0) {
+            await Promise.all(refillSaveTasks)
+        }
+
         const activePokemon = normalizedActivePokemonId
             ? party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null
             : (party.find((entry) => Boolean(entry)) || null)

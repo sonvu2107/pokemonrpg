@@ -8,6 +8,11 @@ const router = express.Router()
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level formId isShiny location obtainedAt createdAt obtainedVipMapLevel'
 const BOX_POKEMON_SELECT = '_id name pokedexNumber rarity imageUrl sprites defaultFormId forms evolution'
+const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
+const getPokemonRarityRank = (rarity = '') => {
+    const index = POKEMON_RARITY_ORDER.indexOf(String(rarity || '').trim().toLowerCase())
+    return index >= 0 ? index : -1
+}
 
 router.use(authMiddleware)
 router.get('/', async (req, res) => {
@@ -16,7 +21,7 @@ router.get('/', async (req, res) => {
             page = 1,
             limit = 28,
             search = '',
-            sort = 'id',
+            sort = 'level',
             filter = 'all'
         } = req.query
 
@@ -65,21 +70,48 @@ router.get('/', async (req, res) => {
             UserPokemon.countDocuments(withActiveUserPokemonFilter({ userId: req.user.userId, location: 'party' })),
         ])
 
-        const userPokemon = await UserPokemon.find(query)
-            .select(BOX_ENTRY_SELECT)
-            .populate('pokemonId', BOX_POKEMON_SELECT)
-            .sort(sortOptions)
-            .skip((pageNum - 1) * limitNum)
-            .limit(limitNum)
-            .lean()
+        const totalPages = Math.max(1, Math.ceil(total / limitNum))
+        const normalizedPage = total > 0 ? Math.min(pageNum, totalPages) : 1
+
+        let userPokemon = []
+
+        if (sort === 'rarity') {
+            const allMatchingPokemon = await UserPokemon.find(query)
+                .select(BOX_ENTRY_SELECT)
+                .populate('pokemonId', BOX_POKEMON_SELECT)
+                .lean()
+
+            allMatchingPokemon.sort((left, right) => {
+                const rarityDiff = getPokemonRarityRank(right?.pokemonId?.rarity) - getPokemonRarityRank(left?.pokemonId?.rarity)
+                if (rarityDiff !== 0) return rarityDiff
+
+                const levelDiff = (Number(right?.level || 0) - Number(left?.level || 0))
+                if (levelDiff !== 0) return levelDiff
+
+                const createdAtDiff = new Date(right?.createdAt || 0).getTime() - new Date(left?.createdAt || 0).getTime()
+                if (createdAtDiff !== 0) return createdAtDiff
+
+                return String(right?._id || '').localeCompare(String(left?._id || ''))
+            })
+
+            userPokemon = allMatchingPokemon.slice((normalizedPage - 1) * limitNum, normalizedPage * limitNum)
+        } else {
+            userPokemon = await UserPokemon.find(query)
+                .select(BOX_ENTRY_SELECT)
+                .populate('pokemonId', BOX_POKEMON_SELECT)
+                .sort(sortOptions)
+                .skip((normalizedPage - 1) * limitNum)
+                .limit(limitNum)
+                .lean()
+        }
 
         res.json({
             pokemon: userPokemon,
             pagination: {
-                page: pageNum,
+                page: normalizedPage,
                 limit: limitNum,
                 total,
-                pages: Math.ceil(total / limitNum)
+                pages: totalPages,
             },
             counts: {
                 total: total + partyCount,
@@ -90,7 +122,7 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         console.error('Box Error:', error)
-        res.status(500).json({ message: 'Không thể tải kho Pokemon' })
+        res.status(500).json({ message: 'Không thể tải kho Pokémon' })
     }
 })
 
