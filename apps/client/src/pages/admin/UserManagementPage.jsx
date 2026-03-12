@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { userApi, vipTierApi } from '../../services/adminApi'
 import { ADMIN_PERMISSION_OPTIONS } from '../../constants/adminPermissions'
+import VipUsername from '../../components/VipUsername'
 
 const DEFAULT_POKEMON_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const DEFAULT_ITEM_IMAGE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'
@@ -929,7 +930,7 @@ export default function UserManagementPage() {
                                             />
                                         </td>
                                         <td className="px-3 py-3 align-middle font-medium text-slate-900 break-all">{user.email}</td>
-                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-slate-600">{user.username || '-'}</td>
+                                        <td className="whitespace-nowrap px-3 py-3 align-middle text-slate-600"><VipUsername userLike={user}>{user.username || '-'}</VipUsername></td>
                                         <td className="whitespace-nowrap px-3 py-3 align-middle text-center">
                                             {isUserCurrentlyBanned(user) ? (
                                                 <div className="inline-flex flex-col items-center gap-1">
@@ -1133,7 +1134,7 @@ export default function UserManagementPage() {
                             <div>
                                 <h3 className="text-lg font-bold text-amber-800">Quản lý quyền lợi VIP</h3>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Mục tiêu: <span className="font-bold text-amber-700">{vipBenefitModal.user.username || vipBenefitModal.user.email}</span>
+                                    Mục tiêu: <VipUsername userLike={vipBenefitModal.user} className="font-bold text-amber-700">{vipBenefitModal.user.username || vipBenefitModal.user.email}</VipUsername>
                                 </p>
                             </div>
                             <button
@@ -1318,7 +1319,7 @@ export default function UserManagementPage() {
                             <div>
                                 <h3 className="text-lg font-bold text-blue-800">Khóa tài khoản</h3>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Mục tiêu: <span className="font-bold text-red-700">{accountBanModal.user.username || accountBanModal.user.email}</span>
+                                    Mục tiêu: <VipUsername userLike={accountBanModal.user} className="font-bold text-red-700">{accountBanModal.user.username || accountBanModal.user.email}</VipUsername>
                                 </p>
                             </div>
                             <button
@@ -1412,7 +1413,7 @@ export default function UserManagementPage() {
                                     {grantModal.type === 'pokemon' ? 'Thêm Pokemon cho người chơi' : 'Thêm vật phẩm cho người chơi'}
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Mục tiêu: <span className="font-bold text-blue-700">{grantModal.user.username || grantModal.user.email}</span>
+                                    Mục tiêu: <VipUsername userLike={grantModal.user} className="font-bold text-blue-700">{grantModal.user.username || grantModal.user.email}</VipUsername>
                                 </p>
                             </div>
                             <button

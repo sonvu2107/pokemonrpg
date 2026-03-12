@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import newsApi from '../services/newsApi'
 import ArticleContentRenderer, { hasInlineImageInContent } from '../components/ArticleContentRenderer'
+import VipUsername from '../components/VipUsername'
 
 const getTypeLabel = (type) => {
     const labels = {
@@ -111,7 +112,7 @@ export default function NewsDetailPage() {
                         </div>
                         <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span>{formatDateTime(post.createdAt)}</span>
-                            <span>Đăng bởi: {post.author?.username || 'Unknown'}</span>
+                            <span>Đăng bởi: <VipUsername userLike={post.author}>{post.author?.username || 'Unknown'}</VipUsername></span>
                         </div>
                     </header>
 

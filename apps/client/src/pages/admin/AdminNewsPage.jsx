@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import newsApi from '../../services/newsApi'
 import ArticleContentRenderer, { hasInlineImageInContent } from '../../components/ArticleContentRenderer'
 import ImageUpload from '../../components/ImageUpload'
+import VipUsername from '../../components/VipUsername'
 import { mapApi as publicMapApi } from '../../services/mapApi'
 import { mapApi as adminMapApi } from '../../services/adminApi'
 import { useAuth } from '../../context/AuthContext'
@@ -970,7 +971,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                                 </Link>
                                             )}
                                             <div className="flex justify-between items-center text-xs text-slate-500">
-                                                <span>Đăng bởi: {post.author?.username || 'Unknown'}</span>
+                                                <span>Đăng bởi: <VipUsername userLike={post.author}>{post.author?.username || 'Unknown'}</VipUsername></span>
                                                 <span>{formatDate(post.createdAt)}</span>
                                             </div>
                                         </div>

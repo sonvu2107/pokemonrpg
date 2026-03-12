@@ -971,9 +971,9 @@ export default function VipPrivilegePage() {
                                 {paginatedVipUsers.map((user) => (
                                     <div key={user._id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col h-full">
                                         <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-semibold text-slate-900 truncate">
+                                            <VipUsername userLike={user} className="text-sm font-semibold text-slate-900 truncate">
                                                 {user.username}
-                                            </div>
+                                            </VipUsername>
                                             <div className="mt-1 text-xs text-slate-500 truncate">
                                                 {user.email || "Không có email"}
                                             </div>

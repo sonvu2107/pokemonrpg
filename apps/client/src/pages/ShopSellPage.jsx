@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
 import PokemonTradeDetailModal from '../components/PokemonTradeDetailModal'
+import VipUsername from '../components/VipUsername'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -521,7 +522,7 @@ export default function ShopSellPage() {
                                                 {Number(listing.price || 0).toLocaleString('vi-VN')} xu
                                             </td>
                                             <td className="px-1 sm:px-3 py-2 sm:py-3 text-center">
-                                                <div className="font-bold text-slate-700 text-xs sm:text-sm break-words">{listing.buyer?.username || 'Không rõ'}</div>
+                                                <VipUsername userLike={listing.buyer} className="font-bold text-slate-700 text-xs sm:text-sm break-words">{listing.buyer?.username || 'Không rõ'}</VipUsername>
                                             </td>
                                         </tr>
                                     ))
@@ -553,7 +554,7 @@ export default function ShopSellPage() {
                 </section>
                 <section className="border border-blue-400 rounded-t-lg overflow-hidden shadow-sm bg-white">
                     <SectionHeader title="Vật Phẩm Đã Bán" />
-                    <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-xs sm:text-sm font-bold"><th className="px-3 py-2 text-left">Vật phẩm</th><th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-center">Giá</th><th className="px-3 py-2 text-center">Người mua</th></tr></thead><tbody>{itemSoldListings.length === 0 ? <tr><td colSpan={4} className="px-3 py-8 text-center text-slate-500">Bạn chưa bán vật phẩm nào.</td></tr> : itemSoldListings.map((listing) => <tr key={listing.id} className="border-b border-blue-100"><td className="px-3 py-3"><div className="flex items-center gap-3"><img src={listing.itemImageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={listing.itemName} className="w-10 h-10 object-contain" /><div><div className="font-bold text-slate-800">{listing.itemName}</div><div className="text-xs text-slate-500">{ITEM_TYPE_LABELS[listing.itemType] || listing.itemType}</div></div></div></td><td className="px-3 py-3 text-center font-bold">x{listing.quantity}</td><td className="px-3 py-3 text-center font-bold">{Number(listing.price || 0).toLocaleString('vi-VN')} xu</td><td className="px-3 py-3 text-center font-bold text-slate-700">{listing.buyer?.username || 'Không rõ'}</td></tr>)}</tbody></table></div>
+                    <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-blue-50 border-b border-blue-300 text-blue-900 text-xs sm:text-sm font-bold"><th className="px-3 py-2 text-left">Vật phẩm</th><th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-center">Giá</th><th className="px-3 py-2 text-center">Người mua</th></tr></thead><tbody>{itemSoldListings.length === 0 ? <tr><td colSpan={4} className="px-3 py-8 text-center text-slate-500">Bạn chưa bán vật phẩm nào.</td></tr> : itemSoldListings.map((listing) => <tr key={listing.id} className="border-b border-blue-100"><td className="px-3 py-3"><div className="flex items-center gap-3"><img src={listing.itemImageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={listing.itemName} className="w-10 h-10 object-contain" /><div><div className="font-bold text-slate-800">{listing.itemName}</div><div className="text-xs text-slate-500">{ITEM_TYPE_LABELS[listing.itemType] || listing.itemType}</div></div></div></td><td className="px-3 py-3 text-center font-bold">x{listing.quantity}</td><td className="px-3 py-3 text-center font-bold">{Number(listing.price || 0).toLocaleString('vi-VN')} xu</td><td className="px-3 py-3 text-center font-bold text-slate-700"><VipUsername userLike={listing.buyer}>{listing.buyer?.username || 'Không rõ'}</VipUsername></td></tr>)}</tbody></table></div>
                 </section>
             </div>}
 

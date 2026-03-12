@@ -362,11 +362,11 @@ export default function PokemonTradeDetailModal({
                                     </div>
                                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                                         <span className="font-bold text-slate-600 uppercase">Người bán:</span>{' '}
-                                        <span className="font-bold text-slate-800 break-all">{pokemon?.seller?.username || '--'}</span>
+                                        <VipUsername userLike={pokemon?.seller} className="font-bold text-slate-800 break-all">{pokemon?.seller?.username || '--'}</VipUsername>
                                     </div>
                                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                                         <span className="font-bold text-slate-600 uppercase">Người mua:</span>{' '}
-                                        <span className="font-bold text-slate-800 break-all">{pokemon?.buyer?.username || '--'}</span>
+                                        <VipUsername userLike={pokemon?.buyer} className="font-bold text-slate-800 break-all">{pokemon?.buyer?.username || '--'}</VipUsername>
                                     </div>
                                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 sm:col-span-2">
                                         <span className="font-bold text-slate-600 uppercase">OT:</span>{' '}

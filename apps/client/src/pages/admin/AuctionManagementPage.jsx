@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { auctionAdminApi, itemApi, userApi } from '../../services/adminApi'
 import { useToast } from '../../context/ToastContext'
+import VipUsername from '../../components/VipUsername'
 
 const STATUS_OPTIONS = [
     { value: 'all', label: 'Tất cả trạng thái' },
@@ -607,7 +608,7 @@ export default function AuctionManagementPage() {
                                     {auctionBidsLoading ? <div className="text-sm text-slate-500">Đang tải lịch sử giá...</div> : auctionBids.length === 0 ? <div className="text-sm text-slate-500">Chưa có ai đặt giá.</div> : auctionBids.map((bid) => (
                                         <div key={bid.id} className="rounded border border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between gap-3 text-sm">
                                             <div>
-                                                <div className="font-bold text-slate-800">{bid.username}</div>
+                                                <VipUsername userLike={bid} className="font-bold text-slate-800">{bid.username}</VipUsername>
                                                 <div className="text-xs text-slate-500">{formatDateTime(bid.createdAt)}</div>
                                             </div>
                                             <div className="font-bold text-blue-700">{Number(bid.amount || 0).toLocaleString('vi-VN')} Xu</div>

@@ -840,7 +840,7 @@ export default function FriendsPage() {
             >
                 {selectedTrainer && (
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
-                        <ProfileSectionHeader title={`Hồ sơ của ${selectedTrainer.username || 'Huấn Luyện Viên'}`} />
+                        <ProfileSectionHeader title={<><span>Hồ sơ của </span><VipUsername userLike={selectedTrainer}>{selectedTrainer.username || 'Huấn Luyện Viên'}</VipUsername></>} />
                         <div className="bg-blue-50/50 p-4 text-center">
                             <div className="max-w-2xl mx-auto">
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-4 shadow-sm">

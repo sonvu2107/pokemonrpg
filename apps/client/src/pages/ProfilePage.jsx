@@ -8,6 +8,7 @@ import SmartImage from '../components/SmartImage'
 import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -224,7 +225,7 @@ export default function ProfilePage() {
     return (
         <div className="max-w-4xl mx-auto font-sans pb-12">
             <div className="text-center mb-6">
-                <h1 className="text-4xl font-bold text-slate-800 mb-2 drop-shadow-sm tracking-tight">{username}</h1>
+                <VipUsername userLike={user} className="text-4xl font-bold text-slate-800 mb-2 drop-shadow-sm tracking-tight">{username}</VipUsername>
                 <div className="flex justify-center gap-6 text-sm font-bold text-slate-500">
                     <div className="flex items-center gap-1 text-slate-700 drop-shadow-sm">
                         <span>🪙 {coins.toLocaleString()} Xu Bạch Kim</span>
@@ -253,7 +254,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="bg-white p-2 sm:p-4 space-y-6">
                     <div className="border border-blue-400 rounded overflow-hidden shadow-sm">
-                        <SectionHeader title={`Hồ sơ của ${username}`} />
+                        <SectionHeader title={<><span>Hồ sơ của </span><VipUsername userLike={user}>{username}</VipUsername></>} />
                         <div className="bg-blue-50/50 p-4 text-center">
                             <div className="max-w-2xl mx-auto">
                                 <div className="bg-gradient-to-b from-blue-100 to-white border border-blue-200 text-blue-900 font-bold py-1 px-4 mb-4 shadow-sm">
@@ -307,7 +308,7 @@ export default function ProfilePage() {
                                     Trạng Thái
                                 </div>
                                 <div className="py-2 text-sm text-slate-700">
-                                    <span className="font-bold text-slate-900">{username}</span> hiện đang{' '}
+                                    <VipUsername userLike={user} className="font-bold text-slate-900">{username}</VipUsername> hiện đang{' '}
                                     <span className={`font-bold ${user?.isOnline ? 'text-green-600' : 'text-slate-500'}`}>
                                         {user?.isOnline ? 'Trực Tuyến' : 'Ngoại Tuyến'}
                                     </span>.
@@ -445,7 +446,7 @@ export default function ProfilePage() {
                         <SectionHeader title="Thông Tin Người Chơi" />
                         <div className="bg-white">
                             <InfoRow label="ID Người Chơi" value={`#${user?.id ? user.id.slice(-7).toUpperCase() : '???'}`} isOdd={false} />
-                            <InfoRow label="Tên Nhân Vật" value={username} isOdd={true} />
+                            <InfoRow label="Tên Nhân Vật" value={<VipUsername userLike={user} className="font-semibold text-slate-900">{username}</VipUsername>} isOdd={true} />
                             <InfoRow label="Nhóm" value={getPublicRoleLabel(user)} isOdd={false} />
                             <InfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={user} fallback="dash" />} isOdd={true} />
                             <InfoRow label="Cấp Người Chơi" value={`Lv. ${level}`} isOdd={false} />

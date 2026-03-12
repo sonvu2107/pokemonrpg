@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { gameApi } from '../../services/gameApi'
 import { leaderboardRewardApi, userApi } from '../../services/adminApi'
 import { uploadToCloudinary } from '../../utils/cloudinaryUtils'
+import VipUsername from '../../components/VipUsername'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
 
@@ -1333,7 +1334,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                     >
                                         <td className="px-3 py-2 font-bold text-blue-700 whitespace-nowrap">#{numberFormat(entry?.rank || 0)}</td>
                                         <td className="px-3 py-2 whitespace-nowrap lg:whitespace-normal break-words max-w-[200px]">
-                                            <div className="font-semibold text-slate-800">{entry?.username || 'Unknown'}</div>
+                                            <VipUsername userLike={entry} className="font-semibold text-slate-800">{entry?.username || 'Unknown'}</VipUsername>
                                             <div className="text-xs text-slate-500">ID: {userId || '--'}</div>
                                         </td>
                                         <td className="px-3 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">{numberFormat(scoreValue)}</td>
@@ -1458,7 +1459,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                     <div className="text-xs text-slate-500">Lv {numberFormat(entry?.level || 1)}</div>
                                 </div>
                                 <div>
-                                    <div className="font-semibold text-slate-800">{entry?.username || 'Unknown'}</div>
+                                    <VipUsername userLike={entry} className="font-semibold text-slate-800">{entry?.username || 'Unknown'}</VipUsername>
                                     <div className="text-xs text-slate-500">{primaryLabel}: {numberFormat(scoreValue)}</div>
                                 </div>
                                 <div>

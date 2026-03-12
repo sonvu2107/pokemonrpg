@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import newsApi from '../services/newsApi'
 import SmartImage from '../components/SmartImage'
+import VipUsername from '../components/VipUsername'
 
 const VIEW_OPTIONS = [
     { key: 'notification', label: 'Thông báo' },
@@ -247,7 +248,7 @@ export default function HomePage() {
                                 )}
                                 {post.author && (
                                     <p className="mt-4 text-xs text-slate-500">
-                                        Đăng bởi: <span className="font-medium">{post.author.username}</span>
+                                        Đăng bởi: <VipUsername userLike={post.author} className="font-medium">{post.author.username}</VipUsername>
                                     </p>
                                 )}
                             </div>

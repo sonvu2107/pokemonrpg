@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { gameApi } from "../services/gameApi"
 import { ADMIN_PERMISSIONS } from "../constants/adminPermissions"
 import ComingSoonModal from "../components/ComingSoonModal"
+import VipUsername from "../components/VipUsername"
 
 const SidebarSection = ({ title, iconId, children, defaultOpen = true }) => {
     const [isOpen, setIsOpen] = useState(() => {
@@ -155,7 +156,7 @@ export default function RightColumn() {
             </SidebarSection>
 
             <SidebarSection title="Tài Khoản" iconId={403}>
-                <SidebarLink to="/profile">Hồ sơ ({user?.username || 'Khách'})</SidebarLink>
+                <SidebarLink to="/profile">Hồ sơ (<VipUsername userLike={user}>{user?.username || 'Khách'}</VipUsername>)</SidebarLink>
                 <SidebarLink to="/inventory">Túi đồ</SidebarLink>
                 <SidebarLink to="/profile/edit">Sửa hồ sơ</SidebarLink>
                 <SidebarLink to="/badges">Huy hiệu</SidebarLink>

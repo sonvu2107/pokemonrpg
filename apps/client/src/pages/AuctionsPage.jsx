@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import VipUsername from '../components/VipUsername'
 import UserAuctionManagementPage from './UserAuctionManagementPage'
 
 const STATUS_OPTIONS = [
@@ -364,7 +365,7 @@ export default function AuctionsPage() {
                                     ) : bidHistory.map((bid) => (
                                         <div key={bid.id} className="px-4 py-3 flex items-center justify-between gap-3 text-sm">
                                             <div>
-                                                <div className="font-bold text-slate-800">{bid.username}</div>
+                                                <VipUsername userLike={bid} className="font-bold text-slate-800">{bid.username}</VipUsername>
                                                 <div className="text-xs text-slate-500">{formatDateTime(bid.createdAt)}</div>
                                             </div>
                                             <div className="font-bold text-blue-700">{formatCurrency(bid.amount)}</div>

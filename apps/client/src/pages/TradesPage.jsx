@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
 import PokemonTradeDetailModal from '../components/PokemonTradeDetailModal'
+import VipUsername from '../components/VipUsername'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm">
@@ -430,7 +431,7 @@ export default function TradesPage() {
                                                         </div>
                                                     )}
                                                     <div className="mt-1 text-xs sm:text-sm font-bold text-slate-700">Cấp độ: {listing.level}</div>
-                                                    <div className="text-xs sm:text-sm"><span className="font-bold">Người bán:</span> {listing.seller?.username || 'Không rõ'}</div>
+                                                    <div className="text-xs sm:text-sm"><span className="font-bold">Người bán:</span> <VipUsername userLike={listing.seller}>{listing.seller?.username || 'Không rõ'}</VipUsername></div>
                                                     <div className="text-xs sm:text-sm"><span className="font-bold">OT:</span> {listing.otName || 'Không rõ'}</div>
                                                     <div className="text-[10px] sm:text-xs text-slate-500 mt-1">{formatDate(listing.listedAt)}</div>
                                                 </button>
