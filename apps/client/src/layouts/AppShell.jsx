@@ -3,6 +3,7 @@ import { Outlet, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { usePlayTab } from "../context/PlayTabContext"
 import VipAvatar from "../components/VipAvatar"
+import VipUsername from "../components/VipUsername"
 import { isVipRole, isAdminRole, getVipTitle, getVipBadgeLabel } from "../utils/vip"
 import LeftColumn from "./LeftColumn"
 import RightColumn from "./RightColumn"
@@ -70,7 +71,7 @@ export default function AppShell() {
                                 <div className="flex items-center gap-4">
                                     <div className="hidden md:flex items-baseline gap-2 text-slate-700">
                                         <div className="text-sm font-medium">
-                                            {user.username}
+                                            <VipUsername userLike={user}>{user.username}</VipUsername>
                                         </div>
                                         {vipTitle && (
                                             <div className="text-[11px] font-bold text-amber-600">
@@ -220,7 +221,7 @@ export default function AppShell() {
                                             />
                                         </div>
                                         <div>
-                                            <div className="font-bold text-slate-800 text-base">{user.username}</div>
+                                            <div className="font-bold text-slate-800 text-base"><VipUsername userLike={user}>{user.username}</VipUsername></div>
                                             <div className="flex gap-2 text-xs">
                                                 {isVipRole(user) ? (
                                                     <span className="px-1.5 py-0.5 bg-amber-500 rounded text-white font-bold uppercase">{vipBadgeLabel}</span>

@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/Modal'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import SmartImage from '../components/SmartImage'
 import VipCaughtStar from '../components/VipCaughtStar'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
@@ -321,7 +322,7 @@ export default function OnlineStatsPage() {
                                             onClick={() => openTrainerModal(entry)}
                                             className="text-left text-sm font-bold text-indigo-800 hover:text-indigo-600 hover:underline truncate"
                                         >
-                                            {entry.username}
+                                            <VipUsername userLike={entry}>{entry.username}</VipUsername>
                                         </button>
                                         <VipTitleBadge userLike={entry} />
                                     </div>
@@ -363,7 +364,7 @@ export default function OnlineStatsPage() {
                                                     onClick={() => openTrainerModal(entry)}
                                                     className="font-bold text-indigo-800 hover:text-indigo-600 hover:underline truncate"
                                                 >
-                                                    {entry.username}
+                                                    <VipUsername userLike={entry}>{entry.username}</VipUsername>
                                                 </button>
                                                 <VipTitleBadge userLike={entry} />
                                             </div>
@@ -428,7 +429,7 @@ export default function OnlineStatsPage() {
                                     Trạng Thái
                                 </div>
                                 <div className="py-2 text-sm text-slate-700">
-                                    <span className="font-bold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</span> hiện đang{' '}
+                                    <VipUsername userLike={selectedTrainer} className="font-bold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</VipUsername> hiện đang{' '}
                                     <span className={`font-bold ${selectedTrainer.isOnline ? 'text-green-600' : 'text-slate-500'}`}>
                                         {selectedTrainer.isOnline ? 'Trực Tuyến' : 'Ngoại Tuyến'}
                                     </span>.
@@ -448,7 +449,7 @@ export default function OnlineStatsPage() {
                             <ProfileSectionHeader title="Thông Tin Người Chơi" />
                             <div className="bg-white">
                                 <ProfileInfoRow label="ID Người Chơi" value={trainerProfileId} isOdd={false} />
-                                <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
+                                <ProfileInfoRow label="Tên Nhân Vật" value={<VipUsername userLike={selectedTrainer} className="font-semibold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</VipUsername>} isOdd={true} />
                                 <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
                                 <ProfileInfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={selectedTrainer} fallback="dash" />} isOdd={true} />
                                 <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />

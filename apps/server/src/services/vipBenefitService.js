@@ -1,5 +1,16 @@
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 
+const VIP_HEX_COLOR_REGEX = /^#([0-9a-f]{6})$/i
+
+const normalizeVipHexColor = (value = '') => {
+    const raw = String(value || '').trim().toUpperCase()
+    return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
+}
+
+const normalizeVipUsernameEffect = (value = 'none') => {
+    return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
+}
+
 export const normalizeVipBenefits = (vipBenefitsLike = {}) => {
     const source = vipBenefitsLike && typeof vipBenefitsLike === 'object' ? vipBenefitsLike : {}
     const platinumCoinBonusPercent = Math.max(
@@ -15,6 +26,9 @@ export const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        usernameColor: normalizeVipHexColor(source?.usernameColor),
+        usernameGradientColor: normalizeVipHexColor(source?.usernameGradientColor),
+        usernameEffect: normalizeVipUsernameEffect(source?.usernameEffect),
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
         autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
@@ -54,6 +68,9 @@ export const mergeVipBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {}
         title: current.title || tier.title,
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+        usernameColor: current.usernameColor || tier.usernameColor,
+        usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
         autoSearchEnabled: current.autoSearchEnabled || tier.autoSearchEnabled,
         autoSearchDurationMinutes: Math.max(current.autoSearchDurationMinutes, tier.autoSearchDurationMinutes),
         autoSearchUsesPerDay: Math.max(current.autoSearchUsesPerDay, tier.autoSearchUsesPerDay),
@@ -86,6 +103,9 @@ export const normalizeVipVisualBenefits = (vipBenefitsLike = {}) => {
         title: source.title,
         titleImageUrl: source.titleImageUrl,
         avatarFrameUrl: source.avatarFrameUrl,
+        usernameColor: source.usernameColor,
+        usernameGradientColor: source.usernameGradientColor,
+        usernameEffect: source.usernameEffect,
     }
 }
 
@@ -95,6 +115,9 @@ export const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLik
         title: merged.title,
         titleImageUrl: merged.titleImageUrl,
         avatarFrameUrl: merged.avatarFrameUrl,
+        usernameColor: merged.usernameColor,
+        usernameGradientColor: merged.usernameGradientColor,
+        usernameEffect: merged.usernameEffect,
     }
 }
 

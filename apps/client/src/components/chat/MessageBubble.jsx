@@ -2,6 +2,7 @@ import { formatMessageTime } from '../../utils/chatUtils'
 import { useAuth } from '../../context/AuthContext'
 import VipAvatar from '../VipAvatar'
 import VipTitleBadge from '../VipTitleBadge'
+import VipUsername from '../VipUsername'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png' // Pikachu
 
@@ -94,7 +95,7 @@ export default function MessageBubble({ message, onOpenProfile }) {
             disabled={!canOpenProfile}
             className="hover:underline"
           >
-            {message.sender.username}
+            <VipUsername userLike={message?.sender}>{message.sender.username}</VipUsername>
           </button>
 
           <VipTitleBadge userLike={message?.sender} />

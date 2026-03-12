@@ -6,13 +6,32 @@ import { ADMIN_PERMISSIONS } from '../constants/adminPermissions.js'
 
 const router = express.Router()
 
+const SUPPORT_TAG = 'ung-ho'
+const SUPPORT_TAG_ALIASES = new Set([
+    SUPPORT_TAG,
+    'ung ho',
+    'ung_ho',
+    'ungho',
+    'ủng hộ',
+    'ủng-hộ',
+])
+
+const normalizeTagValue = (value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return ''
+    if (SUPPORT_TAG_ALIASES.has(normalized)) {
+        return SUPPORT_TAG
+    }
+    return normalized
+}
+
 const normalizeTags = (value) => {
     if (!Array.isArray(value)) return []
     const seen = new Set()
     const tags = []
 
     for (const entry of value) {
-        const normalized = String(entry || '').trim().toLowerCase()
+        const normalized = normalizeTagValue(entry)
         if (!normalized || seen.has(normalized)) continue
         seen.add(normalized)
         tags.push(normalized)
@@ -88,7 +107,7 @@ router.get('/', async (req, res) => {
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10))
         const allowedTypes = ['news', 'event', 'maintenance', 'update', 'notification', 'guide']
         const requestedType = String(req.query.type || '').trim().toLowerCase()
-        const requestedTag = String(req.query.tag || '').trim().toLowerCase()
+        const requestedTag = normalizeTagValue(req.query.tag)
         const query = { isPublished: true }
         if (requestedType) {
             if (!allowedTypes.includes(requestedType)) {

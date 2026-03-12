@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import VipUsername from '../../components/VipUsername'
 import { userApi, vipTierApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
+import { normalizeVipHexColor, normalizeVipUsernameEffect } from '../../utils/vip'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
+const DEFAULT_NAME_COLOR = '#F59E0B'
+const DEFAULT_NAME_GRADIENT_COLOR = '#FFF3B0'
 
 const toLocalDateTimeInputValue = (value) => {
     const date = value ? new Date(value) : null
@@ -21,6 +25,9 @@ const createDefaultTierForm = () => ({
     title: '',
     titleImageUrl: '',
     avatarFrameUrl: '',
+    usernameColor: '',
+    usernameGradientColor: '',
+    usernameEffect: 'none',
     autoSearchEnabled: true,
     autoSearchDurationMinutes: '0',
     autoSearchUsesPerDay: '0',
@@ -41,6 +48,10 @@ const parsePercent = (value) => {
     return Math.min(1000, Math.round(parsed * 100) / 100)
 }
 
+const resolveColorPickerValue = (value, fallback = DEFAULT_NAME_COLOR) => {
+    return normalizeVipHexColor(value) || fallback
+}
+
 const normalizeTierToForm = (tierLike = null) => {
     const base = createDefaultTierForm()
     if (!tierLike) return base
@@ -58,6 +69,9 @@ const normalizeTierToForm = (tierLike = null) => {
         title: String(benefits?.title || base.title),
         titleImageUrl: String(benefits?.titleImageUrl || base.titleImageUrl),
         avatarFrameUrl: String(benefits?.avatarFrameUrl || base.avatarFrameUrl),
+        usernameColor: String(benefits?.usernameColor || base.usernameColor).trim().toUpperCase(),
+        usernameGradientColor: String(benefits?.usernameGradientColor || base.usernameGradientColor).trim().toUpperCase(),
+        usernameEffect: normalizeVipUsernameEffect(benefits?.usernameEffect || base.usernameEffect),
         autoSearchEnabled: benefits?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: String(benefits?.autoSearchDurationMinutes ?? base.autoSearchDurationMinutes),
         autoSearchUsesPerDay: String(benefits?.autoSearchUsesPerDay ?? base.autoSearchUsesPerDay),
@@ -101,6 +115,9 @@ const buildPayloadFromForm = (form) => {
             title: String(form.title || '').trim(),
             titleImageUrl: String(form.titleImageUrl || '').trim(),
             avatarFrameUrl: String(form.avatarFrameUrl || '').trim(),
+            usernameColor: normalizeVipHexColor(form.usernameColor),
+            usernameGradientColor: normalizeVipHexColor(form.usernameGradientColor),
+            usernameEffect: normalizeVipUsernameEffect(form.usernameEffect),
             autoSearchEnabled: Boolean(form.autoSearchEnabled),
             autoSearchDurationMinutes: Math.max(0, parseInt(form.autoSearchDurationMinutes, 10) || 0),
             autoSearchUsesPerDay: Math.max(0, parseInt(form.autoSearchUsesPerDay, 10) || 0),
@@ -680,6 +697,98 @@ export default function VipPrivilegePage() {
 
                             <section className={sectionClass}>
                                 <h3 className="mb-4 text-sm font-semibold text-slate-900">
+                                    Màu tên nhân vật VIP
+                                </h3>
+                                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                                    <div className="space-y-1 xl:col-span-3">
+                                        <label className="block text-xs font-medium text-slate-600">Xem trước tên</label>
+                                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <VipUsername
+                                                userLike={{
+                                                    role: 'vip',
+                                                    vipBenefits: {
+                                                        usernameColor: form.usernameColor,
+                                                        usernameGradientColor: form.usernameGradientColor,
+                                                        usernameEffect: form.usernameEffect,
+                                                    },
+                                                }}
+                                                className="text-lg font-extrabold tracking-wide"
+                                            >
+                                                {form.name || `VIP ${form.level || '1'}`}
+                                            </VipUsername>
+                                            <div className="mt-2 text-[11px] text-slate-500">
+                                                VIP 4-5 có thể đặt màu tĩnh. VIP 6 có thể bật "Chuyển màu" để tên chạy hiệu ứng.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-medium text-slate-600">Màu chính</label>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="color"
+                                                value={resolveColorPickerValue(form.usernameColor, DEFAULT_NAME_COLOR)}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, usernameColor: e.target.value.toUpperCase() }))}
+                                                className="h-10 w-14 rounded border border-slate-300 bg-white p-1"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={form.usernameColor}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, usernameColor: e.target.value.toUpperCase() }))}
+                                                placeholder="#F59E0B"
+                                                className={inputClass}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setForm((prev) => ({ ...prev, usernameColor: '' }))}
+                                                className="shrink-0 rounded border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                            >
+                                                Xóa
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">Để trống = dùng màu tên mặc định.</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-medium text-slate-600">Màu phụ hiệu ứng</label>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="color"
+                                                value={resolveColorPickerValue(form.usernameGradientColor, DEFAULT_NAME_GRADIENT_COLOR)}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, usernameGradientColor: e.target.value.toUpperCase() }))}
+                                                className="h-10 w-14 rounded border border-slate-300 bg-white p-1"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={form.usernameGradientColor}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, usernameGradientColor: e.target.value.toUpperCase() }))}
+                                                placeholder="#FFF3B0"
+                                                className={inputClass}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setForm((prev) => ({ ...prev, usernameGradientColor: '' }))}
+                                                className="shrink-0 rounded border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                            >
+                                                Xóa
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">Dùng khi bật chuyển màu. Để trống sẽ tự pha sáng từ màu chính.</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-medium text-slate-600">Hiệu ứng tên</label>
+                                        <select
+                                            value={form.usernameEffect}
+                                            onChange={(e) => setForm((prev) => ({ ...prev, usernameEffect: e.target.value }))}
+                                            className={inputClass}
+                                        >
+                                            <option value="none">Màu tĩnh</option>
+                                            <option value="animated">Chuyển màu</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section className={sectionClass}>
+                                <h3 className="mb-4 text-sm font-semibold text-slate-900">
                                     Auto tìm kiếm / Auto battle
                                 </h3>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1051,6 +1160,15 @@ export default function VipPrivilegePage() {
                                                                         ) : <span className="text-[9px] text-slate-400">Khung</span>}
                                                                     </div>
                                                                 </div>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span>Tên:</span>
+                                                                    <VipUsername userLike={{ role: 'vip', vipBenefits: benefits }} className="font-extrabold">
+                                                                        {tier.name || `VIP ${tier.level}`}
+                                                                    </VipUsername>
+                                                                    <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                                                                        {benefits.usernameEffect === 'animated' ? 'Chuyển màu' : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
+                                                                    </span>
+                                                                </div>
                                                                 <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span> ({benefits.autoSearchDurationMinutes ? `${benefits.autoSearchDurationMinutes}p` : 'Vô hạn'} - {benefits.autoSearchUsesPerDay ? `${benefits.autoSearchUsesPerDay}lần/ngày` : 'Vô hạn'})</div>
                                                                 <div>Auto battle: <span className="font-semibold">{benefits.autoBattleTrainerEnabled ? 'Bật' : 'Tắt'}</span> ({benefits.autoBattleTrainerDurationMinutes ? `${benefits.autoBattleTrainerDurationMinutes}p` : 'Vô hạn'} - {benefits.autoBattleTrainerUsesPerDay ? `${benefits.autoBattleTrainerUsesPerDay}lần/ngày` : 'Vô hạn'})</div>
                                                             </div>
@@ -1124,6 +1242,17 @@ export default function VipPrivilegePage() {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-700 bg-slate-50 rounded p-3">
                                                 <div className="space-y-1.5">
                                                     <div className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-2">Quyền lợi chính</div>
+                                                    <div className="flex justify-between items-center bg-white p-1 rounded gap-2">
+                                                        <span>Tên:</span>
+                                                        <div className="text-right">
+                                                            <VipUsername userLike={{ role: 'vip', vipBenefits: benefits }} className="font-extrabold text-sm">
+                                                                {tier.name || `VIP ${tier.level}`}
+                                                            </VipUsername>
+                                                            <div className="text-[10px] text-slate-500">
+                                                                {benefits.usernameEffect === 'animated' ? 'Chuyển màu' : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex justify-between items-center bg-white p-1 rounded">
                                                         <span>Danh hiệu:</span>
                                                         <div className="h-7 w-16 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">

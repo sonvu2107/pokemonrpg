@@ -5,6 +5,7 @@ import SmartImage from '../components/SmartImage'
 import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
 import { useAuth } from '../context/AuthContext'
@@ -279,7 +280,7 @@ export default function PokemonRankingsPage() {
                                                                     }, { returnTo: '/rankings/pokemon' })}
                                                                     className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
                                                                 >
-                                                                    {entry.owner?.username || 'Không rõ'}
+                                                                    <VipUsername userLike={entry.owner}>{entry.owner?.username || 'Không rõ'}</VipUsername>
                                                                 </button>
                                                                 <VipTitleBadge userLike={entry.owner} />
                                                             </div>
@@ -382,7 +383,7 @@ export default function PokemonRankingsPage() {
                                                                     }, { returnTo: '/rankings/pokemon' })}
                                                                     className={`font-bold hover:underline disabled:no-underline disabled:opacity-60 ${getUsernameColor(entry.rank)}`}
                                                                 >
-                                                                    {entry.username || 'Không rõ'}
+                                                                    <VipUsername userLike={entry}>{entry.username || 'Không rõ'}</VipUsername>
                                                                 </button>
                                                                 <VipTitleBadge userLike={entry} />
                                                             </div>

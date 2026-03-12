@@ -5,6 +5,8 @@ import { gameApi } from "../services/gameApi"
 import newsApi from "../services/newsApi"
 import ComingSoonModal from "../components/ComingSoonModal"
 
+const SUPPORT_TAG = 'ung-ho'
+
 const SidebarSection = ({ title, iconId, children, defaultOpen = true }) => {
     const [isOpen, setIsOpen] = useState(() => {
         if (typeof window === 'undefined') return defaultOpen
@@ -73,6 +75,7 @@ export default function LeftColumn() {
     const [vipMaps, setVipMaps] = useState([])
     const [loadingMaps, setLoadingMaps] = useState(true)
     const [notificationPosts, setNotificationPosts] = useState([])
+    const [supportPosts, setSupportPosts] = useState([])
     const [updatePosts, setUpdatePosts] = useState([])
     const [loadingHighlights, setLoadingHighlights] = useState(true)
     const [comingSoonModalOpen, setComingSoonModalOpen] = useState(false)
@@ -160,10 +163,11 @@ export default function LeftColumn() {
     useEffect(() => {
         const loadHighlights = async () => {
             try {
-                const [notificationRes, newsRes, updateRes] = await Promise.all([
+                const [notificationRes, newsRes, updateRes, supportRes] = await Promise.all([
                     newsApi.getNews({ limit: 5, type: 'notification' }),
                     newsApi.getNews({ limit: 10, type: 'news' }),
                     newsApi.getNews({ limit: 5, type: 'update' }),
+                    newsApi.getNews({ limit: 1, tag: SUPPORT_TAG }),
                 ])
                 const mergedUpdates = sortPostsByDate([
                     ...(newsRes?.ok ? (newsRes.posts || []) : []),
@@ -171,10 +175,12 @@ export default function LeftColumn() {
                 ]).slice(0, 5)
 
                 setNotificationPosts(sortPostsByDate(notificationRes?.ok ? (notificationRes.posts || []) : []).slice(0, 5))
+                setSupportPosts(sortPostsByDate(supportRes?.ok ? (supportRes.posts || []) : []).slice(0, 1))
                 setUpdatePosts(mergedUpdates)
             } catch (err) {
                 console.error('Không thể tải điểm nhấn:', err)
                 setNotificationPosts([])
+                setSupportPosts([])
                 setUpdatePosts([])
             } finally {
                 setLoadingHighlights(false)
@@ -205,12 +211,22 @@ export default function LeftColumn() {
                 <SidebarLink to="/notifications" isSpecial>Danh sách thông báo</SidebarLink>
                 <SidebarLink to="/news-list" isSpecial>Danh sách tin tức</SidebarLink>
             </SidebarSection>
+            <SidebarSection title="Ủng Hộ" iconId={113}>
+                {loadingHighlights ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Đang tải...</div>
+                ) : supportPosts.length === 0 ? (
+                    <div className="text-xs text-white/70 px-2 py-1">Chưa có bài ủng hộ.</div>
+                ) : (
+                    <SidebarLink to={resolveNewsTarget(supportPosts[0])}>
+                        Ủng Hộ
+                    </SidebarLink>
+                )}
+            </SidebarSection>
             <SidebarSection title="Chung" iconId={81}>
                 <SidebarLink to="/">Trang Chủ</SidebarLink>
                 <SidebarLink onClick={(e) => handleFeatureClick(e, 'Tin Nhắn')}>Tin Nhắn</SidebarLink>
                 <SidebarLink to="/shop/buy">Giao Dịch</SidebarLink>
                 <SidebarLink to="/friends">Bạn Bè</SidebarLink>
-                <SidebarLink onClick={(e) => handleFeatureClick(e, 'Ủng Hộ')}>Ủng Hộ</SidebarLink>
                 <button onClick={logout} className="block w-full text-left px-2 py-0.5 text-sm font-bold text-white hover:text-amber-300 transition-colors drop-shadow-sm">
                     Đăng Xuất
                 </button>

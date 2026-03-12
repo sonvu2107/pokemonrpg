@@ -36,6 +36,17 @@ const createRateLimitHandler = (code, fallbackMessage, fallbackWindowMs) => (req
     })
 }
 
+const VIP_HEX_COLOR_REGEX = /^#([0-9a-f]{6})$/i
+
+const normalizeVipHexColor = (value = '') => {
+    const raw = String(value || '').trim().toUpperCase()
+    return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
+}
+
+const normalizeVipUsernameEffect = (value = 'none') => {
+    return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
+}
+
 const registerLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -96,6 +107,9 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        usernameColor: normalizeVipHexColor(source?.usernameColor),
+        usernameGradientColor: normalizeVipHexColor(source?.usernameGradientColor),
+        usernameEffect: normalizeVipUsernameEffect(source?.usernameEffect),
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
         autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
@@ -114,6 +128,9 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         title: current.title || tier.title,
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+        usernameColor: current.usernameColor || tier.usernameColor,
+        usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
 
@@ -171,6 +188,9 @@ const hasSameVipVisualBenefits = (leftLike = {}, rightLike = {}) => {
     return left.title === right.title
         && left.titleImageUrl === right.titleImageUrl
         && left.avatarFrameUrl === right.avatarFrameUrl
+        && left.usernameColor === right.usernameColor
+        && left.usernameGradientColor === right.usernameGradientColor
+        && left.usernameEffect === right.usernameEffect
         && left.autoSearchEnabled === right.autoSearchEnabled
         && left.autoSearchDurationMinutes === right.autoSearchDurationMinutes
         && left.autoSearchUsesPerDay === right.autoSearchUsesPerDay

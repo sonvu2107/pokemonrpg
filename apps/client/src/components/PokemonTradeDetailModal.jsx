@@ -4,6 +4,7 @@ import { gameApi } from '../services/gameApi'
 import Modal from './Modal'
 import VipAvatar from './VipAvatar'
 import VipTitleBadge from './VipTitleBadge'
+import VipUsername from './VipUsername'
 import { getPublicRoleLabel } from '../utils/vip'
 
 const TYPE_BADGE_CLASS = {
@@ -342,7 +343,7 @@ export default function PokemonTradeDetailModal({
                                             />
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                    <span className="font-bold text-sm text-slate-800 truncate">{ownerName}</span>
+                                                    <VipUsername userLike={ownerInfo} className="font-bold text-sm text-slate-800 truncate">{ownerName}</VipUsername>
                                                     <VipTitleBadge userLike={ownerInfo} />
                                                 </div>
                                                 <div className="text-[11px] font-semibold text-slate-500 mt-0.5">

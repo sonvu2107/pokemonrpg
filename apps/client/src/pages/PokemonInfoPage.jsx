@@ -6,6 +6,7 @@ import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import { useAuth } from '../context/AuthContext'
 import { getPublicRoleLabel } from '../utils/vip'
 
@@ -890,7 +891,7 @@ export default function PokemonInfoPage() {
                                 frameClassName="w-12 h-12 rounded-full object-cover"
                             />
                             <div className="flex items-center justify-center gap-2 flex-wrap">
-                                <span className="text-blue-600">{ownerUsername}</span>
+                                <VipUsername userLike={ownerInfo} className="text-blue-600">{ownerUsername}</VipUsername>
                                 <VipTitleBadge userLike={ownerInfo} />
                             </div>
                             <span className="text-[10px] text-slate-500">Nhóm: {getPublicRoleLabel(ownerInfo)}</span>

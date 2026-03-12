@@ -4,6 +4,7 @@ import Modal from './Modal'
 import { resolvePokemonForm, resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import VipAvatar from './VipAvatar'
 import VipTitleBadge from './VipTitleBadge'
+import VipUsername from './VipUsername'
 import { getPublicRoleLabel } from '../utils/vip'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -186,7 +187,7 @@ export default function TrainerProfileModal({
                             Trạng thái
                         </div>
                         <div className="py-2 text-sm text-slate-700">
-                            <span className="font-bold text-slate-900">{trainer.username || 'Huấn Luyện Viên'}</span> hiện đang{' '}
+                            <VipUsername userLike={trainer} className="font-bold text-slate-900">{trainer.username || 'Huấn Luyện Viên'}</VipUsername> hiện đang{' '}
                             <span className={`font-bold ${trainer.isOnline ? 'text-green-600' : 'text-slate-500'}`}>
                                 {trainer.isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
                             </span>.
@@ -209,7 +210,7 @@ export default function TrainerProfileModal({
                     <ProfileSectionHeader title="Thông tin người chơi" />
                     <div className="bg-white">
                         <ProfileInfoRow label="ID Người Chơi" value={trainer.userIdLabel || '???'} isOdd={false} />
-                        <ProfileInfoRow label="Tên Nhân Vật" value={trainer.username || 'Huấn Luyện Viên'} isOdd={true} />
+                        <ProfileInfoRow label="Tên Nhân Vật" value={<VipUsername userLike={trainer} className="font-semibold text-slate-900">{trainer.username || 'Huấn Luyện Viên'}</VipUsername>} isOdd={true} />
                         <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(trainer)} isOdd={false} />
                         <ProfileInfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={trainer} fallback="dash" />} isOdd={true} />
                         <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />

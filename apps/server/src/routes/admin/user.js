@@ -38,6 +38,16 @@ const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g
 const toSafeLookupLimit = (value, fallback = 200) => Math.min(1000, Math.max(1, parseInt(value, 10) || fallback))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+const VIP_HEX_COLOR_REGEX = /^#([0-9a-f]{6})$/i
+
+const normalizeVipHexColor = (value = '') => {
+    const raw = String(value || '').trim().toUpperCase()
+    return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
+}
+
+const normalizeVipUsernameEffect = (value = 'none') => {
+    return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
+}
 
 const isUserCurrentlyBanned = (user) => {
     if (!user?.isBanned) return false
@@ -58,6 +68,9 @@ const VIP_SYNCABLE_BENEFIT_FIELDS = Object.freeze([
     'title',
     'titleImageUrl',
     'avatarFrameUrl',
+    'usernameColor',
+    'usernameGradientColor',
+    'usernameEffect',
     'autoSearchEnabled',
     'autoSearchDurationMinutes',
     'autoSearchUsesPerDay',
@@ -95,6 +108,9 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        usernameColor: normalizeVipHexColor(source?.usernameColor),
+        usernameGradientColor: normalizeVipHexColor(source?.usernameGradientColor),
+        usernameEffect: normalizeVipUsernameEffect(source?.usernameEffect),
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
         autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
@@ -150,6 +166,9 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
         title: String(source.title ?? fallback.title ?? '').trim().slice(0, 80),
         titleImageUrl: String(source.titleImageUrl ?? fallback.titleImageUrl ?? '').trim(),
         avatarFrameUrl: String(source.avatarFrameUrl ?? fallback.avatarFrameUrl ?? '').trim(),
+        usernameColor: normalizeVipHexColor(source.usernameColor ?? fallback.usernameColor ?? ''),
+        usernameGradientColor: normalizeVipHexColor(source.usernameGradientColor ?? fallback.usernameGradientColor ?? ''),
+        usernameEffect: normalizeVipUsernameEffect(source.usernameEffect ?? fallback.usernameEffect ?? 'none'),
         autoSearchEnabled: source.autoSearchEnabled === undefined
             ? (fallback.autoSearchEnabled !== false)
             : Boolean(source.autoSearchEnabled),
@@ -1646,6 +1665,15 @@ router.put('/:id/vip-benefits', async (req, res) => {
         }
         if (Object.prototype.hasOwnProperty.call(incoming, 'avatarFrameUrl')) {
             nextVipBenefits.avatarFrameUrl = String(incoming.avatarFrameUrl || '').trim()
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'usernameColor')) {
+            nextVipBenefits.usernameColor = normalizeVipHexColor(incoming.usernameColor)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'usernameGradientColor')) {
+            nextVipBenefits.usernameGradientColor = normalizeVipHexColor(incoming.usernameGradientColor)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'usernameEffect')) {
+            nextVipBenefits.usernameEffect = normalizeVipUsernameEffect(incoming.usernameEffect)
         }
         if (Object.prototype.hasOwnProperty.call(incoming, 'autoSearchEnabled')) {
             nextVipBenefits.autoSearchEnabled = Boolean(incoming.autoSearchEnabled)

@@ -203,6 +203,13 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
+        usernameColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameColor || '').trim())
+            ? String(source?.usernameColor || '').trim().toUpperCase()
+            : '',
+        usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameGradientColor || '').trim())
+            ? String(source?.usernameGradientColor || '').trim().toUpperCase()
+            : '',
+        usernameEffect: String(source?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
         autoSearchUsesPerDay: Math.max(0, parseInt(source?.autoSearchUsesPerDay, 10) || 0),
@@ -220,6 +227,9 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         title: current.title || tier.title,
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
+        usernameColor: current.usernameColor || tier.usernameColor,
+        usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
 

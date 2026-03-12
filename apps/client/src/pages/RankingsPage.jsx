@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import TrainerProfileModal from '../components/TrainerProfileModal'
 import { useTrainerProfileModal } from '../hooks/useTrainerProfileModal'
 import { useAuth } from '../context/AuthContext'
@@ -461,7 +462,7 @@ export default function RankingsPage() {
                                                                     }, { returnTo: defaultReturnTo })}
                                                                     className={`font-bold hover:underline ${getUsernameColor(player.rank)}`}
                                                                 >
-                                                                    {player.username || 'Không rõ'}
+                                                                    <VipUsername userLike={player}>{player.username || 'Không rõ'}</VipUsername>
                                                                 </button>
                                                                 <VipTitleBadge userLike={player} />
                                                             </div>
@@ -501,7 +502,7 @@ export default function RankingsPage() {
                                                                     }, { returnTo: defaultReturnTo })}
                                                                     className={`hover:underline ${getUsernameColor(player.rank)}`}
                                                                 >
-                                                                    {player.username}
+                                                                    <VipUsername userLike={player}>{player.username}</VipUsername>
                                                                 </button>
                                                                 <VipTitleBadge userLike={player} />
                                                             </div>

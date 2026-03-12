@@ -175,6 +175,22 @@ export const gameApi = {
         return res.json()
     },
 
+    async startTrainerBattle(payload) {
+        const res = await fetch(`${API_URL}/game/battle/trainer/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.message || 'Không thể bắt đầu battle trainer')
+        }
+        return res.json()
+    },
+
     async switchTrainerBattlePokemon(payload) {
         const res = await fetch(`${API_URL}/game/battle/trainer/switch`, {
             method: 'POST',

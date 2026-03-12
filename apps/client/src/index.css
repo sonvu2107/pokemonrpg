@@ -153,6 +153,22 @@ body {
   .rarity-frame-ss {
     animation: border-pulse-red 2s infinite;
   }
+
+  .vip-username-animated {
+    display: inline-block;
+    animation: vip-username-gradient-shift 3.6s linear infinite;
+    will-change: background-position;
+  }
+}
+
+@keyframes vip-username-gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  100% {
+    background-position: 220% 50%;
+  }
 }
 
 @keyframes sss-rainbow-slide {

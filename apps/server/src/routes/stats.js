@@ -107,6 +107,13 @@ const serializeVipBenefits = (vipBenefitsLike = {}) => ({
     title: String(vipBenefitsLike?.title || '').trim().slice(0, 80),
     titleImageUrl: String(vipBenefitsLike?.titleImageUrl || '').trim(),
     avatarFrameUrl: String(vipBenefitsLike?.avatarFrameUrl || '').trim(),
+    usernameColor: /^#([0-9a-f]{6})$/i.test(String(vipBenefitsLike?.usernameColor || '').trim())
+        ? String(vipBenefitsLike?.usernameColor || '').trim().toUpperCase()
+        : '',
+    usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(vipBenefitsLike?.usernameGradientColor || '').trim())
+        ? String(vipBenefitsLike?.usernameGradientColor || '').trim().toUpperCase()
+        : '',
+    usernameEffect: String(vipBenefitsLike?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
     autoSearchEnabled: vipBenefitsLike?.autoSearchEnabled !== false,
     autoSearchDurationMinutes: Math.max(0, parseInt(vipBenefitsLike?.autoSearchDurationMinutes, 10) || 0),
     autoSearchUsesPerDay: Math.max(0, parseInt(vipBenefitsLike?.autoSearchUsesPerDay, 10) || 0),

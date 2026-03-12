@@ -718,6 +718,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 userId,
                 preferredActivePokemonId: activePokemon._id,
                 preloadedParty: party,
+                hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
             })
 
             const activePokemonIdString = String(activePokemon._id)
@@ -2467,6 +2468,104 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
                 fieldState: battleFieldState,
                 log: flattenedBattleLogLines.join('\n'),
             },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post('/battle/trainer/start', authMiddleware, async (req, res, next) => {
+    try {
+        const userId = req.user.userId
+        const { trainerId = null, activePokemonId = null } = req.body || {}
+        const normalizedTrainerId = String(trainerId || '').trim()
+        const normalizedActivePokemonId = String(activePokemonId || '').trim()
+
+        if (!normalizedTrainerId) {
+            return res.status(400).json({ ok: false, message: 'Thiếu trainerId để bắt đầu battle trainer.' })
+        }
+
+        const trainer = await loadTrainerBattleCombatView(normalizedTrainerId)
+        if (!trainer) {
+            return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle' })
+        }
+
+        const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
+            .populate('pokemonId')
+            .sort({ partyIndex: 1 })
+
+        const activePokemon = normalizedActivePokemonId
+            ? party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null
+            : (party.find((entry) => Boolean(entry)) || null)
+
+        if (!activePokemon) {
+            return res.status(400).json({ ok: false, message: 'Bạn chưa có Pokemon trong đội hình để bắt đầu battle trainer.' })
+        }
+
+        const attackerSpecies = activePokemon?.pokemonId || {}
+        const attackerLevel = Math.max(1, Number(activePokemon?.level || 1))
+        const attackerTypes = normalizePokemonTypes(attackerSpecies?.types)
+        const activeBadgeBonuses = await getCachedActiveBadgeBonuses(userId)
+        const badgeBonusState = resolveBattleBadgeBonusState(activeBadgeBonuses, attackerTypes)
+        const playerMaxHp = Math.max(1, applyPercentBonus(calcMaxHp(attackerSpecies?.baseStats?.hp, attackerLevel, attackerSpecies?.rarity), badgeBonusState?.hpBonusPercent || 0))
+
+        let trainerSession = await BattleSession.findOne({
+            userId,
+            trainerId: normalizedTrainerId,
+            expiresAt: { $gt: new Date() },
+        })
+        if (!trainerSession) {
+            trainerSession = await BattleSession.findOne({
+                userId,
+                expiresAt: { $gt: new Date() },
+            }).sort({ updatedAt: -1, createdAt: -1 })
+        }
+        trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer, null, trainerSession)
+
+        trainerSession.team = buildTrainerBattleTeam(trainer)
+        trainerSession.playerTeam = []
+        trainerSession.knockoutCounts = []
+        trainerSession.currentIndex = 0
+        trainerSession.playerPokemonId = activePokemon._id
+        trainerSession.playerMaxHp = playerMaxHp
+        trainerSession.playerCurrentHp = playerMaxHp
+        trainerSession.playerStatus = ''
+        trainerSession.playerStatusTurns = 0
+        trainerSession.playerStatStages = {}
+        trainerSession.playerDamageGuards = {}
+        trainerSession.playerWasDamagedLastTurn = false
+        trainerSession.playerVolatileState = {}
+        trainerSession.fieldState = {}
+        trainerSession.expiresAt = getBattleSessionExpiryDate()
+
+        await ensureTrainerSessionPlayerParty({
+            trainerSession,
+            userId,
+            preferredActivePokemonId: activePokemon._id,
+            preloadedParty: party,
+            hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
+        })
+
+        trainerSession.playerPokemonId = activePokemon._id
+        trainerSession.playerMaxHp = playerMaxHp
+        trainerSession.playerCurrentHp = playerMaxHp
+        trainerSession.playerStatus = ''
+        trainerSession.playerStatusTurns = 0
+        syncTrainerSessionActivePlayerToParty(trainerSession)
+        await trainerSession.save()
+
+        res.json({
+            ok: true,
+            message: `Bắt đầu battle với ${trainer?.name || 'huấn luyện viên'}!`,
+            player: {
+                pokemonId: trainerSession.playerPokemonId || activePokemon._id,
+                currentHp: Math.max(0, Number(trainerSession.playerCurrentHp || 0)),
+                maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
+                status: normalizeBattleStatus(trainerSession.playerStatus),
+                statusTurns: normalizeStatusTurns(trainerSession.playerStatusTurns),
+            },
+            playerParty: serializeTrainerPlayerPartyState(trainerSession),
+            opponent: serializeTrainerBattleState(trainerSession),
         })
     } catch (error) {
         next(error)

@@ -8,6 +8,19 @@ import { mapApi as adminMapApi } from '../../services/adminApi'
 import { useAuth } from '../../context/AuthContext'
 import { ADMIN_PERMISSIONS } from '../../constants/adminPermissions'
 
+const SUPPORT_TAG = 'ung-ho'
+const SUPPORT_TAG_ALIASES = new Set([
+    SUPPORT_TAG,
+    'ung ho',
+    'ung_ho',
+    'ungho',
+    'ủng hộ',
+    'ủng-hộ',
+])
+const PRESET_TAGS = [
+    { value: SUPPORT_TAG, label: 'Ủng hộ' },
+]
+
 const createDefaultFormData = (isEventManager) => ({
     title: '',
     content: '',
@@ -48,7 +61,8 @@ const normalizeTags = (tags = []) => {
     const seen = new Set()
 
     for (const tag of tags) {
-        const nextTag = String(tag || '').trim().toLowerCase()
+        const rawTag = String(tag || '').trim().toLowerCase()
+        const nextTag = SUPPORT_TAG_ALIASES.has(rawTag) ? SUPPORT_TAG : rawTag
         if (!nextTag || seen.has(nextTag)) continue
         seen.add(nextTag)
         normalized.push(nextTag)
@@ -59,6 +73,20 @@ const normalizeTags = (tags = []) => {
 
 const parseTagsInput = (value = '') => {
     return normalizeTags(String(value || '').split(','))
+}
+
+const formatTagLabel = (tag = '') => {
+    if (tag === SUPPORT_TAG) return 'Ủng hộ'
+    return tag
+}
+
+const toggleTagInputValue = (value = '', tag) => {
+    const nextTags = parseTagsInput(value)
+    const hasTag = nextTags.includes(tag)
+    const updatedTags = hasTag
+        ? nextTags.filter((entry) => entry !== tag)
+        : [...nextTags, tag]
+    return updatedTags.join(', ')
 }
 
 const resolvePostImages = (post) => {
@@ -449,6 +477,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
     const endIndex = Math.min(filteredPosts.length, safeCurrentPage * PAGE_SIZE)
     const paginatedPosts = filteredPosts.slice((safeCurrentPage - 1) * PAGE_SIZE, safeCurrentPage * PAGE_SIZE)
     const formPreviewImages = normalizeImageUrls(formData.imageUrls)
+    const selectedFormTags = parseTagsInput(formData.tagsText)
 
     return (
         <div className="space-y-4">
@@ -592,9 +621,33 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                     type="text"
                                     value={formData.tagsText}
                                     onChange={(e) => setFormData({ ...formData, tagsText: e.target.value })}
-                                    placeholder="vd: quan-trong, vip, su-kien"
+                                    placeholder="vd: ung-ho, quan-trong, vip"
                                     className="w-full px-3 py-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    {PRESET_TAGS.map((tag) => {
+                                        const isActive = selectedFormTags.includes(tag.value)
+                                        return (
+                                            <button
+                                                key={tag.value}
+                                                type="button"
+                                                onClick={() => setFormData((prev) => ({
+                                                    ...prev,
+                                                    tagsText: toggleTagInputValue(prev.tagsText, tag.value),
+                                                }))}
+                                                className={`px-2 py-1 text-xs font-bold rounded border transition-colors ${isActive
+                                                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                }`}
+                                            >
+                                                {isActive ? `Bỏ tag ${tag.label}` : `+ Tag ${tag.label}`}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                    Gắn tag Ủng hộ để bài viết tự hiện ở mục Ủng Hộ bên left column.
+                                </p>
                             </div>
 
                             <div className="rounded border border-blue-200 bg-white p-3">
@@ -871,7 +924,7 @@ export default function AdminNewsPage({ mode = 'all' }) {
                                                         key={`${post._id}-${tag}`}
                                                         className="text-[10px] bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-300"
                                                     >
-                                                        #{tag}
+                                                        #{formatTagLabel(tag)}
                                                     </span>
                                                 ))}
                                             </div>

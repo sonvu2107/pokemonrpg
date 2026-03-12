@@ -5,6 +5,7 @@ import SmartImage from '../components/SmartImage'
 import VipCaughtStar from '../components/VipCaughtStar'
 import VipAvatar from '../components/VipAvatar'
 import VipTitleBadge from '../components/VipTitleBadge'
+import VipUsername from '../components/VipUsername'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { friendsApi } from '../services/friendsApi'
@@ -542,9 +543,9 @@ export default function FriendsPage() {
                     disabled={!userId}
                 >
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                        <div className="text-xl font-bold text-slate-800 truncate hover:text-blue-700 hover:underline leading-none">
+                        <VipUsername userLike={userLike} className="text-xl font-bold text-slate-800 truncate hover:text-blue-700 hover:underline leading-none">
                             {userLike?.username || 'Huấn Luyện Viên'}
-                        </div>
+                        </VipUsername>
                         <VipTitleBadge userLike={userLike} />
                     </div>
                     <div className="mt-0.5">
@@ -925,7 +926,7 @@ export default function FriendsPage() {
                                     Trạng thái
                                 </div>
                                 <div className="py-2 text-sm text-slate-700">
-                                    <span className="font-bold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</span> hiện đang{' '}
+                                    <VipUsername userLike={selectedTrainer} className="font-bold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</VipUsername> hiện đang{' '}
                                     <span className={`font-bold ${selectedTrainer.isOnline ? 'text-green-600' : 'text-slate-500'}`}>
                                         {selectedTrainer.isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
                                     </span>.
@@ -948,7 +949,7 @@ export default function FriendsPage() {
                             <ProfileSectionHeader title="Thông tin người chơi" />
                             <div className="bg-white">
                                 <ProfileInfoRow label="ID Người Chơi" value={selectedTrainer.userIdLabel || '???'} isOdd={false} />
-                                <ProfileInfoRow label="Tên Nhân Vật" value={selectedTrainer.username || 'Huấn Luyện Viên'} isOdd={true} />
+                                <ProfileInfoRow label="Tên Nhân Vật" value={<VipUsername userLike={selectedTrainer} className="font-semibold text-slate-900">{selectedTrainer.username || 'Huấn Luyện Viên'}</VipUsername>} isOdd={true} />
                                 <ProfileInfoRow label="Nhóm" value={getPublicRoleLabel(selectedTrainer)} isOdd={false} />
                                 <ProfileInfoRow label="Danh hiệu VIP" value={<VipTitleBadge userLike={selectedTrainer} fallback="dash" />} isOdd={true} />
                                 <ProfileInfoRow label="Cấp Người Chơi" value={`Lv. ${formatNumber(selectedLevel)}`} isOdd={false} />

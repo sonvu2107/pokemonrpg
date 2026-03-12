@@ -1097,18 +1097,6 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: levelUpMovesError })
         }
 
-        const requiredItemIds = [
-            normalizedEvolution?.requiredItemId,
-            ...(Array.isArray(forms) ? forms.map((entry) => entry?.evolution?.requiredItemId) : []),
-        ].filter(Boolean)
-        let requiredItemValidation = { ok: true, itemById: new Map() }
-        if (requiredItemIds.length > 0) {
-            requiredItemValidation = await validateEvolutionMaterialItems(requiredItemIds)
-            if (!requiredItemValidation.ok) {
-                return res.status(400).json({ ok: false, message: requiredItemValidation.message })
-            }
-        }
-
         const pokemon = await Pokemon.findById(req.params.id)
 
         if (!pokemon) {
@@ -1120,6 +1108,18 @@ router.put('/:id', async (req, res) => {
         const forms = 'forms' in req.body
             ? normalizeForms(req.body.forms, { previousBaseStats, nextBaseStats })
             : null
+
+        const requiredItemIds = [
+            normalizedEvolution?.requiredItemId,
+            ...(Array.isArray(forms) ? forms.map((entry) => entry?.evolution?.requiredItemId) : []),
+        ].filter(Boolean)
+        let requiredItemValidation = { ok: true, itemById: new Map() }
+        if (requiredItemIds.length > 0) {
+            requiredItemValidation = await validateEvolutionMaterialItems(requiredItemIds)
+            if (!requiredItemValidation.ok) {
+                return res.status(400).json({ ok: false, message: requiredItemValidation.message })
+            }
+        }
 
         const effectiveRarity = normalizeRarity(rarity !== undefined ? rarity : pokemon.rarity)
         const pendingRarityEntries = [

@@ -13,6 +13,7 @@ import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
 import { calcMaxHp, expToNext } from '../utils/gameUtils.js'
+import { getCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
@@ -109,6 +110,13 @@ const normalizeVipVisualBenefits = (vipBenefitsLike = {}) => {
     return {
         title: String(source?.title || '').trim().slice(0, 80),
         titleImageUrl: String(source?.titleImageUrl || '').trim(),
+        usernameColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameColor || '').trim())
+            ? String(source?.usernameColor || '').trim().toUpperCase()
+            : '',
+        usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameGradientColor || '').trim())
+            ? String(source?.usernameGradientColor || '').trim().toUpperCase()
+            : '',
+        usernameEffect: String(source?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
     }
 }
 
@@ -118,6 +126,9 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
     return {
         title: current.title || tier.title,
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
+        usernameColor: current.usernameColor || tier.usernameColor,
+        usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
 
@@ -1122,6 +1133,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     trainerSession: activeBattleSession,
                     userId,
                     preferredActivePokemonId: targetPokemon?._id || activeBattleSession.playerPokemonId,
+                    hpBonusPercent: Math.max(0, Number((await getCachedActiveBadgeBonuses(userId))?.partyHpPercent || 0)),
                 })
 
                 const team = Array.isArray(activeBattleSession.team) ? activeBattleSession.team : []
