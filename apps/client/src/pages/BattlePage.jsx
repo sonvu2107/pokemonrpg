@@ -101,8 +101,9 @@ const getOrCreateAutoTrainerClientInstanceId = () => {
 }
 const expToNextPokemonLevel = (level = 1) => 250 + Math.max(0, Number(level || 1) - 1) * 100
 const hydratePartyWithBattleHp = (partySlots = [], options = {}) => {
-    const resolvedActiveIndex = Number.isInteger(Number(options?.activeIndex))
-        ? Math.max(0, Math.floor(Number(options.activeIndex)))
+    const resolvedRawActiveIndex = Number(options?.activeIndex)
+    const resolvedActiveIndex = Number.isInteger(resolvedRawActiveIndex) && resolvedRawActiveIndex >= 0
+        ? Math.floor(resolvedRawActiveIndex)
         : -1
     const resolvedActiveMaxHp = Math.max(0, Number(options?.activeMaxHp) || 0)
     const resolvedActiveCurrentHp = Math.max(0, Number(options?.activeCurrentHp) || 0)
@@ -502,8 +503,9 @@ const normalizeTrainerPlayerPartyState = (playerParty = null) => {
             statusTurns: Number.isFinite(Number(entry?.statusTurns)) ? Math.max(0, Math.floor(Number(entry.statusTurns))) : 0,
         }))
         : []
+    const normalizedActiveIndex = Number(playerParty?.activeIndex)
     return {
-        activeIndex: Number.isInteger(Number(playerParty?.activeIndex)) ? Math.max(0, Math.floor(Number(playerParty.activeIndex))) : -1,
+        activeIndex: Number.isInteger(normalizedActiveIndex) && normalizedActiveIndex >= 0 ? Math.floor(normalizedActiveIndex) : -1,
         activePokemonId: String(playerParty?.activePokemonId || '').trim(),
         team,
     }
@@ -2651,23 +2653,28 @@ export function BattlePage() {
                 const switchedIndex = activeBattleMode === 'trainer' && serverPlayerPartyState
                     ? serverPlayerPartyState.activeIndex
                     : getNextAlivePartyIndex(party, nextPartyState, resolvedActiveIndex)
-                if (switchedIndex !== -1) {
+                const isValidSwitchTarget = switchedIndex !== -1 && switchedIndex !== resolvedActiveIndex
+                if (isValidSwitchTarget) {
                     const switchedPokemon = party[switchedIndex]
-                    setBattlePlayerIndex(switchedIndex)
-                    switchedAfterDefeat = true
-                    setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
-                    serverTurnPhases.push({
-                        key: 'forced_switch',
-                        label: 'Đổi Pokemon bắt buộc',
-                        actor: 'system',
-                        lines: [`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`],
-                        events: [{
-                            kind: 'forced_switch',
+                    const switchedMaxHp = resolvePartySlotMaxHp(switchedPokemon)
+                    const switchedCurrentHp = clampValue(Number(nextPartyState?.[switchedIndex]?.currentHp) || 0, 0, switchedMaxHp)
+                    if (switchedPokemon && switchedCurrentHp > 0) {
+                        setBattlePlayerIndex(switchedIndex)
+                        switchedAfterDefeat = true
+                        setActionMessage(`${activeName} bại trận. ${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân.`)
+                        serverTurnPhases.push({
+                            key: 'forced_switch',
+                            label: 'Đổi Pokemon bắt buộc',
                             actor: 'system',
-                            line: `${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`,
-                            target: 'player',
-                        }],
-                    })
+                            lines: [`${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`],
+                            events: [{
+                                kind: 'forced_switch',
+                                actor: 'system',
+                                line: `${switchedPokemon?.nickname || switchedPokemon?.pokemonId?.name || 'Pokemon'} vào sân thay thế.`,
+                                target: 'player',
+                            }],
+                        })
+                    }
                 }
             }
             appendBattleTurnPhases(serverTurnPhases, fallbackLogLines)

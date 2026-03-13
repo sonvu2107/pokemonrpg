@@ -26,6 +26,17 @@ const PRIZE_POKEMON_FORM_PAGE_SIZE = 18
 const TRAINER_PAGE_SIZE = 20
 const AUTO_PRIZE_POKEMON_PAGE_SIZE = 24
 const POKEMON_REFERENCE_FETCH_LIMIT = 200
+const AUTO_PRIZE_POKEMON_GEN_FILTERS = [
+    { key: 'gen1', label: 'Gen 1 (1-151)', minDex: 1, maxDex: 151 },
+    { key: 'gen2', label: 'Gen 2 (152-251)', minDex: 152, maxDex: 251 },
+    { key: 'gen3', label: 'Gen 3 (252-386)', minDex: 252, maxDex: 386 },
+    { key: 'gen4', label: 'Gen 4 (387-493)', minDex: 387, maxDex: 493 },
+    { key: 'gen5', label: 'Gen 5 (494-649)', minDex: 494, maxDex: 649 },
+    { key: 'gen6', label: 'Gen 6 (650-721)', minDex: 650, maxDex: 721 },
+    { key: 'gen7', label: 'Gen 7 (722-809)', minDex: 722, maxDex: 809 },
+    { key: 'gen8', label: 'Gen 8 (810-905)', minDex: 810, maxDex: 905 },
+    { key: 'gen9', label: 'Gen 9 (906-1025)', minDex: 906, maxDex: 1025 },
+]
 
 const normalizeAutoPrizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 
@@ -182,6 +193,7 @@ export default function BattleTrainerPage() {
     const [autoCoinsReward, setAutoCoinsReward] = useState('')
     const [autoExpReward, setAutoExpReward] = useState('')
     const [autoPrizePokemonSearchTerm, setAutoPrizePokemonSearchTerm] = useState('')
+    const [autoPrizePokemonGenFilter, setAutoPrizePokemonGenFilter] = useState('gen1')
     const [autoPrizePokemonFormFilter, setAutoPrizePokemonFormFilter] = useState('')
     const [autoPrizePokemonSelections, setAutoPrizePokemonSelections] = useState([])
     const [autoPrizePokemonLevels, setAutoPrizePokemonLevels] = useState({})
@@ -755,6 +767,7 @@ export default function BattleTrainerPage() {
 
     const handleOpenAutoPrizePokemonModal = () => {
         setAutoPrizePokemonSearchTerm('')
+        setAutoPrizePokemonGenFilter('gen1')
         setAutoPrizePokemonFormFilter('')
         setAutoPrizePokemonPage(1)
         setShowAutoPrizePokemonModal(true)
@@ -956,9 +969,17 @@ export default function BattleTrainerPage() {
     const autoPrizePokemonFilteredRows = useMemo(() => {
         const normalizedSearch = String(autoPrizePokemonSearchTerm || '').trim().toLowerCase()
         const normalizedFormFilter = String(autoPrizePokemonFormFilter || '').trim().toLowerCase()
+        const selectedGenFilter = AUTO_PRIZE_POKEMON_GEN_FILTERS.find((entry) => entry.key === autoPrizePokemonGenFilter) || null
         const speciesRows = pokemon.filter((entry) => {
             const id = String(entry?._id || '').trim()
             if (!id) return false
+            if (selectedGenFilter) {
+                const dexNumber = Number(entry?.pokedexNumber)
+                if (!Number.isFinite(dexNumber)) return false
+                if (dexNumber < selectedGenFilter.minDex || dexNumber > selectedGenFilter.maxDex) {
+                    return false
+                }
+            }
             if (!normalizedSearch) return true
             const name = String(entry?.name || '').trim().toLowerCase()
             const pokedexNumber = String(entry?.pokedexNumber || '').trim().toLowerCase()
@@ -986,7 +1007,7 @@ export default function BattleTrainerPage() {
         }
 
         return formRows.filter((row) => String(row?.form?.formId || '').trim().toLowerCase() === normalizedFormFilter)
-    }, [pokemon, autoPrizePokemonSearchTerm, autoPrizePokemonFormFilter])
+    }, [pokemon, autoPrizePokemonSearchTerm, autoPrizePokemonFormFilter, autoPrizePokemonGenFilter])
 
     const autoPrizePokemonTotal = autoPrizePokemonFilteredRows.length
     const autoPrizePokemonTotalPages = Math.max(1, Math.ceil(autoPrizePokemonTotal / AUTO_PRIZE_POKEMON_PAGE_SIZE))
@@ -2007,7 +2028,7 @@ export default function BattleTrainerPage() {
                         </div>
 
                         <div className="space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-1.5">Tìm Pokémon</label>
                                     <input
@@ -2020,6 +2041,24 @@ export default function BattleTrainerPage() {
                                         placeholder="Nhập tên, số Pokedex hoặc ID"
                                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-slate-700 text-sm font-bold mb-1.5">Lọc theo Gen</label>
+                                    <select
+                                        value={autoPrizePokemonGenFilter}
+                                        onChange={(e) => {
+                                            setAutoPrizePokemonGenFilter(e.target.value)
+                                            setAutoPrizePokemonPage(1)
+                                        }}
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm"
+                                    >
+                                        <option value="">Tất cả Gen</option>
+                                        {AUTO_PRIZE_POKEMON_GEN_FILTERS.map((entry) => (
+                                            <option key={`auto-prize-gen-filter-${entry.key}`} value={entry.key}>
+                                                {entry.label}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-slate-700 text-sm font-bold mb-1.5">Lọc theo dạng</label>
