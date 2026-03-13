@@ -6,6 +6,15 @@ import ImageUpload from '../../components/ImageUpload'
 const MIN_SPECIAL_WEIGHT = 0.0001
 const SPECIAL_POKEMON_MODAL_PAGE_SIZE = 40
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
+const toSpecialPokemonKey = (pokemonId, formId = 'normal') => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) return ''
+    return `${normalizedPokemonId}:${normalizeFormId(formId)}`
+}
+const isVipMap = (mapLike = {}) => Math.max(
+    Number(mapLike?.vipVisibilityLevel) || 0,
+    Number(mapLike?.requiredVipLevel) || 0
+) > 0
 const MAP_RARITY_CATCH_BONUS_KEYS = ['s', 'ss', 'sss', 'sss+']
 const MAP_RARITY_CATCH_BONUS_MIN_PERCENT = -95
 const MAP_RARITY_CATCH_BONUS_MAX_PERCENT = 500
@@ -111,6 +120,8 @@ export default function MapFormPage() {
     const [specialPokemonPage, setSpecialPokemonPage] = useState(1)
     const [specialPokemonTotalPages, setSpecialPokemonTotalPages] = useState(1)
     const [specialPokemonTotal, setSpecialPokemonTotal] = useState(0)
+    const [vipSpecialPokemonKeySet, setVipSpecialPokemonKeySet] = useState(() => new Set())
+    const [vipSpecialPokemonIdSet, setVipSpecialPokemonIdSet] = useState(() => new Set())
 
     const normalizeSpecialPokemonConfigs = (value, fallbackIds = []) => {
         const fromConfigs = Array.isArray(value)
@@ -152,6 +163,10 @@ export default function MapFormPage() {
     }, [id])
 
     useEffect(() => {
+        loadVipSpecialPokemonUsage()
+    }, [])
+
+    useEffect(() => {
         if (!showSpecialPokemonModal) return
         loadPokemonOptions()
     }, [showSpecialPokemonModal, specialPokemonPage, specialPokemonSearchTerm])
@@ -164,6 +179,52 @@ export default function MapFormPage() {
             })
             return next
         })
+    }
+
+    const loadVipSpecialPokemonUsage = async () => {
+        try {
+            const data = await mapApi.list()
+            const maps = Array.isArray(data?.maps) ? data.maps : []
+            const nextVipSpecialPokemonKeySet = new Set()
+            const nextVipSpecialPokemonIdSet = new Set()
+
+            maps.forEach((mapEntry) => {
+                if (!isVipMap(mapEntry)) return
+
+                const configs = Array.isArray(mapEntry?.specialPokemonConfigs)
+                    ? mapEntry.specialPokemonConfigs
+                    : []
+
+                if (configs.length > 0) {
+                    configs.forEach((entry) => {
+                        const pokemonId = String(entry?.pokemonId?._id || entry?.pokemonId || '').trim()
+                        const key = toSpecialPokemonKey(pokemonId, entry?.formId)
+                        if (!key) return
+                        nextVipSpecialPokemonKeySet.add(key)
+                        nextVipSpecialPokemonIdSet.add(pokemonId)
+                    })
+                    return
+                }
+
+                const fallbackIds = Array.isArray(mapEntry?.specialPokemonIds)
+                    ? mapEntry.specialPokemonIds
+                    : []
+
+                fallbackIds.forEach((entry) => {
+                    const pokemonId = String(entry?._id || entry || '').trim()
+                    const key = toSpecialPokemonKey(pokemonId, 'normal')
+                    if (!key) return
+                    nextVipSpecialPokemonKeySet.add(key)
+                    nextVipSpecialPokemonIdSet.add(pokemonId)
+                })
+            })
+
+            setVipSpecialPokemonKeySet(nextVipSpecialPokemonKeySet)
+            setVipSpecialPokemonIdSet(nextVipSpecialPokemonIdSet)
+        } catch {
+            setVipSpecialPokemonKeySet(new Set())
+            setVipSpecialPokemonIdSet(new Set())
+        }
     }
 
     const loadPokemonOptions = async () => {
@@ -453,6 +514,7 @@ export default function MapFormPage() {
                 || pokemon.sprites?.normal
                 || pokemon.sprites?.icon
                 || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokedexNumber}.png`
+            const specialKey = toSpecialPokemonKey(entry.pokemonId, resolvedFormId)
             return {
                 ...pokemon,
                 formId: resolvedFormId,
@@ -462,6 +524,7 @@ export default function MapFormPage() {
                 weight,
                 relativePoolRate,
                 perSearchRate,
+                isInVipMap: vipSpecialPokemonIdSet.has(String(entry.pokemonId || '').trim()) || vipSpecialPokemonKeySet.has(specialKey),
                 isMissing: false,
             }
         })
@@ -498,6 +561,7 @@ export default function MapFormPage() {
                     formName: String(form?.formName || '').trim() || formId,
                     imageUrl,
                     isDefault: formId === defaultFormId,
+                    isInVipMap: vipSpecialPokemonIdSet.has(String(pokemon._id || '').trim()) || vipSpecialPokemonKeySet.has(key),
                 }
             })
             .filter((row) => !selectedSpecialPokemonKeys.has(`${row.pokemonId}:${row.formId}`))
@@ -911,7 +975,16 @@ export default function MapFormPage() {
                                                         alt={pokemon.name}
                                                         className="w-16 h-16 object-contain pixelated"
                                                     />
-                                                    <p className="text-[11px] font-semibold text-slate-700 text-center mt-1 line-clamp-2">{pokemon.name}</p>
+                                                    <p className="text-[11px] font-semibold text-slate-700 text-center mt-1 line-clamp-2 inline-flex items-center justify-center gap-1">
+                                                        <span>{pokemon.name}</span>
+                                                        {pokemon.isInVipMap && (
+                                                            <span title="Pokemon đã được set trong map VIP">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-amber-400">
+                                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.176 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                                                </svg>
+                                                            </span>
+                                                        )}
+                                                    </p>
                                                     <span className="mt-1 px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 border border-blue-200">
                                                         {pokemon.formName}
                                                     </span>
@@ -1034,7 +1107,16 @@ export default function MapFormPage() {
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <span className="font-mono text-xs text-slate-500 flex-shrink-0">#{String(entry.pokedexNumber || 0).padStart(3, '0')}</span>
-                                                    <span className="font-semibold text-slate-700 truncate">{entry.pokemonName}</span>
+                                                    <span className="font-semibold text-slate-700 truncate inline-flex items-center gap-1">
+                                                        <span className="truncate">{entry.pokemonName}</span>
+                                                        {entry.isInVipMap && (
+                                                            <span title="Pokemon đã được set trong map VIP" className="inline-flex items-center">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-amber-400">
+                                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.176 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                                                </svg>
+                                                            </span>
+                                                        )}
+                                                    </span>
                                                 </div>
                                                 <div className="mt-1">
                                                     <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold uppercase tracking-wide border ${entry.isDefault
@@ -1082,7 +1164,6 @@ export default function MapFormPage() {
         </div>
     )
 }
-
 
 
 
