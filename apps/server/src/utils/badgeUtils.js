@@ -232,6 +232,70 @@ const createEmptyBonusSummary = () => ({
     typeDamagePercentByType: {},
 })
 
+const normalizeBonusSummary = (summaryLike = null) => {
+    const source = summaryLike && typeof summaryLike === 'object' ? summaryLike : {}
+    const typeDamagePercentByType = source?.typeDamagePercentByType && typeof source.typeDamagePercentByType === 'object'
+        ? source.typeDamagePercentByType
+        : {}
+
+    const normalizedTypeDamagePercentByType = {}
+    Object.entries(typeDamagePercentByType).forEach(([pokemonType, percent]) => {
+        const normalizedType = normalizePokemonType(pokemonType)
+        if (!normalizedType) return
+        const normalizedPercent = Math.max(0, Number(percent) || 0)
+        if (normalizedPercent <= 0) return
+        normalizedTypeDamagePercentByType[normalizedType] = normalizedPercent
+    })
+
+    return {
+        partyDamagePercent: Math.max(0, Number(source?.partyDamagePercent || 0)),
+        partySpeedPercent: Math.max(0, Number(source?.partySpeedPercent || 0)),
+        partyHpPercent: Math.max(0, Number(source?.partyHpPercent || 0)),
+        typeDamagePercentByType: normalizedTypeDamagePercentByType,
+    }
+}
+
+export const hasBattleBadgeSnapshot = (battleSessionLike = null) => {
+    const snapshot = battleSessionLike?.badgeSnapshot
+    return Boolean(
+        snapshot
+        && typeof snapshot === 'object'
+        && !Array.isArray(snapshot)
+        && Object.keys(snapshot).length > 0
+    )
+}
+
+export const resolveOrHydrateBattleBadgeSnapshot = async (battleSessionLike = null, userId = '', options = {}) => {
+    const normalizedUserId = String(userId || '').trim()
+    if (hasBattleBadgeSnapshot(battleSessionLike)) {
+        return normalizeBonusSummary(battleSessionLike.badgeSnapshot)
+    }
+
+    if (!normalizedUserId) {
+        const emptySummary = createEmptyBonusSummary()
+        if (battleSessionLike && typeof battleSessionLike === 'object') {
+            battleSessionLike.badgeSnapshot = emptySummary
+        }
+        return emptySummary
+    }
+
+    try {
+        const liveBonuses = normalizeBonusSummary(await getCachedActiveBadgeBonuses(normalizedUserId))
+        if (battleSessionLike && typeof battleSessionLike === 'object') {
+            battleSessionLike.badgeSnapshot = liveBonuses
+        }
+        return liveBonuses
+    } catch (error) {
+        if (!options?.silent) throw error
+
+        const emptySummary = createEmptyBonusSummary()
+        if (battleSessionLike && typeof battleSessionLike === 'object') {
+            battleSessionLike.badgeSnapshot = emptySummary
+        }
+        return emptySummary
+    }
+}
+
 const createEmptyBattleBadgeBonusState = () => ({
     summary: createEmptyBonusSummary(),
     damageBonusPercent: 0,

@@ -72,7 +72,6 @@ import {
     EXP_PER_SEARCH,
     expToNext,
     calcStatsForLevel,
-    calcMaxHp,
     getRarityExpMultiplier,
 } from '../utils/gameUtils.js'
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
@@ -152,7 +151,12 @@ import {
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback } from '../utils/movePpUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
-import { getCachedActiveBadgeBonuses, resolveBattleBadgeBonusState } from '../utils/badgeUtils.js'
+import {
+    getCachedActiveBadgeBonuses,
+    hasBattleBadgeSnapshot,
+    resolveBattleBadgeBonusState,
+    resolveOrHydrateBattleBadgeSnapshot,
+} from '../utils/badgeUtils.js'
 import autoSearchRoutes from './game/autoSearch.js'
 import autoTrainerRoutes from './game/autoTrainer.js'
 import battleRoutes from './game/battle.js'
@@ -206,6 +210,7 @@ import {
     updatePlayerLevel,
 } from '../services/mapProgressionService.js'
 import { hasOwnedPokemonForm } from '../services/userPokemonOwnershipService.js'
+import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -346,6 +351,11 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             : (party.find(Boolean) || null)
         if (!activePokemon) {
             return res.status(400).json({ ok: false, message: 'Không có Pokemon đang hoạt động trong đội hình' })
+        }
+
+        let preloadedTrainerSession = null
+        if (normalizedTrainerId) {
+            preloadedTrainerSession = await BattleSession.findOne({ userId, trainerId: normalizedTrainerId })
         }
 
         if (Boolean(resetMovePpState) || (normalizedTrainerId && Boolean(resetTrainerSession))) {
@@ -542,13 +552,29 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         const getPlayerBattleBadgeBonusState = async () => {
             if (cachedPlayerBattleBadgeBonusState) return cachedPlayerBattleBadgeBonusState
 
+            const hasActiveTrainerSessionSnapshot = Boolean(
+                normalizedTrainerId
+                && hasActiveTrainerBattleSession(preloadedTrainerSession, new Date())
+                && hasBattleBadgeSnapshot(preloadedTrainerSession)
+            )
+
+            if (hasActiveTrainerSessionSnapshot) {
+                cachedPlayerBattleBadgeBonusState = resolveBattleBadgeBonusState(preloadedTrainerSession.badgeSnapshot, attackerTypes)
+                return cachedPlayerBattleBadgeBonusState
+            }
+
             const activeBadgeBonuses = await getCachedActiveBadgeBonuses(req.user.userId)
             cachedPlayerBattleBadgeBonusState = resolveBattleBadgeBonusState(activeBadgeBonuses, attackerTypes)
             return cachedPlayerBattleBadgeBonusState
         }
 
-        const badgeBonusState = await getPlayerBattleBadgeBonusState()
-        const playerMaxHp = Math.max(1, applyPercentBonus(calcMaxHp(attackerBaseStats?.hp, attackerLevel, attackerSpecies.rarity), badgeBonusState?.hpBonusPercent || 0))
+        let badgeBonusState = await getPlayerBattleBadgeBonusState()
+        let playerMaxHp = resolvePlayerBattleMaxHp({
+            baseHp: attackerBaseStats?.hp,
+            level: attackerLevel,
+            rarity: attackerSpecies?.rarity || 'd',
+            hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
+        })
         const parsedPlayerCurrentHp = Number(player.currentHp)
         let playerCurrentHp = clamp(
             Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
@@ -567,7 +593,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             Number(attackerScaledStats?.def) ||
             (20 + attackerLevel * 2)
         )
-        const requestedPlayerCurrentHp = clamp(
+        let requestedPlayerCurrentHp = clamp(
             Math.floor(Number.isFinite(Number(player?.currentHp)) ? Number(player.currentHp) : playerMaxHp),
             0,
             playerMaxHp
@@ -672,7 +698,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
 
         if (normalizedTrainerId) {
             const currentTurnStartedAt = new Date()
-            const existingTrainerSession = await BattleSession.findOne({ userId, trainerId: normalizedTrainerId })
+            const existingTrainerSession = preloadedTrainerSession || await BattleSession.findOne({ userId, trainerId: normalizedTrainerId })
             const hasStoredActiveTrainerSession = hasActiveTrainerBattleSession(existingTrainerSession, currentTurnStartedAt)
             let trainer = null
 
@@ -691,6 +717,39 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             } else {
                 trainerSession = existingTrainerSession
             }
+
+            const hasSessionBadgeSnapshot = hasBattleBadgeSnapshot(trainerSession)
+            let trainerBadgeSummary = null
+            if (Boolean(resetTrainerSession) || !hasStoredActiveTrainerSession) {
+                trainerSession.badgeSnapshot = await getCachedActiveBadgeBonuses(req.user.userId)
+                trainerBadgeSummary = trainerSession.badgeSnapshot
+                trainerSessionDirty = true
+            } else {
+                trainerBadgeSummary = await resolveOrHydrateBattleBadgeSnapshot(trainerSession, req.user.userId)
+                if (!hasSessionBadgeSnapshot) {
+                    trainerSessionDirty = true
+                }
+            }
+
+            badgeBonusState = resolveBattleBadgeBonusState(trainerBadgeSummary || trainerSession.badgeSnapshot, attackerTypes)
+            cachedPlayerBattleBadgeBonusState = badgeBonusState
+            playerMaxHp = resolvePlayerBattleMaxHp({
+                baseHp: attackerBaseStats?.hp,
+                level: attackerLevel,
+                rarity: attackerSpecies?.rarity || 'd',
+                hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
+            })
+            playerCurrentHp = clamp(
+                Math.floor(Number.isFinite(parsedPlayerCurrentHp) ? parsedPlayerCurrentHp : playerMaxHp),
+                0,
+                playerMaxHp
+            )
+            requestedPlayerCurrentHp = clamp(
+                Math.floor(Number.isFinite(Number(player?.currentHp)) ? Number(player.currentHp) : playerMaxHp),
+                0,
+                playerMaxHp
+            )
+            preloadedTrainerSession = trainerSession
 
             if (Boolean(resetTrainerSession)) {
                 trainer = trainer || await loadTrainerBattleCombatView(normalizedTrainerId)
@@ -2535,9 +2594,18 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         const attackerSpecies = activePokemon?.pokemonId || {}
         const attackerLevel = Math.max(1, Number(activePokemon?.level || 1))
         const attackerTypes = normalizePokemonTypes(attackerSpecies?.types)
+        const attackerBaseStats = resolveEffectivePokemonBaseStats({
+            pokemonLike: attackerSpecies,
+            formId: activePokemon?.formId,
+        })
         const activeBadgeBonuses = await getCachedActiveBadgeBonuses(userId)
         const badgeBonusState = resolveBattleBadgeBonusState(activeBadgeBonuses, attackerTypes)
-        const playerMaxHp = Math.max(1, applyPercentBonus(calcMaxHp(attackerSpecies?.baseStats?.hp, attackerLevel, attackerSpecies?.rarity), badgeBonusState?.hpBonusPercent || 0))
+        const playerMaxHp = resolvePlayerBattleMaxHp({
+            baseHp: attackerBaseStats?.hp,
+            level: attackerLevel,
+            rarity: attackerSpecies?.rarity || 'd',
+            hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
+        })
 
         let trainerSession = await BattleSession.findOne({
             userId,
@@ -2560,6 +2628,7 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         trainerSession.playerWasDamagedLastTurn = false
         trainerSession.playerVolatileState = {}
         trainerSession.fieldState = {}
+        trainerSession.badgeSnapshot = activeBadgeBonuses
         trainerSession.expiresAt = getBattleSessionExpiryDate()
 
         await ensureTrainerSessionPlayerParty({
@@ -2598,6 +2667,7 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
                     playerWasDamagedLastTurn: trainerSession.playerWasDamagedLastTurn,
                     playerVolatileState: trainerSession.playerVolatileState,
                     fieldState: trainerSession.fieldState,
+                    badgeSnapshot: trainerSession.badgeSnapshot,
                     expiresAt: trainerSession.expiresAt,
                 },
             },

@@ -81,6 +81,7 @@ export const buildTrainerBattleSessionPayload = ({ userId, trainerId, trainer, a
     playerWasDamagedLastTurn: false,
     playerVolatileState: {},
     fieldState: {},
+    badgeSnapshot: {},
     expiresAt: getTrainerBattleSessionExpiryDate(),
 })
 
@@ -120,6 +121,7 @@ export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer
         session.playerWasDamagedLastTurn = payload.playerWasDamagedLastTurn
         session.playerVolatileState = payload.playerVolatileState
         session.fieldState = payload.fieldState
+        session.badgeSnapshot = payload.badgeSnapshot
     }
 
     session.expiresAt = expiresAt
@@ -150,6 +152,7 @@ export const buildCompletedTrainerBattleSessionPayload = ({ userId, trainer, act
         playerWasDamagedLastTurn: false,
         playerVolatileState: {},
         fieldState: {},
+        badgeSnapshot: {},
         expiresAt: getTrainerBattleSessionExpiryDate(),
     }
 }

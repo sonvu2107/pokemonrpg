@@ -1,10 +1,11 @@
 import UserPokemon from '../models/UserPokemon.js'
-import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
+import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { normalizePokemonTypes } from '../battle/typeSystem.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { loadBattleBadgeBonusStateForUser } from '../utils/badgeUtils.js'
 import { getSpecialDefenseStat } from './trainerBattleStateService.js'
+import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     'sss+': 10,
@@ -29,13 +30,6 @@ const WILD_REWARD_REDUCED_RATE_AFTER = 200
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
-
-const applyPercentBonus = (baseValue = 0, bonusPercent = 0) => {
-    const normalizedBase = Math.max(0, Math.floor(Number(baseValue) || 0))
-    const normalizedPercent = Math.max(0, Number(bonusPercent) || 0)
-    if (normalizedBase <= 0 || normalizedPercent <= 0) return normalizedBase
-    return Math.max(1, Math.floor(normalizedBase * (1 + (normalizedPercent / 100))))
-}
 
 export const normalizeMapRarityCatchBonusPercent = (value = {}) => {
     const source = value && typeof value === 'object' ? value : {}
@@ -116,7 +110,12 @@ export const resolveWildPlayerBattleSnapshot = async (userId) => {
     })
     const scaledStats = calcStatsForLevel(baseStats, level, species.rarity)
     const badgeBonusState = await loadBattleBadgeBonusStateForUser(userId, normalizePokemonTypes(species.types))
-    const maxHp = Math.max(1, applyPercentBonus(calcMaxHp(baseStats?.hp, level, species.rarity), badgeBonusState?.hpBonusPercent || 0))
+    const maxHp = resolvePlayerBattleMaxHp({
+        baseHp: baseStats?.hp,
+        level,
+        rarity: species?.rarity || 'd',
+        hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
+    })
     const defense = Math.max(
         1,
         Number(scaledStats?.def) ||

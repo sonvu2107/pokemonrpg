@@ -71,6 +71,7 @@ const battleSessionSchema = new mongoose.Schema(
         playerWasDamagedLastTurn: { type: Boolean, default: false },
         playerVolatileState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         fieldState: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+        badgeSnapshot: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         expiresAt: { type: Date, required: true },
     },
     { timestamps: true }

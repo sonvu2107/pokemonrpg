@@ -12,9 +12,10 @@ import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName, buildMoveLookupByName } from '../utils/movePpUtils.js'
-import { calcMaxHp, expToNext } from '../utils/gameUtils.js'
-import { getCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
+import { expToNext } from '../utils/gameUtils.js'
+import { resolveBattleBadgeBonusState, resolveOrHydrateBattleBadgeSnapshot } from '../utils/badgeUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
+import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
 import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
@@ -357,6 +358,19 @@ const ALLOWED_ITEM_USE_BATTLE_MODES = new Set(['trainer', 'duel', 'online'])
 const normalizeItemUseBattleMode = (value = '') => {
     const normalized = String(value || '').trim().toLowerCase()
     return ALLOWED_ITEM_USE_BATTLE_MODES.has(normalized) ? normalized : ''
+}
+
+const loadPartyHpBadgeBonusPercent = async ({ userId, trainerSession = null } = {}) => {
+    try {
+        const badgeSummary = await resolveOrHydrateBattleBadgeSnapshot(trainerSession, userId, { silent: true })
+        return Math.max(0, Number(resolveBattleBadgeBonusState(badgeSummary, [])?.hpBonusPercent || 0))
+    } catch (error) {
+        console.warn('inventory_badge_bonus_load_failed', {
+            userId: String(userId || ''),
+            message: String(error?.message || '').trim(),
+        })
+        return 0
+    }
 }
 
 const addMonthsFromBase = (baseValue = new Date(), months = 1) => {
@@ -1168,6 +1182,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             }
 
             let activeBattleSession = null
+            let trainerSessionHpBonusPercent = 0
             if (isTrainerBattleContext) {
                 activeBattleSession = await BattleSession.findOne({
                     userId,
@@ -1184,11 +1199,13 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                     return res.status(409).json({ ok: false, message: 'Không tìm thấy phiên battle trainer. Vui lòng vào lại trận.' })
                 }
 
+                trainerSessionHpBonusPercent = await loadPartyHpBadgeBonusPercent({ userId, trainerSession: activeBattleSession })
+
                 await ensureTrainerSessionPlayerParty({
                     trainerSession: activeBattleSession,
                     userId,
                     preferredActivePokemonId: targetPokemon?._id || activeBattleSession.playerPokemonId,
-                    hpBonusPercent: Math.max(0, Number((await getCachedActiveBadgeBonuses(userId))?.partyHpPercent || 0)),
+                    hpBonusPercent: trainerSessionHpBonusPercent,
                 })
 
                 const team = Array.isArray(activeBattleSession.team) ? activeBattleSession.team : []
@@ -1249,11 +1266,12 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                         formId: targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal',
                         resolvedForm,
                     })
-                    const calculatedMaxHp = calcMaxHp(
-                        Number(resolvedBaseStats?.hp || 1),
-                        Math.max(1, Number(targetPokemon.level || 1)),
-                        targetPokemon?.pokemonId?.rarity || 'd'
-                    )
+                    const calculatedMaxHp = resolvePlayerBattleMaxHp({
+                        baseHp: Number(resolvedBaseStats?.hp || 1),
+                        level: Math.max(1, Number(targetPokemon.level || 1)),
+                        rarity: targetPokemon?.pokemonId?.rarity || 'd',
+                        hpBonusPercent: trainerSessionHpBonusPercent,
+                    })
                     const requestedMaxHp = Number.isFinite(itemUseContext.playerMaxHp)
                         ? itemUseContext.playerMaxHp
                         : calculatedMaxHp

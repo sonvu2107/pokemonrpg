@@ -9,9 +9,14 @@ import Pokemon from '../../models/Pokemon.js'
 import BattleTrainer from '../../models/BattleTrainer.js'
 import BattleSession from '../../models/BattleSession.js'
 import { emitPlayerState } from '../../socket/index.js'
-import { calcMaxHp, expToNext, getRarityExpMultiplier } from '../../utils/gameUtils.js'
+import { expToNext, getRarityExpMultiplier } from '../../utils/gameUtils.js'
 import { withActiveUserPokemonFilter } from '../../utils/userPokemonQuery.js'
-import { getCachedActiveBadgeBonuses } from '../../utils/badgeUtils.js'
+import {
+    resolveBattleBadgeBonusState,
+    resolveOrHydrateBattleBadgeSnapshot,
+} from '../../utils/badgeUtils.js'
+import { resolvePlayerBattleMaxHp } from '../../utils/playerBattleStats.js'
+import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../../utils/pokemonFormStats.js'
 import {
     getOrCreateTrainerBattleSession,
 } from '../../services/trainerBattleSessionService.js'
@@ -92,8 +97,13 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
             trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainerDoc)
         }
 
+        const trainerBadgeSummary = await resolveOrHydrateBattleBadgeSnapshot(trainerSession, userId)
+
         const resolvedTrainerId = String(trainerSession.trainerId || normalizedTrainerId).trim()
-        const badgeHpBonusPercent = Math.max(0, Number((await getCachedActiveBadgeBonuses(userId))?.partyHpPercent || 0))
+        const badgeHpBonusPercent = Math.max(
+            0,
+            Number(resolveBattleBadgeBonusState(trainerBadgeSummary, [])?.hpBonusPercent || 0)
+        )
         await ensureTrainerSessionPlayerParty({
             trainerSession,
             userId,
@@ -135,13 +145,22 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
             return res.status(400).json({ ok: false, message: 'Pokemon này đã bại trận và không thể vào sân.' })
         }
         const targetPartyEntry = trainerSession.playerTeam[targetPartyIndex]
-
-        const calculatedBaseMaxHp = calcMaxHp(
-            Number(targetPokemon?.pokemonId?.baseStats?.hp || 1),
-            Math.max(1, Number(targetPokemon.level || 1)),
-            targetPokemon?.pokemonId?.rarity || 'd'
+        const resolvedForm = resolvePokemonFormEntry(
+            targetPokemon?.pokemonId,
+            targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal'
         )
-        const calculatedMaxHp = Math.max(1, Math.floor(calculatedBaseMaxHp * (100 + badgeHpBonusPercent) / 100))
+        const resolvedBaseStats = resolveEffectivePokemonBaseStats({
+            pokemonLike: targetPokemon?.pokemonId,
+            formId: targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal',
+            resolvedForm,
+        })
+
+        const calculatedMaxHp = resolvePlayerBattleMaxHp({
+            baseHp: Number(resolvedBaseStats?.hp || 1),
+            level: Math.max(1, Number(targetPokemon.level || 1)),
+            rarity: targetPokemon?.pokemonId?.rarity || 'd',
+            hpBonusPercent: badgeHpBonusPercent,
+        })
         const requestedMaxHp = clamp(
             Math.floor(Number.isFinite(Number(playerMaxHp)) ? Number(playerMaxHp) : calculatedMaxHp),
             1,

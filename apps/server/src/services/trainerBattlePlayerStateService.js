@@ -1,23 +1,18 @@
 import UserPokemon from '../models/UserPokemon.js'
-import { calcMaxHp } from '../utils/gameUtils.js'
 import { normalizeBattleStatus, normalizeStatusTurns } from '../battle/battleState.js'
+import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
-const applyHpPercentBonus = (value = 1, percent = 0) => {
-    const safeValue = Math.max(1, Number(value) || 1)
-    const safePercent = Math.max(0, Number(percent) || 0)
-    return Math.max(1, Math.floor(safeValue * (100 + safePercent) / 100))
-}
 
 const buildPlayerPartyEntryFromPokemon = (entry = {}, slot = 0, existingEntry = null, hpBonusPercent = 0) => {
     const species = entry?.pokemonId || {}
     const level = Math.max(1, Number(entry?.level || 1))
-    const calculatedBaseMaxHp = Math.max(1, calcMaxHp(
-        Number(species?.baseStats?.hp || 1),
+    const calculatedMaxHp = resolvePlayerBattleMaxHp({
+        baseHp: Number(species?.baseStats?.hp || 1),
         level,
-        species?.rarity || 'd'
-    ))
-    const calculatedMaxHp = applyHpPercentBonus(calculatedBaseMaxHp, hpBonusPercent)
+        rarity: species?.rarity || 'd',
+        hpBonusPercent,
+    })
     const existingCurrentHp = Number(existingEntry?.currentHp)
     const existingMaxHp = Number(existingEntry?.maxHp)
     const resolvedMaxHp = clamp(
