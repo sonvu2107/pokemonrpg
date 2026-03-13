@@ -57,7 +57,9 @@
         "rebalance:auto-trainer-difficulty:dry": "node src/scripts/rebalanceAutoTrainerDifficulty.js --dry-run",
         "rebalance:auto-trainer-difficulty": "node src/scripts/rebalanceAutoTrainerDifficulty.js",
         "rollback:auto-trainer-team-levels:dry": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js --dry-run",
-        "rollback:auto-trainer-team-levels": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js"
+        "rollback:auto-trainer-team-levels": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js",
+        "report:battle-trainer-moon-points:2k": "node src/reportBattleTrainerMoonPointsFromLevel.js --threshold 2000",
+        "report:battle-trainer-moon-points": "node src/reportBattleTrainerMoonPointsFromLevel.js"
     },
     "dependencies": {
         "bcrypt": "^5.1.1",
