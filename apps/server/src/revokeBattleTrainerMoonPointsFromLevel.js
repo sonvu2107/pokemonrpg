@@ -6,6 +6,7 @@ import { connectDB } from './config/db.js'
 import BattleTrainer from './models/BattleTrainer.js'
 import User from './models/User.js'
 import PlayerState from './models/PlayerState.js'
+import DailyActivity from './models/DailyActivity.js'
 
 dotenv.config()
 
@@ -38,6 +39,26 @@ const estimationMode = estimationModeRaw === 'configured-only'
     : 'legacy-default-zero'
 
 const normalizeId = (value) => String(value || '').trim()
+
+const toReachedAtObject = (value) => {
+    if (value instanceof Map) {
+        return Object.fromEntries(value.entries())
+    }
+    if (value && typeof value === 'object') {
+        return value
+    }
+    return {}
+}
+
+const toDateKeyFromValue = (value) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
 
 const estimateDefaultMoonPointsFromTrainer = (trainer = {}) => {
     const team = Array.isArray(trainer?.team) ? trainer.team : []
@@ -125,10 +146,16 @@ const run = async () => {
         let totalQualifiedClaims = 0
         let totalMoonPointsPlanned = 0
         let totalMoonPointsDeducted = 0
+        let totalDailyMoonPointsPlanned = 0
+        let totalDailyMoonPointsDeducted = 0
+        let totalDailyBattleMoonPointsDeducted = 0
+        let usersWithDailyActivityUpdated = 0
+        let totalClaimsWithoutReachedAt = 0
         const levelStats = new Map()
         const userPreview = []
 
         for (const user of userRows) {
+            const reachedAtByTrainerId = toReachedAtObject(user?.completedBattleTrainerReachedAt)
             const completedTrainerIds = (Array.isArray(user?.completedBattleTrainers) ? user.completedBattleTrainers : [])
                 .map((value) => normalizeId(value))
                 .filter((value) => trainerMetaById.has(value))
@@ -141,6 +168,12 @@ const run = async () => {
                 .map((trainerId) => {
                     const trainerMeta = trainerMetaById.get(trainerId)
                     if (!trainerMeta) return null
+                    const reachedAtRaw = reachedAtByTrainerId?.[trainerId]
+                    const reachedAtDateKey = toDateKeyFromValue(reachedAtRaw)
+                    const reachedAtDate = reachedAtRaw ? new Date(reachedAtRaw) : null
+                    const reachedAtIso = reachedAtDate && !Number.isNaN(reachedAtDate.getTime())
+                        ? reachedAtDate.toISOString()
+                        : null
                     return {
                         trainerId,
                         trainerName: trainerMeta.trainerName,
@@ -148,6 +181,8 @@ const run = async () => {
                         orderIndex: trainerMeta.orderIndex,
                         configuredMoonPointsReward: trainerMeta.configuredMoonPointsReward,
                         estimatedMoonPointsReward: trainerMeta.estimatedMoonPointsReward,
+                        reachedAt: reachedAtIso,
+                        reachedAtDateKey,
                     }
                 })
                 .filter(Boolean)
@@ -162,12 +197,69 @@ const run = async () => {
             const currentMoonPoints = Math.max(0, Number(playerState?.moonPoints) || 0)
             const deductedNow = Math.min(currentMoonPoints, plannedDeduct)
 
+            const plannedByDate = new Map()
+            rewardClaims.forEach((entry) => {
+                if (!entry.reachedAtDateKey) {
+                    totalClaimsWithoutReachedAt += 1
+                    return
+                }
+                plannedByDate.set(
+                    entry.reachedAtDateKey,
+                    (plannedByDate.get(entry.reachedAtDateKey) || 0) + entry.estimatedMoonPointsReward
+                )
+            })
+
+            const dailyPlanTotal = [...plannedByDate.values()].reduce((sum, value) => sum + value, 0)
+            let dailyMoonPointsDeductedForUser = 0
+            let dailyBattleMoonPointsDeductedForUser = 0
+
+            if (plannedByDate.size > 0) {
+                const dailyRows = await DailyActivity.find({
+                    userId: user._id,
+                    date: { $in: [...plannedByDate.keys()] },
+                })
+                    .select('_id date moonPoints battleMoonPoints')
+
+                for (const dailyRow of dailyRows) {
+                    const dateKey = String(dailyRow?.date || '').trim()
+                    if (!dateKey || !plannedByDate.has(dateKey)) continue
+
+                    const plannedForDate = Math.max(0, Number(plannedByDate.get(dateKey) || 0))
+                    if (plannedForDate <= 0) continue
+
+                    const currentDailyMoonPoints = Math.max(0, Number(dailyRow?.moonPoints || 0))
+                    const currentDailyBattleMoonPoints = Math.max(0, Number(dailyRow?.battleMoonPoints || 0))
+
+                    const moonDeduct = Math.min(currentDailyMoonPoints, plannedForDate)
+                    const battleMoonDeduct = Math.min(currentDailyBattleMoonPoints, plannedForDate)
+
+                    if (moonDeduct <= 0 && battleMoonDeduct <= 0) {
+                        continue
+                    }
+
+                    dailyMoonPointsDeductedForUser += moonDeduct
+                    dailyBattleMoonPointsDeductedForUser += battleMoonDeduct
+
+                    if (shouldApply) {
+                        dailyRow.moonPoints = currentDailyMoonPoints - moonDeduct
+                        dailyRow.battleMoonPoints = currentDailyBattleMoonPoints - battleMoonDeduct
+                        await dailyRow.save()
+                    }
+                }
+            }
+
             matchedUsers += 1
             totalQualifiedClaims += rewardClaims.length
             totalMoonPointsPlanned += plannedDeduct
             totalMoonPointsDeducted += deductedNow
+            totalDailyMoonPointsPlanned += dailyPlanTotal
+            totalDailyMoonPointsDeducted += dailyMoonPointsDeductedForUser
+            totalDailyBattleMoonPointsDeducted += dailyBattleMoonPointsDeductedForUser
             if (deductedNow > 0) {
                 usersWithDeduction += 1
+            }
+            if (dailyMoonPointsDeductedForUser > 0 || dailyBattleMoonPointsDeductedForUser > 0) {
+                usersWithDailyActivityUpdated += 1
             }
 
             rewardClaims.forEach((entry) => {
@@ -198,6 +290,9 @@ const run = async () => {
                     currentMoonPoints,
                     plannedDeduct,
                     deductedNow,
+                    dailyPlanTotal,
+                    dailyMoonPointsDeductedForUser,
+                    dailyBattleMoonPointsDeductedForUser,
                     rewardClaimCount: rewardClaims.length,
                     milestoneLevels: [...new Set(rewardClaims.map((entry) => entry.milestoneLevel))],
                     rewardClaims,
@@ -212,6 +307,11 @@ const run = async () => {
         console.log(`Total qualified claims: ${totalQualifiedClaims}`)
         console.log(`Total moon points planned: ${totalMoonPointsPlanned}`)
         console.log(`Total moon points deducted (clamped): ${totalMoonPointsDeducted}`)
+        console.log(`Daily moon points planned by reachedAt date: ${totalDailyMoonPointsPlanned}`)
+        console.log(`Daily moon points deducted: ${totalDailyMoonPointsDeducted}`)
+        console.log(`Daily battleMoonPoints deducted: ${totalDailyBattleMoonPointsDeducted}`)
+        console.log(`Users with daily activity updated: ${usersWithDailyActivityUpdated}`)
+        console.log(`Claims without reachedAt date: ${totalClaimsWithoutReachedAt}`)
         console.log(`Preview users (${userPreview.length}/${matchedUsers}):`)
         if (userPreview.length > 0) {
             console.log(JSON.stringify(userPreview, null, 2))
@@ -235,6 +335,11 @@ const run = async () => {
                 totalQualifiedClaims,
                 totalMoonPointsPlanned,
                 totalMoonPointsDeducted,
+                totalDailyMoonPointsPlanned,
+                totalDailyMoonPointsDeducted,
+                totalDailyBattleMoonPointsDeducted,
+                usersWithDailyActivityUpdated,
+                totalClaimsWithoutReachedAt,
                 levelSummary,
                 previewUsers: userPreview,
             }
