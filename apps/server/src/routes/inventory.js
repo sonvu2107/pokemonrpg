@@ -325,23 +325,27 @@ const sanitizeObjectIdToken = (value) => {
     return ''
 }
 
-const normalizeObjectIdInput = (value) => {
+const normalizeObjectIdInput = (value, visited = new Set()) => {
     if (typeof value === 'string') return sanitizeObjectIdToken(value)
-    if (typeof value === 'number' && Number.isFinite(value)) return sanitizeObjectIdToken(String(value))
+    if (typeof value === 'number' && Number.isFinite(value)) return normalizeObjectIdInput(String(value), visited)
     if (value && typeof value === 'object') {
-        if (typeof value.$oid === 'string') return sanitizeObjectIdToken(value.$oid)
-        if (typeof value._id === 'string') return sanitizeObjectIdToken(value._id)
-        if (typeof value.id === 'string') return sanitizeObjectIdToken(value.id)
-        if (value._id && typeof value._id === 'object') {
-            const nestedId = normalizeObjectIdInput(value._id)
-            if (nestedId) return nestedId
-        }
+        if (visited.has(value)) return ''
+        visited.add(value)
+
         if (typeof value.toHexString === 'function') {
             try {
                 return sanitizeObjectIdToken(value.toHexString())
             } catch {
                 return ''
             }
+        }
+
+        if (typeof value.$oid === 'string') return sanitizeObjectIdToken(value.$oid)
+        if (typeof value._id === 'string') return sanitizeObjectIdToken(value._id)
+        if (typeof value.id === 'string') return sanitizeObjectIdToken(value.id)
+        if (value._id && typeof value._id === 'object' && value._id !== value) {
+            const nestedId = normalizeObjectIdInput(value._id, visited)
+            if (nestedId) return nestedId
         }
     }
     return ''

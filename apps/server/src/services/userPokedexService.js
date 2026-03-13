@@ -4,7 +4,7 @@ import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
 const OBJECT_ID_HEX_REGEX = /^[a-f\d]{24}$/i
 
-const normalizeObjectIdValue = (value) => {
+const normalizeObjectIdValue = (value, visited = new Set()) => {
     if (typeof value === 'string') {
         const raw = value.trim()
         if (!raw) return ''
@@ -15,32 +15,35 @@ const normalizeObjectIdValue = (value) => {
     }
 
     if (typeof value === 'number' && Number.isFinite(value)) {
-        return normalizeObjectIdValue(String(value))
+        return normalizeObjectIdValue(String(value), visited)
     }
 
     if (value && typeof value === 'object') {
-        if (typeof value.$oid === 'string') {
-            const normalizedOid = normalizeObjectIdValue(value.$oid)
-            if (normalizedOid) return normalizedOid
-        }
-
-        if (value._id != null) {
-            const normalizedNestedId = normalizeObjectIdValue(value._id)
-            if (normalizedNestedId) return normalizedNestedId
-        }
-
-        if (value.id != null) {
-            const normalizedId = normalizeObjectIdValue(value.id)
-            if (normalizedId) return normalizedId
-        }
+        if (visited.has(value)) return ''
+        visited.add(value)
 
         if (typeof value.toHexString === 'function') {
             try {
-                const normalizedHex = normalizeObjectIdValue(value.toHexString())
+                const normalizedHex = normalizeObjectIdValue(value.toHexString(), visited)
                 if (normalizedHex) return normalizedHex
             } catch {
                 return ''
             }
+        }
+
+        if (typeof value.$oid === 'string') {
+            const normalizedOid = normalizeObjectIdValue(value.$oid, visited)
+            if (normalizedOid) return normalizedOid
+        }
+
+        if (value._id != null && value._id !== value) {
+            const normalizedNestedId = normalizeObjectIdValue(value._id, visited)
+            if (normalizedNestedId) return normalizedNestedId
+        }
+
+        if (value.id != null && value.id !== value) {
+            const normalizedId = normalizeObjectIdValue(value.id, visited)
+            if (normalizedId) return normalizedId
         }
     }
 
