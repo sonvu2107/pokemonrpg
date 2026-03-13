@@ -114,6 +114,8 @@ const normalizeTrainerUsageRows = (rowsLike = []) => {
 
             return {
                 trainerId,
+                trainerName: String(trainer?.trainerName || trainer?.name || '').trim(),
+                milestoneLevel: Math.max(0, Number(trainer?.milestoneLevel || 0) || 0),
                 prizePokemonId,
                 teamPokemonIds,
             }
@@ -923,6 +925,45 @@ export default function BattleTrainerPage() {
             selectedIds.add(prizePokemonId)
         })
         return selectedIds
+    }, [trainerUsageRows, normalizedEditingId])
+
+    const selectedPrizeUsageInOtherTrainersByPokemonId = useMemo(() => {
+        const usageByPokemonId = {}
+        ;(Array.isArray(trainerUsageRows) ? trainerUsageRows : []).forEach((entry) => {
+            const trainerId = String(entry?.trainerId || '').trim()
+            if (normalizedEditingId && trainerId === normalizedEditingId) return
+
+            const prizePokemonId = String(entry?.prizePokemonId || '').trim()
+            if (!prizePokemonId) return
+
+            const nextUsage = {
+                trainerId,
+                trainerName: String(entry?.trainerName || '').trim(),
+                milestoneLevel: Math.max(0, Number(entry?.milestoneLevel || 0) || 0),
+            }
+
+            if (!Array.isArray(usageByPokemonId[prizePokemonId])) {
+                usageByPokemonId[prizePokemonId] = []
+            }
+            usageByPokemonId[prizePokemonId].push(nextUsage)
+        })
+
+        Object.keys(usageByPokemonId).forEach((pokemonId) => {
+            const uniqueByTrainerId = new Map()
+            usageByPokemonId[pokemonId].forEach((entry) => {
+                const trainerId = String(entry?.trainerId || '').trim()
+                if (!trainerId || uniqueByTrainerId.has(trainerId)) return
+                uniqueByTrainerId.set(trainerId, entry)
+            })
+            usageByPokemonId[pokemonId] = [...uniqueByTrainerId.values()]
+                .sort((a, b) => {
+                    const milestoneA = Math.max(0, Number(a?.milestoneLevel || 0) || 0)
+                    const milestoneB = Math.max(0, Number(b?.milestoneLevel || 0) || 0)
+                    return milestoneA - milestoneB
+                })
+        })
+
+        return usageByPokemonId
     }, [trainerUsageRows, normalizedEditingId])
 
     const selectedPokemonIdsInCurrentForm = useMemo(() => {
@@ -2418,6 +2459,20 @@ export default function BattleTrainerPage() {
                                             && normalizedPrizePokemonFormId === rowForm.formId
                                         const isUsedInCurrentTrainer = selectedPrizePokemonIdsInCurrentForm.has(entry._id)
                                         const isUsedInOtherTrainer = selectedPrizePokemonIdsInOtherTrainers.has(entry._id)
+                                        const usedByOtherTrainerRows = Array.isArray(selectedPrizeUsageInOtherTrainersByPokemonId[entry._id])
+                                            ? selectedPrizeUsageInOtherTrainersByPokemonId[entry._id]
+                                            : []
+                                        const usedMilestoneList = [...new Set(
+                                            usedByOtherTrainerRows
+                                                .map((usage) => Math.max(0, Number(usage?.milestoneLevel || 0) || 0))
+                                                .filter((milestone) => milestone > 0)
+                                        )]
+                                        const usedMilestoneLabel = usedMilestoneList.length > 0
+                                            ? usedMilestoneList.slice(0, 4).join(', ')
+                                            : ''
+                                        const usedMilestoneSuffix = usedMilestoneList.length > 4
+                                            ? ` +${usedMilestoneList.length - 4}`
+                                            : ''
                                         const showPickedTag = !isSelected && (isUsedInCurrentTrainer || isUsedInOtherTrainer)
                                         const pickedTagText = isUsedInCurrentTrainer && isUsedInOtherTrainer
                                             ? 'Đã chọn (trainer này + khác)'
@@ -2458,7 +2513,14 @@ export default function BattleTrainerPage() {
                                                     <span className="text-[11px] font-bold text-blue-700 bg-blue-100 border border-blue-200 rounded px-2 py-0.5">Đã chọn</span>
                                                 )}
                                                 {!isSelected && showPickedTag && (
-                                                    <span className={pickedTagClassName}>{pickedTagText}</span>
+                                                    <div className="flex flex-col items-end gap-1">
+                                                        <span className={pickedTagClassName}>{pickedTagText}</span>
+                                                        {!isUsedInCurrentTrainer && isUsedInOtherTrainer && usedMilestoneLabel && (
+                                                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                                                                Mốc: {usedMilestoneLabel}{usedMilestoneSuffix}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </button>
                                         )

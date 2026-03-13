@@ -491,7 +491,7 @@ router.get('/', async (req, res) => {
 router.get('/usage-summary', async (_req, res) => {
     try {
         const usageRows = await BattleTrainer.find({})
-            .select('_id prizePokemonId team.pokemonId')
+            .select('_id name milestoneLevel prizePokemonId team.pokemonId')
             .lean()
 
         const usages = (Array.isArray(usageRows) ? usageRows : [])
@@ -507,6 +507,8 @@ router.get('/usage-summary', async (_req, res) => {
 
                 return {
                     trainerId,
+                    trainerName: String(trainer?.name || '').trim(),
+                    milestoneLevel: Math.max(0, Number(trainer?.milestoneLevel || 0) || 0),
                     prizePokemonId,
                     teamPokemonIds,
                 }
