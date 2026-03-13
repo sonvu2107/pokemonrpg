@@ -75,7 +75,7 @@ const resolveEffectSummary = (item) => {
         return `Dùng lên 1 Pokemon để tăng ${formatNumber(item?.effectValue)} cấp`
     }
     if (effectType === 'transferPokemonLevel') {
-        return 'Dùng lên 1 Pokemon để nhận level từ 1 Pokemon khác, Pokemon nguồn sẽ về Lv. 1'
+        return 'Dùng lên 1 Pokemon để level của Pokemon đó đổi thành level của 1 Pokemon khác, Pokemon nguồn sẽ về Lv. 1'
     }
     return 'Không có hiệu ứng'
 }

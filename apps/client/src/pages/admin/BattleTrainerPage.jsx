@@ -25,6 +25,7 @@ const PRIZE_POKEMON_MODAL_PAGE_SIZE = 40
 const PRIZE_POKEMON_FORM_PAGE_SIZE = 18
 const TRAINER_PAGE_SIZE = 20
 const AUTO_PRIZE_POKEMON_PAGE_SIZE = 24
+const POKEMON_REFERENCE_FETCH_LIMIT = 200
 
 const normalizeAutoPrizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 
@@ -109,6 +110,42 @@ const normalizeTrainerUsageRows = (rowsLike = []) => {
         .filter((row) => row.trainerId)
 }
 
+const loadAllPokemonReferenceRows = async () => {
+    const firstPageData = await gameApi.getPokemonList({
+        page: 1,
+        limit: POKEMON_REFERENCE_FETCH_LIMIT,
+    })
+
+    const firstPageRows = Array.isArray(firstPageData?.pokemon) ? firstPageData.pokemon : []
+    const totalPages = Math.max(1, Number(firstPageData?.pagination?.pages) || 1)
+    if (totalPages <= 1) {
+        return firstPageRows
+    }
+
+    const pageNumbers = Array.from({ length: totalPages - 1 }, (_, index) => index + 2)
+    const allRows = [...firstPageRows]
+
+    for (let index = 0; index < pageNumbers.length; index += 4) {
+        const pageChunk = pageNumbers.slice(index, index + 4)
+        const chunkResponses = await Promise.all(pageChunk.map((page) => gameApi.getPokemonList({
+            page,
+            limit: POKEMON_REFERENCE_FETCH_LIMIT,
+        })))
+        chunkResponses.forEach((entry) => {
+            const rows = Array.isArray(entry?.pokemon) ? entry.pokemon : []
+            allRows.push(...rows)
+        })
+    }
+
+    const uniqueById = new Map()
+    allRows.forEach((entry) => {
+        const id = String(entry?._id || '').trim()
+        if (!id || uniqueById.has(id)) return
+        uniqueById.set(id, entry)
+    })
+    return [...uniqueById.values()]
+}
+
 export default function BattleTrainerPage() {
     const [trainers, setTrainers] = useState([])
     const [trainerUsageRows, setTrainerUsageRows] = useState([])
@@ -188,11 +225,11 @@ export default function BattleTrainerPage() {
 
     const loadReferenceData = async () => {
         try {
-            const [pokemonData, itemData] = await Promise.all([
-                gameApi.getPokemonList({ page: 1, limit: 5000 }),
+            const [pokemonRows, itemData] = await Promise.all([
+                loadAllPokemonReferenceRows(),
                 itemApi.list({ page: 1, limit: 5000 }),
             ])
-            setPokemon(pokemonData.pokemon || [])
+            setPokemon(Array.isArray(pokemonRows) ? pokemonRows : [])
             setItems(itemData.items || [])
         } catch (err) {
             setError(err.message)

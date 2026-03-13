@@ -379,8 +379,9 @@ export default function PokemonInfoPage() {
 
         const targetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
         const sourceName = String(selectedSource?.nickname || selectedSource?.pokemon?.name || 'Pokemon').trim() || 'Pokemon'
-        const transferableLevels = Math.max(0, Number(selectedSource?.level || 1) - 1)
-        const confirmed = window.confirm(`Dùng ${selectedItem.name} để chuyển ${transferableLevels} cấp từ ${sourceName} sang ${targetName}? ${sourceName} sẽ về Lv. 1.`)
+        const sourceLevel = Math.max(1, Number(selectedSource?.level || 1))
+        const targetLevel = Math.max(1, Number(pokemon?.level || 1))
+        const confirmed = window.confirm(`Dùng ${selectedItem.name} để đổi level của ${targetName} từ Lv. ${targetLevel} thành Lv. ${sourceLevel} theo ${sourceName}? ${sourceName} sẽ về Lv. 1.`)
         if (!confirmed) return
 
         try {
@@ -705,6 +706,9 @@ export default function PokemonInfoPage() {
     const levelTransferSelectedSourceSprite = selectedLevelTransferSource
         ? resolvePokemonDisplaySprite(selectedLevelTransferSource?.pokemon, selectedLevelTransferSource?.formId, selectedLevelTransferSource?.isShiny)
         : ''
+    const levelTransferTargetName = String(pokemon?.nickname || pokemon?.pokemonId?.name || 'Pokemon').trim() || 'Pokemon'
+    const levelTransferTargetLevel = Math.max(1, Number(pokemon?.level || 1))
+    const levelTransferSourceLevel = Math.max(1, Number(selectedLevelTransferSource?.level || 1))
     const levelTransferTotal = Math.max(0, Number(levelTransferPagination?.total || 0))
     const levelTransferPageSize = Math.max(1, Number(levelTransferPagination?.limit || LEVEL_TRANSFER_MODAL_PAGE_SIZE))
     const levelTransferCurrentPage = Math.max(1, Number(levelTransferPagination?.page || levelTransferPage || 1))
@@ -1070,7 +1074,10 @@ export default function PokemonInfoPage() {
                                                                     {levelTransferSelectedSourceName || 'Pokemon'}
                                                                 </div>
                                                                 <div className="text-xs text-slate-500 truncate">
-                                                                    {selectedLevelTransferSource?.pokemon?.name || 'Không rõ'} • Lv. {selectedLevelTransferSource?.level || 1} • Chuyển {Math.max(0, Number(selectedLevelTransferSource?.level || 1) - 1)} cấp
+                                                                    {selectedLevelTransferSource?.pokemon?.name || 'Không rõ'} • Lv. {selectedLevelTransferSource?.level || 1} • Mục tiêu sẽ thành Lv. {selectedLevelTransferSource?.level || 1}
+                                                                </div>
+                                                                <div className="mt-1 text-[11px] font-semibold text-fuchsia-700 truncate">
+                                                                    Preview: {levelTransferTargetName} Lv. {levelTransferTargetLevel} {'->'} Lv. {levelTransferSourceLevel}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1281,7 +1288,6 @@ export default function PokemonInfoPage() {
                                         const isSelected = sourceId === selectedLevelTransferSourceId
                                         const sourceName = String(entry?.nickname || entry?.pokemon?.name || 'Pokemon').trim() || 'Pokemon'
                                         const sourceSpeciesName = String(entry?.pokemon?.name || 'Không rõ').trim() || 'Không rõ'
-                                        const transferableLevels = Math.max(0, Number(entry?.level || 1) - 1)
                                         const sourceSprite = resolvePokemonDisplaySprite(entry?.pokemon, entry?.formId, entry?.isShiny)
 
                                         return (
@@ -1304,7 +1310,7 @@ export default function PokemonInfoPage() {
                                                         <span className="text-xs text-slate-500">Lv.{entry.level}</span>
                                                     </div>
                                                     <div className="text-xs text-slate-500 truncate mt-0.5">
-                                                        {sourceSpeciesName} • Chuyển {transferableLevels} cấp • {entry.location === 'party' ? 'Trong đội hình' : 'Trong kho'}
+                                                        {sourceSpeciesName} • Mục tiêu sẽ thành Lv. {entry.level} • {entry.location === 'party' ? 'Trong đội hình' : 'Trong kho'}
                                                     </div>
                                                 </div>
                                             </button>

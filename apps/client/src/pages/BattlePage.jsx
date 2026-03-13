@@ -2693,31 +2693,39 @@ export function BattlePage() {
                     return
                 }
                 appendBattleLog(['Pokemon của bạn đã bại trận. Trận đấu kết thúc.'])
-                setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
-                setBattleResults({
-                    resultType: 'defeat',
-                    message: 'Pokemon của bạn đã bại trận. Trận đấu kết thúc.',
-                    pokemon: {
-                        name: activeName,
-                        imageUrl: activeResultImage,
-                        level: activePokemon?.level || 1,
-                        exp: activePokemon?.experience || 0,
-                        expToNext: expToNextPokemonLevel(activePokemon?.level || 1),
-                        levelsGained: 0,
-                        happinessGained: 0,
-                    },
-                    rewards: {
-                        coins: 0,
-                        trainerExp: 0,
-                        moonPoints: 0,
-                        prizePokemon: null,
-                        prizeItem: null,
-                    },
-                    evolution: {
-                        evolved: false,
-                        chain: [],
-                    },
-                })
+                if (activeBattleMode === 'trainer') {
+                    setActionMessage('Pokemon của bạn đã bại trận. Đang nhận kết quả trận đấu...')
+                    await resolveTrainerBattleResults({
+                        trainerId: currentBattleState?.trainerId || null,
+                        battleState: currentBattleState,
+                    })
+                } else {
+                    setActionMessage('Pokemon của bạn đã bại trận. Trận đấu kết thúc.')
+                    setBattleResults({
+                        resultType: 'defeat',
+                        message: 'Pokemon của bạn đã bại trận. Trận đấu kết thúc.',
+                        pokemon: {
+                            name: activeName,
+                            imageUrl: activeResultImage,
+                            level: activePokemon?.level || 1,
+                            exp: activePokemon?.experience || 0,
+                            expToNext: expToNextPokemonLevel(activePokemon?.level || 1),
+                            levelsGained: 0,
+                            happinessGained: 0,
+                        },
+                        rewards: {
+                            coins: 0,
+                            trainerExp: 0,
+                            moonPoints: 0,
+                            prizePokemon: null,
+                            prizeItem: null,
+                        },
+                        evolution: {
+                            evolved: false,
+                            chain: [],
+                        },
+                    })
+                }
                 return
             }
 

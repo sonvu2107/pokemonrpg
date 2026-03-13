@@ -93,7 +93,7 @@ const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurati
         return `Tăng ${Math.max(1, Math.floor(Number(effectValue) || 0)).toLocaleString('vi-VN')} cấp cho 1 Pokemon`
     }
     if (effectType === 'transferPokemonLevel') {
-        return 'Chuyển toàn bộ level của Pokemon nguồn sang Pokemon đích, Pokemon nguồn về Lv. 1'
+        return 'Đổi level Pokemon đích thành level hiện tại của Pokemon nguồn, Pokemon nguồn về Lv. 1'
     }
     return 'Không có hiệu ứng'
 }
@@ -486,7 +486,7 @@ export default function ItemFormPage() {
                                         </div>
                                     ) : isTransferPokemonLevelEffect ? (
                                         <div className="rounded border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-sm text-fuchsia-800">
-                                            Dùng vật phẩm này tại trang chi tiết Pokemon để chọn 1 Pokemon nguồn, chuyển level của Pokemon nguồn sang Pokemon đích và đưa Pokemon nguồn về Lv. 1.
+                                            Dùng vật phẩm này tại trang chi tiết Pokemon để chọn 1 Pokemon nguồn, đặt level Pokemon đích bằng level hiện tại của Pokemon nguồn và đưa Pokemon nguồn về Lv. 1.
                                         </div>
                                     ) : isPokemonGrowthEffect ? (
                                         <div>
@@ -533,7 +533,7 @@ export default function ItemFormPage() {
                                 {(isPokemonGrowthEffect || isTransferPokemonLevelEffect) && (
                                     <div className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                                         {isTransferPokemonLevelEffect
-                                            ? 'Dùng vật phẩm này tại trang chi tiết Pokemon để chọn Pokemon nguồn và chuyển level sang Pokemon đang xem.'
+                                            ? 'Dùng vật phẩm này tại trang chi tiết Pokemon để chọn Pokemon nguồn và đổi level Pokemon đang xem theo Pokemon nguồn.'
                                             : `Dùng vật phẩm này tại trang chi tiết Pokemon để cộng ${isPokemonExpEffect ? 'EXP' : 'cấp'} theo giá trị đã nhập.`}
                                     </div>
                                 )}

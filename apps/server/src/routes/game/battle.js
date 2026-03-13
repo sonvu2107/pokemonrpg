@@ -46,6 +46,23 @@ const router = express.Router()
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
 const USER_POKEMON_MAX_LEVEL = 3000
+const hasLivingTrainerPlayer = (session = null) => {
+    const playerTeam = Array.isArray(session?.playerTeam) ? session.playerTeam : []
+    if (playerTeam.length > 0) {
+        return playerTeam.some((entry) => Number(entry?.currentHp || 0) > 0)
+    }
+    return Number(session?.playerCurrentHp || 0) > 0
+}
+const resolveDefeatedTrainerPlayerEntry = (session = null) => {
+    const playerTeam = Array.isArray(session?.playerTeam) ? session.playerTeam : []
+    const activeId = String(session?.playerPokemonId || '').trim()
+    return (activeId
+        ? playerTeam.find((entry) => String(entry?.userPokemonId || '').trim() === activeId)
+        : null)
+        || playerTeam.find((entry) => Number(entry?.currentHp || 0) <= 0)
+        || playerTeam[0]
+        || null
+}
 
 router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => {
     try {
@@ -270,12 +287,14 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             trainerId: normalizedTrainerId,
             expiresAt: { $gt: new Date() },
         })
-            .select('currentIndex team knockoutCounts')
+            .select('currentIndex team knockoutCounts playerTeam playerPokemonId playerCurrentHp playerMaxHp')
             .lean()
         if (!activeSession || !Array.isArray(activeSession.team) || activeSession.team.length === 0) {
             return res.status(400).json({ ok: false, message: 'Không tìm thấy phiên battle. Vui lòng bắt đầu trận trước.' })
         }
-        if (activeSession.currentIndex < activeSession.team.length) {
+        const trainerBattleWon = activeSession.currentIndex >= activeSession.team.length
+        const trainerPlayerDefeated = !hasLivingTrainerPlayer(activeSession)
+        if (!trainerBattleWon && !trainerPlayerDefeated) {
             return res.status(400).json({ ok: false, message: 'Trận battle chưa kết thúc. Hãy hạ toàn bộ Pokemon đối thủ trước.' })
         }
 
@@ -289,6 +308,75 @@ router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
             return res.status(409).json({ ok: false, message: 'Phần thưởng battle đã được nhận. Vui lòng bắt đầu trận mới.' })
         }
         resolvedBattleSession = claimedSession
+
+        if (trainerPlayerDefeated && !trainerBattleWon) {
+            const playerState = await PlayerState.findOne({ userId }).lean()
+            const defeatedEntry = resolveDefeatedTrainerPlayerEntry(resolvedBattleSession)
+            const defeatedUserPokemonId = String(
+                resolvedBattleSession?.playerPokemonId
+                || defeatedEntry?.userPokemonId
+                || ''
+            ).trim()
+
+            let defeatedPokemon = {
+                name: String(defeatedEntry?.name || 'Pokemon').trim() || 'Pokemon',
+                imageUrl: '',
+                level: 1,
+                exp: 0,
+                expToNext: 0,
+                levelsGained: 0,
+                happinessGained: 0,
+                obtainedVipMapLevel: 0,
+            }
+
+            if (defeatedUserPokemonId) {
+                const defeatedPokemonDoc = await UserPokemon.findOne({
+                    _id: defeatedUserPokemonId,
+                    userId,
+                })
+                    .select('pokemonId level experience nickname formId isShiny obtainedVipMapLevel')
+                    .populate('pokemonId', 'name imageUrl sprites forms defaultFormId')
+                    .lean()
+
+                if (defeatedPokemonDoc?.pokemonId) {
+                    defeatedPokemon = {
+                        name: defeatedPokemonDoc.nickname || defeatedPokemonDoc.pokemonId.name || defeatedPokemon.name,
+                        imageUrl: resolvePokemonImageForForm(
+                            defeatedPokemonDoc.pokemonId,
+                            defeatedPokemonDoc.formId,
+                            Boolean(defeatedPokemonDoc.isShiny)
+                        ),
+                        level: Math.max(1, Number(defeatedPokemonDoc.level) || 1),
+                        exp: Math.max(0, Number(defeatedPokemonDoc.experience) || 0),
+                        expToNext: expToNext(Math.max(1, Number(defeatedPokemonDoc.level) || 1)),
+                        levelsGained: 0,
+                        happinessGained: 0,
+                        obtainedVipMapLevel: Math.max(0, Number(defeatedPokemonDoc.obtainedVipMapLevel || 0) || 0),
+                    }
+                }
+            }
+
+            return res.json({
+                ok: true,
+                wallet: serializePlayerWallet(playerState),
+                results: {
+                    resultType: 'defeat',
+                    message: 'Pokemon của bạn đã bại trận. Trận đấu kết thúc.',
+                    pokemon: defeatedPokemon,
+                    rewards: {
+                        coins: 0,
+                        trainerExp: 0,
+                        moonPoints: 0,
+                        prizePokemon: null,
+                        prizeItem: null,
+                    },
+                    evolution: {
+                        evolved: false,
+                        chain: [],
+                    },
+                },
+            })
+        }
 
         if (Array.isArray(trainer.team) && trainer.team.length > 0) {
             sourceTeam = trainer.team

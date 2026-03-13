@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import AdminRouteGuard from './components/AdminRouteGuard'
+import ProtectedRoute from './components/ProtectedRoute'
 import { ADMIN_PERMISSIONS } from './constants/adminPermissions'
 
 const AppShell = lazy(() => import('./layouts/AppShell'))
@@ -80,7 +81,7 @@ export default function App() {
                 <Route path="/reset-password" element={<LoginPage />} />
 
                 {/* Main app with AppShell */}
-                <Route element={<AppShell />}>
+                <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                     <Route path="/" element={<HomePage />} />
                     <Route path="/event-maps" element={<EventMapsPage />} />
                     <Route path="/notifications" element={<NotificationsPage />} />

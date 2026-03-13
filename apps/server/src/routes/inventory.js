@@ -1040,12 +1040,12 @@ router.post('/use', useItemActionGuard, async (req, res) => {
             if (!sourcePokemon) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon nguồn' })
             }
-            if (targetPokemon.level >= USER_POKEMON_MAX_LEVEL) {
-                return res.status(400).json({ ok: false, message: 'Pokemon đích đã đạt cấp tối đa' })
-            }
+            const sourceLevelBefore = Math.max(1, Math.floor(Number(sourcePokemon.level) || 1))
+            const sourceExpBefore = Math.max(0, Math.floor(Number(sourcePokemon.experience) || 0))
+            const targetLevelBefore = Math.max(1, Math.floor(Number(targetPokemon.level) || 1))
+            const targetExpBefore = Math.max(0, Math.floor(Number(targetPokemon.experience) || 0))
 
-            const transferableLevels = Math.max(0, Math.floor(Number(sourcePokemon.level) || 1) - 1)
-            if (transferableLevels <= 0) {
+            if (sourceLevelBefore <= 1) {
                 return res.status(400).json({ ok: false, message: 'Pokemon nguồn phải từ cấp 2 trở lên' })
             }
 
@@ -1063,9 +1063,8 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
             }
 
-            const sourceLevelBefore = Math.max(1, Math.floor(Number(sourcePokemon.level) || 1))
-            const sourceExpBefore = Math.max(0, Math.floor(Number(sourcePokemon.experience) || 0))
-            const targetResult = applyLevelGainToUserPokemon(targetPokemon, transferableLevels)
+            targetPokemon.level = Math.min(USER_POKEMON_MAX_LEVEL, sourceLevelBefore)
+            targetPokemon.experience = targetPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : sourceExpBefore
 
             sourcePokemon.level = 1
             sourcePokemon.experience = 0
@@ -1096,20 +1095,20 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             return res.json({
                 ok: true,
-                message: `Đã chuyển ${transferableLevels} cấp từ ${sourcePokemonName} sang ${targetPokemonName}.`,
+                message: `Đã đặt level của ${targetPokemonName} thành Lv. ${targetPokemon.level} theo ${sourcePokemonName}. ${sourcePokemonName} đã về Lv. 1.`,
                 itemId: normalizedItemId,
                 quantity: qty,
                 effect: {
                     type: 'transferPokemonLevel',
                     targetPokemonId: targetPokemon._id,
                     sourcePokemonId: sourcePokemon._id,
-                    transferredLevels: transferableLevels,
+                    transferredLevel: sourceLevelBefore,
                     target: {
-                        levelBefore: targetResult.levelBefore,
-                        levelAfter: targetResult.levelAfter,
-                        expBefore: targetResult.expBefore,
-                        expAfter: targetResult.expAfter,
-                        expToNext: targetResult.expToNext,
+                        levelBefore: targetLevelBefore,
+                        levelAfter: targetPokemon.level,
+                        expBefore: targetExpBefore,
+                        expAfter: targetPokemon.experience,
+                        expToNext: targetPokemon.level >= USER_POKEMON_MAX_LEVEL ? 0 : expToNext(targetPokemon.level),
                     },
                     source: {
                         levelBefore: sourceLevelBefore,
