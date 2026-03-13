@@ -2306,6 +2306,20 @@ export default function BattleTrainerPage() {
                                         if (!pokemonId) return null
                                         const selectionKey = String(row?.selectionKey || '').trim()
                                         const selected = selectionKey && autoPrizePokemonSelectionSet.has(selectionKey)
+                                        const usedByOtherTrainerRows = Array.isArray(selectedPrizeUsageInOtherTrainersBySelectionKey[selectionKey])
+                                            ? selectedPrizeUsageInOtherTrainersBySelectionKey[selectionKey]
+                                            : []
+                                        const usedMilestoneList = [...new Set(
+                                            usedByOtherTrainerRows
+                                                .map((usage) => Math.max(0, Number(usage?.milestoneLevel || 0) || 0))
+                                                .filter((milestone) => milestone > 0)
+                                        )]
+                                        const usedMilestoneLabel = usedMilestoneList.length > 0
+                                            ? usedMilestoneList.slice(0, 4).join(', ')
+                                            : ''
+                                        const usedMilestoneSuffix = usedMilestoneList.length > 4
+                                            ? ` +${usedMilestoneList.length - 4}`
+                                            : ''
                                         return (
                                             <label key={`auto-prize-${row.key}`} className={`w-full px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors ${selected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
                                                 <input
@@ -2331,9 +2345,16 @@ export default function BattleTrainerPage() {
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <span className={`text-[11px] font-bold rounded px-2 py-0.5 border ${selected ? 'text-emerald-700 bg-emerald-100 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
-                                                    {selected ? 'Đã chọn' : 'Chọn'}
-                                                </span>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <span className={`text-[11px] font-bold rounded px-2 py-0.5 border ${selected ? 'text-emerald-700 bg-emerald-100 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
+                                                        {selected ? 'Đã chọn' : 'Chọn'}
+                                                    </span>
+                                                    {usedMilestoneLabel && (
+                                                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                                                            Mốc: {usedMilestoneLabel}{usedMilestoneSuffix}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </label>
                                         )
                                     })
