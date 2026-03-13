@@ -60,8 +60,8 @@
         "rollback:auto-trainer-team-levels": "node src/scripts/rollbackAutoTrainerTeamLevelSnapshot.js",
         "report:battle-trainer-moon-points:2k": "node src/reportBattleTrainerMoonPointsFromLevel.js --threshold 2000",
         "report:battle-trainer-moon-points": "node src/reportBattleTrainerMoonPointsFromLevel.js",
-        "revoke:battle-trainer-moon-points:2k:dry": "node src/revokeBattleTrainerMoonPointsFromLevel.js --threshold 2000",
-        "revoke:battle-trainer-moon-points:2k": "node src/revokeBattleTrainerMoonPointsFromLevel.js --threshold 2000 --apply",
+        "revoke:battle-trainer-moon-points:2k:dry": "node src/revokeBattleTrainerMoonPointsFromLevel.js --threshold 2000 --mode configured-only",
+        "revoke:battle-trainer-moon-points:2k": "node src/revokeBattleTrainerMoonPointsFromLevel.js --threshold 2000 --mode configured-only --apply",
         "revoke:battle-trainer-moon-points": "node src/revokeBattleTrainerMoonPointsFromLevel.js"
     },
     "dependencies": {

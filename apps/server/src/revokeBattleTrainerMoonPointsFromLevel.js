@@ -27,10 +27,12 @@ const shouldApply = argsSet.has('--apply')
 const isDryRun = !shouldApply
 const includeAdmins = argsSet.has('--include-admins')
 const threshold = Math.max(0, parseIntArg('--threshold', 2000))
+const maxThresholdRaw = parseIntArg('--max-threshold', -1)
+const maxThreshold = maxThresholdRaw >= 0 ? Math.max(0, maxThresholdRaw) : null
 const previewLimit = Math.max(1, Math.min(500, parseIntArg('--preview-limit', 30)))
 const onlyUserIdRaw = getArgValue('--user-id', '')
 const outputPathRaw = getArgValue('--output', '')
-const estimationModeRaw = getArgValue('--mode', 'legacy-default-zero').toLowerCase()
+const estimationModeRaw = getArgValue('--mode', 'configured-only').toLowerCase()
 const estimationMode = estimationModeRaw === 'configured-only'
     ? 'configured-only'
     : 'legacy-default-zero'
@@ -60,8 +62,17 @@ const run = async () => {
 
         await connectDB()
 
+        if (maxThreshold !== null && maxThreshold < threshold) {
+            throw new Error(`--max-threshold (${maxThreshold}) phải >= --threshold (${threshold})`)
+        }
+
+        const trainerMilestoneFilter = { $gte: threshold }
+        if (maxThreshold !== null) {
+            trainerMilestoneFilter.$lte = maxThreshold
+        }
+
         const trainerRows = await BattleTrainer.find({
-            milestoneLevel: { $gte: threshold },
+            milestoneLevel: trainerMilestoneFilter,
         })
             .select('_id name milestoneLevel orderIndex moonPointsReward team.level')
             .sort({ milestoneLevel: 1, orderIndex: 1, createdAt: 1 })
@@ -86,6 +97,7 @@ const run = async () => {
         console.log('=== Revoke Battle Trainer Moon Points ===')
         console.log(`Dry run: ${isDryRun ? 'yes' : 'no'}`)
         console.log(`Threshold milestone level: ${threshold}`)
+        console.log(`Max milestone level: ${maxThreshold !== null ? maxThreshold : 'none'}`)
         console.log(`Estimation mode: ${estimationMode}`)
         console.log(`Target trainers to revoke: ${targetTrainerIds.length}`)
 
@@ -215,6 +227,7 @@ const run = async () => {
                 generatedAt: new Date().toISOString(),
                 dryRun: isDryRun,
                 threshold,
+                maxThreshold,
                 includeAdmins,
                 estimationMode,
                 matchedUsers,
