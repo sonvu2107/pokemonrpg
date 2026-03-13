@@ -1282,20 +1282,6 @@ export function BattlePage() {
         })
         .filter(Boolean)
 
-    const markTrainerCompleted = async (trainerId) => {
-        const normalizedId = String(trainerId || '').trim()
-        if (!normalizedId) return null
-        const res = await gameApi.completeTrainer(normalizedId)
-        const completedTrainerIds = Array.isArray(res?.completedBattleTrainers)
-            ? res.completedBattleTrainers
-            : []
-        return new Set(
-            completedTrainerIds
-                .map((id) => String(id || '').trim())
-                .filter(Boolean)
-        )
-    }
-
     const syncCachedProfileCompletedTrainers = (completedTrainerIds = new Set()) => {
         const nextCompletedIds = [...(completedTrainerIds instanceof Set ? completedTrainerIds : new Set())]
             .map((id) => normalizeEntityId(id))
@@ -1425,50 +1411,41 @@ export function BattlePage() {
             } catch (refreshPartyError) {
                 console.error('Làm mới đội hình sau battle thất bại', refreshPartyError)
             }
-            const entry = buildCompletedEntryFromBattle(battleState)
-            const trainerNameForLog = String(entry?.name || battleState?.trainerName || battleOpponent?.trainerName || 'Trainer').trim() || 'Trainer'
-            const autoWinLog = `Đã đánh bại huấn luyện viên ${trainerNameForLog}.`
-            setAutoTrainerServerStatus(autoWinLog)
-            const normalizedCompletedId = normalizeEntityId(entry?.id)
-            const nextCompletedIds = new Set(
-                (Array.isArray(completedEntries) ? completedEntries : [])
-                    .map((item) => normalizeEntityId(item?.id))
-                    .filter(Boolean)
-            )
-            if (entry) {
-                if (normalizedCompletedId) {
-                    nextCompletedIds.add(normalizedCompletedId)
-                }
-                setCompletedCarouselIndex(0)
-                setCompletedEntries((prev) => {
-                    if (!normalizedCompletedId) return prev
-                    if (prev.some((item) => normalizeEntityId(item?.id) === normalizedCompletedId)) return prev
-                    return [entry, ...prev]
-                })
-                try {
-                    const persistedCompletedIds = await markTrainerCompleted(entry.id)
-                    if (persistedCompletedIds instanceof Set && persistedCompletedIds.size > 0) {
-                        nextCompletedIds.clear()
-                        persistedCompletedIds.forEach((id) => {
-                            const normalizedId = normalizeEntityId(id)
-                            if (normalizedId) nextCompletedIds.add(normalizedId)
-                        })
+            const isDefeatResult = String(resolvedResult?.results?.resultType || '').trim().toLowerCase() === 'defeat'
+            if (!isDefeatResult) {
+                const entry = buildCompletedEntryFromBattle(battleState)
+                const trainerNameForLog = String(entry?.name || battleState?.trainerName || battleOpponent?.trainerName || 'Trainer').trim() || 'Trainer'
+                const autoWinLog = `Đã đánh bại huấn luyện viên ${trainerNameForLog}.`
+                setAutoTrainerServerStatus(autoWinLog)
+                const normalizedCompletedId = normalizeEntityId(entry?.id)
+                const nextCompletedIds = new Set(
+                    (Array.isArray(completedEntries) ? completedEntries : [])
+                        .map((item) => normalizeEntityId(item?.id))
+                        .filter(Boolean)
+                )
+                if (entry) {
+                    if (normalizedCompletedId) {
+                        nextCompletedIds.add(normalizedCompletedId)
                     }
-                } catch (saveProgressError) {
-                    console.error('Lưu tiến trình huấn luyện viên hoàn thành thất bại', saveProgressError)
+                    setCompletedCarouselIndex(0)
+                    setCompletedEntries((prev) => {
+                        if (!normalizedCompletedId) return prev
+                        if (prev.some((item) => normalizeEntityId(item?.id) === normalizedCompletedId)) return prev
+                        return [entry, ...prev]
+                    })
                 }
-            }
 
-            syncCachedProfileCompletedTrainers(nextCompletedIds)
+                syncCachedProfileCompletedTrainers(nextCompletedIds)
 
-            if (masterPokemon.length > 0) {
-                try {
-                    const nextOpponent = await buildPreferredTrainerOpponent(masterPokemon, nextCompletedIds)
-                    if (nextOpponent) {
-                        setOpponent(nextOpponent)
+                if (masterPokemon.length > 0) {
+                    try {
+                        const nextOpponent = await buildPreferredTrainerOpponent(masterPokemon, nextCompletedIds)
+                        if (nextOpponent) {
+                            setOpponent(nextOpponent)
+                        }
+                    } catch (nextOpponentError) {
+                        console.error('Làm mới trainer kế tiếp thất bại', nextOpponentError)
                     }
-                } catch (nextOpponentError) {
-                    console.error('Làm mới trainer kế tiếp thất bại', nextOpponentError)
                 }
             }
             setActionMessage('Nhận kết quả trận đấu thành công.')

@@ -986,10 +986,12 @@ router.post('/complete-trainer', authMiddleware, async (req, res, next) => {
                 : {})
 
         let shouldSave = false
-        if (!completedTrainerIds.includes(trainerId)) {
-            completedTrainerIds.push(trainerId)
-            user.completedBattleTrainers = completedTrainerIds
-            shouldSave = true
+        const alreadyCompleted = completedTrainerIds.includes(trainerId)
+        if (!alreadyCompleted) {
+            return res.status(403).json({
+                ok: false,
+                message: 'Tiến trình trainer chỉ được cập nhật khi nhận kết quả battle.',
+            })
         }
 
         const completionAt = completionMapRaw?.[trainerId]
