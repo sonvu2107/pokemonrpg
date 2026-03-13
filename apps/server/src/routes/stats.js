@@ -276,6 +276,15 @@ const serializePartyPokemon = (entry, moveLookupMap = new Map()) => {
     if (!entry?._id || !entry?.pokemonId) return null
     const species = entry.pokemonId
     const combatPower = calcPartyCombatPower(entry, species)
+    const resolvedStats = calcStatsForLevel(
+        resolveEffectivePokemonBaseStats({
+            pokemonLike: species,
+            formId: entry?.formId,
+        }),
+        Math.max(1, Number(entry?.level || 1)),
+        species?.rarity
+    )
+    const maxHp = Math.max(1, Number(resolvedStats?.maxHp || resolvedStats?.hp || 1))
     const moves = mergeKnownMovesWithFallback(entry?.moves)
     const movePpState = buildMovePpStateFromMoves({
         moveNames: moves,
@@ -320,6 +329,9 @@ const serializePartyPokemon = (entry, moveLookupMap = new Map()) => {
         isShiny: Boolean(entry?.isShiny),
         combatPower,
         power: combatPower,
+        currentHp: maxHp,
+        maxHp,
+        stats: resolvedStats,
         moves,
         moveDetails,
         movePpState,

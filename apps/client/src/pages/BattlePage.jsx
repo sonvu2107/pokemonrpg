@@ -3476,9 +3476,7 @@ export function BattlePage() {
 
             const preparedParty = (Array.isArray(party) ? party : []).map((slot, index) => {
                 if (!slot) return slot
-                const maxHp = index === attackerCandidate.index && Number(playerState?.maxHp) > 0
-                    ? Math.max(1, Number(playerState.maxHp))
-                    : resolvePartySlotMaxHp(slot)
+                const maxHp = resolvePartySlotMaxHp(slot)
                 const refilledMoveData = buildRefilledBattleMoves(slot)
                 if (index !== attackerCandidate.index) {
                     return {
@@ -3506,9 +3504,7 @@ export function BattlePage() {
                     damageGuards: {},
                     wasDamagedLastTurn: false,
                     volatileState: {},
-                    battleCurrentHp: Number(playerState?.hp) >= 0
-                        ? clampValue(Number(playerState.hp) || maxHp, 0, maxHp)
-                        : maxHp,
+                    battleCurrentHp: maxHp,
                     battleMaxHp: maxHp,
                 }
             })
@@ -3567,8 +3563,10 @@ export function BattlePage() {
                     level,
                 })
                 const poke = resolvedEntry.poke || entry?.pokemonId || {}
-                const baseStats = resolvedEntry.baseStats || resolveBattleStats(poke?.baseStats || {}, {})
-                const hp = Math.max(1, (baseStats.hp || 1) + (level - 1))
+                const computedStats = entry?.stats && typeof entry.stats === 'object'
+                    ? entry.stats
+                    : (resolvedEntry.baseStats || resolveBattleStats(poke?.baseStats || {}, {}))
+                const hp = Math.max(1, Number(entry?.maxHp || entry?.currentHp || computedStats?.maxHp || computedStats?.hp || 1))
 
                 return {
                     id: entry?._id || `${normalizedTargetUserId}-${index}`,
@@ -3581,7 +3579,7 @@ export function BattlePage() {
                     }),
                     formId: resolvedEntry.formId || String(entry?.formId || 'normal').trim() || 'normal',
                     formName: resolvedEntry.formName || String(entry?.formId || 'normal').trim() || 'normal',
-                    baseStats,
+                    baseStats: computedStats,
                     pokemon: poke,
                     types: resolvePokemonTypes(poke?.types),
                     currentHp: hp,
