@@ -26,6 +26,7 @@ const parseIntArg = (flag, fallback) => {
 
 const shouldApply = argsSet.has('--apply')
 const isDryRun = !shouldApply
+const syncDailyOnly = argsSet.has('--sync-daily-only')
 const includeAdmins = argsSet.has('--include-admins')
 const threshold = Math.max(0, parseIntArg('--threshold', 2000))
 const maxThresholdRaw = parseIntArg('--max-threshold', -1)
@@ -117,6 +118,7 @@ const run = async () => {
 
         console.log('=== Revoke Battle Trainer Moon Points ===')
         console.log(`Dry run: ${isDryRun ? 'yes' : 'no'}`)
+        console.log(`Sync daily only: ${syncDailyOnly ? 'yes' : 'no'}`)
         console.log(`Threshold milestone level: ${threshold}`)
         console.log(`Max milestone level: ${maxThreshold !== null ? maxThreshold : 'none'}`)
         console.log(`Estimation mode: ${estimationMode}`)
@@ -195,7 +197,9 @@ const run = async () => {
             const plannedDeduct = rewardClaims.reduce((sum, entry) => sum + entry.estimatedMoonPointsReward, 0)
             const playerState = await PlayerState.findOne({ userId: user._id }).select('_id moonPoints')
             const currentMoonPoints = Math.max(0, Number(playerState?.moonPoints) || 0)
-            const deductedNow = Math.min(currentMoonPoints, plannedDeduct)
+            const deductedNow = syncDailyOnly
+                ? 0
+                : Math.min(currentMoonPoints, plannedDeduct)
 
             const plannedByDate = new Map()
             rewardClaims.forEach((entry) => {
@@ -276,7 +280,7 @@ const run = async () => {
                 levelEntry.totalPlannedMoonPoints += entry.estimatedMoonPointsReward
             })
 
-            if (shouldApply && deductedNow > 0 && playerState?._id) {
+            if (!syncDailyOnly && shouldApply && deductedNow > 0 && playerState?._id) {
                 playerState.moonPoints = currentMoonPoints - deductedNow
                 await playerState.save()
             }
@@ -329,6 +333,7 @@ const run = async () => {
                 threshold,
                 maxThreshold,
                 includeAdmins,
+                syncDailyOnly,
                 estimationMode,
                 matchedUsers,
                 usersWithDeduction,
