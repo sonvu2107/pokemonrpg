@@ -2,15 +2,60 @@ import UserPokemon from '../models/UserPokemon.js'
 import UserPokedexEntry from '../models/UserPokedexEntry.js'
 import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
+const OBJECT_ID_HEX_REGEX = /^[a-f\d]{24}$/i
+
+const normalizeObjectIdValue = (value) => {
+    if (typeof value === 'string') {
+        const raw = value.trim()
+        if (!raw) return ''
+        if (OBJECT_ID_HEX_REGEX.test(raw)) return raw
+
+        const objectIdMatch = raw.match(/ObjectId\(["']?([a-f\d]{24})["']?\)/i)
+        return objectIdMatch?.[1] || ''
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return normalizeObjectIdValue(String(value))
+    }
+
+    if (value && typeof value === 'object') {
+        if (typeof value.$oid === 'string') {
+            const normalizedOid = normalizeObjectIdValue(value.$oid)
+            if (normalizedOid) return normalizedOid
+        }
+
+        if (value._id != null) {
+            const normalizedNestedId = normalizeObjectIdValue(value._id)
+            if (normalizedNestedId) return normalizedNestedId
+        }
+
+        if (value.id != null) {
+            const normalizedId = normalizeObjectIdValue(value.id)
+            if (normalizedId) return normalizedId
+        }
+
+        if (typeof value.toHexString === 'function') {
+            try {
+                const normalizedHex = normalizeObjectIdValue(value.toHexString())
+                if (normalizedHex) return normalizedHex
+            } catch {
+                return ''
+            }
+        }
+    }
+
+    return ''
+}
+
 const buildEntryKey = (pokemonId, formId) => {
-    const normalizedPokemonId = String(pokemonId || '').trim()
+    const normalizedPokemonId = normalizeObjectIdValue(pokemonId)
     if (!normalizedPokemonId) return ''
     return `${normalizedPokemonId}:${normalizeFormId(formId || 'normal')}`
 }
 
 export const ensureUserPokedexEntry = async ({ userId, pokemonId, formId = 'normal', obtainedAt = null } = {}) => {
-    const normalizedUserId = String(userId || '').trim()
-    const normalizedPokemonId = String(pokemonId || '').trim()
+    const normalizedUserId = normalizeObjectIdValue(userId)
+    const normalizedPokemonId = normalizeObjectIdValue(pokemonId)
     if (!normalizedUserId || !normalizedPokemonId) return false
 
     const resolvedObtainedAt = obtainedAt instanceof Date ? obtainedAt : new Date(obtainedAt || Date.now())
@@ -37,7 +82,7 @@ export const ensureUserPokedexEntry = async ({ userId, pokemonId, formId = 'norm
 }
 
 export const syncUserPokedexEntriesFromUserPokemon = async (userId) => {
-    const normalizedUserId = String(userId || '').trim()
+    const normalizedUserId = normalizeObjectIdValue(userId)
     if (!normalizedUserId) return new Set()
 
     const userPokemonRows = await UserPokemon.find({ userId: normalizedUserId })
@@ -54,7 +99,7 @@ export const syncUserPokedexEntriesFromUserPokemon = async (userId) => {
         if (!existing) {
             entryMap.set(key, {
                 userId: normalizedUserId,
-                pokemonId: String(row.pokemonId).trim(),
+                pokemonId: normalizeObjectIdValue(row?.pokemonId),
                 formId: normalizeFormId(row?.formId || 'normal'),
                 firstObtainedAt: obtainedAt,
                 lastObtainedAt: obtainedAt,
@@ -93,7 +138,7 @@ export const syncUserPokedexEntriesFromUserPokemon = async (userId) => {
 }
 
 export const getUserPokedexFormSet = async (userId, options = {}) => {
-    const normalizedUserId = String(userId || '').trim()
+    const normalizedUserId = normalizeObjectIdValue(userId)
     if (!normalizedUserId) return new Set()
 
     if (options?.syncCurrentOwned) {
@@ -109,7 +154,7 @@ export const getUserPokedexFormSet = async (userId, options = {}) => {
 
 export const hasUserPokedexEntry = async (userId, pokemonId, formId = 'normal') => {
     const entryKey = buildEntryKey(pokemonId, formId)
-    const normalizedUserId = String(userId || '').trim()
+    const normalizedUserId = normalizeObjectIdValue(userId)
     if (!normalizedUserId || !entryKey) return false
 
     const [resolvedPokemonId, resolvedFormId] = entryKey.split(':')
