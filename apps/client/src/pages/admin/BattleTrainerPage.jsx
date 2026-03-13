@@ -1538,7 +1538,7 @@ export default function BattleTrainerPage() {
                         </div>
                     </div>
                     <p className="mt-2 text-[11px] text-emerald-800">
-                        Nếu để trống hệ số thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Ví dụ nhập 15 nghĩa là Lv x 15. Trainer auto không có thưởng Điểm Nguyệt Các. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó. Pokémon thưởng chỉ áp dụng khi có pool Pokémon và "cách nhau bao nhiêu trainer" lớn hơn 0.
+                        Nếu để trống hệ số thưởng thì hệ thống dùng mặc định: Lv x 10 cho Xu và EXP. Ví dụ nhập 15 nghĩa là Lv x 15. Nếu có ảnh ở trên, trainer auto sẽ dùng ảnh đó. Pokémon thưởng chỉ áp dụng khi có pool Pokémon và "cách nhau bao nhiêu trainer" lớn hơn 0.
                     </p>
                 </div>
                 <div className="mb-4 border border-blue-200 rounded bg-blue-50/50 p-3">
