@@ -3,7 +3,9 @@ import { useAuth } from './AuthContext'
 
 const PlayTabContext = createContext(null)
 
+const TAB_ID_STORAGE_KEY = 'vnpet:tab-id'
 const LOCK_PREFIX = 'vnpet:play-tab:'
+const GAMEPLAY_LOCK_PREFIX = 'vnpet:gameplay-tab:'
 const HEARTBEAT_MS = 2000
 const STALE_LOCK_MS = 6500
 const MAX_ALLOWED_TABS = 2
@@ -13,6 +15,19 @@ const createTabId = () => {
         return crypto.randomUUID()
     }
     return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const getCurrentTabId = () => {
+    if (typeof window === 'undefined') return ''
+
+    const storedValue = String(window.sessionStorage.getItem(TAB_ID_STORAGE_KEY) || '').trim()
+    if (storedValue) {
+        return storedValue
+    }
+
+    const nextTabId = createTabId()
+    window.sessionStorage.setItem(TAB_ID_STORAGE_KEY, nextTabId)
+    return nextTabId
 }
 
 const toUserKey = (userLike = null) => {
@@ -68,12 +83,40 @@ const sanitizeTabs = (lockState) => {
         .filter((entry) => !isTabStale(entry))
 }
 
+const readGameplayLockState = (lockKey) => {
+    if (!lockKey) return null
+
+    try {
+        const raw = window.localStorage.getItem(lockKey)
+        if (!raw) return null
+
+        const parsed = JSON.parse(raw)
+        return {
+            tabId: String(parsed?.tabId || '').trim(),
+            lastSeen: Number(parsed?.lastSeen || 0),
+        }
+    } catch {
+        return null
+    }
+}
+
+const writeGameplayLockState = (lockKey, tabId) => {
+    window.localStorage.setItem(lockKey, JSON.stringify({
+        tabId,
+        lastSeen: Date.now(),
+    }))
+}
+
+const isGameplayLockStale = (lockState) => isTabStale(lockState)
+
 export const PlayTabProvider = ({ children }) => {
     const { user, token } = useAuth()
-    const tabIdRef = useRef(createTabId())
+    const tabIdRef = useRef(getCurrentTabId())
     const lockKeyRef = useRef('')
+    const gameplayLockKeyRef = useRef('')
     const sessionTakenOverRef = useRef(false)
     const [isPrimaryPlayTab, setIsPrimaryPlayTab] = useState(true)
+    const [isGameplayTab, setIsGameplayTab] = useState(true)
     const [isSessionTakenOver, setIsSessionTakenOver] = useState(false)
 
     const userKey = toUserKey(user)
@@ -93,6 +136,15 @@ export const PlayTabProvider = ({ children }) => {
 
     const writeTabs = (lockKey, tabs) => {
         window.localStorage.setItem(lockKey, JSON.stringify({ tabs }))
+    }
+
+    const releaseGameplayLock = (lockKey = gameplayLockKeyRef.current) => {
+        if (!lockKey) return
+
+        const currentLock = readGameplayLockState(lockKey)
+        if (currentLock?.tabId === tabIdRef.current) {
+            window.localStorage.removeItem(lockKey)
+        }
     }
 
     const syncLock = (lockKey) => {
@@ -128,38 +180,89 @@ export const PlayTabProvider = ({ children }) => {
         return false
     }
 
+    const syncGameplayLock = (lockKey) => {
+        if (!lockKey || sessionTakenOverRef.current) {
+            setIsGameplayTab(false)
+            return false
+        }
+
+        const currentLock = readGameplayLockState(lockKey)
+        if (currentLock?.tabId === tabIdRef.current) {
+            writeGameplayLockState(lockKey, tabIdRef.current)
+            setIsGameplayTab(true)
+            return true
+        }
+
+        if (!currentLock || isGameplayLockStale(currentLock)) {
+            writeGameplayLockState(lockKey, tabIdRef.current)
+            const confirmedLock = readGameplayLockState(lockKey)
+            const won = confirmedLock?.tabId === tabIdRef.current
+            setIsGameplayTab(won)
+            return won
+        }
+
+        setIsGameplayTab(false)
+        return false
+    }
+
     useEffect(() => {
         sessionTakenOverRef.current = false
         setIsSessionTakenOver(false)
 
         if (!token || !userKey) {
             releaseLock()
+            releaseGameplayLock()
             lockKeyRef.current = ''
+            gameplayLockKeyRef.current = ''
             setIsPrimaryPlayTab(true)
+            setIsGameplayTab(true)
             return undefined
         }
 
         const lockKey = `${LOCK_PREFIX}${userKey}`
+        const gameplayLockKey = `${GAMEPLAY_LOCK_PREFIX}${userKey}`
         lockKeyRef.current = lockKey
-        syncLock(lockKey)
+        gameplayLockKeyRef.current = gameplayLockKey
+        const canUseTab = syncLock(lockKey)
+        if (canUseTab) {
+            syncGameplayLock(gameplayLockKey)
+        } else {
+            setIsGameplayTab(false)
+        }
 
         const intervalId = window.setInterval(() => {
-            syncLock(lockKey)
+            const stillAllowed = syncLock(lockKey)
+            if (stillAllowed) {
+                syncGameplayLock(gameplayLockKey)
+            } else {
+                setIsGameplayTab(false)
+            }
         }, HEARTBEAT_MS)
 
         const handleStorage = (event) => {
-            if (event.key === lockKey) {
-                syncLock(lockKey)
+            if (event.key === lockKey || event.key === gameplayLockKey) {
+                const stillAllowed = syncLock(lockKey)
+                if (stillAllowed) {
+                    syncGameplayLock(gameplayLockKey)
+                } else {
+                    setIsGameplayTab(false)
+                }
             }
         }
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                syncLock(lockKey)
+                const stillAllowed = syncLock(lockKey)
+                if (stillAllowed) {
+                    syncGameplayLock(gameplayLockKey)
+                } else {
+                    setIsGameplayTab(false)
+                }
             }
         }
 
         const handlePageHide = () => {
+            releaseGameplayLock(gameplayLockKey)
             releaseLock(lockKey)
         }
 
@@ -174,6 +277,7 @@ export const PlayTabProvider = ({ children }) => {
             window.removeEventListener('pagehide', handlePageHide)
             window.removeEventListener('beforeunload', handlePageHide)
             document.removeEventListener('visibilitychange', handleVisibilityChange)
+            releaseGameplayLock(gameplayLockKey)
             releaseLock(lockKey)
         }
     }, [token, userKey])
@@ -182,6 +286,8 @@ export const PlayTabProvider = ({ children }) => {
         sessionTakenOverRef.current = true
         setIsSessionTakenOver(true)
         setIsPrimaryPlayTab(false)
+        setIsGameplayTab(false)
+        releaseGameplayLock()
         releaseLock()
     }
 
@@ -195,14 +301,18 @@ export const PlayTabProvider = ({ children }) => {
 
     const value = useMemo(() => ({
         isPrimaryPlayTab,
+        isGameplayTab,
         isSessionTakenOver,
         isPlayTabBlocked: Boolean(token && userKey) && (!isPrimaryPlayTab || isSessionTakenOver),
+        isGameplayTabBlocked: Boolean(token && userKey) && isPrimaryPlayTab && !isGameplayTab,
         blockReason: isSessionTakenOver ? 'session-replaced' : (!isPrimaryPlayTab ? 'tab-limit-exceeded' : null),
         maxAllowedTabs: MAX_ALLOWED_TABS,
         markSessionTakenOver,
         clearSessionTakenOver,
         releasePlayTabLock: releaseLock,
-    }), [isPrimaryPlayTab, isSessionTakenOver, token, userKey])
+        releaseGameplayLock,
+        currentTabId: tabIdRef.current,
+    }), [isPrimaryPlayTab, isGameplayTab, isSessionTakenOver, token, userKey])
 
     return (
         <PlayTabContext.Provider value={value}>

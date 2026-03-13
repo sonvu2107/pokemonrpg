@@ -1,5 +1,6 @@
 import express from 'express'
 import { authMiddleware } from '../../middleware/auth.js'
+import { requireActiveGameplayTab } from '../../middleware/gameplayTabGuard.js'
 import PlayerState from '../../models/PlayerState.js'
 import User from '../../models/User.js'
 import UserPokemon from '../../models/UserPokemon.js'
@@ -64,7 +65,7 @@ const resolveDefeatedTrainerPlayerEntry = (session = null) => {
         || null
 }
 
-router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => {
+router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'doi Pokemon battle trainer' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null, activePokemonId = null, playerCurrentHp = null, playerMaxHp = null } = req.body || {}
@@ -250,7 +251,7 @@ router.post('/battle/trainer/switch', authMiddleware, async (req, res, next) => 
     }
 })
 
-router.post('/battle/resolve', authMiddleware, async (req, res, next) => {
+router.post('/battle/resolve', authMiddleware, requireActiveGameplayTab({ actionLabel: 'nhan ket qua battle' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null } = req.body

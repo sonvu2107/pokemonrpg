@@ -1,5 +1,6 @@
 import express from 'express'
 import { authMiddleware } from '../../middleware/auth.js'
+import { requireActiveGameplayTab } from '../../middleware/gameplayTabGuard.js'
 import User from '../../models/User.js'
 import MapModel from '../../models/Map.js'
 import {
@@ -77,7 +78,7 @@ router.get('/auto-search/status', authMiddleware, async (req, res, next) => {
     }
 })
 
-router.post('/auto-search/settings', authMiddleware, async (req, res, next) => {
+router.post('/auto-search/settings', authMiddleware, requireActiveGameplayTab({ actionLabel: 'cap nhat auto tim kiem' }), async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
             .select('role vipTierId vipTierLevel vipBenefits autoSearch isBanned')

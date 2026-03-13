@@ -1,5 +1,6 @@
 import express from 'express'
 import { authMiddleware } from '../../middleware/auth.js'
+import { requireActiveGameplayTab } from '../../middleware/gameplayTabGuard.js'
 import User from '../../models/User.js'
 import BattleTrainer from '../../models/BattleTrainer.js'
 import {
@@ -74,7 +75,7 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
     }
 })
 
-router.post('/auto-trainer/settings', authMiddleware, async (req, res, next) => {
+router.post('/auto-trainer/settings', authMiddleware, requireActiveGameplayTab({ actionLabel: 'cap nhat auto trainer' }), async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
             .select('role vipTierId vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')

@@ -1,6 +1,7 @@
 import express from 'express'
 import { authMiddleware } from '../../middleware/auth.js'
 import { createActionGuard } from '../../middleware/actionGuard.js'
+import { requireActiveGameplayTab } from '../../middleware/gameplayTabGuard.js'
 import { emitPlayerState, getIO } from '../../socket/index.js'
 import Encounter from '../../models/Encounter.js'
 import User from '../../models/User.js'
@@ -54,7 +55,7 @@ const encounterAttackActionGuard = createActionGuard({
     message: 'Tấn công quá nhanh. Vui lòng đợi một chút.',
 })
 
-router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard, async (req, res, next) => {
+router.post('/encounter/:id/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tan cong Pokemon hoang da' }), encounterAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
@@ -341,7 +342,7 @@ router.post('/encounter/:id/attack', authMiddleware, encounterAttackActionGuard,
     }
 })
 
-router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
+router.post('/encounter/:id/catch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bat Pokemon' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
@@ -535,7 +536,7 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
     }
 })
 
-router.post('/encounter/:id/run', authMiddleware, async (req, res, next) => {
+router.post('/encounter/:id/run', authMiddleware, requireActiveGameplayTab({ actionLabel: 'rut lui khoi tran' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })

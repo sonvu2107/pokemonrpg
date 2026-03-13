@@ -45,7 +45,7 @@ const searchActionGuard = createActionGuard({
     message: 'Tìm kiếm quá nhanh. Vui lòng đợi một chút.',
 })
 
-router.post('/search', authMiddleware, searchActionGuard, async (req, res, next) => {
+router.post('/search', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tim kiem ban do' }), searchActionGuard, async (req, res, next) => {
     try {
         const { mapSlug } = req.body
         const userId = req.user.userId

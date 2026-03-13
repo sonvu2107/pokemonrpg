@@ -1,6 +1,7 @@
 import express from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
+import { requireActiveGameplayTab } from '../middleware/gameplayTabGuard.js'
 import PlayerState from '../models/PlayerState.js'
 import { emitPlayerState } from '../socket/index.js'
 import Encounter from '../models/Encounter.js'
@@ -313,7 +314,7 @@ router.post('/click', authMiddleware, (req, res) => {
 router.use(encounterRoutes)
 
 // POST /api/game/battle/attack (protected)
-router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (req, res, next) => {
+router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tan cong battle' }), battleAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const {
@@ -2475,7 +2476,7 @@ router.post('/battle/attack', authMiddleware, battleAttackActionGuard, async (re
     }
 })
 
-router.post('/battle/trainer/start', authMiddleware, async (req, res, next) => {
+router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bat dau battle trainer' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null, activePokemonId = null } = req.body || {}
