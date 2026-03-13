@@ -491,13 +491,14 @@ router.get('/', async (req, res) => {
 router.get('/usage-summary', async (_req, res) => {
     try {
         const usageRows = await BattleTrainer.find({})
-            .select('_id name milestoneLevel prizePokemonId team.pokemonId')
+            .select('_id name milestoneLevel prizePokemonId prizePokemonFormId team.pokemonId')
             .lean()
 
         const usages = (Array.isArray(usageRows) ? usageRows : [])
             .map((trainer) => {
                 const trainerId = String(trainer?._id || '').trim()
                 const prizePokemonId = String(trainer?.prizePokemonId || '').trim()
+                const prizePokemonFormId = String(trainer?.prizePokemonFormId || '').trim().toLowerCase() || 'normal'
                 const teamEntries = Array.isArray(trainer?.team) ? trainer.team : []
                 const teamPokemonIds = [...new Set(
                     teamEntries
@@ -510,6 +511,7 @@ router.get('/usage-summary', async (_req, res) => {
                     trainerName: String(trainer?.name || '').trim(),
                     milestoneLevel: Math.max(0, Number(trainer?.milestoneLevel || 0) || 0),
                     prizePokemonId,
+                    prizePokemonFormId,
                     teamPokemonIds,
                 }
             })

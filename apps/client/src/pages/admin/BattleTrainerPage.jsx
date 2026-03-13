@@ -46,6 +46,12 @@ const buildAutoPrizeSelectionKey = (pokemonId, formId = 'normal') => {
     return `${normalizedPokemonId}:${normalizeAutoPrizeFormId(formId)}`
 }
 
+const buildPrizePokemonSelectionKey = (pokemonId, formId = 'normal') => {
+    const normalizedPokemonId = String(pokemonId || '').trim()
+    if (!normalizedPokemonId) return ''
+    return `${normalizedPokemonId}:${normalizeAutoPrizeFormId(formId)}`
+}
+
 const normalizeAutoPrizeLevel = (value) => {
     const parsed = Number.parseInt(value, 10)
     if (!Number.isFinite(parsed) || parsed <= 0) return 0
@@ -117,6 +123,7 @@ const normalizeTrainerUsageRows = (rowsLike = []) => {
                 trainerName: String(trainer?.trainerName || trainer?.name || '').trim(),
                 milestoneLevel: Math.max(0, Number(trainer?.milestoneLevel || 0) || 0),
                 prizePokemonId,
+                prizePokemonFormId: normalizeAutoPrizeFormId(trainer?.prizePokemonFormId || 'normal'),
                 teamPokemonIds,
             }
         })
@@ -907,34 +914,34 @@ export default function BattleTrainerPage() {
         || null
     const normalizedEditingId = String(editingId || '').trim()
 
-    const selectedPrizePokemonIdsInCurrentForm = useMemo(() => {
-        const selectedIds = new Set()
-        const prizePokemonId = String(form.prizePokemonId || '').trim()
-        if (!prizePokemonId) return selectedIds
-        selectedIds.add(prizePokemonId)
-        return selectedIds
-    }, [form.prizePokemonId])
+    const selectedPrizePokemonSelectionsInCurrentForm = useMemo(() => {
+        const selectedKeys = new Set()
+        const selectionKey = buildPrizePokemonSelectionKey(form.prizePokemonId, form.prizePokemonFormId)
+        if (!selectionKey) return selectedKeys
+        selectedKeys.add(selectionKey)
+        return selectedKeys
+    }, [form.prizePokemonId, form.prizePokemonFormId])
 
-    const selectedPrizePokemonIdsInOtherTrainers = useMemo(() => {
-        const selectedIds = new Set()
+    const selectedPrizePokemonSelectionsInOtherTrainers = useMemo(() => {
+        const selectedKeys = new Set()
         ;(Array.isArray(trainerUsageRows) ? trainerUsageRows : []).forEach((entry) => {
             const trainerId = String(entry?.trainerId || '').trim()
             if (normalizedEditingId && trainerId === normalizedEditingId) return
-            const prizePokemonId = String(entry?.prizePokemonId || '').trim()
-            if (!prizePokemonId) return
-            selectedIds.add(prizePokemonId)
+            const selectionKey = buildPrizePokemonSelectionKey(entry?.prizePokemonId, entry?.prizePokemonFormId)
+            if (!selectionKey) return
+            selectedKeys.add(selectionKey)
         })
-        return selectedIds
+        return selectedKeys
     }, [trainerUsageRows, normalizedEditingId])
 
-    const selectedPrizeUsageInOtherTrainersByPokemonId = useMemo(() => {
-        const usageByPokemonId = {}
+    const selectedPrizeUsageInOtherTrainersBySelectionKey = useMemo(() => {
+        const usageBySelectionKey = {}
         ;(Array.isArray(trainerUsageRows) ? trainerUsageRows : []).forEach((entry) => {
             const trainerId = String(entry?.trainerId || '').trim()
             if (normalizedEditingId && trainerId === normalizedEditingId) return
 
-            const prizePokemonId = String(entry?.prizePokemonId || '').trim()
-            if (!prizePokemonId) return
+            const selectionKey = buildPrizePokemonSelectionKey(entry?.prizePokemonId, entry?.prizePokemonFormId)
+            if (!selectionKey) return
 
             const nextUsage = {
                 trainerId,
@@ -942,20 +949,20 @@ export default function BattleTrainerPage() {
                 milestoneLevel: Math.max(0, Number(entry?.milestoneLevel || 0) || 0),
             }
 
-            if (!Array.isArray(usageByPokemonId[prizePokemonId])) {
-                usageByPokemonId[prizePokemonId] = []
+            if (!Array.isArray(usageBySelectionKey[selectionKey])) {
+                usageBySelectionKey[selectionKey] = []
             }
-            usageByPokemonId[prizePokemonId].push(nextUsage)
+            usageBySelectionKey[selectionKey].push(nextUsage)
         })
 
-        Object.keys(usageByPokemonId).forEach((pokemonId) => {
+        Object.keys(usageBySelectionKey).forEach((selectionKey) => {
             const uniqueByTrainerId = new Map()
-            usageByPokemonId[pokemonId].forEach((entry) => {
+            usageBySelectionKey[selectionKey].forEach((entry) => {
                 const trainerId = String(entry?.trainerId || '').trim()
                 if (!trainerId || uniqueByTrainerId.has(trainerId)) return
                 uniqueByTrainerId.set(trainerId, entry)
             })
-            usageByPokemonId[pokemonId] = [...uniqueByTrainerId.values()]
+            usageBySelectionKey[selectionKey] = [...uniqueByTrainerId.values()]
                 .sort((a, b) => {
                     const milestoneA = Math.max(0, Number(a?.milestoneLevel || 0) || 0)
                     const milestoneB = Math.max(0, Number(b?.milestoneLevel || 0) || 0)
@@ -963,7 +970,7 @@ export default function BattleTrainerPage() {
                 })
         })
 
-        return usageByPokemonId
+        return usageBySelectionKey
     }, [trainerUsageRows, normalizedEditingId])
 
     const selectedPokemonIdsInCurrentForm = useMemo(() => {
@@ -2455,12 +2462,13 @@ export default function BattleTrainerPage() {
                                 ) : (
                                     prizePokemonFormRows.map((row) => {
                                         const { pokemon: entry, form: rowForm } = row
+                                        const selectionKey = buildPrizePokemonSelectionKey(entry._id, rowForm.formId)
                                         const isSelected = form.prizePokemonId === entry._id
                                             && normalizedPrizePokemonFormId === rowForm.formId
-                                        const isUsedInCurrentTrainer = selectedPrizePokemonIdsInCurrentForm.has(entry._id)
-                                        const isUsedInOtherTrainer = selectedPrizePokemonIdsInOtherTrainers.has(entry._id)
-                                        const usedByOtherTrainerRows = Array.isArray(selectedPrizeUsageInOtherTrainersByPokemonId[entry._id])
-                                            ? selectedPrizeUsageInOtherTrainersByPokemonId[entry._id]
+                                        const isUsedInCurrentTrainer = selectedPrizePokemonSelectionsInCurrentForm.has(selectionKey)
+                                        const isUsedInOtherTrainer = selectedPrizePokemonSelectionsInOtherTrainers.has(selectionKey)
+                                        const usedByOtherTrainerRows = Array.isArray(selectedPrizeUsageInOtherTrainersBySelectionKey[selectionKey])
+                                            ? selectedPrizeUsageInOtherTrainersBySelectionKey[selectionKey]
                                             : []
                                         const usedMilestoneList = [...new Set(
                                             usedByOtherTrainerRows
