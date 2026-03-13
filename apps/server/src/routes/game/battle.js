@@ -89,12 +89,6 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
             expiresAt: { $gt: new Date() },
         })
         if (!trainerSession) {
-            trainerSession = await BattleSession.findOne({
-                userId,
-                expiresAt: { $gt: new Date() },
-            }).sort({ updatedAt: -1, createdAt: -1 })
-        }
-        if (!trainerSession) {
             trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainerDoc)
         }
 

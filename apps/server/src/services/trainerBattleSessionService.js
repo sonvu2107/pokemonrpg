@@ -87,7 +87,14 @@ export const buildTrainerBattleSessionPayload = ({ userId, trainerId, trainer, a
 export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer, activePokemonId = null, existingSession = null) => {
     const now = new Date()
     const expiresAt = getTrainerBattleSessionExpiryDate()
-    let session = existingSession || await BattleSession.findOne({ userId, trainerId })
+    const normalizedTrainerId = String(trainerId || '').trim()
+    const existingSessionTrainerId = String(existingSession?.trainerId || '').trim()
+    const canReuseExistingSession = Boolean(existingSession && existingSessionTrainerId && normalizedTrainerId && existingSessionTrainerId === normalizedTrainerId)
+    let session = canReuseExistingSession ? existingSession : null
+
+    if (!session) {
+        session = await BattleSession.findOne({ userId, trainerId })
+    }
 
     if (!session) {
         return BattleSession.create({

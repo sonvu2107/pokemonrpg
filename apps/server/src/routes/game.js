@@ -2544,12 +2544,6 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
             trainerId: normalizedTrainerId,
             expiresAt: { $gt: new Date() },
         })
-        if (!trainerSession) {
-            trainerSession = await BattleSession.findOne({
-                userId,
-                expiresAt: { $gt: new Date() },
-            }).sort({ updatedAt: -1, createdAt: -1 })
-        }
         trainerSession = await getOrCreateTrainerBattleSession(userId, normalizedTrainerId, trainer, null, trainerSession)
 
         trainerSession.team = buildTrainerBattleTeam(trainer)
