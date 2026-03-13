@@ -11,7 +11,7 @@ import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
-import { syncUserPokemonMovesAndPp, normalizeMoveName } from '../utils/movePpUtils.js'
+import { syncUserPokemonMovesAndPp, normalizeMoveName, buildMoveLookupByName } from '../utils/movePpUtils.js'
 import { calcMaxHp, expToNext } from '../utils/gameUtils.js'
 import { getCachedActiveBadgeBonuses } from '../utils/badgeUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
@@ -198,6 +198,43 @@ const getOffTypeSkillAllowance = (userPokemonLike = null) => {
     const explicitAllowance = Math.max(0, Number.parseInt(userPokemonLike?.offTypeSkillAllowance, 10) || 0)
     if (explicitAllowance > 0) return explicitAllowance
     return userPokemonLike?.allowOffTypeSkills ? 1 : 0
+}
+
+const isMoveOffTypeForPokemon = (move, pokemonSpecies) => {
+    const learnScope = String(move?.learnScope || 'all').trim().toLowerCase() || 'all'
+    const speciesTypes = new Set((Array.isArray(pokemonSpecies?.types) ? pokemonSpecies.types : [])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean))
+
+    if (learnScope === 'move_type') {
+        const moveType = String(move?.type || '').trim().toLowerCase()
+        return !moveType || !speciesTypes.has(moveType)
+    }
+
+    if (learnScope === 'type') {
+        const allowedTypeSet = new Set((Array.isArray(move?.allowedTypes) ? move.allowedTypes : [])
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter(Boolean))
+        return ![...speciesTypes].some((entry) => allowedTypeSet.has(entry))
+    }
+
+    return false
+}
+
+const countOffTypeMovesForPokemon = ({ moveNames = [], moveLookupMap = new Map(), pokemonSpecies = null } = {}) => (Array.isArray(moveNames) ? moveNames : [])
+    .reduce((count, moveNameRaw) => {
+        const moveName = String(moveNameRaw || '').trim()
+        if (!moveName) return count
+        const moveDoc = moveLookupMap.get(normalizeMoveName(moveName))
+        if (!moveDoc) return count
+        return count + (isMoveOffTypeForPokemon(moveDoc, pokemonSpecies) ? 1 : 0)
+    }, 0)
+
+const getEffectiveOffTypeSkillAllowance = ({ userPokemonLike = null, pokemonSpecies = null, moveNames = [], moveLookupMap = new Map() } = {}) => {
+    const storedAllowance = getOffTypeSkillAllowance(userPokemonLike)
+    if (!pokemonSpecies) return storedAllowance
+    const equippedOffTypeMoveCount = countOffTypeMovesForPokemon({ moveNames, moveLookupMap, pokemonSpecies })
+    return Math.max(storedAllowance, equippedOffTypeMoveCount)
 }
 
 const applyExperienceGainToUserPokemon = (userPokemon, expAmount = 0) => {
@@ -804,7 +841,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 _id: normalizedActivePokemonId,
                 userId,
             }))
-                .populate('pokemonId', 'name')
+                .populate('pokemonId', 'name types')
 
             if (!targetPokemon) {
                 return res.status(404).json({ ok: false, message: 'Không tìm thấy Pokemon mục tiêu' })
@@ -824,7 +861,14 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Không đủ vật phẩm' })
             }
 
-            const nextOffTypeSkillAllowance = getOffTypeSkillAllowance(targetPokemon) + 1
+            const targetMoveNames = Array.isArray(targetPokemon?.moves) ? targetPokemon.moves : []
+            const targetMoveLookupMap = await buildMoveLookupByName(targetMoveNames)
+            const nextOffTypeSkillAllowance = getEffectiveOffTypeSkillAllowance({
+                userPokemonLike: targetPokemon,
+                pokemonSpecies: targetPokemon?.pokemonId,
+                moveNames: targetMoveNames,
+                moveLookupMap: targetMoveLookupMap,
+            }) + 1
             targetPokemon.offTypeSkillAllowance = nextOffTypeSkillAllowance
             targetPokemon.allowOffTypeSkills = nextOffTypeSkillAllowance > 0
 
@@ -850,7 +894,7 @@ router.post('/use', useItemActionGuard, async (req, res) => {
 
             return res.json({
                 ok: true,
-                message: `${targetPokemonName} nhận 1 lượt học skill khác hệ.`,
+                message: `${targetPokemonName} mở thêm 1 ô skill khác hệ.`,
                 itemId: normalizedItemId,
                 quantity: qty,
                 effect: {

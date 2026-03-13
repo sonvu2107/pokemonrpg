@@ -572,6 +572,8 @@ export default function PokemonInfoPage() {
                     moves: nextMoves,
                     movePpState: nextMovePpState,
                     moveDetails: nextMoveDetails,
+                    offTypeSkillAllowance: Math.max(0, Number(data?.pokemon?.offTypeSkillAllowance ?? prev.offTypeSkillAllowance ?? 0)),
+                    allowOffTypeSkills: Boolean(data?.pokemon?.allowOffTypeSkills ?? prev.allowOffTypeSkills),
                 }
             })
             window.alert(data?.message || `Đã gỡ kỹ năng ${safeMoveName}.`)
@@ -872,7 +874,7 @@ export default function PokemonInfoPage() {
                         </div>
                         {hasOffTypeSkillAccess && (
                             <div className="mt-2 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800">
-                                Còn {offTypeSkillAllowance} lượt học skill khác hệ
+                                Có thể gắn tối đa {offTypeSkillAllowance} skill khác hệ
                             </div>
                         )}
                     </div>
@@ -971,7 +973,7 @@ export default function PokemonInfoPage() {
                                 <div className={`rounded border px-3 py-2 text-left ${hasOffTypeSkillAccess ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
                                     <div className="text-[11px] font-bold uppercase">Skill khác hệ</div>
                                     {hasOffTypeSkillAccess ? (
-                                        <div className="mt-1 text-xs font-semibold">Pokemon này còn {offTypeSkillAllowance} lượt học skill khác hệ.</div>
+                                        <div className="mt-1 text-xs font-semibold">Pokemon này có thể gắn tối đa {offTypeSkillAllowance} skill khác hệ.</div>
                                     ) : offTypeSkillItemsLoading ? (
                                         <div className="mt-1 text-xs">Đang tải vật phẩm hỗ trợ...</div>
                                     ) : null}
@@ -1365,7 +1367,7 @@ export default function PokemonInfoPage() {
                                 <>
                                     {hasOffTypeSkillAccess && (
                                         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                                            Pokemon này còn {offTypeSkillAllowance} lượt học skill khác hệ.
+                                            Pokemon này có thể gắn tối đa {offTypeSkillAllowance} skill khác hệ.
                                         </div>
                                     )}
                                     <div className="space-y-2">
@@ -1393,7 +1395,7 @@ export default function PokemonInfoPage() {
                                                                 {String(entry.move?.type || '').toUpperCase()} • {String(entry.move?.category || '').toUpperCase()} • Pow {entry.move?.power ?? '--'} • PP {entry.move?.pp ?? '--'}
                                                             </div>
                                                             {entry.canLearn && entry.usesOffTypeAllowance && (
-                                                                <div className="text-[11px] text-fuchsia-700 font-semibold mt-1">Học kỹ năng này sẽ tốn 1 lượt skill khác hệ.</div>
+                                                                <div className="text-[11px] text-fuchsia-700 font-semibold mt-1">Kỹ năng này sẽ chiếm 1 ô skill khác hệ.</div>
                                                             )}
                                                             {!entry.canLearn && (
                                                                 <div className="text-[11px] text-amber-700 font-semibold mt-1">{entry.reason || 'Không thể học kỹ năng này'}</div>

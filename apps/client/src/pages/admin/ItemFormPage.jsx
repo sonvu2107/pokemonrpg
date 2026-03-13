@@ -57,7 +57,7 @@ const EFFECT_TYPE_OPTIONS = [
     { value: 'heal', label: 'Hồi HP/PP' },
     { value: 'healAmount', label: 'Hồi HP/PP (Legacy)' },
     { value: 'grantVipTier', label: 'Kích hoạt VIP theo tháng' },
-    { value: 'allowOffTypeSkills', label: 'Thêm 1 lượt học skill khác hệ' },
+    { value: 'allowOffTypeSkills', label: 'Thêm 1 ô skill khác hệ' },
     { value: 'grantPokemonExp', label: 'Cộng EXP cho Pokemon' },
     { value: 'grantPokemonLevel', label: 'Tăng cấp cho Pokemon' },
     { value: 'transferPokemonLevel', label: 'Chuyển level giữa Pokemon' },
@@ -84,7 +84,7 @@ const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurati
         return `Kích hoạt VIP ${vipLevel} trong ${durationValue} ${durationUnit}`
     }
     if (effectType === 'allowOffTypeSkills') {
-        return 'Dùng lên 1 Pokemon để thêm 1 lượt học skill khác hệ'
+        return 'Dùng lên 1 Pokemon để thêm 1 ô skill khác hệ'
     }
     if (effectType === 'grantPokemonExp') {
         return `Cộng ${Math.max(1, Math.floor(Number(effectValue) || 0)).toLocaleString('vi-VN')} EXP cho 1 Pokemon`
@@ -482,7 +482,7 @@ export default function ItemFormPage() {
                                     </div>
                                     {isOffTypeSkillEffect ? (
                                         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                                            Dùng vật phẩm này lên 1 Pokemon để cộng 1 lượt học skill khác hệ. Mỗi lượt chỉ dùng được cho 1 skill khác hệ.
+                                            Dùng vật phẩm này lên 1 Pokemon để mở thêm 1 ô skill khác hệ. Pokemon có thể gắn số skill khác hệ tối đa bằng số ô đã mở.
                                         </div>
                                     ) : isTransferPokemonLevelEffect ? (
                                         <div className="rounded border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-sm text-fuchsia-800">
