@@ -417,7 +417,7 @@ router.post('/battle/resolve', authMiddleware, requireActiveGameplayTab({ action
             : defaultScaledReward
         const baseMoonPointsAwarded = trainerMoonPointsReward > 0
             ? Math.floor(trainerMoonPointsReward)
-            : defaultScaledReward
+            : 0
         const moonPointsAwarded = trainerAlreadyCompleted ? 0 : baseMoonPointsAwarded
         const happinessAwarded = 13
 

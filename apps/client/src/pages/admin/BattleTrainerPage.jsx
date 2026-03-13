@@ -1786,7 +1786,7 @@ export default function BattleTrainerPage() {
                                             value={form.moonPointsReward}
                                             onChange={(e) => setForm({ ...form, moonPointsReward: parseInt(e.target.value) || 0 })}
                                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-sm"
-                                            placeholder="0 = dùng công thức mặc định"
+                                            placeholder="0 = không thưởng"
                                         />
                                     </div>
                                 </div>
