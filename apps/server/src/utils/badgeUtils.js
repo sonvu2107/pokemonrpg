@@ -8,6 +8,7 @@ import { getTotalOnlineHours } from './onlineTime.js'
 export const BADGE_MAX_EQUIPPED = 5
 
 const ACTIVE_BADGE_BONUS_TTL_MS = 60 * 1000
+const ACTIVE_BADGE_BONUS_CACHE_MAX_ENTRIES = 5000
 const activeBadgeBonusCache = new Map()
 const BADGE_OVERVIEW_USER_SELECT = 'role completedBattleTrainers equippedBadgeIds totalOnlineSeconds onlineSessionStartedAt isOnline lastActive vipTierLevel catchFailCount'
 const BADGE_OVERVIEW_OWNED_POKEMON_SELECT = 'pokemonId formId'
@@ -43,6 +44,22 @@ const setCachedValue = (map, key, value, ttlMs) => {
         expiresAt: Date.now() + Math.max(1000, Number(ttlMs) || ACTIVE_BADGE_BONUS_TTL_MS),
     })
     return value
+}
+
+const pruneExpiredCacheEntries = (map, nowMs = Date.now()) => {
+    for (const [key, entry] of map.entries()) {
+        if (Number(entry?.expiresAt || 0) <= nowMs) {
+            map.delete(key)
+        }
+    }
+}
+
+const enforceCacheSizeLimit = (map, maxEntries = ACTIVE_BADGE_BONUS_CACHE_MAX_ENTRIES) => {
+    while (map.size > maxEntries) {
+        const oldestKey = map.keys().next().value
+        if (!oldestKey) break
+        map.delete(oldestKey)
+    }
 }
 
 const slugify = (value = '') => String(value || '')
@@ -484,12 +501,16 @@ export const getCachedActiveBadgeBonuses = async (userId, options = {}) => {
     const normalizedUserId = String(userId || '').trim()
     if (!normalizedUserId) return createEmptyBonusSummary()
 
+    pruneExpiredCacheEntries(activeBadgeBonusCache)
+
     const cacheKey = getActiveBadgeBonusCacheKey(normalizedUserId)
     const cached = getCachedValue(activeBadgeBonusCache, cacheKey)
     if (cached) return cached
 
     const fresh = await buildActiveBadgeBonusesLiteForUser(normalizedUserId, options)
-    return setCachedValue(activeBadgeBonusCache, cacheKey, fresh, options?.ttlMs)
+    const result = setCachedValue(activeBadgeBonusCache, cacheKey, fresh, options?.ttlMs)
+    enforceCacheSizeLimit(activeBadgeBonusCache)
+    return result
 }
 
 export const loadActiveBadgeBonusesForUser = async (userId) => {

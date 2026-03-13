@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import Friendship, { FRIENDSHIP_STATUS } from '../models/Friendship.js'
 import { attachChatHandlers } from './chatHandlers.js'
+import { closeOnlineSession, startOnlineSession } from '../utils/onlineTime.js'
 
 let io = null
 const activeSocketsByUser = new Map()
@@ -41,11 +42,34 @@ const removeUserSocket = (userId, socketId) => {
     return socketSet.size
 }
 
+const pruneStaleSocketsForUser = (userId) => {
+    const normalizedUserId = normalizeUserId(userId)
+    if (!io || !normalizedUserId) return 0
+
+    const socketSet = activeSocketsByUser.get(normalizedUserId)
+    if (!socketSet) return 0
+
+    let removedCount = 0
+    for (const socketId of Array.from(socketSet)) {
+        if (!io.sockets.sockets.has(socketId)) {
+            socketSet.delete(socketId)
+            removedCount += 1
+        }
+    }
+
+    if (socketSet.size === 0) {
+        activeSocketsByUser.delete(normalizedUserId)
+    }
+
+    return removedCount
+}
+
 const disconnectExcessUserSockets = (userId, currentSocketId) => {
     const normalizedUserId = normalizeUserId(userId)
     const normalizedCurrentSocketId = String(currentSocketId || '').trim()
     if (!io || !normalizedUserId || !normalizedCurrentSocketId) return 0
 
+    pruneStaleSocketsForUser(normalizedUserId)
     const socketSet = activeSocketsByUser.get(normalizedUserId)
     if (!socketSet || socketSet.size <= MAX_ACTIVE_SOCKETS_PER_USER) return 0
 
@@ -103,22 +127,38 @@ const setUserPresenceState = async (userId, isOnline) => {
     if (!normalizedUserId) return
 
     const lastActive = new Date()
-    await User.findByIdAndUpdate(
-        normalizedUserId,
-        {
-            isOnline: Boolean(isOnline),
-            lastActive,
-        },
-        {
-            new: false,
+    const user = await User.findById(normalizedUserId)
+        .select('isOnline totalOnlineSeconds onlineSessionStartedAt lastActive')
+
+    if (!user) return
+
+    if (isOnline) {
+        if (!user.isOnline) {
+            startOnlineSession(user, lastActive)
+        } else {
+            if (!user.onlineSessionStartedAt) {
+                user.onlineSessionStartedAt = lastActive
+            }
+            user.lastActive = lastActive
         }
-    )
+    } else if (user.isOnline) {
+        closeOnlineSession(user, lastActive)
+    } else {
+        user.onlineSessionStartedAt = null
+        user.lastActive = lastActive
+    }
+
+    await user.save()
 
     await emitFriendsPresenceChanged(normalizedUserId, isOnline, lastActive)
 }
 
 const handleSocketConnected = async (userId, socketId) => {
-    const totalSockets = addUserSocket(userId, socketId)
+    addUserSocket(userId, socketId)
+    pruneStaleSocketsForUser(userId)
+
+    const socketSet = activeSocketsByUser.get(normalizeUserId(userId))
+    const totalSockets = socketSet ? socketSet.size : 0
     const disconnectedCount = disconnectExcessUserSockets(userId, socketId)
     if (totalSockets === 1 || disconnectedCount > 0) {
         await setUserPresenceState(userId, true)
@@ -131,7 +171,10 @@ const handleSocketConnected = async (userId, socketId) => {
 }
 
 const handleSocketDisconnected = async (userId, socketId) => {
-    const totalSockets = removeUserSocket(userId, socketId)
+    removeUserSocket(userId, socketId)
+    pruneStaleSocketsForUser(userId)
+    const socketSet = activeSocketsByUser.get(normalizeUserId(userId))
+    const totalSockets = socketSet ? socketSet.size : 0
     if (totalSockets === 0) {
         await setUserPresenceState(userId, false)
     }
@@ -259,6 +302,7 @@ export const disconnectUserSockets = (userId, reason = 'session-replaced') => {
     const normalizedUserId = normalizeUserId(userId)
     if (!io || !normalizedUserId) return 0
 
+    pruneStaleSocketsForUser(normalizedUserId)
     const socketSet = activeSocketsByUser.get(normalizedUserId)
     if (!socketSet || socketSet.size === 0) return 0
 
@@ -281,6 +325,10 @@ export const disconnectUserSockets = (userId, reason = 'session-replaced') => {
 }
 
 export const getLiveSocketPresenceSnapshot = ({ includeSocketIds = false } = {}) => {
+    for (const [userId] of activeSocketsByUser.entries()) {
+        pruneStaleSocketsForUser(userId)
+    }
+
     const users = Array.from(activeSocketsByUser.entries())
         .map(([userId, socketSet]) => {
             const socketIds = Array.from(socketSet || []).filter(Boolean)

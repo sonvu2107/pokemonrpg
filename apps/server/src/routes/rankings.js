@@ -15,6 +15,7 @@ const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const POKEMON_POWER_META_CACHE_TTL_MS = 5 * 60 * 1000
 const POWER_RANKING_CACHE_TTL_MS = 10 * 60 * 1000
+const POWER_RANKING_CACHE_MAX_ENTRIES = 20
 const POWER_RANKING_CACHE_WARMUP_DELAY_MS = 10 * 1000
 const POWER_RANKING_CACHE_WARM_INTERVAL_MS = 3 * 60 * 1000
 
@@ -25,6 +26,26 @@ const pokemonPowerMetaCache = {
 }
 
 const powerRankingSnapshotCache = new Map()
+
+const prunePowerRankingSnapshotCache = (nowMs = Date.now()) => {
+    for (const [key, entry] of powerRankingSnapshotCache.entries()) {
+        if (!entry) {
+            powerRankingSnapshotCache.delete(key)
+            continue
+        }
+        if (!entry.inFlight && Number(entry.expiresAt || 0) <= nowMs) {
+            powerRankingSnapshotCache.delete(key)
+        }
+    }
+
+    if (powerRankingSnapshotCache.size <= POWER_RANKING_CACHE_MAX_ENTRIES) return
+
+    for (const [key, entry] of powerRankingSnapshotCache.entries()) {
+        if (powerRankingSnapshotCache.size <= POWER_RANKING_CACHE_MAX_ENTRIES) break
+        if (entry?.inFlight) continue
+        powerRankingSnapshotCache.delete(key)
+    }
+}
 
 const normalizeAvatarUrl = (value = '') => String(value || '').trim() || DEFAULT_AVATAR_URL
 
@@ -701,6 +722,8 @@ const buildPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
 }
 
 const getPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
+    prunePowerRankingSnapshotCache()
+
     const normalizedAdminKeys = Array.isArray(adminUserIds)
         ? adminUserIds.map((entry) => String(entry || '').trim()).filter(Boolean).sort()
         : []

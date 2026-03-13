@@ -11,6 +11,7 @@ import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
 import { getLiveSocketPresenceSnapshot } from '../socket/index.js'
 import { resolveEffectiveVipBenefits, resolveEffectiveVipBenefitsForUsers } from '../services/vipBenefitService.js'
+import { closeOnlineSession } from '../utils/onlineTime.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -526,7 +527,7 @@ router.post('/online/reconcile', authMiddleware, requireAdmin, async (req, res) 
 
         const [dbOnlineUsers, liveUsersMarkedOffline] = await Promise.all([
             User.find({ isOnline: true })
-                .select('_id username lastActive role')
+                .select('_id username lastActive role totalOnlineSeconds onlineSessionStartedAt isOnline')
                 .lean(),
             liveUserIds.length > 0
                 ? User.find({ _id: { $in: liveUserIds }, isOnline: { $ne: true } })
@@ -544,16 +545,27 @@ router.post('/online/reconcile', authMiddleware, requireAdmin, async (req, res) 
         let onlineModifiedCount = 0
 
         if (apply && offlineUserIds.length > 0) {
-            const offlineResult = await User.updateMany(
-                { _id: { $in: offlineUserIds } },
-                {
-                    $set: {
-                        isOnline: false,
-                        onlineSessionStartedAt: null,
+            const offlineOps = usersToSetOffline.map((entry) => {
+                closeOnlineSession(entry, now)
+                return {
+                    updateOne: {
+                        filter: { _id: entry._id },
+                        update: {
+                            $set: {
+                                isOnline: false,
+                                onlineSessionStartedAt: null,
+                                lastActive: entry.lastActive,
+                                totalOnlineSeconds: Math.max(0, Math.floor(Number(entry.totalOnlineSeconds) || 0)),
+                            },
+                        },
                     },
                 }
-            )
-            offlineModifiedCount = Number(offlineResult?.modifiedCount || 0)
+            })
+
+            if (offlineOps.length > 0) {
+                const offlineResult = await User.bulkWrite(offlineOps, { ordered: false })
+                offlineModifiedCount = Number(offlineResult?.modifiedCount || 0)
+            }
         }
 
         if (apply && onlineUserIds.length > 0) {
@@ -562,6 +574,7 @@ router.post('/online/reconcile', authMiddleware, requireAdmin, async (req, res) 
                 {
                     $set: {
                         isOnline: true,
+                        onlineSessionStartedAt: now,
                         lastActive: now,
                     },
                 }
