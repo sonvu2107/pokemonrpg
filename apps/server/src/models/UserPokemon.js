@@ -4,6 +4,50 @@ import { normalizeFormId } from '../utils/pokemonFormStats.js'
 
 const { Schema } = mongoose
 export const USER_POKEMON_MAX_LEVEL = 3000
+const OBJECT_ID_HEX_REGEX = /^[a-f\d]{24}$/i
+
+const normalizeObjectIdValue = (value) => {
+    if (typeof value === 'string') {
+        const raw = value.trim()
+        if (!raw) return ''
+        if (OBJECT_ID_HEX_REGEX.test(raw)) return raw
+
+        const objectIdMatch = raw.match(/ObjectId\(["']?([a-f\d]{24})["']?\)/i)
+        return objectIdMatch?.[1] || ''
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return normalizeObjectIdValue(String(value))
+    }
+
+    if (value && typeof value === 'object') {
+        if (typeof value.$oid === 'string') {
+            const normalizedOid = normalizeObjectIdValue(value.$oid)
+            if (normalizedOid) return normalizedOid
+        }
+
+        if (value._id != null) {
+            const normalizedNestedId = normalizeObjectIdValue(value._id)
+            if (normalizedNestedId) return normalizedNestedId
+        }
+
+        if (value.id != null) {
+            const normalizedId = normalizeObjectIdValue(value.id)
+            if (normalizedId) return normalizedId
+        }
+
+        if (typeof value.toHexString === 'function') {
+            try {
+                const normalizedHex = normalizeObjectIdValue(value.toHexString())
+                if (normalizedHex) return normalizedHex
+            } catch {
+                return ''
+            }
+        }
+    }
+
+    return ''
+}
 
 const MovePpStateSchema = new Schema(
     {
@@ -127,8 +171,8 @@ UserPokemonSchema.pre('validate', function (next) {
 
 UserPokemonSchema.post('save', async function (doc) {
     try {
-        const normalizedUserId = String(doc?.userId || '').trim()
-        const normalizedPokemonId = String(doc?.pokemonId || '').trim()
+        const normalizedUserId = normalizeObjectIdValue(doc?.userId)
+        const normalizedPokemonId = normalizeObjectIdValue(doc?.pokemonId)
         if (!normalizedUserId || !normalizedPokemonId) return
 
         const resolvedObtainedAt = doc?.obtainedAt instanceof Date ? doc.obtainedAt : new Date(doc?.obtainedAt || Date.now())
