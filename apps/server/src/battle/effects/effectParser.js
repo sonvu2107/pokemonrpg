@@ -36,12 +36,16 @@ const statAlias = {
     evasiveness: 'eva',
     evasive: 'eva',
     'special attack': 'spatk',
+    'special atk': 'spatk',
     'special attack stat': 'spatk',
     'sp attack': 'spatk',
     'sp. attack': 'spatk',
     'sp atk': 'spatk',
+    'sp atk stat': 'spatk',
+    'sp atk stats': 'spatk',
     spatk: 'spatk',
     'special defense': 'spdef',
+    'special def': 'spdef',
     'special defense stat': 'spdef',
     'special defence': 'spdef',
     'special defence stat': 'spdef',
@@ -56,8 +60,15 @@ const statAlias = {
 const parseStatName = (raw = '') => {
     const normalized = normalizeText(raw)
         .toLowerCase()
+        .replace(/\./g, '')
         .replace(/\bby\s+(one|two)\s+stage(s)?\b/g, '')
         .replace(/\bby\s+(one|two)\b/g, '')
+        .replace(/\b(if|when|on|every|then)\b.*$/g, '')
+        .replace(/\bor\s+cause\b.*$/g, '')
+        .replace(/\bin\s+the\s+second\b.*$/g, '')
+        .replace(/\bin\s+(incarnate|therian)\s+forme\b.*$/g, '')
+        .replace(/^\s*(the|its|their)\s+/g, '')
+        .replace(/\s+stats?\b/g, '')
         .replace(/\s+/g, ' ')
         .trim()
     return statAlias[normalized] || ''
@@ -74,6 +85,10 @@ const parseStatList = (raw = '') => {
     const replaced = normalized
         .replace(/special attack/g, 'special_attack')
         .replace(/special defense/g, 'special_defense')
+        .replace(/special atk/g, 'special_attack')
+        .replace(/special def/g, 'special_defense')
+        .replace(/sp atk/g, 'special_attack')
+        .replace(/sp def/g, 'special_defense')
         .replace(/ and /g, ',')
         .replace(/\//g, ',')
 
@@ -157,7 +172,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }
     }
 
-    const text = sourceText.toLowerCase()
+    const text = sourceText
+        .toLowerCase()
+        .replace(/\bsp\.\s*atk\b/g, 'sp atk')
+        .replace(/\bsp\.\s*attack\b/g, 'sp attack')
+        .replace(/\bsp\.\s*def\b/g, 'sp def')
+        .replace(/\bsp\.\s*defense\b/g, 'sp defense')
+        .replace(/\bsp\.\s*defence\b/g, 'sp defence')
     const chanceFromProb = parseProbabilityToChance(probability)
     const effects = []
     const warnings = []
@@ -252,37 +273,25 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/\bz-move\b/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
+            op: 'set_move_variant',
+            trigger: 'on_select_move',
             target: 'self',
             chance: 1,
-            params: { reason: 'z_move_flavor' },
+            params: { variant: 'z_move' },
             sourceText,
-            parserConfidence: 0.99,
+            parserConfidence: 0.9,
         }))
     }
 
     if (/\bg-max move\b/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
+            op: 'set_move_variant',
+            trigger: 'on_select_move',
             target: 'self',
             chance: 1,
-            params: { reason: 'gmax_move_flavor' },
+            params: { variant: 'gmax_move' },
             sourceText,
-            parserConfidence: 0.96,
-        }))
-    }
-
-    if (/\bdynamax move\b/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'dynamax_move_flavor' },
-            sourceText,
-            parserConfidence: 0.96,
+            parserConfidence: 0.88,
         }))
     }
 
@@ -719,13 +728,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/after making its attack, the user rushes back to switch places with a party pok[eé]mon in waiting/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'self_switch_after_attack',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'self_switch_after_attack_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -750,30 +759,6 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
             params: { reason: 'ability_swap_unsupported' },
             sourceText,
             parserConfidence: 0.68,
-        }))
-    }
-
-    if (/the user uses its body like a hammer to attack the target and inflict damage/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'flavor_damage_text' },
-            sourceText,
-            parserConfidence: 0.72,
-        }))
-    }
-
-    if (/the user fiercely attacks the target using its entire body/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'flavor_damage_text' },
-            sourceText,
-            parserConfidence: 0.72,
         }))
     }
 
@@ -839,37 +824,25 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/in battles, the opponent switches|opponent switches\./.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'force_switch_target',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'forced_switch_single_battle_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.65,
-        }))
-    }
-
-    if (/hits all adjacent pok[eé]mon|hits all adjacent pokemon|hits all adjacent opponents/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'single_battle_multi_target_flavor' },
-            sourceText,
-            parserConfidence: 0.75,
+            parserConfidence: 0.78,
         }))
     }
 
     if (/the user swings its body around violently to inflict damage on everything in its vicinity/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'multi_target_damage',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'aoe_damage_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -887,49 +860,37 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/the user attacks by sending a frightful amount of small ghosts at opposing pok[eé]mon/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'multi_target_damage',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'aoe_damage_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.7,
-        }))
-    }
-
-    if (/the user attacks by hurling a blizzard-cloaked icicle lance at opposing pok[eé]mon/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'flavor_damage_text' },
-            sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
     if (/suppresses the target's ability if the target has already moved/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
-            trigger: 'on_hit',
-            target: 'opponent',
+            op: 'ignore_target_ability',
+            trigger: 'on_calculate_damage',
+            target: 'self',
             chance: 1,
-            params: { reason: 'ability_suppression_unsupported' },
+            params: { mode: 'suppress_if_target_moved' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.78,
         }))
     }
 
     if (/cancels out the effect of the opponent's ability|ignores (the )?target's ability/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
-            trigger: 'on_hit',
-            target: 'opponent',
+            op: 'ignore_target_ability',
+            trigger: 'on_calculate_damage',
+            target: 'self',
             chance: 1,
-            params: { reason: 'ignore_or_cancel_ability_unsupported' },
+            params: { mode: 'ignore' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1001,13 +962,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/damage occurs 2 turns later/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'delayed_damage',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'delayed_damage_unsupported' },
+            params: { turns: 2 },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1067,13 +1028,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/deals damage and reduces opponent's pp/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'reduce_target_pp',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'pp_reduction_unsupported' },
+            params: { amount: 3 },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -1103,13 +1064,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/reduces opponent's pp/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'reduce_target_pp',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'pp_reduction_unsupported' },
+            params: { amount: 3 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -1298,13 +1259,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/added effects appear if combined with grass pledge or water pledge|added effects appear if preceded by water pledge or succeeded by fire pledge|added effects appear if preceded by fire pledge or succeeded by grass pledge/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'conditional_combo_effect',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'pledge_combo_unsupported' },
+            params: { mode: 'pledge_combo' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1421,25 +1382,25 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/opponent cannot flee or switch|target becomes unable to flee|unable to flee/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'set_escape_lock',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'escape_lock_single_battle_flavor' },
+            params: { turns: 4 },
             sourceText,
-            parserConfidence: 0.65,
+            parserConfidence: 0.8,
         }))
     }
 
     if (/prevents (the )?opponent from switching out/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'set_escape_lock',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'switch_lock_unsupported' },
+            params: { turns: 4 },
             sourceText,
-            parserConfidence: 0.68,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1455,15 +1416,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/removes opponent's items|opponent's item is stolen by the user|removes opponent's held item for the rest of the battle/.test(text)) {
+    if (/removes opponent's items|removes opponent's held item for the rest of the battle/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'remove_target_item',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'item_manipulation_flavor' },
+            params: { mode: 'remove' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/opponent's item is stolen by the user/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'steal_target_item',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1554,13 +1527,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
             parserConfidence: 0.78,
         }))
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'override_ghost_immunity',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'normal_fighting_hit_ghost_override_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1682,26 +1655,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/will no longer be [a-z]+ type/.test(text)) {
+        const removedTypeMatch = text.match(/will no longer be\s+([a-z]+)\s+type/)
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'remove_user_type',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'self_type_change_unsupported' },
+            params: { type: removedTypeMatch?.[1] || '' },
             sourceText,
-            parserConfidence: 0.68,
+            parserConfidence: 0.82,
         }))
     }
 
     if (/adds grass type to opponent/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'add_type_to_target',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'add_type_to_target_unsupported' },
+            params: { type: 'grass' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1767,25 +1741,32 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/power increases if fusion flare is used in the same turn|power increases if fusion bolt is used in the same turn/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_modifier_if',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'fusion_combo_turn_condition_unsupported' },
+            params: {
+                condition: 'fusion_combo_same_turn',
+                multiplier: 2,
+            },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.82,
         }))
     }
 
     if (/damages non-water types for 4 turns|damages non-fire types for 4 turns|damages non-grass types for 4 turns/.test(text)) {
+        let excludedType = ''
+        if (/non-water types/.test(text)) excludedType = 'water'
+        if (/non-fire types/.test(text)) excludedType = 'fire'
+        if (/non-grass types/.test(text)) excludedType = 'grass'
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'type_filtered_residual_damage',
             trigger: 'end_turn',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'gmax_type_filtered_dot_unsupported' },
+            params: { excludedType, turns: 4, fraction: 1 / 6 },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -1835,13 +1816,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/sets up stealth rock/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'set_entry_hazard',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'hazard_stealth_rock_unsupported' },
+            params: { hazard: 'stealth_rock' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.84,
         }))
     }
 
@@ -2081,11 +2062,11 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/no battle effect/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'no_battle_effect',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'explicit_no_battle_effect' },
+            params: {},
             sourceText,
             parserConfidence: 0.99,
         }))
@@ -2353,13 +2334,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/sets up spikes/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'set_entry_hazard',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'hazard_spikes_unsupported' },
+            params: { hazard: 'spikes' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.84,
         }))
     }
 
@@ -2708,25 +2689,25 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/in double battles, boosts the power of the partner's move|raises attack of allies|makes the user and an ally very happy/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'ally_support_effect',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'double_battle_or_ally_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.78,
         }))
     }
 
     if (/opponent is unable to use moves that the user also knows|type and power depends on user's ivs|destroys the target's held berry/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'special_rule_constraint',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'double_battle_or_item_or_lock_unsupported' },
+            params: { mode: 'double_battle_or_item_or_lock' },
             sourceText,
-            parserConfidence: 0.7,
+            parserConfidence: 0.75,
         }))
     }
 
@@ -2755,26 +2736,124 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/boosts attack\/defense\/speed depending on ally tatsugiri|deals damage to opponent or restores hp of teammate|forces attacks to hit user, not team-mates|power increases if teammates use it in the same turn|the user shines a spotlight on the target so that only the target will be attacked during the turn/.test(text)) {
+        if (/boosts attack\/defense\/speed depending on ally tatsugiri/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'ally_condition_stat_boost',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+        if (/deals damage to opponent or restores hp of teammate/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'ally_target_dual_mode',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+        if (/forces attacks to hit user, not team-mates|the user shines a spotlight on the target so that only the target will be attacked during the turn/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'redirect_attacks_to_user',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: { turns: 1 },
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
+        if (/power increases if teammates use it in the same turn/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'power_if_ally_used_move',
+                trigger: 'on_calculate_damage',
+                target: 'self',
+                chance: 1,
+                params: { multiplier: 2 },
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+    }
+
+    if (/uses a certain move based on the current terrain/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'use_move_by_terrain',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'single_battle_ally_condition_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.68,
+            parserConfidence: 0.78,
         }))
     }
 
-    if (/uses a certain move based on the current terrain|either deals damage or heals|inflicts double damage if a teammate fainted on the last turn|effects of the attack vary with the location|fails if the target doesn’t have an item|hits any pok[eé]mon that shares a type with the user/.test(text)) {
+    if (/either deals damage or heals/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'random_heal_or_damage',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'advanced_contextual_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.66,
+            parserConfidence: 0.78,
+        }))
+    }
+
+    if (/inflicts double damage if a teammate fainted on the last turn/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'power_modifier_if',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: {
+                condition: 'ally_fainted_last_turn',
+                multiplier: 2,
+            },
+            sourceText,
+            parserConfidence: 0.72,
+        }))
+    }
+
+    if (/effects of the attack vary with the location/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'use_move_by_location',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.75,
+        }))
+    }
+
+    if (/fails if the target doesn’t have an item|fails if the target doesn't have an item/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'require_target_item',
+            trigger: 'on_select_move',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/hits any pok[eé]mon that shares a type with the user/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'require_shared_type_with_target',
+            trigger: 'on_select_move',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.74,
         }))
     }
 
@@ -2880,13 +2959,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/any pok[eé]mon in play when this attack is used faints in 3 turns|steals the effects of the opponent's next move|swaps every pok[eé]mon's defense and special defense for 5 turns/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'advanced_battle_rule',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'advanced_battle_rule_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.78,
         }))
     }
 
@@ -2904,13 +2983,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/power increases when player's bond is stronger/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'power_by_friendship',
             trigger: 'on_calculate_damage',
             target: 'self',
             chance: 1,
-            params: { reason: 'friendship_or_bond_scaled_power_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -3060,13 +3139,13 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
 
     if (/adds ghost type to opponent/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'add_type_to_target',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'add_type_to_target_unsupported' },
+            params: { type: 'ghost' },
             sourceText,
-            parserConfidence: 0.76,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -3368,15 +3447,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/suppresses the effects of held items for five turns|user becomes immune to ground-type moves for 5 turns/.test(text)) {
+    if (/suppresses the effects of held items for five turns/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'suppress_held_items_field',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'field_or_teamwide_unsupported' },
+            params: { turns: 5 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/user becomes immune to ground-type moves for 5 turns/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_ground_immunity',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: { turns: 5 },
+            sourceText,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -3389,18 +3480,6 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
             params: { turns: 1 },
             sourceText,
             parserConfidence: 0.78,
-        }))
-    }
-
-    if (/strikes opponent with leaves/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'flavor_damage_text' },
-            sourceText,
-            parserConfidence: 0.72,
         }))
     }
 
@@ -3420,15 +3499,63 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/allows an ally to use a move instead|prevents user and opponent from switching out|type depends on the arceus plate being held|can only be used after all other moves are used|damages increases the more party pok[eé]mon have been defeated/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'no_op',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'special_mechanic_unsupported' },
-            sourceText,
-            parserConfidence: 0.72,
-        }))
+        if (/allows an ally to use a move instead/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'ally_command_move',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+        if (/prevents user and opponent from switching out/.test(text)) {
+            ;['self', 'opponent'].forEach((lockTarget) => {
+                maybePush(effects, makeEffect({
+                    op: 'set_escape_lock',
+                    trigger: 'on_hit',
+                    target: lockTarget,
+                    chance: 1,
+                    params: { turns: 4 },
+                    sourceText,
+                    parserConfidence: 0.8,
+                }))
+            })
+        }
+        if (/type depends on the arceus plate being held/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'set_move_type_from_context',
+                trigger: 'on_calculate_damage',
+                target: 'self',
+                chance: 1,
+                params: { mode: 'arceus_plate' },
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
+        if (/can only be used after all other moves are used/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'require_all_other_moves_used',
+                trigger: 'on_select_move',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.82,
+            }))
+        }
+        if (/damages increases the more party pok[eé]mon have been defeated/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'power_by_fainted_allies',
+                trigger: 'on_calculate_damage',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
     }
 
     if (/copies the opponent's stat changes|copies the target's stat changes/.test(text)) {
@@ -3489,26 +3616,62 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/user copies the opponent's ability|the user swaps abilities with the opponent|copies the opponent's last move|user performs the opponent's last move|permanently copies the opponent's last move/.test(text)) {
+        if (/user copies the opponent's ability/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'copy_target_ability',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+        if (/the user swaps abilities with the opponent/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'swap_abilities',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+        if (/copies the opponent's last move|user performs the opponent's last move|permanently copies the opponent's last move/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'copy_last_move_effect',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+    }
+
+    if (/user performs almost any move in the game at random/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'random_move_execution',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'copy_or_transform_contextual_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.66,
+            parserConfidence: 0.82,
         }))
     }
 
-    if (/user performs almost any move in the game at random|user takes on the form and attacks of the opponent/.test(text)) {
+    if (/user takes on the form and attacks of the opponent/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'transform_into_target',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'copy_or_transform_mechanic_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -3558,26 +3721,53 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/weakens the power of electric-type moves|weakens the power of fire-type moves/.test(text)) {
+        let weakenedType = ''
+        if (/electric-type moves/.test(text)) weakenedType = 'electric'
+        if (/fire-type moves/.test(text)) weakenedType = 'fire'
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'weaken_move_type_power',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'weather_or_terrain_control_unsupported' },
+            params: { type: weakenedType, multiplier: 0.67 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
-    if (/damages opponents switching into battle|lowers opponent's speed when switching into battle|removes the effects of entry hazards and substitute/.test(text)) {
+    if (/damages opponents switching into battle/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'set_entry_hazard',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'entry_hazard_single_battle_flavor' },
+            params: { hazard: 'chip_damage' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.78,
+        }))
+    }
+
+    if (/lowers opponent's speed when switching into battle/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_entry_hazard',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { hazard: 'sticky_web' },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/removes the effects of entry hazards and substitute/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'clear_entry_hazards',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -3639,15 +3829,27 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/the user's and opponent's hp becomes the average of both|inflicts damage 50-150% of user's level/.test(text)) {
+    if (/the user's and opponent's hp becomes the average of both/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'average_hp_with_target',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'fixed_or_fractional_hp_damage_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.74,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/inflicts damage 50-150% of user's level/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'fixed_damage_random_user_level',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { minMultiplier: 0.5, maxMultiplier: 1.5 },
+            sourceText,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -3717,38 +3919,86 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/money is earned after the battle|revives a fainted party pok[eé]mon to half hp|allows user to flee wild battles/.test(text)) {
+        if (/money is earned after the battle/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'post_battle_reward_bonus',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
+        if (/revives a fainted party pok[eé]mon to half hp/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'revive_party_member',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: { fraction: 0.5 },
+                sourceText,
+                parserConfidence: 0.82,
+            }))
+        }
+        if (/allows user to flee wild battles/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'force_escape_wild',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: {},
+                sourceText,
+                parserConfidence: 0.78,
+            }))
+        }
+    }
+
+    if (/swaps held items with the opponent/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'swap_held_items',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'out_of_battle_or_party_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.75,
+            parserConfidence: 0.8,
         }))
     }
 
-    if (/swaps held items with the opponent|also steals opponent's held item|if the opponent is holding a berry, its effect is stolen by user|user's used hold item is restored/.test(text)) {
+    if (/also steals opponent's held item|if the opponent is holding a berry, its effect is stolen by user/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'steal_target_item',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'item_manipulation_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.78,
+        }))
+    }
+
+    if (/user's used hold item is restored/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'restore_consumed_item',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.78,
         }))
     }
 
     if (/user switches out immediately after attacking|user must switch out after attacking/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'self_switch_after_attack',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'self_switch_after_attack_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -3954,27 +4204,63 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/forces all pok[eé]mon on the field to eat their berries|opponent cannot use the same move in a row/.test(text)) {
+    if (/forces all pok[eé]mon on the field to eat their berries/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'force_berry_consumption',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'turn_control_or_contact_flavor' },
+            params: {},
             sourceText,
-            parserConfidence: 0.66,
+            parserConfidence: 0.74,
         }))
     }
 
-    if (/prevents use of sound moves for two turns|makes the target act last this turn|slower pok[eé]mon move first in the turn for 5 turns/.test(text)) {
+    if (/opponent cannot use the same move in a row/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'set_repeat_move_block',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { turns: 2 },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/prevents use of sound moves for two turns/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_sound_move_block',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { turns: 2 },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/makes the target act last this turn/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_target_priority_last',
+            trigger: 'on_select_move',
+            target: 'opponent',
+            chance: 1,
+            params: { delta: -7 },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/slower pok[eé]mon move first in the turn for 5 turns/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_turn_order_inversion',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'turn_control_or_contact_flavor' },
+            params: { turns: 5 },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
         }))
     }
 
@@ -4008,37 +4294,121 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/changes target's ability to simple|changes the opponent's ability to insomnia|type matches memory item held|power and type depend on the user's held berry|type depends on the drive being held|changes type when the user has terastallized|type changes based on oricorio's form/.test(text)) {
+    if (/changes target's ability to simple/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'self',
-            chance: 1,
-            params: { reason: 'type_or_ability_contextual_flavor' },
-            sourceText,
-            parserConfidence: 0.68,
-        }))
-    }
-
-    if (/user becomes the target's type|changes the target's type to water/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'set_target_ability',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'type_change_unmodeled_flavor' },
+            params: { ability: 'simple' },
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/changes the opponent's ability to insomnia/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_target_ability',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { ability: 'insomnia' },
+            sourceText,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/type matches memory item held/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_move_type_from_context',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'memory_item' },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/power and type depend on the user's held berry/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_move_type_from_context',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'held_berry' },
+            sourceText,
+            parserConfidence: 0.78,
+        }))
+    }
+
+    if (/type depends on the drive being held/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_move_type_from_context',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'drive_item' },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/changes type when the user has terastallized/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_move_type_from_context',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'terastallized' },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/type changes based on oricorio's form/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_move_type_from_context',
+            trigger: 'on_calculate_damage',
+            target: 'self',
+            chance: 1,
+            params: { mode: 'oricorio_form' },
+            sourceText,
+            parserConfidence: 0.8,
+        }))
+    }
+
+    if (/user becomes the target's type/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_user_type_from_target',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.82,
+        }))
+    }
+
+    if (/changes the target's type to water/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'set_target_type',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { type: 'water' },
+            sourceText,
+            parserConfidence: 0.84,
         }))
     }
 
     if (/doesn't do anything/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'flavor_only',
+            op: 'no_battle_effect',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'explicit_no_battle_effect' },
+            params: {},
             sourceText,
             parserConfidence: 0.99,
         }))
@@ -4241,26 +4611,39 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     }
 
     if (/opponent cannot escape\/switch|user cannot escape\/switch/.test(text)) {
-        maybePush(effects, makeEffect({
-            op: 'flavor_only',
-            trigger: 'on_hit',
-            target: 'opponent',
-            chance: 1,
-            params: { reason: 'escape_lock_single_battle_flavor' },
-            sourceText,
-            parserConfidence: 0.72,
-        }))
+        if (/opponent cannot escape\/switch/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'set_escape_lock',
+                trigger: 'on_hit',
+                target: 'opponent',
+                chance: 1,
+                params: { turns: 4 },
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
+        if (/user cannot escape\/switch/.test(text)) {
+            maybePush(effects, makeEffect({
+                op: 'set_escape_lock',
+                trigger: 'on_hit',
+                target: 'self',
+                chance: 1,
+                params: { turns: 4 },
+                sourceText,
+                parserConfidence: 0.8,
+            }))
+        }
     }
 
     if (/makes flying-type pok[eé]mon vulnerable to ground moves|hits the opponent, even during fly/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'flying_ground_interaction',
             trigger: 'on_hit',
             target: 'opponent',
             chance: 1,
-            params: { reason: 'flying_ground_interaction_unsupported' },
+            params: {},
             sourceText,
-            parserConfidence: 0.72,
+            parserConfidence: 0.8,
         }))
     }
 
@@ -4346,26 +4729,47 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
     let match = null
     while ((match = statRegex.exec(text)) !== null) {
         const [, maybeKeyword, sharplyKeyword, action, owner, statRaw] = match
-        const stat = parseStatName(statRaw.replace(/\./g, '').trim())
-        if (!stat) {
-            warnings.push(`Không map được stat từ: ${match[0]}`)
-            continue
-        }
-
+        const normalizedStatRaw = statRaw.replace(/\./g, '').trim()
+        const stat = parseStatName(normalizedStatRaw)
         const magnitude = sharplyKeyword ? 2 : 1
         const delta = action.startsWith('raise') ? magnitude : -magnitude
         const target = owner.includes('user') ? 'self' : 'opponent'
         const chance = maybeKeyword ? (chanceFromProb ?? 0.3) : 1
 
-        maybePush(effects, makeEffect({
-            op: 'stat_stage',
-            trigger: 'on_hit',
-            target,
-            chance,
-            params: { stat, delta },
-            sourceText,
-            parserConfidence: 0.88,
-        }))
+        if (stat) {
+            maybePush(effects, makeEffect({
+                op: 'stat_stage',
+                trigger: 'on_hit',
+                target,
+                chance,
+                params: { stat, delta },
+                sourceText,
+                parserConfidence: 0.88,
+            }))
+            continue
+        }
+
+        const stats = parseStatList(normalizedStatRaw)
+        if (stats.length > 0) {
+            stats.forEach((parsedStat) => {
+                maybePush(effects, makeEffect({
+                    op: 'stat_stage',
+                    trigger: 'on_hit',
+                    target,
+                    chance,
+                    params: { stat: parsedStat, delta },
+                    sourceText,
+                    parserConfidence: 0.84,
+                }))
+            })
+            continue
+        }
+
+        if (/\bhp\b/.test(normalizedStatRaw) || /\bstats?\b/.test(normalizedStatRaw)) {
+            continue
+        }
+
+        warnings.push(`Không map được stat từ: ${match[0]}`)
     }
 
     if (/may raise all user's stats at once|raises all user's stats at once|raise all user's stats/.test(text)) {
@@ -4431,6 +4835,7 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         const [full, maybeKeyword, sharplyKeyword, action, statRaw] = match
         if (/user['’]s|opponent['’]s|target['’]s/.test(full)) continue
         if (/all user's stats/.test(full)) continue
+        if (/^\s*their\s+/.test(statRaw)) continue
         const stats = parseStatList(statRaw)
         if (stats.length === 0) continue
 
@@ -4457,7 +4862,7 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         const normalizedEffect = effect?.op === 'no_op'
             ? {
                 ...effect,
-                op: 'flavor_only',
+                op: 'unsupported_rule',
                 params: {
                     reason: String(effect?.params?.reason || 'unmodeled_effect').trim() || 'unmodeled_effect',
                 },

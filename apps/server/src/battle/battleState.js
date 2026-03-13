@@ -155,6 +155,9 @@ export const normalizeVolatileState = (value = {}) => {
     const healBlockTurns = normalizeStatusTurns(source.healBlockTurns)
     const critBlockTurns = normalizeStatusTurns(source.critBlockTurns)
     const statusMoveBlockTurns = normalizeStatusTurns(source.statusMoveBlockTurns)
+    const soundMoveBlockTurns = normalizeStatusTurns(source.soundMoveBlockTurns)
+    const repeatMoveBlockTurns = normalizeStatusTurns(source.repeatMoveBlockTurns)
+    const escapeLockTurns = normalizeStatusTurns(source.escapeLockTurns)
     const pendingAlwaysCrit = Boolean(source.pendingAlwaysCrit)
     const pendingNeverMiss = Boolean(source.pendingNeverMiss)
 
@@ -169,6 +172,9 @@ export const normalizeVolatileState = (value = {}) => {
         ...(healBlockTurns > 0 ? { healBlockTurns } : {}),
         ...(critBlockTurns > 0 ? { critBlockTurns } : {}),
         ...(statusMoveBlockTurns > 0 ? { statusMoveBlockTurns } : {}),
+        ...(soundMoveBlockTurns > 0 ? { soundMoveBlockTurns } : {}),
+        ...(repeatMoveBlockTurns > 0 ? { repeatMoveBlockTurns } : {}),
+        ...(escapeLockTurns > 0 ? { escapeLockTurns } : {}),
         ...(pendingAlwaysCrit ? { pendingAlwaysCrit: true } : {}),
         ...(pendingNeverMiss ? { pendingNeverMiss: true } : {}),
     }
@@ -372,6 +378,27 @@ export const decrementVolatileTurnState = (value = {}) => {
         next.critBlockTurns -= 1
         if (next.critBlockTurns <= 0) {
             delete next.critBlockTurns
+        }
+    }
+
+    if (next.escapeLockTurns > 0) {
+        next.escapeLockTurns -= 1
+        if (next.escapeLockTurns <= 0) {
+            delete next.escapeLockTurns
+        }
+    }
+
+    if (next.soundMoveBlockTurns > 0) {
+        next.soundMoveBlockTurns -= 1
+        if (next.soundMoveBlockTurns <= 0) {
+            delete next.soundMoveBlockTurns
+        }
+    }
+
+    if (next.repeatMoveBlockTurns > 0) {
+        next.repeatMoveBlockTurns -= 1
+        if (next.repeatMoveBlockTurns <= 0) {
+            delete next.repeatMoveBlockTurns
         }
     }
 

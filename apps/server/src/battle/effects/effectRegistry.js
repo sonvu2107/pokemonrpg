@@ -220,6 +220,11 @@ const evaluateCondition = (context = {}, condition = '') => {
         terrain_misty: normalizeTerrain(context?.terrain) === 'misty',
         terrain_psychic: normalizeTerrain(context?.terrain) === 'psychic',
         terrain_present: Boolean(normalizeTerrain(context?.terrain)),
+        ally_fainted_last_turn: Boolean(
+            context?.allyFaintedLastTurn
+            || context?.teammateFaintedLastTurn
+            || context?.partyAllyFaintedLastTurn
+        ),
         target_hp_below_half: (() => {
             const currentHp = Math.max(0, Number(context?.targetCurrentHp || 0))
             const maxHp = Math.max(1, Number(context?.targetMaxHp || 1))
@@ -840,6 +845,620 @@ const handlers = {
         return result
     },
 
+    ignore_target_ability: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const mode = String(effect?.params?.mode || 'ignore').trim().toLowerCase() || 'ignore'
+        result.applied = true
+        result.statePatches.self.ignoreTargetAbility = true
+        result.statePatches.self.ignoreTargetAbilityMode = mode
+        appendEffectLog(result, 'Đòn đánh bỏ qua hiệu ứng Ability của mục tiêu trong tính toán phù hợp.')
+        return result
+    },
+
+    set_target_ability: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const ability = String(effect?.params?.ability || '').trim().toLowerCase()
+        if (!ability) return result
+
+        result.applied = true
+        result.statePatches.opponent.setAbility = ability
+        appendEffectLog(result, `Ability của mục tiêu bị đổi thành ${ability}.`)
+        return result
+    },
+
+    set_move_type_from_context: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const mode = String(effect?.params?.mode || '').trim().toLowerCase()
+        if (!mode) return result
+
+        result.applied = true
+        result.statePatches.self.moveTypeContextMode = mode
+        appendEffectLog(result, 'Hệ chiêu được xác định theo ngữ cảnh đặc thù.')
+        return result
+    },
+
+    multi_target_damage: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.multiTargetDamage = true
+        return result
+    },
+
+    delayed_damage: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 2))
+        result.applied = true
+        result.statePatches.self.delayedDamageTurns = turns
+        return result
+    },
+
+    reduce_target_pp: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const amount = Math.max(1, clampPositiveInt(effect?.params?.amount, 3))
+        result.applied = true
+        result.statePatches.opponent.reducePpAmount = amount
+        return result
+    },
+
+    override_ghost_immunity: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.overrideGhostImmunity = true
+        return result
+    },
+
+    remove_user_type: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const removedType = String(effect?.params?.type || '').trim().toLowerCase()
+        result.applied = true
+        result.statePatches.self.removeType = removedType || true
+        return result
+    },
+
+    add_type_to_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const addType = String(effect?.params?.type || '').trim().toLowerCase()
+        if (!addType) return result
+        result.applied = true
+        result.statePatches.opponent.addType = addType
+        return result
+    },
+
+    no_battle_effect: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.noBattleEffect = true
+        return result
+    },
+
+    unsupported_rule: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const reason = String(effect?.params?.reason || '').trim().toLowerCase() || 'unmodeled_effect'
+        result.applied = true
+        result.statePatches.self.unsupportedRule = reason
+        return result
+    },
+
+    power_by_friendship: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const friendship = Math.max(0, Math.min(255, Math.floor(Number(context?.userFriendship ?? 0))))
+        const multiplier = 1 + ((friendship / 255) * 1)
+        result.applied = true
+        result.statePatches.self.powerMultiplier = clampMultiplier(multiplier, 1)
+        return result
+    },
+
+    suppress_held_items_field: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 5))
+        result.applied = true
+        result.statePatches.field.suppressHeldItemsTurns = turns
+        return result
+    },
+
+    set_ground_immunity: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 5))
+        result.applied = true
+        result.statePatches.self.volatileState = {
+            groundImmunityTurns: turns,
+        }
+        return result
+    },
+
+    random_move_execution: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.randomMoveExecution = true
+        return result
+    },
+
+    transform_into_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.transformIntoTarget = true
+        return result
+    },
+
+    weaken_move_type_power: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const type = String(effect?.params?.type || '').trim().toLowerCase()
+        const multiplier = clampMultiplier(effect?.params?.multiplier, 0.67)
+        if (!type) return result
+        result.applied = true
+        result.statePatches.field.weakenMoveTypePower = { type, multiplier }
+        return result
+    },
+
+    average_hp_with_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.averageHpWithTarget = true
+        return result
+    },
+
+    fixed_damage_random_user_level: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const userLevel = Math.max(1, clampPositiveInt(context?.userLevel ?? context?.attackerLevel, 1))
+        const minMultiplier = clampMultiplier(effect?.params?.minMultiplier, 0.5)
+        const maxMultiplier = clampMultiplier(effect?.params?.maxMultiplier, 1.5)
+        const low = Math.min(minMultiplier, maxMultiplier)
+        const high = Math.max(minMultiplier, maxMultiplier)
+        const randomValue = Number(context?.random?.())
+        const roll = Number.isFinite(randomValue) ? randomValue : Math.random()
+        const multiplier = low + ((high - low) * Math.max(0, Math.min(1, roll)))
+        result.applied = true
+        result.statePatches.self.fixedDamageValue = Math.max(1, Math.floor(userLevel * multiplier))
+        return result
+    },
+
+    set_user_type_from_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.copyTypeFromTarget = true
+        return result
+    },
+
+    set_target_type: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const nextType = String(effect?.params?.type || '').trim().toLowerCase()
+        if (!nextType) return result
+        result.applied = true
+        result.statePatches.opponent.setType = nextType
+        return result
+    },
+
+    set_move_variant: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const variant = String(effect?.params?.variant || '').trim().toLowerCase()
+        if (!variant) return result
+
+        result.applied = true
+        result.statePatches.self.moveVariant = variant
+        return result
+    },
+
+    conditional_combo_effect: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const mode = String(effect?.params?.mode || '').trim().toLowerCase()
+        if (!mode) return result
+
+        result.applied = true
+        result.statePatches.self.conditionalComboMode = mode
+        return result
+    },
+
+    type_filtered_residual_damage: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const excludedType = String(effect?.params?.excludedType || '').trim().toLowerCase()
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 4))
+        const fraction = clampFraction(effect?.params?.fraction, 1 / 6)
+        result.applied = true
+        result.statePatches.self.typeFilteredResidualDamage = {
+            excludedType,
+            turns,
+            fraction,
+        }
+        return result
+    },
+
+    ally_support_effect: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.allySupportEffect = true
+        return result
+    },
+
+    special_rule_constraint: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const mode = String(effect?.params?.mode || '').trim().toLowerCase()
+        result.applied = true
+        result.statePatches.self.specialRuleConstraint = mode || true
+        return result
+    },
+
+    ally_condition_stat_boost: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.allyConditionStatBoost = true
+        return result
+    },
+
+    ally_target_dual_mode: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.allyTargetDualMode = true
+        return result
+    },
+
+    redirect_attacks_to_user: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 1))
+        result.applied = true
+        result.statePatches.self.redirectAttacksToUserTurns = turns
+        return result
+    },
+
+    power_if_ally_used_move: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const allyUsedMove = Boolean(context?.allyUsedSameMoveThisTurn || context?.teammateUsedSameMoveThisTurn)
+        if (!allyUsedMove) return result
+
+        const multiplier = clampMultiplier(effect?.params?.multiplier, 2)
+        result.applied = true
+        result.statePatches.self.powerMultiplier = multiplier
+        return result
+    },
+
+    advanced_battle_rule: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.advancedBattleRule = true
+        return result
+    },
+
+    ally_command_move: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.allyCommandMove = true
+        return result
+    },
+
+    require_all_other_moves_used: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const ready = Boolean(context?.allOtherMovesUsed)
+        if (ready) return result
+
+        result.applied = true
+        result.statePatches.self.moveRequirement = {
+            failed: true,
+            condition: 'all_other_moves_used',
+            message: 'Chiêu nay chi dung duoc sau khi cac chieu khac da duoc su dung.',
+        }
+        return result
+    },
+
+    power_by_fainted_allies: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const faintedAllies = Math.max(0, clampPositiveInt(
+            context?.faintedAlliesCount
+            ?? context?.userFaintedAllies
+            ?? context?.partyFaintedAllies,
+            0
+        ))
+        const multiplier = Math.max(1, 1 + (faintedAllies * 0.1))
+        result.applied = true
+        result.statePatches.self.powerMultiplier = clampMultiplier(multiplier, 1)
+        return result
+    },
+
+    copy_target_ability: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.copyTargetAbility = true
+        return result
+    },
+
+    swap_abilities: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.swapAbilityWithTarget = true
+        result.statePatches.opponent.swapAbilityWithUser = true
+        return result
+    },
+
+    copy_last_move_effect: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.copyLastMoveEffect = true
+        return result
+    },
+
+    post_battle_reward_bonus: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.postBattleRewardBonus = true
+        return result
+    },
+
+    revive_party_member: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        const fraction = clampFraction(effect?.params?.fraction, 0.5)
+        result.applied = true
+        result.statePatches.self.revivePartyMemberFraction = fraction
+        return result
+    },
+
+    force_escape_wild: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.forceEscapeWild = true
+        return result
+    },
+
+    self_switch_after_attack: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.switchAfterAttack = true
+        return result
+    },
+
+    flying_ground_interaction: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.flyingGroundInteraction = true
+        return result
+    },
+
+    force_switch_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.opponent.forceSwitchOut = true
+        appendEffectLog(result, 'Mục tiêu bị ép đổi Pokemon.')
+        return result
+    },
+
+    set_entry_hazard: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const hazard = String(effect?.params?.hazard || '').trim().toLowerCase() || 'generic_hazard'
+        result.applied = true
+        result.statePatches.self.setEntryHazard = hazard
+        appendEffectLog(result, 'Sân đấu được thiết lập bẫy khi đổi Pokemon.')
+        return result
+    },
+
+    clear_entry_hazards: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.self.clearEntryHazards = true
+        result.statePatches.opponent.clearEntryHazards = true
+        appendEffectLog(result, 'Hiệu ứng bẫy khi đổi Pokemon bị xóa khỏi sân.')
+        return result
+    },
+
+    use_move_by_terrain: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.useMoveByTerrain = true
+        return result
+    },
+
+    use_move_by_location: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.useMoveByLocation = true
+        return result
+    },
+
+    require_target_item: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const targetHasItem = Boolean(
+            context?.targetHasHeldItem
+            || context?.targetHeldItem
+            || context?.targetItem
+        )
+        if (targetHasItem) return result
+
+        result.applied = true
+        result.statePatches.self.moveRequirement = {
+            failed: true,
+            condition: 'target_has_held_item',
+            message: 'Chiêu này chỉ dùng được khi mục tiêu đang cầm vật phẩm.',
+        }
+        return result
+    },
+
+    require_shared_type_with_target: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const hasSharedType = Boolean(context?.targetSharesTypeWithUser)
+        if (hasSharedType) return result
+
+        result.applied = true
+        result.statePatches.self.moveRequirement = {
+            failed: true,
+            condition: 'target_shares_type_with_user',
+            message: 'Chiêu này chỉ trúng mục tiêu có chung hệ với người dùng.',
+        }
+        return result
+    },
+
+    random_heal_or_damage: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.randomHealOrDamage = true
+        appendEffectLog(result, 'Hiệu ứng ngẫu nhiên: có thể gây sát thương hoặc hồi máu.')
+        return result
+    },
+
+    remove_target_item: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        result.applied = true
+        result.statePatches[target].removeHeldItem = true
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị loại bỏ vật phẩm đang cầm.`)
+        return result
+    },
+
+    steal_target_item: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.opponent.removeHeldItem = true
+        result.statePatches.self.stealHeldItemFromTarget = true
+        appendEffectLog(result, 'Pokemon của bạn cướp vật phẩm đang cầm của mục tiêu.')
+        return result
+    },
+
+    swap_held_items: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.self.swapHeldItemWithOpponent = true
+        result.statePatches.opponent.swapHeldItemWithSelf = true
+        appendEffectLog(result, 'Hai bên hoán đổi vật phẩm đang cầm.')
+        return result
+    },
+
+    restore_consumed_item: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.self.restoreConsumedHeldItem = true
+        appendEffectLog(result, 'Pokemon của bạn khôi phục lại vật phẩm đã dùng.')
+        return result
+    },
+
+    force_berry_consumption: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        result.applied = true
+        result.statePatches.self.forceBerryConsumption = true
+        result.statePatches.opponent.forceBerryConsumption = true
+        appendEffectLog(result, 'Tat ca Pokemon tren san buoc phai an Berry neu co.')
+        return result
+    },
+
+    set_target_priority_last: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const delta = Math.min(-1, Math.max(-7, Math.floor(Number(effect?.params?.delta || -7))))
+        result.applied = true
+        result.statePatches.opponent.priorityDelta = delta
+        appendEffectLog(result, 'Mục tiêu bị đẩy xuống hành động cuối lượt.')
+        return result
+    },
+
+    set_turn_order_inversion: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 5))
+        result.applied = true
+        result.statePatches.self.turnOrderInversionTurns = turns
+        appendEffectLog(result, `Thứ tự hành động đảo ngược trong ${turns} lượt.`)
+        return result
+    },
+
+    set_sound_move_block: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 2))
+        result.applied = true
+        result.statePatches[target].volatileState = {
+            soundMoveBlockTurns: turns,
+        }
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị chặn chiêu âm thanh trong ${turns} lượt.`)
+        return result
+    },
+
+    set_repeat_move_block: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 2))
+        result.applied = true
+        result.statePatches[target].volatileState = {
+            repeatMoveBlockTurns: turns,
+        }
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} không thể lặp lại cùng một chiêu trong ${turns} lượt.`)
+        return result
+    },
+
     use_target_defense_for_special: (context, effect) => {
         const result = createBaseResult()
         if (!shouldProc(effect?.chance, context?.random?.())) return result
@@ -1012,6 +1631,20 @@ const handlers = {
             bindFraction,
         }
         appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} bị trói trong ${rolledTurns} lượt.`)
+        return result
+    },
+
+    set_escape_lock: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+
+        const target = effect?.target === 'self' ? 'self' : 'opponent'
+        const turns = Math.max(1, clampPositiveInt(effect?.params?.turns, 4))
+        result.applied = true
+        result.statePatches[target].volatileState = {
+            escapeLockTurns: turns,
+        }
+        appendEffectLog(result, `${target === 'self' ? 'Pokemon của bạn' : 'Mục tiêu'} không thể rút lui trong ${turns} lượt.`)
         return result
     },
 
