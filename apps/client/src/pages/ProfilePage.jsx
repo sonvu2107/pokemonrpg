@@ -334,7 +334,13 @@ export default function ProfilePage() {
                                     >
                                         <div className="h-16 flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-white mb-2">
                                             {badge?.imageUrl ? (
-                                                <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" />
+                                                <SmartImage
+                                                    src={badge.imageUrl}
+                                                    alt={badge.name}
+                                                    width={64}
+                                                    height={64}
+                                                    className="max-h-full max-w-full object-contain"
+                                                />
                                             ) : (
                                                 <span className="text-xs font-bold text-slate-300">{index + 1}</span>
                                             )}
@@ -530,7 +536,13 @@ export default function ProfilePage() {
                                                                 : 'border-slate-300 bg-white hover:bg-slate-50'}`}
                                                         >
                                                             <div className="h-12 w-full flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
-                                                                <img src={imageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
+                                                                <SmartImage
+                                                                    src={imageUrl}
+                                                                    alt="Danh hiệu"
+                                                                    transformWidth={256}
+                                                                    transformQuality="auto"
+                                                                    className="max-h-full max-w-full object-contain"
+                                                                />
                                                             </div>
                                                             <div className="mt-1 text-[10px] text-slate-500">
                                                                 {entry?.weekStart ? `Tuần ${entry.weekStart}` : 'Từ thưởng top tuần'}
@@ -568,7 +580,13 @@ export default function ProfilePage() {
                                                                     : 'border-slate-300 bg-white hover:bg-slate-50'}`}
                                                             >
                                                                 <div className="h-12 w-full flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50">
-                                                                    <img src={imageUrl} alt="Khung avatar" className="max-h-full max-w-full object-contain" />
+                                                                    <SmartImage
+                                                                        src={imageUrl}
+                                                                        alt="Khung avatar"
+                                                                        transformWidth={128}
+                                                                        transformQuality="auto"
+                                                                        className="max-h-full max-w-full object-contain"
+                                                                    />
                                                                 </div>
                                                                 <div className="mt-1 text-[10px] text-slate-500">
                                                                     {entry?.weekStart ? `Tuần ${entry.weekStart}` : 'Từ thưởng top tuần'}

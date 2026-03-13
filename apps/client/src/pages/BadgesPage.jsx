@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
+import SmartImage from '../components/SmartImage'
 
 const badgeRankClassMap = {
     D: 'border-slate-300 bg-slate-100 text-slate-700',
@@ -178,7 +179,15 @@ export default function BadgesPage() {
                             <article key={badge._id} className={`rounded-2xl border p-3 shadow-sm space-y-3 ${badge.isUnlocked ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-100'}`}>
                                 <div className="flex items-start gap-3">
                                     <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-                                        {badge.imageUrl ? <img src={badge.imageUrl} alt={badge.name} className={`max-h-full max-w-full object-contain ${badge.isUnlocked ? '' : 'grayscale opacity-40'}`} /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
+                                        {badge.imageUrl ? (
+                                            <SmartImage
+                                                src={badge.imageUrl}
+                                                alt={badge.name}
+                                                width={64}
+                                                height={64}
+                                                className={`max-h-full max-w-full object-contain ${badge.isUnlocked ? '' : 'grayscale opacity-40'}`}
+                                            />
+                                        ) : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="text-xs font-bold text-slate-400 mb-1">#{index + 1}</div>
@@ -251,7 +260,15 @@ export default function BadgesPage() {
                                         <td className="border-r border-slate-300 text-center py-3 px-1">#{index + 1}</td>
                                         <td className="border-r border-slate-300 text-center py-3 px-2">
                                             <div className="w-16 h-16 mx-auto rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
-                                                {badge.imageUrl ? <img src={badge.imageUrl} alt={badge.name} className={`max-h-full max-w-full object-contain ${badge.isUnlocked ? '' : 'grayscale opacity-40'}`} /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
+                                                {badge.imageUrl ? (
+                                                    <SmartImage
+                                                        src={badge.imageUrl}
+                                                        alt={badge.name}
+                                                        width={64}
+                                                        height={64}
+                                                        className={`max-h-full max-w-full object-contain ${badge.isUnlocked ? '' : 'grayscale opacity-40'}`}
+                                                    />
+                                                ) : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
                                             </div>
                                         </td>
                                         <td className="border-r border-slate-300 py-3 px-4 text-center w-[24%]">

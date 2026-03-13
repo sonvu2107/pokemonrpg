@@ -484,7 +484,13 @@ export default function OnlineStatsPage() {
                                         >
                                             <div className="h-16 flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-white mb-2">
                                                 {badge?.imageUrl ? (
-                                                    <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" />
+                                                    <SmartImage
+                                                        src={badge.imageUrl}
+                                                        alt={badge.name}
+                                                        width={64}
+                                                        height={64}
+                                                        className="max-h-full max-w-full object-contain"
+                                                    />
                                                 ) : (
                                                     <span className="text-xs font-bold text-slate-300">Slot {index + 1}</span>
                                                 )}
