@@ -37,7 +37,7 @@ export const buildMoveLookupByName = async (moveNames = []) => {
     }
 
     const docs = await Move.find({ nameLower: { $in: normalizedKeys } })
-        .select('name nameLower pp type category power accuracy priority')
+        .select('name nameLower pp type category power accuracy priority learnScope allowedTypes allowedPokemonIds allowedRarities')
         .lean()
 
     const map = new Map()
