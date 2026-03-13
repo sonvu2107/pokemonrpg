@@ -1,6 +1,7 @@
 import express from 'express'
 import { authMiddleware } from '../../middleware/auth.js'
 import { createActionGuard } from '../../middleware/actionGuard.js'
+import { requireActiveGameplayTab } from '../../middleware/gameplayTabGuard.js'
 import PlayerState from '../../models/PlayerState.js'
 import Encounter from '../../models/Encounter.js'
 import UserInventory from '../../models/UserInventory.js'
