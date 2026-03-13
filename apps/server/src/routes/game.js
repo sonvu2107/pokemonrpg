@@ -2582,7 +2582,44 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         trainerSession.playerStatus = ''
         trainerSession.playerStatusTurns = 0
         syncTrainerSessionActivePlayerToParty(trainerSession)
-        await trainerSession.save()
+        const persistedTrainerSession = await BattleSession.findOneAndUpdate(
+            {
+                _id: trainerSession._id,
+                userId,
+                trainerId: normalizedTrainerId,
+            },
+            {
+                $set: {
+                    team: trainerSession.team,
+                    playerTeam: trainerSession.playerTeam,
+                    knockoutCounts: trainerSession.knockoutCounts,
+                    currentIndex: trainerSession.currentIndex,
+                    playerPokemonId: trainerSession.playerPokemonId,
+                    playerCurrentHp: trainerSession.playerCurrentHp,
+                    playerMaxHp: trainerSession.playerMaxHp,
+                    playerStatus: trainerSession.playerStatus,
+                    playerStatusTurns: trainerSession.playerStatusTurns,
+                    playerStatStages: trainerSession.playerStatStages,
+                    playerDamageGuards: trainerSession.playerDamageGuards,
+                    playerWasDamagedLastTurn: trainerSession.playerWasDamagedLastTurn,
+                    playerVolatileState: trainerSession.playerVolatileState,
+                    fieldState: trainerSession.fieldState,
+                    expiresAt: trainerSession.expiresAt,
+                },
+            },
+            {
+                new: true,
+            }
+        )
+
+        if (!persistedTrainerSession) {
+            return res.status(409).json({
+                ok: false,
+                code: 'BATTLE_SESSION_CONFLICT',
+                message: 'Phiên battle trainer vừa được cập nhật ở luồng khác. Vui lòng thử lại ngay.',
+            })
+        }
+        trainerSession = persistedTrainerSession
 
         res.json({
             ok: true,

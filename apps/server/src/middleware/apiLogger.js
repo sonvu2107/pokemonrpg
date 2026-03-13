@@ -25,16 +25,16 @@ const getClientIp = (req) => {
 }
 
 export const apiLogger = (req, res, next) => {
+    const requestId = randomUUID()
+    req.requestId = requestId
+    res.setHeader('x-request-id', requestId)
+
     const shouldLog = req.originalUrl.startsWith('/api') || req.originalUrl === '/health'
     if (!shouldLog) {
         return next()
     }
 
-    const requestId = randomUUID()
     const startedAt = process.hrtime.bigint()
-
-    req.requestId = requestId
-    res.setHeader('x-request-id', requestId)
 
     res.on('finish', () => {
         const elapsedNs = process.hrtime.bigint() - startedAt
