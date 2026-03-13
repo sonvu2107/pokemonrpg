@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import VipUsername from '../../components/VipUsername'
 import { userApi, vipTierApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
-import { normalizeVipHexColor, normalizeVipUsernameEffect } from '../../utils/vip'
+import { normalizeVipColorList, normalizeVipHexColor, normalizeVipUsernameEffect } from '../../utils/vip'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
 const DEFAULT_NAME_COLOR = '#F59E0B'
@@ -27,6 +27,7 @@ const createDefaultTierForm = () => ({
     avatarFrameUrl: '',
     usernameColor: '',
     usernameGradientColor: '',
+    usernameEffectColors: [],
     usernameEffect: 'none',
     autoSearchEnabled: true,
     autoSearchDurationMinutes: '0',
@@ -71,6 +72,7 @@ const normalizeTierToForm = (tierLike = null) => {
         avatarFrameUrl: String(benefits?.avatarFrameUrl || base.avatarFrameUrl),
         usernameColor: String(benefits?.usernameColor || base.usernameColor).trim().toUpperCase(),
         usernameGradientColor: String(benefits?.usernameGradientColor || base.usernameGradientColor).trim().toUpperCase(),
+        usernameEffectColors: normalizeVipColorList(benefits?.usernameEffectColors || base.usernameEffectColors),
         usernameEffect: normalizeVipUsernameEffect(benefits?.usernameEffect || base.usernameEffect),
         autoSearchEnabled: benefits?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: String(benefits?.autoSearchDurationMinutes ?? base.autoSearchDurationMinutes),
@@ -117,6 +119,7 @@ const buildPayloadFromForm = (form) => {
             avatarFrameUrl: String(form.avatarFrameUrl || '').trim(),
             usernameColor: normalizeVipHexColor(form.usernameColor),
             usernameGradientColor: normalizeVipHexColor(form.usernameGradientColor),
+            usernameEffectColors: normalizeVipColorList(form.usernameEffectColors),
             usernameEffect: normalizeVipUsernameEffect(form.usernameEffect),
             autoSearchEnabled: Boolean(form.autoSearchEnabled),
             autoSearchDurationMinutes: Math.max(0, parseInt(form.autoSearchDurationMinutes, 10) || 0),
@@ -709,6 +712,7 @@ export default function VipPrivilegePage() {
                                                     vipBenefits: {
                                                         usernameColor: form.usernameColor,
                                                         usernameGradientColor: form.usernameGradientColor,
+                                                        usernameEffectColors: form.usernameEffectColors,
                                                         usernameEffect: form.usernameEffect,
                                                     },
                                                 }}
@@ -717,7 +721,7 @@ export default function VipPrivilegePage() {
                                                 {form.name || `VIP ${form.level || '1'}`}
                                             </VipUsername>
                                             <div className="mt-2 text-[11px] text-slate-500">
-                                                VIP 4-5 có thể đặt màu tĩnh. VIP 6 có thể bật "Chuyển màu" để tên chạy hiệu ứng.
+                                                VIP 4-5 có thể đặt màu tĩnh. VIP 6 có thể bật "Chuyển màu" và dùng nhiều màu để tên chạy hiệu ứng.
                                             </div>
                                         </div>
                                     </div>
@@ -772,6 +776,65 @@ export default function VipPrivilegePage() {
                                             </button>
                                         </div>
                                         <p className="text-[11px] text-slate-500">Dùng khi bật chuyển màu. Để trống sẽ tự pha sáng từ màu chính.</p>
+                                    </div>
+                                    <div className="space-y-2 xl:col-span-2">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <label className="block text-xs font-medium text-slate-600">Bảng màu hiệu ứng</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setForm((prev) => ({
+                                                    ...prev,
+                                                    usernameEffectColors: [...normalizeVipColorList(prev.usernameEffectColors), ''],
+                                                }))}
+                                                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                            >
+                                                + Thêm màu
+                                            </button>
+                                        </div>
+                                        {form.usernameEffectColors.length === 0 ? (
+                                            <div className="rounded border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-[11px] text-slate-500">
+                                                Chưa có màu bổ sung. Bạn có thể thêm 1-6 màu để tên VIP chuyển sắc phong phú hơn.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {form.usernameEffectColors.map((color, index) => (
+                                                    <div key={`effect-color-${index}`} className="flex items-center gap-2">
+                                                        <input
+                                                            type="color"
+                                                            value={resolveColorPickerValue(color, DEFAULT_NAME_GRADIENT_COLOR)}
+                                                            onChange={(e) => setForm((prev) => {
+                                                                const nextColors = [...prev.usernameEffectColors]
+                                                                nextColors[index] = e.target.value.toUpperCase()
+                                                                return { ...prev, usernameEffectColors: nextColors }
+                                                            })}
+                                                            className="h-10 w-14 rounded border border-slate-300 bg-white p-1"
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            value={color}
+                                                            onChange={(e) => setForm((prev) => {
+                                                                const nextColors = [...prev.usernameEffectColors]
+                                                                nextColors[index] = e.target.value.toUpperCase()
+                                                                return { ...prev, usernameEffectColors: nextColors }
+                                                            })}
+                                                            placeholder="#38BDF8"
+                                                            className={inputClass}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setForm((prev) => ({
+                                                                ...prev,
+                                                                usernameEffectColors: prev.usernameEffectColors.filter((_, colorIndex) => colorIndex !== index),
+                                                            }))}
+                                                            className="shrink-0 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100"
+                                                        >
+                                                            Xóa
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <p className="text-[11px] text-slate-500">Hệ thống sẽ dùng màu chính + màu phụ + các màu bổ sung để tạo dải chuyển động. Tối đa 8 màu.</p>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="block text-xs font-medium text-slate-600">Hiệu ứng tên</label>
@@ -1166,7 +1229,9 @@ export default function VipPrivilegePage() {
                                                                         {tier.name || `VIP ${tier.level}`}
                                                                     </VipUsername>
                                                                     <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
-                                                                        {benefits.usernameEffect === 'animated' ? 'Chuyển màu' : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
+                                                                        {benefits.usernameEffect === 'animated'
+                                                                            ? `Chuyển màu${Array.isArray(benefits.usernameEffectColors) && benefits.usernameEffectColors.length > 0 ? ` (${benefits.usernameEffectColors.length + 2} màu)` : ''}`
+                                                                            : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
                                                                     </span>
                                                                 </div>
                                                                 <div>Auto tìm: <span className="font-semibold">{benefits.autoSearchEnabled ? 'Bật' : 'Tắt'}</span> ({benefits.autoSearchDurationMinutes ? `${benefits.autoSearchDurationMinutes}p` : 'Vô hạn'} - {benefits.autoSearchUsesPerDay ? `${benefits.autoSearchUsesPerDay}lần/ngày` : 'Vô hạn'})</div>
@@ -1249,7 +1314,9 @@ export default function VipPrivilegePage() {
                                                                 {tier.name || `VIP ${tier.level}`}
                                                             </VipUsername>
                                                             <div className="text-[10px] text-slate-500">
-                                                                {benefits.usernameEffect === 'animated' ? 'Chuyển màu' : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
+                                                                {benefits.usernameEffect === 'animated'
+                                                                    ? `Chuyển màu${Array.isArray(benefits.usernameEffectColors) && benefits.usernameEffectColors.length > 0 ? ` (${benefits.usernameEffectColors.length + 2} màu)` : ''}`
+                                                                    : (benefits.usernameColor ? 'Màu tĩnh' : 'Mặc định')}
                                                             </div>
                                                         </div>
                                                     </div>

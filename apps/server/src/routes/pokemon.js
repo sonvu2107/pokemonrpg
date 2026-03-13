@@ -209,6 +209,9 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameGradientColor || '').trim())
             ? String(source?.usernameGradientColor || '').trim().toUpperCase()
             : '',
+        usernameEffectColors: [...new Set((Array.isArray(source?.usernameEffectColors) ? source.usernameEffectColors : [])
+            .map((entry) => /^#([0-9a-f]{6})$/i.test(String(entry || '').trim()) ? String(entry || '').trim().toUpperCase() : '')
+            .filter(Boolean))].slice(0, 8),
         usernameEffect: String(source?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
@@ -229,6 +232,7 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
         usernameColor: current.usernameColor || tier.usernameColor,
         usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffectColors: current.usernameEffectColors.length > 0 ? current.usernameEffectColors : tier.usernameEffectColors,
         usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
@@ -1256,8 +1260,8 @@ router.get('/:id', async (req, res) => {
             getPokemonServerStats(basePokemon._id),
             MarketListing.find({ userPokemonId: userPokemon._id })
                 .select('sellerId buyerId price otName status listedAt soldAt updatedAt createdAt')
-                .populate('sellerId', 'username')
-                .populate('buyerId', 'username')
+                .populate('sellerId', 'username role vipTierLevel vipTierCode vipBenefits')
+                .populate('buyerId', 'username role vipTierLevel vipTierCode vipBenefits')
                 .sort({ listedAt: -1, _id: -1 })
                 .lean(),
             viewerUserId

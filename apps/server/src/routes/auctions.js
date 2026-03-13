@@ -25,6 +25,7 @@ import {
 import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../utils/mongoTransactions.js'
 
 const router = express.Router()
+const AUCTION_USER_SELECT = 'username role vipTierLevel vipTierCode vipBenefits'
 
 const toSafePage = (value) => Math.max(1, Number.parseInt(value, 10) || 1)
 const toSafeLimit = (value) => Math.min(50, Math.max(1, Number.parseInt(value, 10) || 20))
@@ -115,8 +116,8 @@ const loadManagedAuction = (auctionId, userId) => Auction.findOne({
     createdBy: userId,
     rewardType: AUCTION_REWARD_TYPE_POKEMON,
 })
-    .populate('highestBidderId', 'username')
-    .populate('winnerId', 'username')
+    .populate('highestBidderId', AUCTION_USER_SELECT)
+    .populate('winnerId', AUCTION_USER_SELECT)
 
 const loadParticipantCountMap = async (auctionIds = []) => {
     if (auctionIds.length === 0) return new Map()
@@ -291,8 +292,8 @@ router.get('/manage', async (req, res) => {
 
         const [rows, total] = await Promise.all([
             Auction.find(query)
-                .populate('highestBidderId', 'username')
-                .populate('winnerId', 'username')
+                .populate('highestBidderId', AUCTION_USER_SELECT)
+                .populate('winnerId', AUCTION_USER_SELECT)
                 .sort({ createdAt: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -591,7 +592,7 @@ router.get('/manage/:id/bids', async (req, res) => {
 
         const [rows, total] = await Promise.all([
             AuctionBid.find({ auctionId })
-                .populate('userId', 'username')
+                .populate('userId', AUCTION_USER_SELECT)
                 .sort({ createdAt: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -666,8 +667,8 @@ router.get('/', async (req, res) => {
             const auctionIds = (result.rows || []).map((entry) => entry?.auction?._id).filter(Boolean)
             const auctions = auctionIds.length > 0
                 ? await Auction.find({ _id: { $in: auctionIds } })
-                    .populate('highestBidderId', 'username')
-                    .populate('winnerId', 'username')
+                    .populate('highestBidderId', AUCTION_USER_SELECT)
+                    .populate('winnerId', AUCTION_USER_SELECT)
                     .lean()
                 : []
             const auctionMap = new Map(auctions.map((entry) => [String(entry?._id || '').trim(), entry]))
@@ -702,8 +703,8 @@ router.get('/', async (req, res) => {
 
         const [rows, total] = await Promise.all([
             Auction.find(query)
-                .populate('highestBidderId', 'username')
-                .populate('winnerId', 'username')
+                .populate('highestBidderId', AUCTION_USER_SELECT)
+                .populate('winnerId', AUCTION_USER_SELECT)
                 .sort(status === 'completed' ? { settledAt: -1, _id: -1 } : { endsAt: 1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -792,8 +793,8 @@ router.get('/me/participated', async (req, res) => {
         const auctionIds = (result.rows || []).map((entry) => entry?.auction?._id).filter(Boolean)
         const auctions = auctionIds.length > 0
             ? await Auction.find({ _id: { $in: auctionIds } })
-                .populate('highestBidderId', 'username')
-                .populate('winnerId', 'username')
+                .populate('highestBidderId', AUCTION_USER_SELECT)
+                .populate('winnerId', AUCTION_USER_SELECT)
                 .lean()
             : []
         const auctionMap = new Map(auctions.map((entry) => [String(entry?._id || '').trim(), entry]))
@@ -831,7 +832,7 @@ router.get('/:id/bids', async (req, res) => {
 
         const [rows, total] = await Promise.all([
             AuctionBid.find({ auctionId })
-                .populate('userId', 'username')
+                .populate('userId', AUCTION_USER_SELECT)
                 .sort({ createdAt: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -868,8 +869,8 @@ router.get('/:id', async (req, res) => {
         const userId = req.user.userId
         const [auction, myBidAgg, myLatestBid, bidRows] = await Promise.all([
             Auction.findById(auctionId)
-                .populate('highestBidderId', 'username')
-                .populate('winnerId', 'username')
+                .populate('highestBidderId', AUCTION_USER_SELECT)
+                .populate('winnerId', AUCTION_USER_SELECT)
                 .lean(),
             AuctionBid.aggregate([
                 { $match: { auctionId: new mongoose.Types.ObjectId(auctionId), userId: new mongoose.Types.ObjectId(userId) } },
@@ -879,7 +880,7 @@ router.get('/:id', async (req, res) => {
                 .sort({ createdAt: -1, _id: -1 })
                 .lean(),
             AuctionBid.find({ auctionId })
-                .populate('userId', 'username')
+                .populate('userId', AUCTION_USER_SELECT)
                 .sort({ createdAt: -1, _id: -1 })
                 .limit(20)
                 .lean(),

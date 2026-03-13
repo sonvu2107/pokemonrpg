@@ -288,10 +288,18 @@ const mapItemMarketListing = (row = {}) => ({
     seller: row?.seller ? {
         id: row.seller._id || null,
         username: row.seller.username || 'Không rõ',
+        role: row.seller.role || 'user',
+        vipTierLevel: Math.max(0, Number.parseInt(row.seller.vipTierLevel, 10) || 0),
+        vipTierCode: String(row.seller.vipTierCode || '').trim().toUpperCase(),
+        vipBenefits: row.seller.vipBenefits || {},
     } : null,
     buyer: row?.buyer ? {
         id: row.buyer._id || null,
         username: row.buyer.username || 'Không rõ',
+        role: row.buyer.role || 'user',
+        vipTierLevel: Math.max(0, Number.parseInt(row.buyer.vipTierLevel, 10) || 0),
+        vipTierCode: String(row.buyer.vipTierCode || '').trim().toUpperCase(),
+        vipBenefits: row.buyer.vipBenefits || {},
     } : null,
 })
 
@@ -1173,6 +1181,10 @@ router.get('/sell', async (req, res) => {
                                     buyer: {
                                         _id: '$buyer._id',
                                         username: '$buyer.username',
+                                        role: '$buyer.role',
+                                        vipTierLevel: '$buyer.vipTierLevel',
+                                        vipTierCode: '$buyer.vipTierCode',
+                                        vipBenefits: '$buyer.vipBenefits',
                                     },
                                 },
                             },
@@ -1233,6 +1245,10 @@ router.get('/sell', async (req, res) => {
                                     buyer: {
                                         _id: '$buyer._id',
                                         username: '$buyer.username',
+                                        role: '$buyer.role',
+                                        vipTierLevel: '$buyer.vipTierLevel',
+                                        vipTierCode: '$buyer.vipTierCode',
+                                        vipBenefits: '$buyer.vipBenefits',
                                     },
                                 },
                             },
@@ -1292,6 +1308,10 @@ router.get('/sell', async (req, res) => {
                     ? {
                         id: row.buyer._id,
                         username: row.buyer.username || 'Không rõ',
+                        role: row.buyer.role || 'user',
+                        vipTierLevel: Math.max(0, Number.parseInt(row.buyer.vipTierLevel, 10) || 0),
+                        vipTierCode: String(row.buyer.vipTierCode || '').trim().toUpperCase(),
+                        vipBenefits: row.buyer.vipBenefits || {},
                     }
                     : null,
                 status: row.status,
@@ -1526,6 +1546,10 @@ router.get('/buy', async (req, res) => {
                     seller: {
                         _id: '$seller._id',
                         username: '$seller.username',
+                        role: '$seller.role',
+                        vipTierLevel: '$seller.vipTierLevel',
+                        vipTierCode: '$seller.vipTierCode',
+                        vipBenefits: '$seller.vipBenefits',
                     },
                 },
             },

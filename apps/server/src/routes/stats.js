@@ -113,6 +113,9 @@ const serializeVipBenefits = (vipBenefitsLike = {}) => ({
     usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(vipBenefitsLike?.usernameGradientColor || '').trim())
         ? String(vipBenefitsLike?.usernameGradientColor || '').trim().toUpperCase()
         : '',
+    usernameEffectColors: [...new Set((Array.isArray(vipBenefitsLike?.usernameEffectColors) ? vipBenefitsLike.usernameEffectColors : [])
+        .map((entry) => /^#([0-9a-f]{6})$/i.test(String(entry || '').trim()) ? String(entry || '').trim().toUpperCase() : '')
+        .filter(Boolean))].slice(0, 8),
     usernameEffect: String(vipBenefitsLike?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
     autoSearchEnabled: vipBenefitsLike?.autoSearchEnabled !== false,
     autoSearchDurationMinutes: Math.max(0, parseInt(vipBenefitsLike?.autoSearchDurationMinutes, 10) || 0),

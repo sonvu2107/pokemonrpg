@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { gameApi } from '../services/gameApi'
 import { useAuth } from '../context/AuthContext'
+import VipUsername from '../components/VipUsername'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 
@@ -110,7 +111,7 @@ export default function DailyStatsPage() {
     return (
         <div className="max-w-5xl mx-auto pb-12">
             <div className="text-center mb-5">
-                <h1 className="text-3xl font-bold text-slate-800">Thống kê hằng ngày của {username}</h1>
+                <h1 className="text-3xl font-bold text-slate-800">Thống kê hằng ngày của <VipUsername userLike={authUser}>{username}</VipUsername></h1>
                 <div className="mt-1 text-sm font-bold text-blue-700 underline decoration-blue-400 cursor-not-allowed" title="Tính năng đang được phát triển">
                     Xem thống kê đào mỏ chi tiết
                 </div>

@@ -4,6 +4,7 @@ const EMPTY_VIP_BENEFITS = Object.freeze({
     avatarFrameUrl: '',
     usernameColor: '',
     usernameGradientColor: '',
+    usernameEffectColors: [],
     usernameEffect: 'none',
     autoSearchEnabled: true,
     autoSearchDurationMinutes: 0,

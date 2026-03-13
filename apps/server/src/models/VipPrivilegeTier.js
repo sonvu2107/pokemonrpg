@@ -60,6 +60,10 @@ const vipPrivilegeTierSchema = new mongoose.Schema(
                 default: '',
                 trim: true,
             },
+            usernameEffectColors: {
+                type: [String],
+                default: [],
+            },
             usernameEffect: {
                 type: String,
                 enum: ['none', 'animated'],

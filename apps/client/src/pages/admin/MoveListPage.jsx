@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { moveApi } from '../../services/adminApi'
+import VipUsername from '../../components/VipUsername'
 import { parseMoveCsvImport } from '../../utils/moveCsvImport'
 
 const CATEGORY_LABELS = {
@@ -890,7 +891,7 @@ export default function MoveListPage() {
                                 ) : historyLogs.map((log) => (
                                     <tr key={log._id} className="hover:bg-blue-50 transition-colors">
                                         <td className="px-3 py-2 text-slate-700">{formatDateTime(log.createdAt)}</td>
-                                        <td className="px-3 py-2 text-slate-800 font-semibold">{log?.buyer?.username || 'Không rõ'}</td>
+                                        <td className="px-3 py-2 text-slate-800 font-semibold"><VipUsername userLike={log?.buyer}>{log?.buyer?.username || 'Không rõ'}</VipUsername></td>
                                         <td className="px-3 py-2 text-slate-700">{log?.move?.name || 'Kỹ năng đã xóa'}</td>
                                         <td className="px-3 py-2 text-right font-bold text-slate-700">{Number(log.quantity || 0).toLocaleString('vi-VN')}</td>
                                         <td className="px-3 py-2 text-right text-slate-700">{Number(log.unitPrice || 0).toLocaleString('vi-VN')}</td>

@@ -453,6 +453,10 @@ router.post('/encounter/:id/catch', authMiddleware, async (req, res, next) => {
                         isVip,
                         vipTitle: effectiveVipVisualBenefits.title,
                         vipTitleImageUrl: effectiveVipVisualBenefits.titleImageUrl,
+                        usernameColor: effectiveVipVisualBenefits.usernameColor,
+                        usernameGradientColor: effectiveVipVisualBenefits.usernameGradientColor,
+                        usernameEffectColors: effectiveVipVisualBenefits.usernameEffectColors,
+                        usernameEffect: effectiveVipVisualBenefits.usernameEffect,
                         message: `Người chơi ${username} vừa bắt được Pokemon ${rarityLabel} - ${pokemon.name}!`,
                     }
                     const io = getIO()

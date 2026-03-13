@@ -38,6 +38,9 @@ const buildSeedTrainer = (userLike = {}) => {
             avatarFrameUrl: String(userLike?.vipBenefits?.avatarFrameUrl || '').trim(),
             usernameColor: String(userLike?.vipBenefits?.usernameColor || '').trim().toUpperCase(),
             usernameGradientColor: String(userLike?.vipBenefits?.usernameGradientColor || '').trim().toUpperCase(),
+            usernameEffectColors: Array.isArray(userLike?.vipBenefits?.usernameEffectColors)
+                ? userLike.vipBenefits.usernameEffectColors.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean)
+                : [],
             usernameEffect: String(userLike?.vipBenefits?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
         },
         isOnline: Boolean(userLike?.isOnline),

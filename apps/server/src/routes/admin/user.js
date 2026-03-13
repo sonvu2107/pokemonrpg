@@ -45,6 +45,16 @@ const normalizeVipHexColor = (value = '') => {
     return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
 }
 
+const normalizeVipColorList = (value = []) => {
+    const list = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[\n,|]+/)
+
+    return [...new Set(list
+        .map((entry) => normalizeVipHexColor(entry))
+        .filter(Boolean))].slice(0, 8)
+}
+
 const normalizeVipUsernameEffect = (value = 'none') => {
     return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
 }
@@ -70,6 +80,7 @@ const VIP_SYNCABLE_BENEFIT_FIELDS = Object.freeze([
     'avatarFrameUrl',
     'usernameColor',
     'usernameGradientColor',
+    'usernameEffectColors',
     'usernameEffect',
     'autoSearchEnabled',
     'autoSearchDurationMinutes',
@@ -110,6 +121,7 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
         usernameColor: normalizeVipHexColor(source?.usernameColor),
         usernameGradientColor: normalizeVipHexColor(source?.usernameGradientColor),
+        usernameEffectColors: normalizeVipColorList(source?.usernameEffectColors),
         usernameEffect: normalizeVipUsernameEffect(source?.usernameEffect),
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
@@ -168,6 +180,7 @@ const normalizeVipTierBenefits = (benefitsLike = {}, fallbackLike = {}) => {
         avatarFrameUrl: String(source.avatarFrameUrl ?? fallback.avatarFrameUrl ?? '').trim(),
         usernameColor: normalizeVipHexColor(source.usernameColor ?? fallback.usernameColor ?? ''),
         usernameGradientColor: normalizeVipHexColor(source.usernameGradientColor ?? fallback.usernameGradientColor ?? ''),
+        usernameEffectColors: normalizeVipColorList(source.usernameEffectColors ?? fallback.usernameEffectColors ?? []),
         usernameEffect: normalizeVipUsernameEffect(source.usernameEffect ?? fallback.usernameEffect ?? 'none'),
         autoSearchEnabled: source.autoSearchEnabled === undefined
             ? (fallback.autoSearchEnabled !== false)
@@ -1671,6 +1684,9 @@ router.put('/:id/vip-benefits', async (req, res) => {
         }
         if (Object.prototype.hasOwnProperty.call(incoming, 'usernameGradientColor')) {
             nextVipBenefits.usernameGradientColor = normalizeVipHexColor(incoming.usernameGradientColor)
+        }
+        if (Object.prototype.hasOwnProperty.call(incoming, 'usernameEffectColors')) {
+            nextVipBenefits.usernameEffectColors = normalizeVipColorList(incoming.usernameEffectColors)
         }
         if (Object.prototype.hasOwnProperty.call(incoming, 'usernameEffect')) {
             nextVipBenefits.usernameEffect = normalizeVipUsernameEffect(incoming.usernameEffect)

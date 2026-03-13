@@ -116,6 +116,9 @@ const normalizeVipVisualBenefits = (vipBenefitsLike = {}) => {
         usernameGradientColor: /^#([0-9a-f]{6})$/i.test(String(source?.usernameGradientColor || '').trim())
             ? String(source?.usernameGradientColor || '').trim().toUpperCase()
             : '',
+        usernameEffectColors: [...new Set((Array.isArray(source?.usernameEffectColors) ? source.usernameEffectColors : [])
+            .map((entry) => /^#([0-9a-f]{6})$/i.test(String(entry || '').trim()) ? String(entry || '').trim().toUpperCase() : '')
+            .filter(Boolean))].slice(0, 8),
         usernameEffect: String(source?.usernameEffect || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none',
     }
 }
@@ -128,6 +131,7 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         titleImageUrl: current.titleImageUrl || tier.titleImageUrl,
         usernameColor: current.usernameColor || tier.usernameColor,
         usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffectColors: current.usernameEffectColors.length > 0 ? current.usernameEffectColors : tier.usernameEffectColors,
         usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
@@ -682,6 +686,10 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                             isVip,
                             vipTitle: effectiveVipVisualBenefits.title,
                             vipTitleImageUrl: effectiveVipVisualBenefits.titleImageUrl,
+                            usernameColor: effectiveVipVisualBenefits.usernameColor,
+                            usernameGradientColor: effectiveVipVisualBenefits.usernameGradientColor,
+                            usernameEffectColors: effectiveVipVisualBenefits.usernameEffectColors,
+                            usernameEffect: effectiveVipVisualBenefits.usernameEffect,
                             message: `Người chơi ${username} vừa bắt được Pokemon ${rarityLabel} - ${pokemon.name}!`,
                         }
 

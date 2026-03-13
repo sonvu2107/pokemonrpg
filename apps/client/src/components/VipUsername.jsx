@@ -10,6 +10,19 @@ const hexToRgba = (hexColor = '', alpha = 1) => {
     return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${Math.max(0, Math.min(1, Number(alpha) || 0))})`
 }
 
+const buildAnimatedGradient = (palette = []) => {
+    const colors = Array.isArray(palette) ? palette.filter(Boolean) : []
+    if (colors.length === 0) return ''
+    if (colors.length === 1) return `linear-gradient(90deg, ${colors[0]} 0%, ${colors[0]} 100%)`
+
+    const steps = colors.map((color, index) => {
+        const position = Math.round((index / (colors.length - 1)) * 100)
+        return `${color} ${position}%`
+    })
+
+    return `linear-gradient(90deg, ${steps.join(', ')})`
+}
+
 export default function VipUsername({
     as: Component = 'span',
     userLike,
@@ -25,8 +38,8 @@ export default function VipUsername({
 
     if (vipUsername.isAnimated) {
         const glowColor = hexToRgba(vipUsername.color, 0.42)
-        resolvedStyle.backgroundImage = `linear-gradient(90deg, ${vipUsername.color} 0%, ${vipUsername.gradientColor} 30%, #FFFFFF 50%, ${vipUsername.gradientColor} 70%, ${vipUsername.color} 100%)`
-        resolvedStyle.backgroundSize = '220% 100%'
+        resolvedStyle.backgroundImage = buildAnimatedGradient(vipUsername.palette)
+        resolvedStyle.backgroundSize = `${Math.max(220, vipUsername.palette.length * 70)}% 100%`
         resolvedStyle.backgroundClip = 'text'
         resolvedStyle.WebkitBackgroundClip = 'text'
         resolvedStyle.color = 'transparent'

@@ -87,6 +87,10 @@ const toNewsSummary = (postLike = {}) => {
             ? {
                 _id: postLike.author._id,
                 username: String(postLike.author.username || '').trim(),
+                role: String(postLike.author.role || 'user').trim() || 'user',
+                vipTierLevel: Math.max(0, Number.parseInt(postLike.author.vipTierLevel, 10) || 0),
+                vipTierCode: String(postLike.author.vipTierCode || '').trim().toUpperCase(),
+                vipBenefits: postLike.author.vipBenefits || {},
             }
             : null,
         mapId: postLike?.mapId
@@ -120,7 +124,7 @@ router.get('/', async (req, res) => {
         }
 
         const posts = await Post.find(query)
-            .populate('author', 'username')
+            .populate('author', 'username role vipTierLevel vipTierCode vipBenefits')
             .populate('mapId', 'name slug')
             .select('title content type imageUrl imageUrls tags author mapId createdAt updatedAt')
             .sort({ createdAt: -1 })
@@ -141,7 +145,7 @@ router.get('/', async (req, res) => {
 router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.NEWS), async (req, res) => {
     try {
         const posts = await Post.find()
-            .populate('author', 'username')
+            .populate('author', 'username role vipTierLevel vipTierCode vipBenefits')
             .populate('mapId', 'name slug')
             .sort({ createdAt: -1 })
             .lean()
@@ -157,7 +161,7 @@ router.get('/admin/all', authMiddleware, requireAdmin, requireAdminPermission(AD
 router.get('/:id', async (req, res) => {
     try {
         const post = await Post.findOne({ _id: req.params.id, isPublished: true })
-            .populate('author', 'username')
+            .populate('author', 'username role vipTierLevel vipTierCode vipBenefits')
             .populate('mapId', 'name slug')
 
         if (!post) {
@@ -209,7 +213,7 @@ router.post('/', authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERM
 
         await post.save()
         await post.populate([
-            { path: 'author', select: 'username' },
+            { path: 'author', select: 'username role vipTierLevel vipTierCode vipBenefits' },
             { path: 'mapId', select: 'name slug' },
         ])
 

@@ -7,6 +7,16 @@ export const normalizeVipHexColor = (value = '') => {
     return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
 }
 
+export const normalizeVipColorList = (value = []) => {
+    const list = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[\n,|]+/)
+
+    return [...new Set(list
+        .map((entry) => normalizeVipHexColor(entry))
+        .filter(Boolean))].slice(0, 8)
+}
+
 export const normalizeVipUsernameEffect = (value = 'none') => {
     return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
 }
@@ -82,6 +92,7 @@ export const getVipUsernameConfig = (userLike) => {
         return {
             color: '',
             gradientColor: '',
+            palette: [],
             effect: 'none',
             isAnimated: false,
             isColored: false,
@@ -91,11 +102,17 @@ export const getVipUsernameConfig = (userLike) => {
     const color = normalizeVipHexColor(userLike?.vipBenefits?.usernameColor)
     const effect = normalizeVipUsernameEffect(userLike?.vipBenefits?.usernameEffect)
     const gradientColor = normalizeVipHexColor(userLike?.vipBenefits?.usernameGradientColor) || mixHexColor(color, '#FFFFFF', 0.42)
+    const effectColors = normalizeVipColorList(userLike?.vipBenefits?.usernameEffectColors)
+    const palette = [...new Set([color, gradientColor, ...effectColors].filter(Boolean))]
     const isAnimated = Boolean(color) && effect === 'animated'
+    const resolvedPalette = isAnimated
+        ? (palette.length >= 2 ? palette : [...palette, mixHexColor(color, '#FFFFFF', 0.42), '#FFFFFF'].filter(Boolean).slice(0, 4))
+        : []
 
     return {
         color,
         gradientColor,
+        palette: resolvedPalette,
         effect: isAnimated ? 'animated' : 'none',
         isAnimated,
         isColored: Boolean(color),

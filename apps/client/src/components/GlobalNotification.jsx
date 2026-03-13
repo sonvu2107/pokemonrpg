@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '../context/ChatContext'
 import VipTitleBadge from './VipTitleBadge'
+import VipUsername from './VipUsername'
 
 const MARQUEE_DURATION_MS = 12000
 const DEFAULT_ICON = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png'
@@ -50,6 +51,10 @@ const normalizeNotificationPayload = (payload = {}) => {
         isVip: Boolean(payload?.isVip),
         vipTitle: String(payload?.vipTitle || '').trim(),
         vipTitleImageUrl: String(payload?.vipTitleImageUrl || '').trim(),
+        usernameColor: String(payload?.usernameColor || '').trim(),
+        usernameGradientColor: String(payload?.usernameGradientColor || '').trim(),
+        usernameEffectColors: Array.isArray(payload?.usernameEffectColors) ? payload.usernameEffectColors : [],
+        usernameEffect: String(payload?.usernameEffect || '').trim(),
     }
 }
 
@@ -137,6 +142,10 @@ export default function GlobalNotification() {
             vipBenefits: {
                 title: String(activeNotification?.vipTitle || '').trim(),
                 titleImageUrl: String(activeNotification?.vipTitleImageUrl || '').trim(),
+                usernameColor: String(activeNotification?.usernameColor || '').trim(),
+                usernameGradientColor: String(activeNotification?.usernameGradientColor || '').trim(),
+                usernameEffectColors: Array.isArray(activeNotification?.usernameEffectColors) ? activeNotification.usernameEffectColors : [],
+                usernameEffect: String(activeNotification?.usernameEffect || '').trim(),
             },
         }
     }, [activeNotification])
@@ -173,7 +182,7 @@ export default function GlobalNotification() {
                         {activeNotification.username && activeNotification.pokemonName ? (
                             <span className="whitespace-nowrap font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] inline-flex items-center gap-2">
                                 <span>Người chơi</span>
-                                <span className="text-cyan-100">{activeNotification.username}</span>
+                                <VipUsername userLike={notificationUserLike} className="text-cyan-100">{activeNotification.username}</VipUsername>
                                 <VipTitleBadge
                                     userLike={notificationUserLike}
                                     imageClassName="h-7 max-w-[180px] object-contain shrink-0"

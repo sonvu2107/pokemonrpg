@@ -43,6 +43,16 @@ const normalizeVipHexColor = (value = '') => {
     return VIP_HEX_COLOR_REGEX.test(raw) ? raw : ''
 }
 
+const normalizeVipColorList = (value = []) => {
+    const list = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[\n,|]+/)
+
+    return [...new Set(list
+        .map((entry) => normalizeVipHexColor(entry))
+        .filter(Boolean))].slice(0, 8)
+}
+
 const normalizeVipUsernameEffect = (value = 'none') => {
     return String(value || '').trim().toLowerCase() === 'animated' ? 'animated' : 'none'
 }
@@ -109,6 +119,7 @@ const normalizeVipBenefits = (vipBenefitsLike = {}) => {
         avatarFrameUrl: String(source?.avatarFrameUrl || '').trim(),
         usernameColor: normalizeVipHexColor(source?.usernameColor),
         usernameGradientColor: normalizeVipHexColor(source?.usernameGradientColor),
+        usernameEffectColors: normalizeVipColorList(source?.usernameEffectColors),
         usernameEffect: normalizeVipUsernameEffect(source?.usernameEffect),
         autoSearchEnabled: source?.autoSearchEnabled !== false,
         autoSearchDurationMinutes: Math.max(0, parseInt(source?.autoSearchDurationMinutes, 10) || 0),
@@ -130,6 +141,7 @@ const mergeVipVisualBenefits = (currentBenefitsLike = {}, tierBenefitsLike = {})
         avatarFrameUrl: current.avatarFrameUrl || tier.avatarFrameUrl,
         usernameColor: current.usernameColor || tier.usernameColor,
         usernameGradientColor: current.usernameGradientColor || tier.usernameGradientColor,
+        usernameEffectColors: current.usernameEffectColors.length > 0 ? current.usernameEffectColors : tier.usernameEffectColors,
         usernameEffect: current.usernameEffect !== 'none' ? current.usernameEffect : tier.usernameEffect,
     }
 }
@@ -190,6 +202,7 @@ const hasSameVipVisualBenefits = (leftLike = {}, rightLike = {}) => {
         && left.avatarFrameUrl === right.avatarFrameUrl
         && left.usernameColor === right.usernameColor
         && left.usernameGradientColor === right.usernameGradientColor
+        && JSON.stringify(left.usernameEffectColors) === JSON.stringify(right.usernameEffectColors)
         && left.usernameEffect === right.usernameEffect
         && left.autoSearchEnabled === right.autoSearchEnabled
         && left.autoSearchDurationMinutes === right.autoSearchDurationMinutes

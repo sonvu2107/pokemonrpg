@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { itemApi } from '../../services/adminApi'
+import VipUsername from '../../components/VipUsername'
 
 const TYPE_LABELS = {
     healing: 'Hồi phục',
@@ -479,7 +480,7 @@ export default function ItemListPage() {
                                 ) : historyLogs.map((log) => (
                                     <tr key={log._id} className="hover:bg-blue-50 transition-colors">
                                         <td className="px-3 py-2 text-slate-700">{formatDateTime(log.createdAt)}</td>
-                                        <td className="px-3 py-2 text-slate-800 font-semibold">{log?.buyer?.username || 'Không rõ'}</td>
+                                        <td className="px-3 py-2 text-slate-800 font-semibold"><VipUsername userLike={log?.buyer}>{log?.buyer?.username || 'Không rõ'}</VipUsername></td>
                                         <td className="px-3 py-2 text-slate-700">{log?.item?.name || 'Vật phẩm đã xóa'}</td>
                                         <td className="px-3 py-2 text-slate-700 font-semibold">{log?.shopType === 'moon' ? 'Nguyệt Các' : 'Vật phẩm'}</td>
                                         <td className="px-3 py-2 text-right font-bold text-slate-700">{Number(log.quantity || 0).toLocaleString('vi-VN')}</td>
