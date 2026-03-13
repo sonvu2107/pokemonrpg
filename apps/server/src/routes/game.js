@@ -314,7 +314,7 @@ router.post('/click', authMiddleware, (req, res) => {
 router.use(encounterRoutes)
 
 // POST /api/game/battle/attack (protected)
-router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tan cong battle' }), battleAttackActionGuard, async (req, res, next) => {
+router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tấn công battle' }), battleAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const {
@@ -2476,7 +2476,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
     }
 })
 
-router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bat dau battle trainer' }), async (req, res, next) => {
+router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bắt đầu battle trainer' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null, activePokemonId = null } = req.body || {}

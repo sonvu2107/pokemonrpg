@@ -75,7 +75,7 @@ router.get('/auto-trainer/status', authMiddleware, async (req, res, next) => {
     }
 })
 
-router.post('/auto-trainer/settings', authMiddleware, requireActiveGameplayTab({ actionLabel: 'cap nhat auto trainer' }), async (req, res, next) => {
+router.post('/auto-trainer/settings', authMiddleware, requireActiveGameplayTab({ actionLabel: 'cập nhật auto trainer' }), async (req, res, next) => {
     try {
         const user = await User.findById(req.user.userId)
             .select('role vipTierId vipTierLevel vipBenefits completedBattleTrainers autoTrainer isBanned')

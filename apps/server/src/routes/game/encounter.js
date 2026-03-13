@@ -55,7 +55,7 @@ const encounterAttackActionGuard = createActionGuard({
     message: 'Tấn công quá nhanh. Vui lòng đợi một chút.',
 })
 
-router.post('/encounter/:id/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tan cong Pokemon hoang da' }), encounterAttackActionGuard, async (req, res, next) => {
+router.post('/encounter/:id/attack', authMiddleware, requireActiveGameplayTab({ actionLabel: 'tấn công Pokemon hoang dã' }), encounterAttackActionGuard, async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
@@ -342,7 +342,7 @@ router.post('/encounter/:id/attack', authMiddleware, requireActiveGameplayTab({ 
     }
 })
 
-router.post('/encounter/:id/catch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bat Pokemon' }), async (req, res, next) => {
+router.post('/encounter/:id/catch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'bắt Pokemon' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })
@@ -536,7 +536,7 @@ router.post('/encounter/:id/catch', authMiddleware, requireActiveGameplayTab({ a
     }
 })
 
-router.post('/encounter/:id/run', authMiddleware, requireActiveGameplayTab({ actionLabel: 'rut lui khoi tran' }), async (req, res, next) => {
+router.post('/encounter/:id/run', authMiddleware, requireActiveGameplayTab({ actionLabel: 'rút lui khỏi trận' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const encounter = await Encounter.findOne({ _id: req.params.id, userId, isActive: true })

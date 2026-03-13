@@ -16,7 +16,7 @@ const cleanupGameplayTabState = (nowMs = Date.now()) => {
 }
 
 export const requireActiveGameplayTab = (options = {}) => {
-    const actionLabel = normalize(options.actionLabel) || 'thao tac game'
+    const actionLabel = normalize(options.actionLabel) || 'thao tác game'
 
     return (req, res, next) => {
         if (req.user?.tokenType === 'internal') {
@@ -32,7 +32,7 @@ export const requireActiveGameplayTab = (options = {}) => {
             return res.status(409).json({
                 ok: false,
                 code: 'GAMEPLAY_TAB_REQUIRED',
-                message: 'Tab nay chua san sang de choi. Hay tai lai trang va thu lai.',
+                message: 'Tab này chưa sẵn sàng để chơi. Hãy tải lại trang và thử lại.',
             })
         }
 
@@ -60,7 +60,7 @@ export const requireActiveGameplayTab = (options = {}) => {
         return res.status(409).json({
             ok: false,
             code: 'GAMEPLAY_TAB_LOCKED',
-            message: `Tab nay dang o che do xem. Hay quay lai tab dang choi de tiep tuc ${actionLabel}.`,
+            message: `Tab này đang ở chế độ xem. Hãy quay lại tab đang chơi để tiếp tục ${actionLabel}.`,
         })
     }
 }

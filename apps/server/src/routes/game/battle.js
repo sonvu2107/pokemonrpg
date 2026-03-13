@@ -65,7 +65,7 @@ const resolveDefeatedTrainerPlayerEntry = (session = null) => {
         || null
 }
 
-router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'doi Pokemon battle trainer' }), async (req, res, next) => {
+router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({ actionLabel: 'đổi Pokemon battle trainer' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null, activePokemonId = null, playerCurrentHp = null, playerMaxHp = null } = req.body || {}
@@ -251,7 +251,7 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
     }
 })
 
-router.post('/battle/resolve', authMiddleware, requireActiveGameplayTab({ actionLabel: 'nhan ket qua battle' }), async (req, res, next) => {
+router.post('/battle/resolve', authMiddleware, requireActiveGameplayTab({ actionLabel: 'nhận kết quả battle' }), async (req, res, next) => {
     try {
         const userId = req.user.userId
         const { trainerId = null } = req.body

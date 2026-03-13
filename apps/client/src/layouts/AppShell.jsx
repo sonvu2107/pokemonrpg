@@ -15,7 +15,7 @@ const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master
 
 export default function AppShell() {
     const { user, logout } = useAuth()
-    const { isPlayTabBlocked, blockReason, maxAllowedTabs } = usePlayTab()
+    const { isPlayTabBlocked, isGameplayTabBlocked, blockReason, maxAllowedTabs } = usePlayTab()
     const { data: profilePayload } = useProfileQuery({ enabled: Boolean(user) })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [mobileProfile, setMobileProfile] = useState({
@@ -122,6 +122,23 @@ export default function AppShell() {
                                 </div>
                             </div>
                             <div className="p-3">
+                                {!isPlayTabBlocked && isGameplayTabBlocked ? (
+                                    <div className="mb-4 rounded-2xl border-[3px] border-slate-800 bg-gradient-to-r from-sky-100 via-white to-emerald-100 px-4 py-3 shadow-sm">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-sky-700">Che do xem</div>
+                                                <div className="mt-1 text-sm font-bold text-slate-800">Tab này chỉ xem thông tin và chat. Muốn đánh/search, hãy quay lại tab đang chơi.</div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => window.location.reload()}
+                                                className="rounded-full border-2 border-slate-900 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-800 shadow-sm transition-transform hover:-translate-y-0.5"
+                                            >
+                                                Giành lại tab chơi
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
                                 {isPlayTabBlocked ? (
                                     <div className="mx-auto flex min-h-[420px] max-w-2xl items-center justify-center">
                                         <div className="relative w-full overflow-hidden rounded-[28px] border-[3px] border-slate-800 bg-sky-100 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">

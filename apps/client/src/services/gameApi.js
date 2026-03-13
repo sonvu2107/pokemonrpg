@@ -1,10 +1,127 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 import { clearAuthSession, getValidTokenFromStorage } from '../utils/authSession'
 
+const TAB_ID_STORAGE_KEY = 'vnpet:tab-id'
+const PLAY_TAB_LOCK_PREFIX = 'vnpet:play-tab:'
+const GAMEPLAY_LOCK_PREFIX = 'vnpet:gameplay-tab:'
+const TAB_LOCK_STALE_MS = 6500
+
 // Helper to get auth header
 const getAuthHeader = () => {
     const token = getValidTokenFromStorage()
     return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const getStoredUserKey = () => {
+    if (typeof window === 'undefined') return ''
+
+    try {
+        const raw = window.localStorage.getItem('user')
+        if (!raw) return ''
+        const parsed = JSON.parse(raw)
+        return String(parsed?.id || parsed?._id || parsed?.userId || parsed?.email || parsed?.username || '').trim()
+    } catch {
+        return ''
+    }
+}
+
+const getCurrentTabId = () => {
+    if (typeof window === 'undefined') return ''
+    return String(window.sessionStorage.getItem(TAB_ID_STORAGE_KEY) || '').trim()
+}
+
+const isStaleTab = (entry) => {
+    const lastSeen = Number(entry?.lastSeen || 0)
+    if (!String(entry?.tabId || '').trim()) return true
+    if (!Number.isFinite(lastSeen) || lastSeen <= 0) return true
+    return (Date.now() - lastSeen) > TAB_LOCK_STALE_MS
+}
+
+const readAllowedTabs = (userKey) => {
+    if (typeof window === 'undefined' || !userKey) return []
+
+    try {
+        const raw = window.localStorage.getItem(`${PLAY_TAB_LOCK_PREFIX}${userKey}`)
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        const tabs = Array.isArray(parsed?.tabs) ? parsed.tabs : []
+        return tabs
+            .map((entry) => ({
+                tabId: String(entry?.tabId || '').trim(),
+                lastSeen: Number(entry?.lastSeen || 0),
+            }))
+            .filter((entry) => !isStaleTab(entry))
+    } catch {
+        return []
+    }
+}
+
+const readGameplayLock = (userKey) => {
+    if (typeof window === 'undefined' || !userKey) return null
+
+    try {
+        const raw = window.localStorage.getItem(`${GAMEPLAY_LOCK_PREFIX}${userKey}`)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        return {
+            tabId: String(parsed?.tabId || '').trim(),
+            lastSeen: Number(parsed?.lastSeen || 0),
+        }
+    } catch {
+        return null
+    }
+}
+
+const writeGameplayLock = (userKey, tabId) => {
+    if (typeof window === 'undefined' || !userKey || !tabId) return
+    window.localStorage.setItem(`${GAMEPLAY_LOCK_PREFIX}${userKey}`, JSON.stringify({
+        tabId,
+        lastSeen: Date.now(),
+    }))
+}
+
+const getGameplayActionHeaders = (actionLabel = 'thao tác này') => {
+    const userKey = getStoredUserKey()
+    const tabId = getCurrentTabId()
+
+    if (!userKey || !tabId) {
+        return {
+            allowed: false,
+            headers: {},
+            message: 'Tab này chưa sẵn sàng để chơi. Hãy tải lại trang rồi thử lại.',
+        }
+    }
+
+    const allowedTabs = readAllowedTabs(userKey)
+    if (allowedTabs.length > 0 && !allowedTabs.some((entry) => entry.tabId === tabId)) {
+        return {
+            allowed: false,
+            headers: {},
+            message: 'Bạn đã mở quá 2 tab chơi cho tài khoản này.',
+        }
+    }
+
+    const currentLock = readGameplayLock(userKey)
+    if (!currentLock || isStaleTab(currentLock) || currentLock.tabId === tabId) {
+        writeGameplayLock(userKey, tabId)
+        return {
+            allowed: true,
+            headers: {
+                'X-VNPET-Tab-Id': tabId,
+                'X-VNPET-Gameplay-Tab': tabId,
+                'X-VNPET-Gameplay-Claim': '1',
+            },
+        }
+    }
+
+    return {
+        allowed: false,
+        headers: {
+            'X-VNPET-Tab-Id': tabId,
+            'X-VNPET-Gameplay-Tab': tabId,
+        },
+        message: `Tab này đang ở chế độ xem. Hãy quay lại tab đang chơi để tiếp tục ${actionLabel}.`,
+    }
 }
 
 const throwApiError = async (res, fallbackMessage) => {
@@ -25,11 +142,16 @@ const throwApiError = async (res, fallbackMessage) => {
 export const gameApi = {
     // POST /api/game/search
     async searchMap(mapSlug) {
+        const gameplay = getGameplayActionHeaders('tìm kiếm bản đồ')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/search`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify({ mapSlug }),
         })
@@ -86,9 +208,16 @@ export const gameApi = {
 
     // POST /api/game/encounter/:id/attack
     async attackEncounter(encounterId) {
+        const gameplay = getGameplayActionHeaders('tấn công Pokemon hoang dã')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/encounter/${encounterId}/attack`, {
             method: 'POST',
-            headers: getAuthHeader(),
+            headers: {
+                ...getAuthHeader(),
+                ...gameplay.headers,
+            },
         })
         if (!res.ok) {
             const err = await res.json()
@@ -99,9 +228,16 @@ export const gameApi = {
 
     // POST /api/game/encounter/:id/catch
     async catchEncounter(encounterId) {
+        const gameplay = getGameplayActionHeaders('bắt Pokemon')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/encounter/${encounterId}/catch`, {
             method: 'POST',
-            headers: getAuthHeader(),
+            headers: {
+                ...getAuthHeader(),
+                ...gameplay.headers,
+            },
         })
         if (!res.ok) {
             const err = await res.json()
@@ -118,9 +254,16 @@ export const gameApi = {
 
     // POST /api/game/encounter/:id/run
     async runEncounter(encounterId) {
+        const gameplay = getGameplayActionHeaders('rút lui khỏi trận')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/encounter/${encounterId}/run`, {
             method: 'POST',
-            headers: getAuthHeader(),
+            headers: {
+                ...getAuthHeader(),
+                ...gameplay.headers,
+            },
         })
         if (!res.ok) {
             const err = await res.json()
@@ -143,11 +286,16 @@ export const gameApi = {
 
     // POST /api/game/battle/resolve
     async resolveBattle(_opponentTeam, trainerId = null) {
+        const gameplay = getGameplayActionHeaders('nhận kết quả battle')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/battle/resolve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify({ trainerId }),
         })
@@ -160,11 +308,16 @@ export const gameApi = {
 
     // POST /api/game/battle/attack
     async battleAttack(payload) {
+        const gameplay = getGameplayActionHeaders('tấn công battle')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/battle/attack`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify(payload),
         })
@@ -176,11 +329,16 @@ export const gameApi = {
     },
 
     async startTrainerBattle(payload) {
+        const gameplay = getGameplayActionHeaders('bắt đầu battle trainer')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/battle/trainer/start`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify(payload),
         })
@@ -192,11 +350,16 @@ export const gameApi = {
     },
 
     async switchTrainerBattlePokemon(payload) {
+        const gameplay = getGameplayActionHeaders('đổi Pokemon battle trainer')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/battle/trainer/switch`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify(payload),
         })
@@ -220,11 +383,16 @@ export const gameApi = {
 
     // POST /api/game/auto-trainer/settings
     async updateAutoTrainerSettings(payload = {}) {
+        const gameplay = getGameplayActionHeaders('cập nhật auto trainer')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/auto-trainer/settings`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify(payload || {}),
         })
@@ -247,11 +415,16 @@ export const gameApi = {
 
     // POST /api/game/auto-search/settings
     async updateAutoSearchSettings(payload = {}) {
+        const gameplay = getGameplayActionHeaders('cập nhật auto tìm kiếm')
+        if (!gameplay.allowed) {
+            throw new Error(gameplay.message)
+        }
         const res = await fetch(`${API_URL}/game/auto-search/settings`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...getAuthHeader(),
+                ...gameplay.headers,
             },
             body: JSON.stringify(payload || {}),
         })
