@@ -1,5 +1,7 @@
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { connectDB } from './config/db.js'
 import BattleTrainer from './models/BattleTrainer.js'
 import PlayerState from './models/PlayerState.js'
@@ -7,6 +9,10 @@ import User from './models/User.js'
 import UserInventory from './models/UserInventory.js'
 import UserPokemon from './models/UserPokemon.js'
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') })
 dotenv.config()
 
 const args = process.argv.slice(2)
@@ -15,6 +21,10 @@ const argsSet = new Set(args)
 const shouldApply = argsSet.has('--apply')
 const isDryRun = !shouldApply
 const includeAdmins = argsSet.has('--include-admins')
+const onlyUserIdRaw = (() => {
+    const idx = args.indexOf('--user-id')
+    return idx >= 0 ? String(args[idx + 1] || '').trim() : ''
+})()
 
 const resolveNumericArg = (flag, fallback) => {
     const idx = args.indexOf(flag)
@@ -58,6 +68,14 @@ const summarizeItemMap = (itemMap = new Map()) => {
 
 const run = async () => {
     try {
+        if (!String(process.env.MONGO_URI || '').trim()) {
+            throw new Error('Thiếu MONGO_URI. Hãy cấu hình trong apps/server/.env hoặc export biến môi trường trước khi chạy script.')
+        }
+
+        if (onlyUserIdRaw && !mongoose.Types.ObjectId.isValid(onlyUserIdRaw)) {
+            throw new Error(`--user-id không hợp lệ: ${onlyUserIdRaw}`)
+        }
+
         await connectDB()
 
         const trainerRows = await BattleTrainer.find({})
@@ -81,6 +99,9 @@ const run = async () => {
         console.log(`Dry run: ${isDryRun ? 'yes' : 'no'}`)
         console.log(`Threshold orderIndex: ${threshold}`)
         console.log(`Trainers above threshold: ${trainerIdsAboveThreshold.size}`)
+        if (onlyUserIdRaw) {
+            console.log(`Scope: only user ${onlyUserIdRaw}`)
+        }
 
         if (trainerIdsAboveThreshold.size === 0) {
             console.log('No trainer found above threshold. Nothing to do.')
@@ -89,6 +110,9 @@ const run = async () => {
 
         const userFilter = {
             completedBattleTrainers: { $in: [...trainerIdsAboveThreshold] },
+        }
+        if (onlyUserIdRaw) {
+            userFilter._id = new mongoose.Types.ObjectId(onlyUserIdRaw)
         }
         if (!includeAdmins) {
             userFilter.role = { $ne: 'admin' }
