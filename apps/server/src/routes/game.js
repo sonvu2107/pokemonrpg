@@ -2613,13 +2613,24 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         )
 
         if (!persistedTrainerSession) {
-            return res.status(409).json({
-                ok: false,
-                code: 'BATTLE_SESSION_CONFLICT',
-                message: 'Phiên battle trainer vừa được cập nhật ở luồng khác. Vui lòng thử lại ngay.',
+            const latestTrainerSession = await BattleSession.findOne({
+                userId,
+                trainerId: normalizedTrainerId,
+                expiresAt: { $gt: new Date() },
             })
+
+            if (latestTrainerSession && Array.isArray(latestTrainerSession.team) && latestTrainerSession.team.length > 0) {
+                trainerSession = latestTrainerSession
+            } else {
+                return res.status(409).json({
+                    ok: false,
+                    code: 'BATTLE_SESSION_CONFLICT',
+                    message: 'Phiên battle trainer vừa được cập nhật ở luồng khác. Vui lòng thử lại ngay.',
+                })
+            }
+        } else {
+            trainerSession = persistedTrainerSession
         }
-        trainerSession = persistedTrainerSession
 
         res.json({
             ok: true,
