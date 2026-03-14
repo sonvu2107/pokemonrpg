@@ -180,8 +180,8 @@ export default function RightColumn() {
                 <SidebarLink to="/rankings/daily">BXH Ngày</SidebarLink>
             </SidebarSection>
             <SidebarSection title="Kinh Tế" iconId={304}>
-                <SidebarLink to="/shop/buy">Mua Pokémon</SidebarLink>
-                <SidebarLink to="/shop/sell">Bán Pokémon</SidebarLink>
+                <SidebarLink to="/shop/buy">Mua Pokémon/Vật Phẩm</SidebarLink>
+                <SidebarLink to="/shop/sell">Bán Pokémon/Vật Phẩm</SidebarLink>
                 <SidebarLink to="/shop/items">Cửa hàng Vật Phẩm</SidebarLink>
                 <SidebarLink to="/shop/skills">Cửa hàng Kỹ Năng</SidebarLink>
                 <SidebarLink to="/shop/moon">Cửa hàng Nguyệt Các</SidebarLink>

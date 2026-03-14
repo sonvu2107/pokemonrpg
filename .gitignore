@@ -38,6 +38,7 @@ scripts/
 apps/server/scripts/
 # Documentation & Examples
 *.md
+!apps/server/docs/ability-runtime.md
 example/
 examples/
 *.example

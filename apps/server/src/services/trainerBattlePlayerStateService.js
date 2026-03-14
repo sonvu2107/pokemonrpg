@@ -4,6 +4,36 @@ import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const normalizeAbility = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeAbilitySuppressed = (value = false) => {
+    if (typeof value === 'string') {
+        const normalized = String(value || '').trim().toLowerCase()
+        return normalized === 'true' || normalized === '1'
+    }
+    return Boolean(value)
+}
+
+const normalizeAbilityPool = (value = []) => {
+    const entries = Array.isArray(value) ? value : []
+    return [...new Set(entries.map((entry) => normalizeAbility(entry)).filter(Boolean))]
+}
+
+const resolvePokemonAbilitySnapshot = ({ entry = null, existingEntry = null } = {}) => {
+    const existingAbility = normalizeAbility(existingEntry?.ability)
+    if (existingAbility) return existingAbility
+
+    const directAbility = normalizeAbility(entry?.ability)
+    if (directAbility) return directAbility
+
+    const legacySpeciesAbility = normalizeAbility(entry?.pokemonId?.ability)
+    if (legacySpeciesAbility) return legacySpeciesAbility
+
+    const speciesPool = normalizeAbilityPool(entry?.pokemonId?.abilities)
+    if (speciesPool.length > 0) return speciesPool[0]
+
+    return ''
+}
+
 const buildPlayerPartyEntryFromPokemon = (entry = {}, slot = 0, existingEntry = null, hpBonusPercent = 0) => {
     const species = entry?.pokemonId || {}
     const level = Math.max(1, Number(entry?.level || 1))
@@ -34,6 +64,8 @@ const buildPlayerPartyEntryFromPokemon = (entry = {}, slot = 0, existingEntry = 
         maxHp: resolvedMaxHp,
         status: normalizeBattleStatus(existingEntry?.status),
         statusTurns: normalizeStatusTurns(existingEntry?.statusTurns),
+        ability: resolvePokemonAbilitySnapshot({ entry, existingEntry }),
+        abilitySuppressed: normalizeAbilitySuppressed(existingEntry?.abilitySuppressed),
     }
 }
 
@@ -59,8 +91,8 @@ export const ensureTrainerSessionPlayerParty = async ({ trainerSession, userId, 
             userId,
             location: 'party',
         })
-            .select('_id nickname level pokemonId partyIndex')
-            .populate('pokemonId', 'name baseStats rarity')
+            .select('_id nickname level pokemonId partyIndex ability')
+            .populate('pokemonId', 'name baseStats rarity abilities')
             .sort({ partyIndex: 1, _id: 1 })
 
     const nextPlayerTeam = buildTrainerPlayerPartyState(partyRows, trainerSession.playerTeam, { hpBonusPercent })
@@ -79,6 +111,8 @@ export const ensureTrainerSessionPlayerParty = async ({ trainerSession, userId, 
         trainerSession.playerMaxHp = Math.max(1, Number(activeEntry.maxHp || 1))
         trainerSession.playerStatus = normalizeBattleStatus(activeEntry.status)
         trainerSession.playerStatusTurns = normalizeStatusTurns(activeEntry.statusTurns)
+        trainerSession.playerAbility = normalizeAbility(activeEntry.ability)
+        trainerSession.playerAbilitySuppressed = normalizeAbilitySuppressed(activeEntry.abilitySuppressed)
     }
 
     return nextPlayerTeam
@@ -95,6 +129,8 @@ export const syncTrainerSessionActivePlayerToParty = (trainerSession = null) => 
     activeEntry.maxHp = Math.max(1, Number(trainerSession.playerMaxHp || activeEntry.maxHp || 1))
     activeEntry.status = normalizeBattleStatus(trainerSession.playerStatus)
     activeEntry.statusTurns = normalizeStatusTurns(trainerSession.playerStatusTurns)
+    activeEntry.ability = normalizeAbility(trainerSession.playerAbility || activeEntry.ability)
+    activeEntry.abilitySuppressed = normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed)
     return activeEntry
 }
 
@@ -116,6 +152,8 @@ export const setTrainerSessionActivePlayerByIndex = (trainerSession = null, part
     trainerSession.playerMaxHp = Math.max(1, Number(entry.maxHp || 1))
     trainerSession.playerStatus = normalizeBattleStatus(entry.status)
     trainerSession.playerStatusTurns = normalizeStatusTurns(entry.statusTurns)
+    trainerSession.playerAbility = normalizeAbility(entry.ability)
+    trainerSession.playerAbilitySuppressed = normalizeAbilitySuppressed(entry.abilitySuppressed)
     resetTrainerSessionTransientPlayerState(trainerSession)
     return entry
 }
@@ -153,13 +191,24 @@ export const serializeTrainerPlayerPartyState = (trainerSession = null) => {
             maxHp: Math.max(1, Number(entry?.maxHp || 1)),
             status: normalizeBattleStatus(entry?.status),
             statusTurns: normalizeStatusTurns(entry?.statusTurns),
+            ability: normalizeAbility(entry?.ability),
+            abilitySuppressed: normalizeAbilitySuppressed(entry?.abilitySuppressed),
         })),
+    }
+}
+
+export const clearTrainerSessionActivePlayerAbilitySuppression = (trainerSession = null) => {
+    if (!trainerSession) return
+    trainerSession.playerAbilitySuppressed = false
+    const activeEntry = syncTrainerSessionActivePlayerToParty(trainerSession)
+    if (activeEntry) {
+        activeEntry.abilitySuppressed = false
     }
 }
 
 export const applyTrainerSessionForcedPlayerSwitch = (trainerSession = null) => {
     if (!trainerSession) return null
-    syncTrainerSessionActivePlayerToParty(trainerSession)
+    clearTrainerSessionActivePlayerAbilitySuppression(trainerSession)
     const currentIndex = resolveTrainerSessionActivePlayerIndex(trainerSession)
     const nextIndex = resolveNextAliveTrainerPlayerIndex(trainerSession, currentIndex)
     if (nextIndex === -1) {

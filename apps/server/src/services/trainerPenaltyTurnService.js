@@ -2,6 +2,8 @@ import Move from '../models/Move.js'
 import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { normalizeVolatileState, resolveActionAvailabilityByStatus } from '../battle/battleState.js'
+import { applyAbilityHook } from '../battle/abilities/abilityRuntime.js'
+import { resolveAbilityBypassDecision } from '../battle/abilities/abilityBypassPolicy.js'
 import { syncTrainerSessionActivePlayerToParty } from './trainerBattlePlayerStateService.js'
 import {
     appendTurnPhaseEvent,
@@ -36,6 +38,261 @@ const normalizeStatusTurns = (value = 0) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return 0
     return Math.max(0, Math.floor(parsed))
+}
+
+const normalizeAbilityToken = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeAbilitySuppressed = (value = false) => {
+    if (typeof value === 'string') {
+        const normalized = String(value || '').trim().toLowerCase()
+        return normalized === 'true' || normalized === '1'
+    }
+    return Boolean(value)
+}
+
+const normalizeAbilityPool = (value = []) => {
+    const entries = Array.isArray(value) ? value : []
+    return [...new Set(entries.map((entry) => normalizeAbilityToken(entry)).filter(Boolean))]
+}
+
+const normalizeAbilityLogs = (value = []) => (
+    Array.isArray(value)
+        ? value.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : []
+)
+
+const clampProcChance = (value) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return 0
+    if (parsed <= 0) return 0
+    if (parsed >= 1) return 1
+    return parsed
+}
+
+const shouldProcEffectChance = (chance = 1, randomValue = Math.random()) => {
+    const normalizedChance = clampProcChance(chance)
+    if (normalizedChance >= 1) return true
+    if (normalizedChance <= 0) return false
+    return Number(randomValue) < normalizedChance
+}
+
+const normalizeIgnoreTargetAbilityMode = (value = '') => String(value || '').trim().toLowerCase() || 'ignore'
+const isSuppressAbilityMode = (mode = '') => normalizeIgnoreTargetAbilityMode(mode).startsWith('suppress')
+const MOLD_BREAKER_STYLE_ABILITIES = new Set(['mold_breaker', 'teravolt', 'turboblaze'])
+
+const formatAbilityName = (ability = '') => {
+    const normalized = normalizeAbilityToken(ability)
+    if (!normalized) return 'Ability'
+    return normalized
+        .split('_')
+        .filter(Boolean)
+        .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
+        .join(' ')
+}
+
+const hasMoldBreakerStyleBypass = ({ attackerAbility = '', attackerAbilitySuppressed = false } = {}) => {
+    if (normalizeAbilitySuppressed(attackerAbilitySuppressed)) return false
+    return MOLD_BREAKER_STYLE_ABILITIES.has(normalizeAbilityToken(attackerAbility))
+}
+
+const buildAbilityResolutionContext = ({
+    ignoreTargetAbility = false,
+    ignoreTargetAbilityFromMove = false,
+    ignoreTargetAbilityFromAttackerAbility = false,
+    ignoreTargetAbilityMode = 'ignore',
+    logs = [],
+} = {}) => {
+    const fromMove = Boolean(ignoreTargetAbility || ignoreTargetAbilityFromMove)
+    const fromAttackerAbility = Boolean(ignoreTargetAbilityFromAttackerAbility)
+    const shouldIgnore = fromMove || fromAttackerAbility
+    const source = fromMove && fromAttackerAbility
+        ? 'move_and_attacker_ability'
+        : (fromMove ? 'move' : (fromAttackerAbility ? 'attacker_ability' : null))
+    return {
+        ignoreTargetAbility: shouldIgnore,
+        shouldIgnoreTargetDefensiveAbility: shouldIgnore,
+        ignoreTargetAbilityFromMove: fromMove,
+        ignoreTargetAbilityFromAttackerAbility: fromAttackerAbility,
+        ignoreTargetAbilitySource: source,
+        ignoreTargetAbilityMode: normalizeIgnoreTargetAbilityMode(ignoreTargetAbilityMode),
+        logs: normalizeAbilityLogs(logs),
+    }
+}
+
+const resolveIgnoreTargetAbilityFromEffectSpecs = ({
+    effectSpecs = [],
+    random = Math.random,
+    triggers = null,
+} = {}) => {
+    const list = Array.isArray(effectSpecs) ? effectSpecs : []
+    const triggerFilter = new Set((Array.isArray(triggers) && triggers.length > 0
+        ? triggers
+        : ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean))
+
+    let enabled = false
+    let mode = 'ignore'
+
+    for (const spec of list) {
+        const op = String(spec?.op || '').trim().toLowerCase()
+        if (op !== 'ignore_target_ability') continue
+
+        const trigger = String(spec?.trigger || 'on_hit').trim().toLowerCase()
+        if (!triggerFilter.has(trigger)) continue
+
+        if (!shouldProcEffectChance(spec?.chance, random?.())) continue
+
+        const nextMode = normalizeIgnoreTargetAbilityMode(spec?.params?.mode)
+        if (isSuppressAbilityMode(nextMode)) continue
+
+        enabled = true
+        mode = nextMode
+        break
+    }
+
+    return {
+        ignoreTargetAbility: enabled,
+        ignoreTargetAbilityMode: mode,
+        logs: enabled
+            ? ['Đòn đánh bỏ qua hiệu ứng Ability của mục tiêu trong lần xử lý này.']
+            : [],
+    }
+}
+
+const resolveSuppressTargetAbilityFromEffectSpecs = ({
+    effectSpecs = [],
+    random = Math.random,
+    triggers = null,
+    targetMovedBeforeAction = false,
+} = {}) => {
+    const list = Array.isArray(effectSpecs) ? effectSpecs : []
+    const triggerFilter = new Set((Array.isArray(triggers) && triggers.length > 0
+        ? triggers
+        : ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean))
+
+    let enabled = false
+    let mode = 'suppress'
+
+    for (const spec of list) {
+        const op = String(spec?.op || '').trim().toLowerCase()
+        if (op !== 'ignore_target_ability') continue
+
+        const trigger = String(spec?.trigger || 'on_hit').trim().toLowerCase()
+        if (!triggerFilter.has(trigger)) continue
+
+        if (!shouldProcEffectChance(spec?.chance, random?.())) continue
+
+        const nextMode = normalizeIgnoreTargetAbilityMode(spec?.params?.mode)
+        if (!isSuppressAbilityMode(nextMode)) continue
+        if (nextMode === 'suppress_if_target_moved' && !Boolean(targetMovedBeforeAction)) continue
+
+        enabled = true
+        mode = nextMode
+        break
+    }
+
+    return {
+        suppressTargetAbility: enabled,
+        mode,
+        logs: enabled
+            ? ['Đòn đánh áp chế Ability của mục tiêu cho đến khi rời sân.']
+            : [],
+    }
+}
+
+const resolveBattleAbility = ({ fallbackAbility = '', species = null } = {}) => {
+    const fallback = normalizeAbilityToken(fallbackAbility)
+    if (fallback) return fallback
+
+    const speciesSingle = normalizeAbilityToken(species?.ability)
+    if (speciesSingle) return speciesSingle
+
+    const speciesPool = normalizeAbilityPool(species?.abilities)
+    if (speciesPool.length > 0) return speciesPool[0]
+
+    return ''
+}
+
+const resolveAbilityHitDefense = ({ ability = '', incomingMoveType = '', incomingMoveCategory = '', didMoveHit = false, defenderCurrentHp = 0, defenderMaxHp = 1, resolutionContext = {}, isSuppressed = false } = {}) => {
+    const bypassDecision = resolveAbilityBypassDecision({
+        hookKey: 'hit_defense',
+        ignoreTargetAbilityFromMove: resolutionContext?.ignoreTargetAbilityFromMove ?? resolutionContext?.ignoreTargetAbility,
+        ignoreTargetAbilityFromAttackerAbility: resolutionContext?.ignoreTargetAbilityFromAttackerAbility,
+    })
+    if (bypassDecision.shouldBypass || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            preventDamage: false,
+            healHp: 0,
+            logs: [],
+        }
+    }
+
+    const normalizedAbility = normalizeAbilityToken(ability)
+    if (!normalizedAbility) {
+        return {
+            preventDamage: false,
+            healHp: 0,
+            logs: [],
+        }
+    }
+
+    const hookResult = applyAbilityHook('onTryHit', {
+        ability: normalizedAbility,
+        incomingMoveType,
+        incomingMoveCategory,
+        isDamagingMove: normalizeTypeToken(incomingMoveCategory) !== 'status',
+        didMoveHit,
+    })
+    const preventDamage = Boolean(hookResult?.statePatches?.self?.preventDamage)
+    const healFractionRaw = Number(hookResult?.statePatches?.self?.healFractionMaxHp)
+    const healFraction = Number.isFinite(healFractionRaw)
+        ? Math.max(0, Math.min(1, healFractionRaw))
+        : 0
+    const maxHp = Math.max(1, Number(defenderMaxHp) || 1)
+    const currentHp = Math.max(0, Number(defenderCurrentHp) || 0)
+    const healHp = preventDamage && healFraction > 0
+        ? Math.max(0, Math.min(maxHp - currentHp, Math.max(1, Math.floor(maxHp * healFraction))))
+        : 0
+
+    return {
+        preventDamage,
+        healHp,
+        logs: normalizeAbilityLogs(hookResult?.logs),
+    }
+}
+
+const resolveAbilityStatusGuard = ({ ability = '', incomingStatus = '', resolutionContext = {}, isSuppressed = false } = {}) => {
+    const bypassDecision = resolveAbilityBypassDecision({
+        hookKey: 'status_guard',
+        ignoreTargetAbilityFromMove: resolutionContext?.ignoreTargetAbilityFromMove ?? resolutionContext?.ignoreTargetAbility,
+        ignoreTargetAbilityFromAttackerAbility: resolutionContext?.ignoreTargetAbilityFromAttackerAbility,
+    })
+    if (bypassDecision.shouldBypass || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            preventStatus: false,
+            logs: [],
+        }
+    }
+
+    const normalizedAbility = normalizeAbilityToken(ability)
+    const normalizedStatus = normalizeBattleStatus(incomingStatus)
+    if (!normalizedAbility || !normalizedStatus) {
+        return {
+            preventStatus: false,
+            logs: [],
+        }
+    }
+
+    const hookResult = applyAbilityHook('onStatusAttempt', {
+        ability: normalizedAbility,
+        incomingStatus: normalizedStatus,
+    })
+    return {
+        preventStatus: Boolean(hookResult?.statePatches?.self?.preventStatus),
+        logs: normalizeAbilityLogs(hookResult?.logs),
+    }
 }
 
 const formatStatusLabel = (value = '') => {
@@ -350,6 +607,14 @@ export const applyTrainerPenaltyTurn = async ({
     })
     activeTrainerOpponent.status = normalizeBattleStatus(opponentStatusCheck.statusAfterCheck)
     activeTrainerOpponent.statusTurns = normalizeStatusTurns(opponentStatusCheck.statusTurnsAfterCheck)
+    const playerAbility = normalizeAbilityToken(activeBattleSession?.playerAbility)
+    let playerAbilitySuppressed = normalizeAbilitySuppressed(activeBattleSession?.playerAbilitySuppressed)
+    const opponentAbility = resolveBattleAbility({
+        fallbackAbility: activeTrainerOpponent?.ability,
+        species: trainerSpecies,
+    })
+    activeTrainerOpponent.ability = opponentAbility
+    activeTrainerOpponent.abilitySuppressed = normalizeAbilitySuppressed(activeTrainerOpponent?.abilitySuppressed)
 
     const normalizedPlayerMaxHp = Math.max(1, Number(playerMaxHp) || 1)
     const normalizedPlayerCurrentHp = clamp(Math.floor(Number(playerCurrentHp) || 0), 0, normalizedPlayerMaxHp)
@@ -379,6 +644,7 @@ export const applyTrainerPenaltyTurn = async ({
             player: {
                 status: normalizeBattleStatus(activeBattleSession.playerStatus),
                 statusTurns: normalizeStatusTurns(activeBattleSession.playerStatusTurns),
+                abilitySuppressed: normalizeAbilitySuppressed(activeBattleSession.playerAbilitySuppressed),
             },
         }
     }
@@ -424,6 +690,7 @@ export const applyTrainerPenaltyTurn = async ({
             player: {
                 status: normalizeBattleStatus(activeBattleSession.playerStatus),
                 statusTurns: normalizeStatusTurns(activeBattleSession.playerStatusTurns),
+                abilitySuppressed: normalizeAbilitySuppressed(activeBattleSession.playerAbilitySuppressed),
                 effectiveStats: buildEffectiveBattleStats({
                     stats: playerBattleStats.stats,
                     statStages: activeBattleSession.playerStatStages || {},
@@ -440,13 +707,56 @@ export const applyTrainerPenaltyTurn = async ({
     const selectedMove = chooseTrainerMove({ movePool, activeTrainerOpponent, playerBattleStats })
     const hitRoll = Math.random() * 100
     const didHit = hitRoll <= Math.max(1, Number(selectedMove.accuracy || 100))
-    const damage = didHit ? Math.max(1, Math.floor(Number(selectedMove.estimatedDamage || 1))) : 0
-    const nextHp = Math.max(0, normalizedPlayerCurrentHp - damage)
+    const ignoreFromMove = resolveIgnoreTargetAbilityFromEffectSpecs({
+        effectSpecs: selectedMove.effectSpecs,
+        random: Math.random,
+    })
+    const attackerBypassFromAbility = hasMoldBreakerStyleBypass({
+        attackerAbility: opponentAbility,
+        attackerAbilitySuppressed: normalizeAbilitySuppressed(activeTrainerOpponent?.abilitySuppressed),
+    })
+    const targetAbilityResolutionContext = buildAbilityResolutionContext({
+        ignoreTargetAbilityFromMove: ignoreFromMove.ignoreTargetAbility,
+        ignoreTargetAbilityFromAttackerAbility: attackerBypassFromAbility,
+        ignoreTargetAbilityMode: ignoreFromMove.ignoreTargetAbilityMode,
+        logs: [
+            ...ignoreFromMove.logs,
+            ...(attackerBypassFromAbility
+                ? [`${formatAbilityName(opponentAbility)} giúp bỏ qua Ability phòng thủ của mục tiêu trong lần xử lý này.`]
+                : []),
+        ],
+    })
+    const targetAbilitySuppressionContext = resolveSuppressTargetAbilityFromEffectSpecs({
+        effectSpecs: selectedMove.effectSpecs,
+        random: Math.random,
+        targetMovedBeforeAction: true,
+    })
+    const playerAbilityDefense = resolveAbilityHitDefense({
+        ability: playerAbility,
+        incomingMoveType: selectedMove.type,
+        incomingMoveCategory: selectedMove.category,
+        didMoveHit: didHit,
+        defenderCurrentHp: normalizedPlayerCurrentHp,
+        defenderMaxHp: normalizedPlayerMaxHp,
+        resolutionContext: targetAbilityResolutionContext,
+        isSuppressed: playerAbilitySuppressed,
+    })
+    const didBlockDamageByAbility = didHit && playerAbilityDefense.preventDamage
+    const damage = didBlockDamageByAbility
+        ? 0
+        : (didHit ? Math.max(1, Math.floor(Number(selectedMove.estimatedDamage || 1))) : 0)
+    const nextHp = didBlockDamageByAbility
+        ? Math.min(normalizedPlayerMaxHp, normalizedPlayerCurrentHp + playerAbilityDefense.healHp)
+        : Math.max(0, normalizedPlayerCurrentHp - damage)
 
     let nextStatus = normalizeBattleStatus(activeBattleSession.playerStatus)
     let nextStatusTurns = normalizeStatusTurns(activeBattleSession.playerStatusTurns)
     let nextPlayerVolatileState = normalizeVolatileState(activeBattleSession.playerVolatileState)
-    const effectLogs = []
+    const effectLogs = [...targetAbilityResolutionContext.logs, ...playerAbilityDefense.logs]
+    if (didHit && targetAbilitySuppressionContext.suppressTargetAbility) {
+        playerAbilitySuppressed = true
+        effectLogs.push(...targetAbilitySuppressionContext.logs)
+    }
     if (didHit && !nextStatus && selectedMove.statusFromEffects) {
         if (selectedMove.statusFromEffects === 'drowsy') {
             nextPlayerVolatileState = {
@@ -455,9 +765,18 @@ export const applyTrainerPenaltyTurn = async ({
             }
             effectLogs.push(`${playerBattleStats.name} bắt đầu buồn ngủ.`)
         } else {
-            nextStatus = selectedMove.statusFromEffects
-            nextStatusTurns = ['sleep', 'freeze', 'confuse'].includes(nextStatus) ? 2 : 1
-            effectLogs.push(`${playerBattleStats.name} bị ${formatStatusLabel(nextStatus)}.`)
+            const statusGuard = resolveAbilityStatusGuard({
+                ability: playerAbility,
+                incomingStatus: selectedMove.statusFromEffects,
+                resolutionContext: targetAbilityResolutionContext,
+                isSuppressed: playerAbilitySuppressed,
+            })
+            effectLogs.push(...statusGuard.logs)
+            if (!statusGuard.preventStatus) {
+                nextStatus = selectedMove.statusFromEffects
+                nextStatusTurns = ['sleep', 'freeze', 'confuse'].includes(nextStatus) ? 2 : 1
+                effectLogs.push(`${playerBattleStats.name} bị ${formatStatusLabel(nextStatus)}.`)
+            }
         }
     }
 
@@ -466,6 +785,7 @@ export const applyTrainerPenaltyTurn = async ({
     activeBattleSession.playerCurrentHp = nextHp
     activeBattleSession.playerStatus = nextStatus
     activeBattleSession.playerStatusTurns = nextStatusTurns
+    activeBattleSession.playerAbilitySuppressed = playerAbilitySuppressed
     activeBattleSession.playerVolatileState = nextPlayerVolatileState
     syncTrainerSessionActivePlayerToParty(activeBattleSession)
     await activeBattleSession.save()
@@ -538,6 +858,7 @@ export const applyTrainerPenaltyTurn = async ({
         player: {
             status: nextStatus,
             statusTurns: nextStatusTurns,
+            abilitySuppressed: playerAbilitySuppressed,
             effectiveStats: buildEffectiveBattleStats({
                 stats: playerBattleStats.stats,
                 statStages: activeBattleSession.playerStatStages || {},
@@ -548,4 +869,13 @@ export const applyTrainerPenaltyTurn = async ({
             statusTurns: activeTrainerOpponent.statusTurns,
         },
     }
+}
+
+export const __trainerPenaltyInternals = {
+    buildAbilityResolutionContext,
+    resolveIgnoreTargetAbilityFromEffectSpecs,
+    resolveSuppressTargetAbilityFromEffectSpecs,
+    hasMoldBreakerStyleBypass,
+    resolveAbilityHitDefense,
+    resolveAbilityStatusGuard,
 }

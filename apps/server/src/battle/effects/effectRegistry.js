@@ -850,6 +850,22 @@ const handlers = {
         if (!shouldProc(effect?.chance, context?.random?.())) return result
 
         const mode = String(effect?.params?.mode || 'ignore').trim().toLowerCase() || 'ignore'
+        const isSuppressMode = mode.startsWith('suppress')
+        if (isSuppressMode) {
+            const targetMovedBeforeAction = Boolean(
+                context?.targetMovedBeforeAction
+                ?? (context?.userActsFirst === false)
+            )
+            if (mode === 'suppress_if_target_moved' && !targetMovedBeforeAction) {
+                return result
+            }
+            result.applied = true
+            result.statePatches.opponent.suppressAbility = true
+            result.statePatches.opponent.suppressAbilityMode = mode
+            appendEffectLog(result, 'Ability của mục tiêu bị áp chế cho đến khi rời sân.')
+            return result
+        }
+
         result.applied = true
         result.statePatches.self.ignoreTargetAbility = true
         result.statePatches.self.ignoreTargetAbilityMode = mode

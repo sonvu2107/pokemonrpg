@@ -13,6 +13,26 @@ const normalizePokemonTypes = (types = []) => {
     return [...new Set(entries.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))]
 }
 
+const normalizeAbilityToken = (value = '') => String(value || '').trim().toLowerCase()
+
+const normalizeAbilityList = (abilities = []) => {
+    const entries = Array.isArray(abilities) ? abilities : []
+    return [...new Set(entries.map((entry) => normalizeAbilityToken(entry)).filter(Boolean))]
+}
+
+const resolveBattleAbility = ({ pokemon = null, preferredAbility = '' } = {}) => {
+    const explicit = normalizeAbilityToken(preferredAbility)
+    if (explicit) return explicit
+
+    const legacySingle = normalizeAbilityToken(pokemon?.ability)
+    if (legacySingle) return legacySingle
+
+    const pool = normalizeAbilityList(pokemon?.abilities)
+    if (pool.length > 0) return pool[0]
+
+    return ''
+}
+
 const normalizeTrainerPokemonDamagePercent = (value, fallback = 100) => {
     const parsed = Number.parseInt(value, 10)
     if (!Number.isFinite(parsed)) return Math.max(0, Math.min(1000, fallback))
@@ -45,6 +65,10 @@ export const buildTrainerBattleTeam = (trainer = {}) => {
                 name: String(pokemon.name || 'Pokemon').trim() || 'Pokemon',
                 level,
                 formId,
+                ability: resolveBattleAbility({
+                    pokemon,
+                    preferredAbility: entry?.ability,
+                }),
                 damagePercent: normalizeTrainerPokemonDamagePercent(entry?.damagePercent, 100),
                 types: normalizePokemonTypes(pokemon.types),
                 baseStats: scaledStats,
@@ -52,6 +76,7 @@ export const buildTrainerBattleTeam = (trainer = {}) => {
                 maxHp,
                 status: '',
                 statusTurns: 0,
+                abilitySuppressed: false,
                 statStages: {},
                 damageGuards: {},
                 wasDamagedLastTurn: false,
@@ -76,6 +101,8 @@ export const buildTrainerBattleSessionPayload = ({ userId, trainerId, trainer, a
     playerMaxHp: 1,
     playerStatus: '',
     playerStatusTurns: 0,
+    playerAbility: '',
+    playerAbilitySuppressed: false,
     playerStatStages: {},
     playerDamageGuards: {},
     playerWasDamagedLastTurn: false,
@@ -116,6 +143,8 @@ export const getOrCreateTrainerBattleSession = async (userId, trainerId, trainer
         session.playerMaxHp = payload.playerMaxHp
         session.playerStatus = payload.playerStatus
         session.playerStatusTurns = payload.playerStatusTurns
+        session.playerAbility = payload.playerAbility
+        session.playerAbilitySuppressed = payload.playerAbilitySuppressed
         session.playerStatStages = payload.playerStatStages
         session.playerDamageGuards = payload.playerDamageGuards
         session.playerWasDamagedLastTurn = payload.playerWasDamagedLastTurn
@@ -147,6 +176,8 @@ export const buildCompletedTrainerBattleSessionPayload = ({ userId, trainer, act
         playerMaxHp: 1,
         playerStatus: '',
         playerStatusTurns: 0,
+        playerAbility: '',
+        playerAbilitySuppressed: false,
         playerStatStages: {},
         playerDamageGuards: {},
         playerWasDamagedLastTurn: false,

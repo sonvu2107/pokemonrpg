@@ -121,6 +121,9 @@ const UserPokemonSchema = new Schema(
         // Item held
         heldItem: { type: String, default: null },
 
+        // Battle identity (snapshot source for battle session)
+        ability: { type: String, default: '', trim: true, lowercase: true },
+
         // Special unlocks
         allowOffTypeSkills: { type: Boolean, default: false },
         offTypeSkillAllowance: { type: Number, default: 0, min: 0 },

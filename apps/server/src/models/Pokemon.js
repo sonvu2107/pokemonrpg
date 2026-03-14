@@ -109,6 +109,11 @@ const pokemonSchema = new Schema(
             ],
         },
 
+        abilities: {
+            type: [String],
+            default: [],
+        },
+
         // Initial Moves (Deprecated - use levelUpMoves instead)
         // Keeping for backwards compatibility
         initialMoves: {
@@ -231,6 +236,15 @@ pokemonSchema.pre('validate', function (next) {
 
 // Pre-save: clean and sort levelUpMoves
 pokemonSchema.pre('save', function (next) {
+    if (Array.isArray(this.abilities)) {
+        const normalizedAbilities = this.abilities
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter(Boolean)
+        this.abilities = [...new Set(normalizedAbilities)]
+    } else {
+        this.abilities = []
+    }
+
     // Ensure formId uniqueness and defaultFormId consistency
     if (Array.isArray(this.forms) && this.forms.length > 0) {
         const ids = this.forms

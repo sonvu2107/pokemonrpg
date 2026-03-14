@@ -21,6 +21,8 @@ const battleSessionOpponentSchema = new mongoose.Schema(
         maxHp: { type: Number, required: true, min: 1 },
         status: { type: String, default: '', trim: true },
         statusTurns: { type: Number, default: 0, min: 0 },
+        ability: { type: String, default: '', trim: true, lowercase: true },
+        abilitySuppressed: { type: Boolean, default: false },
         statStages: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         damageGuards: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         wasDamagedLastTurn: { type: Boolean, default: false },
@@ -49,6 +51,8 @@ const battleSessionPlayerPartySchema = new mongoose.Schema(
         maxHp: { type: Number, required: true, min: 1 },
         status: { type: String, default: '', trim: true },
         statusTurns: { type: Number, default: 0, min: 0 },
+        ability: { type: String, default: '', trim: true, lowercase: true },
+        abilitySuppressed: { type: Boolean, default: false },
     },
     { _id: false }
 )
@@ -66,6 +70,8 @@ const battleSessionSchema = new mongoose.Schema(
         playerMaxHp: { type: Number, default: 1, min: 1 },
         playerStatus: { type: String, default: '', trim: true },
         playerStatusTurns: { type: Number, default: 0, min: 0 },
+        playerAbility: { type: String, default: '', trim: true, lowercase: true },
+        playerAbilitySuppressed: { type: Boolean, default: false },
         playerStatStages: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         playerDamageGuards: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         playerWasDamagedLastTurn: { type: Boolean, default: false },

@@ -12,6 +12,15 @@ const TRAINER_POKEMON_DAMAGE_PERCENT_MAX = 1000
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const normalizeAbility = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeAbilitySuppressed = (value = false) => {
+    if (typeof value === 'string') {
+        const normalized = String(value || '').trim().toLowerCase()
+        return normalized === 'true' || normalized === '1'
+    }
+    return Boolean(value)
+}
+
 export const getSpecialDefenseStat = (stats = {}) => (
     Number(stats?.spdef) || Number(stats?.spldef) || 0
 )
@@ -54,6 +63,8 @@ export const serializeTrainerBattleState = (trainerSession = null) => {
                 maxHp: Math.max(1, Number(entry?.maxHp || 1)),
                 status: normalizeBattleStatus(entry?.status),
                 statusTurns: normalizeStatusTurns(entry?.statusTurns),
+                ability: normalizeAbility(entry?.ability),
+                abilitySuppressed: normalizeAbilitySuppressed(entry?.abilitySuppressed),
             }))
             : [],
         team: trainerSession.team.map((entry) => ({
@@ -66,6 +77,8 @@ export const serializeTrainerBattleState = (trainerSession = null) => {
             maxHp: Math.max(1, Number(entry?.maxHp || 1)),
             status: normalizeBattleStatus(entry?.status),
             statusTurns: normalizeStatusTurns(entry?.statusTurns),
+            ability: normalizeAbility(entry?.ability),
+            abilitySuppressed: normalizeAbilitySuppressed(entry?.abilitySuppressed),
             statStages: normalizeStatStages(entry?.statStages),
             damageGuards: normalizeDamageGuards(entry?.damageGuards),
             wasDamagedLastTurn: Boolean(entry?.wasDamagedLastTurn),

@@ -320,7 +320,7 @@ export default function MapPage() {
     const [searchChallengeInput, setSearchChallengeInput] = useState('')
     const [searchChallengeError, setSearchChallengeError] = useState('')
     const [lastEncounterSummary, setLastEncounterSummary] = useState(null)
-    const [isEncounterDetailExpanded, setIsEncounterDetailExpanded] = useState(true)
+    const [isEncounterDetailExpanded, setIsEncounterDetailExpanded] = useState(false)
     const [detailTab, setDetailTab] = useState('pokemon')
     const [pokemonSortKey, setPokemonSortKey] = useState('name')
     const [pokemonSortDirection, setPokemonSortDirection] = useState('desc')
@@ -453,7 +453,7 @@ export default function MapPage() {
         setSearchChallengeInput('')
         setSearchChallengeError('')
         lastSearchChallengeAtRef.current = Date.now()
-        setIsEncounterDetailExpanded(true)
+        setIsEncounterDetailExpanded(false)
         setDetailTab('pokemon')
         setPokemonPage(1)
         setItemPage(1)
@@ -1489,14 +1489,14 @@ export default function MapPage() {
                                             </select>
                                         </div>
                                     </div>
-                                    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
-                                        <table className="w-full min-w-[760px] text-xs">
+                                    <div className="rounded border border-slate-200 bg-white">
+                                        <table className="w-full text-xs">
                                             <thead>
                                                 <tr className="bg-blue-50 text-blue-900">
                                                     <th className="px-3 py-2 text-left font-bold">Pokemon</th>
-                                                    <th className="px-3 py-2 text-center font-bold">Loại</th>
-                                                    <th className="px-3 py-2 text-center font-bold">Độ hiếm</th>
-                                                    <th className="px-3 py-2 text-center font-bold">Hệ</th>
+                                                    <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Loại</th>
+                                                    <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Độ hiếm</th>
+                                                    <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Hệ</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1516,25 +1516,25 @@ export default function MapPage() {
 
                                                     return (
                                                         <tr key={entry?._id || `${pokemon?._id || pokemon?.name}-${entry?.formId || 'normal'}-${entry?.source || 'normal'}`} className="border-t border-slate-100 hover:bg-slate-50">
-                                                            <td className="px-3 py-2">
-                                                                <div className="flex items-center gap-3">
-                                                                    <img src={entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || ''} alt={pokemon?.name || 'Pokemon'} className="h-12 w-12 object-contain pixelated" />
-                                                                    <div>
-                                                                        <div className="flex flex-wrap items-center gap-2">
-                                                                            <div className="font-bold text-slate-800">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
+                                                            <td className="px-2 py-1.5">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src={entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || ''} alt={pokemon?.name || 'Pokemon'} className="h-10 w-10 shrink-0 object-contain pixelated" />
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-bold text-slate-800 leading-tight">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
+                                                                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                                                            <span className="text-[11px] text-slate-500">#{pokemon?.pokedexNumber || '-'}</span>
                                                                             {isMissingFromPokedex && (
-                                                                                <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                                                                                <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wide text-rose-700 whitespace-nowrap">
                                                                                     Chưa có
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <div className="text-[11px] text-slate-500">#{pokemon?.pokedexNumber || '-'}</div>
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-3 py-2 text-center"><span className={`inline-flex rounded-full px-2 py-1 font-bold ${entry?.source === 'special' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{entry?.source === 'special' ? 'Đặc biệt' : 'Thường'}</span></td>
-                                                            <td className="px-3 py-2 text-center"><span className={`font-bold ${rarityMeta.text}`}>{rarityMeta.label}</span></td>
-                                                            <td className="px-3 py-2 text-center text-slate-700">{types.length > 0 ? types.map((type) => capitalizeWords(type)).join(', ') : '-'}</td>
+                                                            <td className="px-2 py-1.5 text-center"><span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold whitespace-nowrap ${entry?.source === 'special' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{entry?.source === 'special' ? 'Đặc biệt' : 'Thường'}</span></td>
+                                                            <td className="px-2 py-1.5 text-center"><span className={`font-bold whitespace-nowrap ${rarityMeta.text}`}>{rarityMeta.label}</span></td>
+                                                            <td className="px-2 py-1.5 text-center text-slate-700">{types.length > 0 ? types.map((type) => capitalizeWords(type)).join(', ') : '-'}</td>
                                                         </tr>
                                                     )
                                                 })}
@@ -1583,14 +1583,14 @@ export default function MapPage() {
                                             </select>
                                         </div>
                                     </div>
-                                    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
-                                        <table className="w-full min-w-[720px] text-xs">
+                                    <div className="rounded border border-slate-200 bg-white">
+                                        <table className="w-full text-xs">
                                             <thead>
                                                 <tr className="bg-emerald-50 text-emerald-900">
                                                     <th className="px-3 py-2 text-left font-bold">Vật phẩm</th>
-                                                    <th className="px-3 py-2 text-center font-bold">Loại</th>
-                                                    <th className="px-3 py-2 text-center font-bold">Độ hiếm</th>
-                                                    <th className="px-3 py-2 text-right font-bold">Tỷ lệ rơi</th>
+                                                    <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Loại</th>
+                                                    <th className="px-3 py-2 text-center font-bold whitespace-nowrap">Độ hiếm</th>
+                                                    <th className="px-3 py-2 text-right font-bold whitespace-nowrap">Tỷ lệ rơi</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1771,7 +1771,7 @@ export default function MapPage() {
                     {/* Search Button */}
                     <button
                         onClick={handleSearch}
-                        disabled={Boolean(encounter) || isLocked} 
+                        disabled={Boolean(encounter) || isLocked}
                         className="px-8 py-3 bg-white border border-slate-400 hover:bg-slate-50 text-black font-bold text-base shadow-[0_2px_0_#94a3b8] active:translate-y-[2px] active:shadow-none transition-all rounded touch-manipulation"
                         style={{ transform: `translate(${searchButtonOffset.x}px, ${searchButtonOffset.y}px)` }}
                     >
@@ -1859,9 +1859,9 @@ export default function MapPage() {
                                             }
                                         }}
                                         disabled={isLocked || !canUseCurrentMapAutoSearch}
-                                    className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoSearchEnabled
-                                        ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
-                                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
+                                        className={`px-3 py-1.5 rounded font-bold border transition-colors ${autoSearchEnabled
+                                            ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
+                                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} disabled:opacity-50`}
                                     >
                                         {autoSearchEnabled ? 'Đang chạy' : 'Bật auto'}
                                     </button>
@@ -1871,95 +1871,95 @@ export default function MapPage() {
                             {isAutoSearchConfigExpanded && (
                                 <>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[11px] font-semibold text-slate-700">Tốc độ tìm kiếm</span>
-                                    <select
-                                        value={autoSearchIntervalMs}
-                                        onChange={(e) => {
-                                            const nextValue = Number.parseInt(e.target.value, 10)
-                                            markAutoSearchConfigDirty()
-                                            setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
-                                        }}
-                                        disabled={!canUseCurrentMapAutoSearch}
-                                        className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
-                                    >
-                                        {AUTO_SEARCH_INTERVAL_OPTIONS.map((option) => (
-                                            <option key={option.value} value={option.value}>{option.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[11px] font-semibold text-slate-700">Tốc độ tìm kiếm</span>
+                                            <select
+                                                value={autoSearchIntervalMs}
+                                                onChange={(e) => {
+                                                    const nextValue = Number.parseInt(e.target.value, 10)
+                                                    markAutoSearchConfigDirty()
+                                                    setAutoSearchIntervalMs(Number.isFinite(nextValue) ? nextValue : DEFAULT_AUTO_SEARCH_INTERVAL_MS)
+                                                }}
+                                                disabled={!canUseCurrentMapAutoSearch}
+                                                className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
+                                            >
+                                                {AUTO_SEARCH_INTERVAL_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[11px] font-semibold text-slate-700">Dạng sẽ bắt</span>
-                                    <select
-                                        value={autoCatchFormMode}
-                                        onChange={(e) => {
-                                            markAutoSearchConfigDirty()
-                                            setAutoCatchFormMode(String(e.target.value || 'all'))
-                                        }}
-                                        disabled={!canUseCurrentMapAutoSearch}
-                                        className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
-                                    >
-                                        {AUTO_CATCH_FORM_OPTIONS.map((option) => (
-                                            <option key={option.value} value={option.value}>{option.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[11px] font-semibold text-slate-700">Dạng sẽ bắt</span>
+                                            <select
+                                                value={autoCatchFormMode}
+                                                onChange={(e) => {
+                                                    markAutoSearchConfigDirty()
+                                                    setAutoCatchFormMode(String(e.target.value || 'all'))
+                                                }}
+                                                disabled={!canUseCurrentMapAutoSearch}
+                                                className="px-2 py-1 border border-slate-300 rounded bg-white text-xs"
+                                            >
+                                                {AUTO_CATCH_FORM_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
                                     </div>
 
                                     <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold text-slate-700">Bóng dùng để bắt</span>
-                                <select
-                                    value={autoCatchBallId}
-                                    onChange={(e) => {
-                                        markAutoSearchConfigDirty()
-                                        setAutoCatchBallId(String(e.target.value || ''))
-                                    }}
-                                    disabled={!canUseCurrentMapAutoSearch}
-                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
-                                >
-                                    {availablePokeballs.length === 0 && <option value="">Hết bóng</option>}
-                                    {availablePokeballs.map((entry) => (
-                                        <option key={entry.item._id} value={entry.item._id}>
-                                            {entry.item.name} (x{entry.quantity})
-                                        </option>
-                                    ))}
-                                </select>
+                                        <span className="text-[11px] font-semibold text-slate-700">Bóng dùng để bắt</span>
+                                        <select
+                                            value={autoCatchBallId}
+                                            onChange={(e) => {
+                                                markAutoSearchConfigDirty()
+                                                setAutoCatchBallId(String(e.target.value || ''))
+                                            }}
+                                            disabled={!canUseCurrentMapAutoSearch}
+                                            className="px-2 py-1 border border-slate-300 rounded bg-white text-xs min-w-[200px]"
+                                        >
+                                            {availablePokeballs.length === 0 && <option value="">Hết bóng</option>}
+                                            {availablePokeballs.map((entry) => (
+                                                <option key={entry.item._id} value={entry.item._id}>
+                                                    {entry.item.name} (x{entry.quantity})
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div className="rounded border border-slate-200 bg-white p-2">
-                                <div className="text-[11px] font-semibold text-slate-700 mb-2">Tùy chọn hành động theo độ hiếm Pokemon</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {AUTO_SEARCH_RARITY_KEYS.map((rarityKey) => {
-                                        const rarityMeta = getRarityStyle(rarityKey)
-                                        const currentAction = String(autoActionByRarity?.[rarityKey] || 'battle')
-                                        return (
-                                            <div key={rarityKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded p-1.5">
-                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${rarityMeta.badge}`}>
-                                                    {rarityMeta.label}
-                                                </span>
-                                                <select
-                                                    value={currentAction}
-                                                    onChange={(e) => {
-                                                        const nextAction = String(e.target.value || 'battle')
-                                                        markAutoSearchConfigDirty()
-                                                        setAutoActionByRarity((prev) => ({
-                                                            ...prev,
-                                                            [rarityKey]: nextAction,
-                                                        }))
-                                                    }}
-                                                    disabled={!canUseCurrentMapAutoSearch}
-                                                    className="px-2 py-1 border border-slate-300 rounded bg-white text-[11px]"
-                                                >
-                                                    {AUTO_SEARCH_ACTION_OPTIONS.map((option) => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
+                                        <div className="text-[11px] font-semibold text-slate-700 mb-2">Tùy chọn hành động theo độ hiếm Pokemon</div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {AUTO_SEARCH_RARITY_KEYS.map((rarityKey) => {
+                                                const rarityMeta = getRarityStyle(rarityKey)
+                                                const currentAction = String(autoActionByRarity?.[rarityKey] || 'battle')
+                                                return (
+                                                    <div key={rarityKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded p-1.5">
+                                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${rarityMeta.badge}`}>
+                                                            {rarityMeta.label}
+                                                        </span>
+                                                        <select
+                                                            value={currentAction}
+                                                            onChange={(e) => {
+                                                                const nextAction = String(e.target.value || 'battle')
+                                                                markAutoSearchConfigDirty()
+                                                                setAutoActionByRarity((prev) => ({
+                                                                    ...prev,
+                                                                    [rarityKey]: nextAction,
+                                                                }))
+                                                            }}
+                                                            disabled={!canUseCurrentMapAutoSearch}
+                                                            className="px-2 py-1 border border-slate-300 rounded bg-white text-[11px]"
+                                                        >
+                                                            {AUTO_SEARCH_ACTION_OPTIONS.map((option) => (
+                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
                                     </div>
                                 </>
                             )}
@@ -1982,9 +1982,9 @@ export default function MapPage() {
                                                 ? 'Tự tìm kiếm là quyền lợi dành cho tài khoản VIP.'
                                                 : (remainingAutoSearchVipLevels > 0
                                                     ? `Map này yêu cầu VIP ${autoSearchRequiredVipLevel} để bật tự tìm kiếm. Bạn còn thiếu ${remainingAutoSearchVipLevels} cấp VIP.`
-                                                : (autoSearchEnabled
-                                                    ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
-                                                    : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.')))}
+                                                    : (autoSearchEnabled
+                                                        ? `Đang tự tìm: mỗi ${Math.max(0.9, Number(autoSearchIntervalMs) / 1000).toFixed(1)} giây. Hết bóng sẽ tự dừng.`
+                                                        : 'Tự tìm đang tắt. Bạn vẫn có thể tìm thủ công.')))}
                                     </div>
 
                                     {autoSearchServerStatus && (
@@ -2144,7 +2144,7 @@ export default function MapPage() {
             {searchChallenge && (
                 <Modal
                     isOpen
-                    onClose={() => {}}
+                    onClose={() => { }}
                     title="Xác minh thao tác"
                     maxWidth="sm"
                     showCloseButton={false}

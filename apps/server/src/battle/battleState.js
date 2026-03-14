@@ -158,6 +158,7 @@ export const normalizeVolatileState = (value = {}) => {
     const soundMoveBlockTurns = normalizeStatusTurns(source.soundMoveBlockTurns)
     const repeatMoveBlockTurns = normalizeStatusTurns(source.repeatMoveBlockTurns)
     const escapeLockTurns = normalizeStatusTurns(source.escapeLockTurns)
+    const switchInAbilityAppliedFor = String(source.switchInAbilityAppliedFor || '').trim().toLowerCase()
     const pendingAlwaysCrit = Boolean(source.pendingAlwaysCrit)
     const pendingNeverMiss = Boolean(source.pendingNeverMiss)
 
@@ -175,6 +176,7 @@ export const normalizeVolatileState = (value = {}) => {
         ...(soundMoveBlockTurns > 0 ? { soundMoveBlockTurns } : {}),
         ...(repeatMoveBlockTurns > 0 ? { repeatMoveBlockTurns } : {}),
         ...(escapeLockTurns > 0 ? { escapeLockTurns } : {}),
+        ...(switchInAbilityAppliedFor ? { switchInAbilityAppliedFor } : {}),
         ...(pendingAlwaysCrit ? { pendingAlwaysCrit: true } : {}),
         ...(pendingNeverMiss ? { pendingNeverMiss: true } : {}),
     }

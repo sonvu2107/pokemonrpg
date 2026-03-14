@@ -52,7 +52,7 @@ const formatWildPlayerBattleState = (encounterLike = {}) => {
 
     return {
         pokemonId: encounterLike?.playerPokemonId || null,
-        name: String(encounterLike?.playerPokemonName || '').trim() || 'Pokemon cua ban',
+        name: String(encounterLike?.playerPokemonName || '').trim() || 'Pokemon của bạn',
         imageUrl: encounterLike?.playerPokemonImageUrl || '',
         level: Math.max(1, Number(encounterLike?.playerPokemonLevel) || 1),
         currentHp,

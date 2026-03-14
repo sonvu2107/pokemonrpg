@@ -16,7 +16,7 @@ import Pokemon from '../models/Pokemon.js'
 
 const router = express.Router()
 
-const TRAINER_COMBAT_TEAM_POPULATE = 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves'
+const TRAINER_COMBAT_TEAM_POPULATE = 'name baseStats rarity forms defaultFormId types abilities levelUpMoves initialMoves'
 const hasActiveTrainerBattleSession = (session = null, now = new Date()) => Boolean(
     session?.expiresAt
     && session.expiresAt > now
@@ -78,6 +78,8 @@ import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
 import { parseMoveEffectText } from '../battle/effects/effectParser.js'
+import { applyAbilityHook } from '../battle/abilities/abilityRuntime.js'
+import { resolveAbilityBypassDecision } from '../battle/abilities/abilityBypassPolicy.js'
 import {
     inferMoveType,
     normalizePokemonTypes,
@@ -214,6 +216,477 @@ import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+const normalizeAbilityToken = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeAbilitySuppressed = (value = false) => {
+    if (typeof value === 'string') {
+        const normalized = String(value || '').trim().toLowerCase()
+        return normalized === 'true' || normalized === '1'
+    }
+    return Boolean(value)
+}
+
+const normalizeAbilityPool = (value = []) => {
+    const entries = Array.isArray(value) ? value : []
+    return [...new Set(entries.map((entry) => normalizeAbilityToken(entry)).filter(Boolean))]
+}
+
+const resolveBattleAbilityForPokemon = ({ userPokemon = null, species = null, fallbackAbility = '' } = {}) => {
+    const fallback = normalizeAbilityToken(fallbackAbility)
+    if (fallback) return fallback
+
+    const userAbility = normalizeAbilityToken(userPokemon?.ability)
+    if (userAbility) return userAbility
+
+    const speciesAbility = normalizeAbilityToken(species?.ability)
+    if (speciesAbility) return speciesAbility
+
+    const speciesPool = normalizeAbilityPool(species?.abilities)
+    if (speciesPool.length > 0) return speciesPool[0]
+
+    return ''
+}
+
+const clampProcChance = (value) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return 0
+    if (parsed <= 0) return 0
+    if (parsed >= 1) return 1
+    return parsed
+}
+
+const shouldProcEffectChance = (chance = 1, randomValue = Math.random()) => {
+    const normalizedChance = clampProcChance(chance)
+    if (normalizedChance >= 1) return true
+    if (normalizedChance <= 0) return false
+    return Number(randomValue) < normalizedChance
+}
+
+const normalizeIgnoreTargetAbilityMode = (value = '') => String(value || '').trim().toLowerCase() || 'ignore'
+const isSuppressAbilityMode = (mode = '') => normalizeIgnoreTargetAbilityMode(mode).startsWith('suppress')
+const MOLD_BREAKER_STYLE_ABILITIES = new Set(['mold_breaker', 'teravolt', 'turboblaze'])
+
+const formatAbilityName = (ability = '') => {
+    const normalized = normalizeAbilityToken(ability)
+    if (!normalized) return 'Ability'
+    return normalized
+        .split('_')
+        .filter(Boolean)
+        .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
+        .join(' ')
+}
+
+const hasMoldBreakerStyleBypass = ({ attackerAbility = '', attackerAbilitySuppressed = false } = {}) => {
+    if (normalizeAbilitySuppressed(attackerAbilitySuppressed)) return false
+    return MOLD_BREAKER_STYLE_ABILITIES.has(normalizeAbilityToken(attackerAbility))
+}
+
+const buildAbilityResolutionContext = ({
+    ignoreTargetAbility = false,
+    ignoreTargetAbilityFromMove = false,
+    ignoreTargetAbilityFromAttackerAbility = false,
+    ignoreTargetAbilityMode = 'ignore',
+    logs = [],
+} = {}) => {
+    const fromMove = Boolean(ignoreTargetAbility || ignoreTargetAbilityFromMove)
+    const fromAttackerAbility = Boolean(ignoreTargetAbilityFromAttackerAbility)
+    const shouldIgnore = fromMove || fromAttackerAbility
+    const source = fromMove && fromAttackerAbility
+        ? 'move_and_attacker_ability'
+        : (fromMove ? 'move' : (fromAttackerAbility ? 'attacker_ability' : null))
+
+    return {
+        ignoreTargetAbility: shouldIgnore,
+        shouldIgnoreTargetDefensiveAbility: shouldIgnore,
+        ignoreTargetAbilityFromMove: fromMove,
+        ignoreTargetAbilityFromAttackerAbility: fromAttackerAbility,
+        ignoreTargetAbilitySource: source,
+        ignoreTargetAbilityMode: normalizeIgnoreTargetAbilityMode(ignoreTargetAbilityMode),
+        logs: normalizeAbilityResultLogs(logs),
+    }
+}
+
+const resolveIgnoreTargetAbilityFromEffectAggregates = ({ aggregates = [] } = {}) => {
+    const entries = Array.isArray(aggregates) ? aggregates : []
+    let enabled = false
+    let mode = 'ignore'
+
+    entries.forEach((aggregate) => {
+        const selfPatches = aggregate?.statePatches?.self
+        if (!selfPatches || typeof selfPatches !== 'object') return
+        if (!Boolean(selfPatches?.ignoreTargetAbility)) return
+        const nextMode = normalizeIgnoreTargetAbilityMode(selfPatches?.ignoreTargetAbilityMode)
+        if (isSuppressAbilityMode(nextMode)) return
+        enabled = true
+        mode = nextMode
+    })
+
+    return {
+        ignoreTargetAbility: enabled,
+        ignoreTargetAbilityMode: mode,
+        logs: enabled
+            ? ['Đòn đánh bỏ qua hiệu ứng Ability của mục tiêu trong lần xử lý này.']
+            : [],
+    }
+}
+
+const resolveIgnoreTargetAbilityFromEffectSpecs = ({
+    effectSpecs = [],
+    random = Math.random,
+    triggers = null,
+} = {}) => {
+    const list = Array.isArray(effectSpecs) ? effectSpecs : []
+    const triggerFilter = new Set((Array.isArray(triggers) && triggers.length > 0
+        ? triggers
+        : ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean))
+
+    let enabled = false
+    let mode = 'ignore'
+
+    for (const spec of list) {
+        const op = String(spec?.op || '').trim().toLowerCase()
+        if (op !== 'ignore_target_ability') continue
+
+        const trigger = String(spec?.trigger || 'on_hit').trim().toLowerCase()
+        if (!triggerFilter.has(trigger)) continue
+
+        if (!shouldProcEffectChance(spec?.chance, random?.())) continue
+
+        const nextMode = normalizeIgnoreTargetAbilityMode(spec?.params?.mode)
+        if (isSuppressAbilityMode(nextMode)) continue
+
+        enabled = true
+        mode = nextMode
+        break
+    }
+
+    return {
+        ignoreTargetAbility: enabled,
+        ignoreTargetAbilityMode: mode,
+        logs: enabled
+            ? ['Đòn đánh bỏ qua hiệu ứng Ability của mục tiêu trong lần xử lý này.']
+            : [],
+    }
+}
+
+const resolveSuppressTargetAbilityFromEffectAggregates = ({ aggregates = [] } = {}) => {
+    const entries = Array.isArray(aggregates) ? aggregates : []
+    let enabled = false
+    let mode = 'suppress'
+
+    entries.forEach((aggregate) => {
+        const opponentPatches = aggregate?.statePatches?.opponent
+        if (!opponentPatches || typeof opponentPatches !== 'object') return
+        if (!Boolean(opponentPatches?.suppressAbility)) return
+        enabled = true
+        mode = normalizeIgnoreTargetAbilityMode(opponentPatches?.suppressAbilityMode)
+    })
+
+    return {
+        suppressTargetAbility: enabled,
+        mode,
+        logs: enabled
+            ? ['Ability của mục tiêu bị áp chế cho đến khi rời sân.']
+            : [],
+    }
+}
+
+const resolveSuppressTargetAbilityFromEffectSpecs = ({
+    effectSpecs = [],
+    random = Math.random,
+    triggers = null,
+    targetMovedBeforeAction = false,
+} = {}) => {
+    const list = Array.isArray(effectSpecs) ? effectSpecs : []
+    const triggerFilter = new Set((Array.isArray(triggers) && triggers.length > 0
+        ? triggers
+        : ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'])
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean))
+
+    let enabled = false
+    let mode = 'suppress'
+
+    for (const spec of list) {
+        const op = String(spec?.op || '').trim().toLowerCase()
+        if (op !== 'ignore_target_ability') continue
+
+        const trigger = String(spec?.trigger || 'on_hit').trim().toLowerCase()
+        if (!triggerFilter.has(trigger)) continue
+
+        if (!shouldProcEffectChance(spec?.chance, random?.())) continue
+
+        const nextMode = normalizeIgnoreTargetAbilityMode(spec?.params?.mode)
+        if (!isSuppressAbilityMode(nextMode)) continue
+        if (nextMode === 'suppress_if_target_moved' && !Boolean(targetMovedBeforeAction)) continue
+
+        enabled = true
+        mode = nextMode
+        break
+    }
+
+    return {
+        suppressTargetAbility: enabled,
+        mode,
+        logs: enabled
+            ? ['Ability của mục tiêu bị áp chế cho đến khi rời sân.']
+            : [],
+    }
+}
+
+const clampAbilitySpeedMultiplier = (value, fallback = 1) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return fallback
+    return Math.max(0.25, Math.min(4, parsed))
+}
+
+const normalizeAbilityResultLogs = (value = []) => (
+    Array.isArray(value)
+        ? value.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : []
+)
+
+const resolveAbilitySwitchIn = ({ ability = '', weather = '', terrain = '', volatileState = {}, actorName = '', targetName = '', isSuppressed = false } = {}) => {
+    const normalizedAbility = normalizeAbilityToken(ability)
+    const currentVolatile = volatileState && typeof volatileState === 'object' ? volatileState : {}
+    const appliedFor = normalizeAbilityToken(currentVolatile?.switchInAbilityAppliedFor)
+    if (!normalizedAbility || appliedFor === normalizedAbility || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            applied: false,
+            logs: [],
+            selfStageDelta: {},
+            opponentStageDelta: {},
+            volatileState: currentVolatile,
+        }
+    }
+
+    const hookResult = applyAbilityHook('onSwitchIn', {
+        ability: normalizedAbility,
+        weather,
+        terrain,
+        actorName,
+        targetName,
+    })
+
+    return {
+        applied: Boolean(hookResult?.applied),
+        logs: normalizeAbilityResultLogs(hookResult?.logs),
+        selfStageDelta: normalizeStatStages(hookResult?.statePatches?.self?.statStages),
+        opponentStageDelta: normalizeStatStages(hookResult?.statePatches?.opponent?.statStages),
+        volatileState: {
+            ...currentVolatile,
+            switchInAbilityAppliedFor: normalizedAbility,
+        },
+    }
+}
+
+const resolveAbilitySpeed = ({ ability = '', baseSpeed = 1, weather = '', terrain = '', isSuppressed = false } = {}) => {
+    const normalizedAbility = normalizeAbilityToken(ability)
+    if (!normalizedAbility || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            speed: Math.max(1, Math.floor(Number(baseSpeed) || 1)),
+            logs: [],
+        }
+    }
+
+    const hookResult = applyAbilityHook('beforeSpeedCalc', {
+        ability: normalizedAbility,
+        baseSpeed,
+        weather,
+        terrain,
+    })
+    const multiplier = clampAbilitySpeedMultiplier(hookResult?.statePatches?.self?.speedMultiplier, 1)
+    return {
+        speed: Math.max(1, Math.floor(Math.max(1, Number(baseSpeed) || 1) * multiplier)),
+        logs: normalizeAbilityResultLogs(hookResult?.logs),
+    }
+}
+
+const resolveAbilityHitDefense = ({ ability = '', incomingMoveType = '', incomingMoveCategory = '', didMoveHit = false, defenderCurrentHp = 0, defenderMaxHp = 1, resolutionContext = {}, isSuppressed = false } = {}) => {
+    const bypassDecision = resolveAbilityBypassDecision({
+        hookKey: 'hit_defense',
+        ignoreTargetAbilityFromMove: resolutionContext?.ignoreTargetAbilityFromMove ?? resolutionContext?.ignoreTargetAbility,
+        ignoreTargetAbilityFromAttackerAbility: resolutionContext?.ignoreTargetAbilityFromAttackerAbility,
+    })
+    if (bypassDecision.shouldBypass || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            preventDamage: false,
+            healHp: 0,
+            logs: [],
+        }
+    }
+
+    const normalizedAbility = normalizeAbilityToken(ability)
+    if (!normalizedAbility) {
+        return {
+            preventDamage: false,
+            healHp: 0,
+            logs: [],
+        }
+    }
+
+    const hookResult = applyAbilityHook('onTryHit', {
+        ability: normalizedAbility,
+        incomingMoveType,
+        incomingMoveCategory,
+        isDamagingMove: normalizeTypeToken(incomingMoveCategory) !== 'status',
+        didMoveHit,
+    })
+    const preventDamage = Boolean(hookResult?.statePatches?.self?.preventDamage)
+    const healFraction = clampFraction(hookResult?.statePatches?.self?.healFractionMaxHp, 0)
+    const maxHp = Math.max(1, Number(defenderMaxHp) || 1)
+    const currentHp = Math.max(0, Number(defenderCurrentHp) || 0)
+    const healHp = preventDamage && healFraction > 0
+        ? Math.max(0, Math.min(maxHp - currentHp, Math.max(1, Math.floor(maxHp * healFraction))))
+        : 0
+
+    return {
+        preventDamage,
+        healHp,
+        logs: normalizeAbilityResultLogs(hookResult?.logs),
+    }
+}
+
+const resolveAbilityStatusGuard = ({ ability = '', incomingStatus = '', resolutionContext = {}, isSuppressed = false } = {}) => {
+    const bypassDecision = resolveAbilityBypassDecision({
+        hookKey: 'status_guard',
+        ignoreTargetAbilityFromMove: resolutionContext?.ignoreTargetAbilityFromMove ?? resolutionContext?.ignoreTargetAbility,
+        ignoreTargetAbilityFromAttackerAbility: resolutionContext?.ignoreTargetAbilityFromAttackerAbility,
+    })
+    if (bypassDecision.shouldBypass || normalizeAbilitySuppressed(isSuppressed)) {
+        return {
+            preventStatus: false,
+            logs: [],
+        }
+    }
+
+    const normalizedAbility = normalizeAbilityToken(ability)
+    const normalizedStatus = normalizeBattleStatus(incomingStatus)
+    if (!normalizedAbility || !normalizedStatus) {
+        return {
+            preventStatus: false,
+            logs: [],
+        }
+    }
+
+    const hookResult = applyAbilityHook('onStatusAttempt', {
+        ability: normalizedAbility,
+        incomingStatus: normalizedStatus,
+    })
+    return {
+        preventStatus: Boolean(hookResult?.statePatches?.self?.preventStatus),
+        logs: normalizeAbilityResultLogs(hookResult?.logs),
+    }
+}
+
+const resolveAbilitySuppressionMutations = ({
+    selfSuppressed = false,
+    opponentSuppressed = false,
+    selfPatches = {},
+    opponentPatches = {},
+    selfLabel = 'Pokemon của bạn',
+    opponentLabel = 'Mục tiêu',
+} = {}) => {
+    const normalizePatch = (value = {}) => (value && typeof value === 'object' ? value : {})
+    const normalizedSelfPatches = normalizePatch(selfPatches)
+    const normalizedOpponentPatches = normalizePatch(opponentPatches)
+
+    const current = {
+        self: normalizeAbilitySuppressed(selfSuppressed),
+        opponent: normalizeAbilitySuppressed(opponentSuppressed),
+    }
+    const next = {
+        self: current.self,
+        opponent: current.opponent,
+    }
+
+    if (Boolean(normalizedSelfPatches?.clearAbilitySuppressed)) next.self = false
+    if (Boolean(normalizedOpponentPatches?.clearAbilitySuppressed)) next.opponent = false
+    if (Boolean(normalizedSelfPatches?.suppressAbility)) next.self = true
+    if (Boolean(normalizedOpponentPatches?.suppressAbility)) next.opponent = true
+
+    const logs = []
+    if (!current.self && next.self) {
+        logs.push(`${String(selfLabel || 'Pokemon của bạn').trim() || 'Pokemon của bạn'} bị áp chế Ability cho đến khi rời sân.`)
+    } else if (current.self && !next.self) {
+        logs.push(`${String(selfLabel || 'Pokemon của bạn').trim() || 'Pokemon của bạn'} không còn bị áp chế Ability.`)
+    }
+    if (!current.opponent && next.opponent) {
+        logs.push(`${String(opponentLabel || 'Mục tiêu').trim() || 'Mục tiêu'} bị áp chế Ability cho đến khi rời sân.`)
+    } else if (current.opponent && !next.opponent) {
+        logs.push(`${String(opponentLabel || 'Mục tiêu').trim() || 'Mục tiêu'} không còn bị áp chế Ability.`)
+    }
+
+    return {
+        selfSuppressed: next.self,
+        opponentSuppressed: next.opponent,
+        changed: next.self !== current.self || next.opponent !== current.opponent,
+        logs,
+    }
+}
+
+const resolveAbilityMutations = ({
+    selfAbility = '',
+    opponentAbility = '',
+    selfPatches = {},
+    opponentPatches = {},
+    selfLabel = 'Pokemon của bạn',
+    opponentLabel = 'Mục tiêu',
+} = {}) => {
+    const normalizePatch = (value = {}) => (value && typeof value === 'object' ? value : {})
+    const normalizedSelfPatches = normalizePatch(selfPatches)
+    const normalizedOpponentPatches = normalizePatch(opponentPatches)
+
+    const current = {
+        self: normalizeAbilityToken(selfAbility),
+        opponent: normalizeAbilityToken(opponentAbility),
+    }
+    const next = {
+        self: current.self,
+        opponent: current.opponent,
+    }
+
+    const setSelfAbility = normalizeAbilityToken(normalizedSelfPatches?.setAbility)
+    const setOpponentAbility = normalizeAbilityToken(normalizedOpponentPatches?.setAbility)
+    if (setSelfAbility) next.self = setSelfAbility
+    if (setOpponentAbility) next.opponent = setOpponentAbility
+
+    if (Boolean(normalizedSelfPatches?.copyTargetAbility) && next.opponent) {
+        next.self = next.opponent
+    }
+    if (Boolean(normalizedOpponentPatches?.copyTargetAbility) && next.self) {
+        next.opponent = next.self
+    }
+
+    const shouldSwap = Boolean(
+        normalizedSelfPatches?.swapAbilityWithTarget
+        || normalizedSelfPatches?.swapAbilityWithUser
+        || normalizedOpponentPatches?.swapAbilityWithTarget
+        || normalizedOpponentPatches?.swapAbilityWithUser
+    )
+    if (shouldSwap) {
+        const snapshotSelf = next.self
+        next.self = next.opponent
+        next.opponent = snapshotSelf
+    }
+
+    const changes = []
+    if (next.self !== current.self) {
+        changes.push(`${String(selfLabel || 'Pokemon của bạn').trim() || 'Pokemon của bạn'} đổi Ability thành ${next.self || 'không có'}.`)
+    }
+    if (next.opponent !== current.opponent) {
+        changes.push(`${String(opponentLabel || 'Mục tiêu').trim() || 'Mục tiêu'} đổi Ability thành ${next.opponent || 'không có'}.`)
+    }
+
+    return {
+        selfAbility: next.self,
+        opponentAbility: next.opponent,
+        changed: changes.length > 0,
+        logs: changes,
+    }
+}
+
 const formatBattleStatusLabel = (value = '') => {
     const normalized = normalizeBattleStatus(value)
     if (normalized === 'burn') return 'bỏng'
@@ -342,9 +815,9 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
         const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
-            .select('pokemonId level experience moves movePpState nickname formId partyIndex')
+            .select('pokemonId level experience moves movePpState nickname formId partyIndex ability')
             .sort({ partyIndex: 1 })
-            .populate('pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves')
+            .populate('pokemonId', 'name baseStats rarity forms defaultFormId types abilities levelUpMoves')
 
         let activePokemon = normalizedActivePokemonId
             ? (party.find((entry) => String(entry?._id || '') === normalizedActivePokemonId) || null)
@@ -646,6 +1119,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         let trainerSessionDirty = false
         let playerStatus = ''
         let playerStatusTurns = 0
+        let playerAbility = normalizeAbilityToken(player?.ability)
+        let playerAbilitySuppressed = normalizeAbilitySuppressed(player?.abilitySuppressed)
         let playerStatStages = {}
         let playerDamageGuards = {}
         let playerWasDamagedLastTurn = Boolean(player?.wasDamagedLastTurn)
@@ -653,6 +1128,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         let battleFieldState = normalizeFieldState(fieldState)
         let opponentStatus = normalizeBattleStatus(opponent?.status)
         let opponentStatusTurns = normalizeStatusTurns(opponent?.statusTurns)
+        let opponentAbility = normalizeAbilityToken(opponent?.ability)
+        let opponentAbilitySuppressed = normalizeAbilitySuppressed(opponent?.abilitySuppressed)
         let opponentStatStages = normalizeStatStages(opponent?.statStages)
         let opponentDamageGuards = normalizeDamageGuards(opponent?.damageGuards)
         let opponentWasDamagedLastTurn = Boolean(opponent?.wasDamagedLastTurn)
@@ -765,6 +1242,11 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 trainerSession.playerCurrentHp = playerMaxHp
                 trainerSession.playerStatus = ''
                 trainerSession.playerStatusTurns = 0
+                trainerSession.playerAbility = resolveBattleAbilityForPokemon({
+                    userPokemon: activePokemon,
+                    species: attackerSpecies,
+                })
+                trainerSession.playerAbilitySuppressed = false
                 trainerSession.playerStatStages = {}
                 trainerSession.playerDamageGuards = {}
                 trainerSession.playerWasDamagedLastTurn = false
@@ -792,6 +1274,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 trainerSession.playerCurrentHp = Math.max(0, Number(activePlayerPartyEntry.currentHp || 0))
                 trainerSession.playerStatus = normalizeBattleStatus(activePlayerPartyEntry.status)
                 trainerSession.playerStatusTurns = normalizeStatusTurns(activePlayerPartyEntry.statusTurns)
+                trainerSession.playerAbility = normalizeAbilityToken(activePlayerPartyEntry.ability)
+                trainerSession.playerAbilitySuppressed = normalizeAbilitySuppressed(activePlayerPartyEntry.abilitySuppressed)
             }
 
             if (String(trainerSession.playerPokemonId || '') !== activePokemonIdString) {
@@ -800,9 +1284,17 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 trainerSession.playerCurrentHp = requestedPlayerCurrentHp
                 trainerSession.playerStatus = requestedPlayerStatus
                 trainerSession.playerStatusTurns = requestedPlayerStatusTurns
+                trainerSession.playerAbility = resolveBattleAbilityForPokemon({
+                    userPokemon: activePokemon,
+                    species: attackerSpecies,
+                })
+                trainerSession.playerAbilitySuppressed = false
                 syncTrainerSessionActivePlayerToParty(trainerSession)
                 trainerSessionDirty = true
             }
+
+            playerAbility = normalizeAbilityToken(trainerSession.playerAbility)
+            playerAbilitySuppressed = normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed)
 
             const storedPlayerMaxHp = Math.max(1, Number(trainerSession.playerMaxHp) || playerMaxHp)
             const storedPlayerCurrentHpRaw = Number(trainerSession.playerCurrentHp)
@@ -832,6 +1324,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             activeTrainerOpponent = trainerSession.team[activeOpponentIndex]
             activeTrainerOpponent.status = normalizeBattleStatus(activeTrainerOpponent.status)
             activeTrainerOpponent.statusTurns = normalizeStatusTurns(activeTrainerOpponent.statusTurns)
+            activeTrainerOpponent.ability = normalizeAbilityToken(activeTrainerOpponent.ability)
+            activeTrainerOpponent.abilitySuppressed = normalizeAbilitySuppressed(activeTrainerOpponent.abilitySuppressed)
             activeTrainerOpponent.statStages = normalizeStatStages(activeTrainerOpponent.statStages)
             activeTrainerOpponent.damageGuards = normalizeDamageGuards(activeTrainerOpponent.damageGuards)
             activeTrainerOpponent.wasDamagedLastTurn = Boolean(activeTrainerOpponent.wasDamagedLastTurn)
@@ -895,6 +1389,13 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             )
             activeTrainerOpponent.damagePercent = trainerPokemonDamagePercent
             const trainerSpecies = trainerTeamEntry?.pokemonId || null
+            const trainerResolvedAbility = resolveBattleAbilityForPokemon({
+                species: trainerSpecies,
+                fallbackAbility: activeTrainerOpponent?.ability,
+            })
+            activeTrainerOpponent.ability = trainerResolvedAbility
+            opponentAbility = trainerResolvedAbility
+            opponentAbilitySuppressed = normalizeAbilitySuppressed(activeTrainerOpponent.abilitySuppressed)
             const trainerSpeciesTypes = normalizePokemonTypes(trainerSpecies?.types)
             if (targetTypes.length === 0 && trainerSpeciesTypes.length > 0) {
                 targetTypes = trainerSpeciesTypes
@@ -1128,6 +1629,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
 
             playerStatus = normalizeBattleStatus(trainerSession.playerStatus)
             playerStatusTurns = normalizeStatusTurns(trainerSession.playerStatusTurns)
+            playerAbility = normalizeAbilityToken(trainerSession.playerAbility)
+            playerAbilitySuppressed = normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed)
             playerStatStages = normalizeStatStages(trainerSession.playerStatStages)
             playerDamageGuards = normalizeDamageGuards(trainerSession.playerDamageGuards)
             playerWasDamagedLastTurn = Boolean(trainerSession.playerWasDamagedLastTurn)
@@ -1135,6 +1638,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             battleFieldState = normalizeFieldState(trainerSession.fieldState)
             opponentStatus = normalizeBattleStatus(activeTrainerOpponent.status)
             opponentStatusTurns = normalizeStatusTurns(activeTrainerOpponent.statusTurns)
+            opponentAbility = normalizeAbilityToken(activeTrainerOpponent.ability)
+            opponentAbilitySuppressed = normalizeAbilitySuppressed(activeTrainerOpponent.abilitySuppressed)
             opponentStatStages = normalizeStatStages(activeTrainerOpponent.statStages)
             opponentDamageGuards = normalizeDamageGuards(activeTrainerOpponent.damageGuards)
             opponentWasDamagedLastTurn = Boolean(activeTrainerOpponent.wasDamagedLastTurn)
@@ -1144,9 +1649,66 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         if (!normalizedTrainerId) {
             playerStatus = normalizeBattleStatus(player?.status)
             playerStatusTurns = normalizeStatusTurns(player?.statusTurns)
+            playerAbility = normalizeAbilityToken(player?.ability)
+            playerAbilitySuppressed = normalizeAbilitySuppressed(player?.abilitySuppressed)
             playerStatStages = normalizeStatStages(player?.statStages)
             playerDamageGuards = normalizeDamageGuards(player?.damageGuards)
             playerVolatileState = normalizeVolatileState(player?.volatileState)
+            opponentAbility = normalizeAbilityToken(opponent?.ability)
+            opponentAbilitySuppressed = normalizeAbilitySuppressed(opponent?.abilitySuppressed)
+        }
+
+        const pendingTurnStartAbilityLogs = []
+        const weatherToken = String(battleFieldState?.weather || '').trim().toLowerCase()
+        const terrainToken = String(battleFieldState?.terrain || '').trim().toLowerCase()
+        let didResolveSwitchInAbility = false
+
+        if (playerCurrentHp > 0 && playerAbility) {
+            const playerSwitchInResult = resolveAbilitySwitchIn({
+                ability: playerAbility,
+                isSuppressed: playerAbilitySuppressed,
+                weather: weatherToken,
+                terrain: terrainToken,
+                volatileState: playerVolatileState,
+                actorName: activePokemon.nickname || attackerSpecies?.name || 'Pokemon của bạn',
+                targetName: targetName || 'Mục tiêu',
+            })
+            playerVolatileState = playerSwitchInResult.volatileState
+            playerStatStages = combineStatStageDeltas(playerStatStages, playerSwitchInResult.selfStageDelta)
+            opponentStatStages = combineStatStageDeltas(opponentStatStages, playerSwitchInResult.opponentStageDelta)
+            pendingTurnStartAbilityLogs.push(...playerSwitchInResult.logs)
+            if (playerSwitchInResult.applied
+                || Object.keys(playerSwitchInResult.selfStageDelta).length > 0
+                || Object.keys(playerSwitchInResult.opponentStageDelta).length > 0
+            ) {
+                didResolveSwitchInAbility = true
+            }
+        }
+
+        if (targetCurrentHp > 0 && opponentAbility) {
+            const opponentSwitchInResult = resolveAbilitySwitchIn({
+                ability: opponentAbility,
+                isSuppressed: opponentAbilitySuppressed,
+                weather: weatherToken,
+                terrain: terrainToken,
+                volatileState: opponentVolatileState,
+                actorName: targetName || 'Pokemon đối thủ',
+                targetName: activePokemon.nickname || attackerSpecies?.name || 'Pokemon của bạn',
+            })
+            opponentVolatileState = opponentSwitchInResult.volatileState
+            opponentStatStages = combineStatStageDeltas(opponentStatStages, opponentSwitchInResult.selfStageDelta)
+            playerStatStages = combineStatStageDeltas(playerStatStages, opponentSwitchInResult.opponentStageDelta)
+            pendingTurnStartAbilityLogs.push(...opponentSwitchInResult.logs)
+            if (opponentSwitchInResult.applied
+                || Object.keys(opponentSwitchInResult.selfStageDelta).length > 0
+                || Object.keys(opponentSwitchInResult.opponentStageDelta).length > 0
+            ) {
+                didResolveSwitchInAbility = true
+            }
+        }
+
+        if (trainerSession && didResolveSwitchInAbility) {
+            trainerSessionDirty = true
         }
 
         selectMoveEffects = applyEffectSpecs({
@@ -1229,14 +1791,37 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             selectedCounterMoveIndex = -1
         }
 
-        const playerEffectiveSpeed = applyStatStageToValue(
+        const opponentMoveEffectSpecs = resolveRuntimeMoveEffectSpecs({
+            moveDoc: opponentMoveDoc,
+            fallbackMove: selectedOpponentMove,
+        })
+
+        const playerBaseEffectiveSpeed = applyStatStageToValue(
             Math.max(1, Math.floor(applyPercentMultiplier(Number(attackerScaledStats?.spd) || 1, badgeBonusState?.speedBonusPercent || 0))),
             playerStatStages?.spd
         )
-        const opponentEffectiveSpeed = applyStatStageToValue(
+        const opponentBaseEffectiveSpeed = applyStatStageToValue(
             Math.max(1, Number(activeTrainerOpponent?.baseStats?.spd) || Number(opponent?.baseStats?.spd) || 1),
             opponentStatStages?.spd
         )
+        const playerSpeedByAbility = resolveAbilitySpeed({
+            ability: playerAbility,
+            isSuppressed: playerAbilitySuppressed,
+            baseSpeed: playerBaseEffectiveSpeed,
+            weather: weatherToken,
+            terrain: terrainToken,
+        })
+        const opponentSpeedByAbility = resolveAbilitySpeed({
+            ability: opponentAbility,
+            isSuppressed: opponentAbilitySuppressed,
+            baseSpeed: opponentBaseEffectiveSpeed,
+            weather: weatherToken,
+            terrain: terrainToken,
+        })
+        pendingTurnStartAbilityLogs.push(...playerSpeedByAbility.logs)
+        pendingTurnStartAbilityLogs.push(...opponentSpeedByAbility.logs)
+        const playerEffectiveSpeed = playerSpeedByAbility.speed
+        const opponentEffectiveSpeed = opponentSpeedByAbility.speed
 
         const turnOrder = resolveBattleTurnOrder({
             playerPriority: movePriority,
@@ -1265,6 +1850,11 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             lines,
             ...payload,
         })
+        if (pendingTurnStartAbilityLogs.length > 0) {
+            appendPhaseLines('turn_start', 'system', 'ability_trigger', pendingTurnStartAbilityLogs, {
+                source: 'ability',
+            })
+        }
         if (moveFallbackReason === 'OUT_OF_PP') {
             appendPhaseEvent(
                 playerTurnPhaseKeys.preAction,
@@ -1312,7 +1902,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 'turn_start',
                 'system',
                 'turn_order_decided',
-                'Hai ben co cung do uu tien va toc do, thu tu ra don duoc quyet dinh ngau nhien.',
+                'Hai bên có cùng độ ưu tiên và tốc độ, thứ tự ra đòn được quyết định ngẫu nhiên.',
                 {
                     reason: 'speed-tie',
                     firstActor: playerActsFirst ? 'player' : 'opponent',
@@ -1378,6 +1968,51 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             }
 
             const didOpponentMoveHit = canOpponentAct && (Math.random() * 100) <= opponentMoveAccuracy
+            const opponentHasMoldBreakerBypass = canOpponentAct && hasMoldBreakerStyleBypass({
+                attackerAbility: opponentAbility,
+                attackerAbilitySuppressed: opponentAbilitySuppressed,
+            })
+            const opponentIgnoreTargetFromMove = canOpponentAct
+                ? resolveIgnoreTargetAbilityFromEffectSpecs({
+                    effectSpecs: opponentMoveEffectSpecs,
+                    random: randomFn,
+                    triggers: ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'],
+                })
+                : { ignoreTargetAbility: false, ignoreTargetAbilityMode: 'ignore', logs: [] }
+            const opponentAbilityResolutionContext = canOpponentAct
+                ? buildAbilityResolutionContext(
+                    {
+                        ignoreTargetAbilityFromMove: opponentIgnoreTargetFromMove.ignoreTargetAbility,
+                        ignoreTargetAbilityFromAttackerAbility: opponentHasMoldBreakerBypass,
+                        ignoreTargetAbilityMode: opponentIgnoreTargetFromMove.ignoreTargetAbilityMode,
+                        logs: [
+                            ...opponentIgnoreTargetFromMove.logs,
+                            ...(opponentHasMoldBreakerBypass
+                                ? [`${formatAbilityName(opponentAbility)} giúp bỏ qua Ability phòng thủ của mục tiêu trong lần xử lý này.`]
+                                : []),
+                        ],
+                    }
+                )
+                : buildAbilityResolutionContext()
+            const opponentAbilitySuppressionFromMove = canOpponentAct
+                ? resolveSuppressTargetAbilityFromEffectSpecs({
+                    effectSpecs: opponentMoveEffectSpecs,
+                    random: randomFn,
+                    triggers: ['on_select_move', 'on_calculate_damage', 'before_accuracy_check', 'on_hit'],
+                    targetMovedBeforeAction: playerActsFirst,
+                })
+                : { suppressTargetAbility: false, logs: [] }
+            const playerAbilityDefense = resolveAbilityHitDefense({
+                ability: playerAbility,
+                incomingMoveType: opponentMoveType,
+                incomingMoveCategory: opponentMoveCategory,
+                didMoveHit: didOpponentMoveHit,
+                defenderCurrentHp: playerCurrentHp,
+                defenderMaxHp: playerMaxHp,
+                resolutionContext: opponentAbilityResolutionContext,
+                isSuppressed: playerAbilitySuppressed,
+            })
+            const opponentMoveBlockedByAbility = didOpponentMoveHit && playerAbilityDefense.preventDamage
             const opponentTypeEffectiveness = resolveTypeEffectiveness(opponentMoveType, attackerTypes)
             const opponentStabMultiplier = targetTypes.includes(opponentMoveType) ? 1.5 : 1
             const playerCritBlockTurns = normalizeStatusTurns(playerVolatileState?.critBlockTurns)
@@ -1401,7 +2036,11 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 opponentMoveCategory === 'special' ? playerSpDef : playerDef,
                 playerDefenseStage
             )
-            const rawCounterDamage = (!canOpponentAct || !didOpponentMoveHit || opponentMoveCategory === 'status' || opponentTypeEffectiveness.multiplier <= 0)
+            const rawCounterDamage = (!canOpponentAct
+                || !didOpponentMoveHit
+                || opponentMoveCategory === 'status'
+                || opponentTypeEffectiveness.multiplier <= 0
+                || opponentMoveBlockedByAbility)
                 ? 0
                 : calcBattleDamage({
                     attackerLevel: targetLevel,
@@ -1422,7 +2061,30 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                     target: 'player',
                 })
             }
-            const nextPlayerHp = Math.max(0, playerCurrentHp - counterDamage)
+            if (playerAbilityDefense.logs.length > 0) {
+                appendPhaseLines(opponentTurnPhaseKeys.postAction, 'system', 'ability_trigger', playerAbilityDefense.logs, {
+                    target: 'player',
+                    source: 'ability',
+                })
+            }
+            if (opponentAbilityResolutionContext.ignoreTargetAbility && opponentAbilityResolutionContext.logs.length > 0) {
+                appendPhaseLines(opponentTurnPhaseKeys.postAction, 'system', 'ability_ignore', opponentAbilityResolutionContext.logs, {
+                    target: 'player',
+                    source: opponentAbilityResolutionContext.ignoreTargetAbilitySource || 'move_effects',
+                })
+            }
+            if (didOpponentMoveHit && opponentAbilitySuppressionFromMove.suppressTargetAbility) {
+                playerAbilitySuppressed = true
+                if (opponentAbilitySuppressionFromMove.logs.length > 0) {
+                    appendPhaseLines(opponentTurnPhaseKeys.postAction, 'system', 'ability_suppressed', opponentAbilitySuppressionFromMove.logs, {
+                        target: 'player',
+                        source: 'move_effects',
+                    })
+                }
+            }
+            const nextPlayerHp = opponentMoveBlockedByAbility
+                ? Math.min(playerMaxHp, playerCurrentHp + playerAbilityDefense.healHp)
+                : Math.max(0, playerCurrentHp - counterDamage)
             resultingPlayerHp = nextPlayerHp
 
             if (trainerSession) {
@@ -1501,6 +2163,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 userHasNoHeldItem: true,
                 targetIsDynamaxed: Boolean(opponent?.isDynamaxed),
                 userActsFirst: playerActsFirst,
+                targetMovedBeforeAction: !playerActsFirst,
                 isSuperEffective: precomputedTypeEffectiveness.multiplier > 1,
                 userMaxHp: playerMaxHp,
                 userCurrentHp: playerCurrentHp,
@@ -1700,6 +2363,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                     userStatusTurns: playerStatusTurns,
                     userStatStages: playerStatStages,
                     targetStatus: opponentStatus,
+                    targetMovedBeforeAction: !playerActsFirst,
                     weather: battleFieldState.weather || '',
                     terrain: battleFieldState.terrain || '',
                     targetStatStages: opponentStatStages,
@@ -1725,8 +2389,46 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         const fixedDamageValue = Math.max(0, Math.floor(Number(onHitSelfPatch?.fixedDamageValue) || 0))
         const fixedDamageFractionTargetCurrentHp = clampFraction(onHitSelfPatch?.fixedDamageFractionTargetCurrentHp, 0)
         const minTargetHpAfterHit = Math.max(0, Math.floor(Number(onHitSelfPatch?.minTargetHp || 0)))
+        const targetIgnoreFromMove = resolveIgnoreTargetAbilityFromEffectAggregates({
+            aggregates: [
+                selectMoveEffects,
+                damageCalcEffects,
+                beforeAccuracyEffects,
+                onHitEffects,
+            ],
+        })
+        const playerHasMoldBreakerBypass = hasMoldBreakerStyleBypass({
+            attackerAbility: playerAbility,
+            attackerAbilitySuppressed: playerAbilitySuppressed,
+        })
+        const targetAbilityResolutionContext = buildAbilityResolutionContext({
+            ignoreTargetAbilityFromMove: targetIgnoreFromMove.ignoreTargetAbility,
+            ignoreTargetAbilityFromAttackerAbility: playerHasMoldBreakerBypass,
+            ignoreTargetAbilityMode: targetIgnoreFromMove.ignoreTargetAbilityMode,
+            logs: [
+                ...targetIgnoreFromMove.logs,
+                ...(playerHasMoldBreakerBypass
+                    ? [`${formatAbilityName(playerAbility)} giúp bỏ qua Ability phòng thủ của mục tiêu trong lần xử lý này.`]
+                    : []),
+            ],
+        })
+        const opponentAbilityDefense = resolveAbilityHitDefense({
+            ability: opponentAbility,
+            incomingMoveType: moveType,
+            incomingMoveCategory: moveCategory,
+            didMoveHit: didPlayerMoveHit,
+            defenderCurrentHp: targetCurrentHp,
+            defenderMaxHp: targetMaxHp,
+            resolutionContext: targetAbilityResolutionContext,
+            isSuppressed: opponentAbilitySuppressed,
+        })
+        const playerMoveBlockedByAbility = didPlayerMoveHit && opponentAbilityDefense.preventDamage
 
-        const rawSingleHitDamage = (!canPlayerAct || !didPlayerMoveHit || isStatusMove || playerTypeEffectiveness.multiplier <= 0)
+        const rawSingleHitDamage = (!canPlayerAct
+            || !didPlayerMoveHit
+            || isStatusMove
+            || playerTypeEffectiveness.multiplier <= 0
+            || playerMoveBlockedByAbility)
             ? 0
             : calcBattleDamage({
                 attackerLevel,
@@ -1754,7 +2456,24 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         if (shouldForceTargetKo && didPlayerMoveHit && !isStatusMove) {
             damage = Math.max(damage, targetCurrentHp)
         }
-        let currentHp = Math.max(0, targetCurrentHp - damage)
+        if (playerMoveBlockedByAbility) {
+            damage = 0
+        }
+        if (opponentAbilityDefense.logs.length > 0) {
+            appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_trigger', opponentAbilityDefense.logs, {
+                target: 'opponent',
+                source: 'ability',
+            })
+        }
+        if (targetAbilityResolutionContext.ignoreTargetAbility && targetAbilityResolutionContext.logs.length > 0) {
+            appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_ignore', targetAbilityResolutionContext.logs, {
+                target: 'opponent',
+                source: targetAbilityResolutionContext.ignoreTargetAbilitySource || 'move_effects',
+            })
+        }
+        let currentHp = playerMoveBlockedByAbility
+            ? Math.min(targetMaxHp, targetCurrentHp + opponentAbilityDefense.healHp)
+            : Math.max(0, targetCurrentHp - damage)
         if (minTargetHpAfterHit > 0 && currentHp < minTargetHpAfterHit && targetCurrentHp > minTargetHpAfterHit) {
             currentHp = minTargetHpAfterHit
             damage = Math.max(0, targetCurrentHp - currentHp)
@@ -1800,6 +2519,23 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         const effectSelfPatches = combinedEffectResult?.statePatches?.self || {}
         const effectOpponentPatches = combinedEffectResult?.statePatches?.opponent || {}
         const effectFieldPatch = combinedEffectResult?.statePatches?.field || {}
+
+        const abilityMutationResult = resolveAbilityMutations({
+            selfAbility: playerAbility,
+            opponentAbility,
+            selfPatches: effectSelfPatches,
+            opponentPatches: effectOpponentPatches,
+            selfLabel: activePokemon.nickname || attackerSpecies?.name || 'Pokemon của bạn',
+            opponentLabel: targetName || 'Mục tiêu',
+        })
+        if (abilityMutationResult.changed) {
+            playerAbility = abilityMutationResult.selfAbility
+            opponentAbility = abilityMutationResult.opponentAbility
+            appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_mutation', abilityMutationResult.logs, {
+                source: 'move_effects',
+            })
+        }
+
         const selfStatusShieldTurns = normalizeStatusTurns(playerVolatileState?.statusShieldTurns)
         const opponentStatusShieldTurns = normalizeStatusTurns(opponentVolatileState?.statusShieldTurns)
         const selfStatDropShieldTurns = normalizeStatusTurns(playerVolatileState?.statDropShieldTurns)
@@ -1812,10 +2548,24 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             playerStatusTurns = 0
         } else {
             const incomingSelfStatus = normalizeBattleStatus(effectSelfPatches?.status)
-            const nextSelfStatus = incomingSelfStatus && selfStatusShieldTurns > 0 ? '' : effectSelfPatches?.status
+            const selfStatusGuard = resolveAbilityStatusGuard({
+                ability: playerAbility,
+                incomingStatus: incomingSelfStatus,
+                isSuppressed: playerAbilitySuppressed,
+            })
+            const shouldBlockSelfStatusByAbility = incomingSelfStatus && selfStatusGuard.preventStatus
+            const nextSelfStatus = (incomingSelfStatus && selfStatusShieldTurns > 0) || shouldBlockSelfStatusByAbility
+                ? ''
+                : effectSelfPatches?.status
             if (incomingSelfStatus && selfStatusShieldTurns > 0) {
                 appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'status_blocked', 'Lá chắn trạng thái bảo vệ Pokemon của bạn khỏi hiệu ứng bất lợi.', {
                     target: 'player',
+                })
+            }
+            if (shouldBlockSelfStatusByAbility && selfStatusGuard.logs.length > 0) {
+                appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_trigger', selfStatusGuard.logs, {
+                    target: 'player',
+                    source: 'ability',
                 })
             }
             const patchedSelfStatus = applyStatusPatch({
@@ -1834,10 +2584,25 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             opponentStatusTurns = 0
         } else {
             const incomingOpponentStatus = normalizeBattleStatus(effectOpponentPatches?.status)
-            const nextOpponentStatus = incomingOpponentStatus && opponentStatusShieldTurns > 0 ? '' : effectOpponentPatches?.status
+            const opponentStatusGuard = resolveAbilityStatusGuard({
+                ability: opponentAbility,
+                incomingStatus: incomingOpponentStatus,
+                resolutionContext: targetAbilityResolutionContext,
+                isSuppressed: opponentAbilitySuppressed,
+            })
+            const shouldBlockOpponentStatusByAbility = incomingOpponentStatus && opponentStatusGuard.preventStatus
+            const nextOpponentStatus = (incomingOpponentStatus && opponentStatusShieldTurns > 0) || shouldBlockOpponentStatusByAbility
+                ? ''
+                : effectOpponentPatches?.status
             if (incomingOpponentStatus && opponentStatusShieldTurns > 0) {
                 appendPhaseEvent(playerTurnPhaseKeys.postAction, 'system', 'status_blocked', `${targetName} được lá chắn trạng thái bảo vệ.`, {
                     target: 'opponent',
+                })
+            }
+            if (shouldBlockOpponentStatusByAbility && opponentStatusGuard.logs.length > 0) {
+                appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_trigger', opponentStatusGuard.logs, {
+                    target: 'opponent',
+                    source: 'ability',
                 })
             }
             const patchedOpponentStatus = applyStatusPatch({
@@ -1849,6 +2614,31 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             })
             opponentStatus = patchedOpponentStatus.status
             opponentStatusTurns = patchedOpponentStatus.statusTurns
+        }
+
+        const suppressionSelfPatches = {
+            ...effectSelfPatches,
+            suppressAbility: didPlayerMoveHit ? effectSelfPatches?.suppressAbility : false,
+        }
+        const suppressionOpponentPatches = {
+            ...effectOpponentPatches,
+            suppressAbility: didPlayerMoveHit ? effectOpponentPatches?.suppressAbility : false,
+        }
+
+        const abilitySuppressionResult = resolveAbilitySuppressionMutations({
+            selfSuppressed: playerAbilitySuppressed,
+            opponentSuppressed: opponentAbilitySuppressed,
+            selfPatches: suppressionSelfPatches,
+            opponentPatches: suppressionOpponentPatches,
+            selfLabel: activePokemon.nickname || attackerSpecies?.name || 'Pokemon của bạn',
+            opponentLabel: targetName || 'Mục tiêu',
+        })
+        if (abilitySuppressionResult.changed) {
+            playerAbilitySuppressed = abilitySuppressionResult.selfSuppressed
+            opponentAbilitySuppressed = abilitySuppressionResult.opponentSuppressed
+            appendPhaseLines(playerTurnPhaseKeys.postAction, 'system', 'ability_suppressed', abilitySuppressionResult.logs, {
+                source: 'move_effects',
+            })
         }
 
         const filteredSelfStatDelta = filterNegativeStatStageDeltas(effectSelfPatches?.statStages, selfStatDropShieldTurns)
@@ -2182,6 +2972,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         if (currentHp <= 0) {
             opponentStatus = ''
             opponentStatusTurns = 0
+            opponentAbilitySuppressed = false
             opponentStatStages = {}
             opponentDamageGuards = {}
             opponentVolatileState = {}
@@ -2190,6 +2981,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         if (resultingPlayerHp <= 0) {
             playerStatus = ''
             playerStatusTurns = 0
+            playerAbilitySuppressed = false
             playerStatStages = {}
             playerDamageGuards = {}
             playerVolatileState = {}
@@ -2200,11 +2992,15 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             trainerSession.playerMaxHp = playerMaxHp
             trainerSession.playerStatus = playerStatus
             trainerSession.playerStatusTurns = playerStatusTurns
+            trainerSession.playerAbility = normalizeAbilityToken(playerAbility || trainerSession.playerAbility)
+            trainerSession.playerAbilitySuppressed = normalizeAbilitySuppressed(playerAbilitySuppressed)
             syncTrainerSessionActivePlayerToParty(trainerSession)
 
             if (resultingPlayerHp <= 0) {
                 playerForcedSwitchInfo = applyTrainerSessionForcedPlayerSwitch(trainerSession)
                 if (playerForcedSwitchInfo?.switched && playerForcedSwitchInfo?.nextEntry) {
+                    playerAbility = normalizeAbilityToken(trainerSession.playerAbility)
+                    playerAbilitySuppressed = normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed)
                     appendPhaseEvent('forced_switch', 'system', 'forced_switch', `${playerForcedSwitchInfo.nextEntry.name || 'Pokemon'} vào sân thay thế.`, {
                         target: 'player',
                         nextPokemonName: playerForcedSwitchInfo.nextEntry.name || 'Pokemon',
@@ -2219,6 +3015,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 trainerSession.playerCurrentHp = resultingPlayerHp
                 trainerSession.playerStatus = playerStatus
                 trainerSession.playerStatusTurns = playerStatusTurns
+                trainerSession.playerAbility = normalizeAbilityToken(playerAbility || trainerSession.playerAbility)
+                trainerSession.playerAbilitySuppressed = normalizeAbilitySuppressed(playerAbilitySuppressed)
                 trainerSession.playerStatStages = playerStatStages
                 trainerSession.playerDamageGuards = playerDamageGuards
                 trainerSession.playerWasDamagedLastTurn = playerWasDamagedLastTurn
@@ -2230,6 +3028,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 activeTrainerOpponent.currentHp = currentHp
                 activeTrainerOpponent.status = opponentStatus
                 activeTrainerOpponent.statusTurns = opponentStatusTurns
+                activeTrainerOpponent.ability = normalizeAbilityToken(opponentAbility || activeTrainerOpponent.ability)
+                activeTrainerOpponent.abilitySuppressed = normalizeAbilitySuppressed(opponentAbilitySuppressed)
                 activeTrainerOpponent.statStages = opponentStatStages
                 activeTrainerOpponent.damageGuards = opponentDamageGuards
                 activeTrainerOpponent.wasDamagedLastTurn = opponentWasDamagedLastTurn
@@ -2296,6 +3096,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 defeatedAll: trainerSession.currentIndex >= trainerSession.team.length,
                 playerStatus: normalizeBattleStatus(trainerSession.playerStatus),
                 playerStatusTurns: normalizeStatusTurns(trainerSession.playerStatusTurns),
+                playerAbility: normalizeAbilityToken(trainerSession.playerAbility),
+                playerAbilitySuppressed: normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed),
                 playerStatStages: normalizeStatStages(trainerSession.playerStatStages),
                 playerDamageGuards: normalizeDamageGuards(trainerSession.playerDamageGuards),
                 playerWasDamagedLastTurn: Boolean(trainerSession.playerWasDamagedLastTurn),
@@ -2324,6 +3126,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                     }),
                     status: normalizeBattleStatus(entry.status),
                     statusTurns: normalizeStatusTurns(entry.statusTurns),
+                    ability: normalizeAbilityToken(entry.ability),
+                    abilitySuppressed: normalizeAbilitySuppressed(entry.abilitySuppressed),
                     statStages: normalizeStatStages(entry.statStages),
                     damageGuards: normalizeDamageGuards(entry.damageGuards),
                     wasDamagedLastTurn: Boolean(entry.wasDamagedLastTurn),
@@ -2499,6 +3303,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                     effectiveStats: playerEffectiveStats,
                     status: playerStatus,
                     statusTurns: playerStatusTurns,
+                    ability: normalizeAbilityToken(playerAbility),
+                    abilitySuppressed: normalizeAbilitySuppressed(playerAbilitySuppressed),
                     statStages: playerStatStages,
                     damageGuards: playerDamageGuards,
                     wasDamagedLastTurn: playerWasDamagedLastTurn,
@@ -2513,6 +3319,8 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                     effectiveStats: opponentEffectiveStats,
                     status: opponentStatus,
                     statusTurns: opponentStatusTurns,
+                    ability: normalizeAbilityToken(opponentAbility),
+                    abilitySuppressed: normalizeAbilitySuppressed(opponentAbilitySuppressed),
                     statStages: opponentStatStages,
                     damageGuards: opponentDamageGuards,
                     wasDamagedLastTurn: opponentWasDamagedLastTurn,
@@ -2623,6 +3431,11 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         trainerSession.playerCurrentHp = playerMaxHp
         trainerSession.playerStatus = ''
         trainerSession.playerStatusTurns = 0
+        trainerSession.playerAbility = resolveBattleAbilityForPokemon({
+            userPokemon: activePokemon,
+            species: attackerSpecies,
+        })
+        trainerSession.playerAbilitySuppressed = false
         trainerSession.playerStatStages = {}
         trainerSession.playerDamageGuards = {}
         trainerSession.playerWasDamagedLastTurn = false
@@ -2644,6 +3457,11 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
         trainerSession.playerCurrentHp = playerMaxHp
         trainerSession.playerStatus = ''
         trainerSession.playerStatusTurns = 0
+        trainerSession.playerAbility = resolveBattleAbilityForPokemon({
+            userPokemon: activePokemon,
+            species: attackerSpecies,
+        })
+        trainerSession.playerAbilitySuppressed = false
         syncTrainerSessionActivePlayerToParty(trainerSession)
         const persistedTrainerSession = await BattleSession.findOneAndUpdate(
             {
@@ -2662,6 +3480,8 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
                     playerMaxHp: trainerSession.playerMaxHp,
                     playerStatus: trainerSession.playerStatus,
                     playerStatusTurns: trainerSession.playerStatusTurns,
+                    playerAbility: trainerSession.playerAbility,
+                    playerAbilitySuppressed: trainerSession.playerAbilitySuppressed,
                     playerStatStages: trainerSession.playerStatStages,
                     playerDamageGuards: trainerSession.playerDamageGuards,
                     playerWasDamagedLastTurn: trainerSession.playerWasDamagedLastTurn,
@@ -2705,6 +3525,8 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
                 maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
                 status: normalizeBattleStatus(trainerSession.playerStatus),
                 statusTurns: normalizeStatusTurns(trainerSession.playerStatusTurns),
+                ability: normalizeAbilityToken(trainerSession.playerAbility),
+                abilitySuppressed: normalizeAbilitySuppressed(trainerSession.playerAbilitySuppressed),
             },
             playerParty: serializeTrainerPlayerPartyState(trainerSession),
             opponent: serializeTrainerBattleState(trainerSession),
@@ -2732,6 +3554,17 @@ export const __battleEffectInternals = {
     appendTurnPhaseEvent,
     finalizeTurnTimeline,
     flattenTurnPhaseLines,
+    buildAbilityResolutionContext,
+    resolveIgnoreTargetAbilityFromEffectAggregates,
+    resolveIgnoreTargetAbilityFromEffectSpecs,
+    resolveSuppressTargetAbilityFromEffectAggregates,
+    resolveSuppressTargetAbilityFromEffectSpecs,
+    normalizeAbilitySuppressed,
+    hasMoldBreakerStyleBypass,
+    resolveAbilityHitDefense,
+    resolveAbilityStatusGuard,
+    resolveAbilityMutations,
+    resolveAbilitySuppressionMutations,
 }
 
 export default router

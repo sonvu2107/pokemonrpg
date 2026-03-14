@@ -30,6 +30,7 @@ import {
 } from '../../battle/turnTimeline.js'
 import {
     applyTrainerSessionForcedPlayerSwitch,
+    clearTrainerSessionActivePlayerAbilitySuppression,
     ensureTrainerSessionPlayerParty,
     serializeTrainerPlayerPartyState,
     setTrainerSessionActivePlayerByIndex,
@@ -50,6 +51,26 @@ import {
 const router = express.Router()
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+const normalizeAbilityToken = (value = '') => String(value || '').trim().toLowerCase()
+const normalizeAbilityPool = (value = []) => {
+    const entries = Array.isArray(value) ? value : []
+    return [...new Set(entries.map((entry) => normalizeAbilityToken(entry)).filter(Boolean))]
+}
+const resolveBattleAbilityForPokemon = ({ userPokemon = null, species = null, fallbackAbility = '' } = {}) => {
+    const fallback = normalizeAbilityToken(fallbackAbility)
+    if (fallback) return fallback
+
+    const userAbility = normalizeAbilityToken(userPokemon?.ability)
+    if (userAbility) return userAbility
+
+    const speciesAbility = normalizeAbilityToken(species?.ability)
+    if (speciesAbility) return speciesAbility
+
+    const speciesPool = normalizeAbilityPool(species?.abilities)
+    if (speciesPool.length > 0) return speciesPool[0]
+
+    return ''
+}
 const DEFAULT_TRAINER_PRIZE_LEVEL = 5
 const USER_POKEMON_MAX_LEVEL = 3000
 const hasLivingTrainerPlayer = (session = null) => {
@@ -82,7 +103,7 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
         }
 
         const trainerDoc = await BattleTrainer.findById(normalizedTrainerId)
-            .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+            .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types abilities levelUpMoves initialMoves')
             .lean()
         if (!trainerDoc) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle.' })
@@ -120,7 +141,7 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
         const resolvedTrainerDoc = resolvedTrainerId === normalizedTrainerId
             ? trainerDoc
             : await BattleTrainer.findById(resolvedTrainerId)
-                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types levelUpMoves initialMoves')
+                .populate('team.pokemonId', 'name baseStats rarity forms defaultFormId types abilities levelUpMoves initialMoves')
                 .lean()
         if (!resolvedTrainerDoc) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy huấn luyện viên battle.' })
@@ -172,7 +193,7 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
             requestedMaxHp
         )
 
-        syncTrainerSessionActivePlayerToParty(trainerSession)
+        clearTrainerSessionActivePlayerAbilitySuppression(trainerSession)
         setTrainerSessionActivePlayerByIndex(trainerSession, targetPartyIndex)
         const authoritativePlayerMaxHp = Math.max(1, Number(targetPartyEntry?.maxHp || requestedMaxHp || 1))
         const authoritativePlayerCurrentHp = clamp(
@@ -186,6 +207,12 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
 
         const activeTrainerOpponent = team[currentIndex] || null
         const trainerTeamEntry = Array.isArray(resolvedTrainerDoc?.team) ? resolvedTrainerDoc.team[currentIndex] : null
+        if (activeTrainerOpponent) {
+            activeTrainerOpponent.ability = resolveBattleAbilityForPokemon({
+                species: trainerTeamEntry?.pokemonId,
+                fallbackAbility: activeTrainerOpponent.ability,
+            })
+        }
         const counterAttack = await applyTrainerPenaltyTurn({
             activeBattleSession: trainerSession,
             activeTrainerOpponent,
@@ -243,6 +270,8 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
                 pokemonId: trainerSession.playerPokemonId || targetPokemon._id,
                 currentHp: Math.max(0, Number(trainerSession.playerCurrentHp || 0)),
                 maxHp: Math.max(1, Number(trainerSession.playerMaxHp || 1)),
+                ability: String(trainerSession.playerAbility || '').trim().toLowerCase(),
+                abilitySuppressed: Boolean(trainerSession.playerAbilitySuppressed),
                 effectiveStats: counterAttack?.player?.effectiveStats || null,
             },
             playerParty: serializeTrainerPlayerPartyState(trainerSession),
