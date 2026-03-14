@@ -1,0 +1,24 @@
+{
+  "moves": [
+    {
+      "move": "Thunderbolt",
+      "effectSpecs": [
+        {
+          "op": "apply_status",
+          "trigger": "on_hit",
+          "target": "opponent",
+          "chance": 0.1,
+          "params": {
+            "status": "paralyze"
+          }
+        }
+      ]
+    },
+    {
+      "move": "Tailwind",
+      "effectIds": [
+        "stat_stage"
+      ]
+    }
+  ]
+}

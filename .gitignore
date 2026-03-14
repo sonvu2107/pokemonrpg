@@ -34,8 +34,8 @@ tmp/
 temp/
 
 # Scripts
-scripts/
-apps/server/scripts/
+/scripts/
+/apps/server/scripts/
 # Documentation & Examples
 *.md
 !apps/server/docs/ability-runtime.md
