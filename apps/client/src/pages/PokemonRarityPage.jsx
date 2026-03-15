@@ -4,6 +4,7 @@ import { gameApi } from '../services/gameApi'
 import { getRarityStyle } from '../utils/rarityStyles'
 import Modal from '../components/Modal'
 import PokemonSpeciesDetailModal from '../components/PokemonSpeciesDetailModal'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-b from-blue-400 to-blue-600 text-white font-bold px-4 py-2 text-center border-b border-blue-700 shadow-sm">
@@ -446,7 +447,7 @@ export default function PokemonRarityPage() {
                                         className="w-full text-left p-3 hover:bg-blue-50 transition-colors"
                                     >
                                         <div className="flex items-center gap-2 min-w-0">
-                                            <img src={entry.sprite} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
+                                            <img src={resolveImageSrc(entry.sprite)} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className={`font-bold truncate group-hover:text-blue-700 transition-colors ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
@@ -517,7 +518,7 @@ export default function PokemonRarityPage() {
                                                     className="w-full text-left min-w-0 group"
                                                 >
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <img src={entry.sprite} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
+                                                        <img src={resolveImageSrc(entry.sprite)} alt={entry.name} className="w-12 h-12 object-contain pixelated shrink-0" />
                                                         <div className="min-w-0">
                                                             <div className={`font-bold truncate group-hover:text-blue-700 transition-colors ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
                                                                 {entry.name}

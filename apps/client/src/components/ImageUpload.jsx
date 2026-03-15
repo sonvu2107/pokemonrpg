@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { uploadToCloudinary, uploadManyToCloudinary, validateImageFile } from '../utils/cloudinaryUtils'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 export default function ImageUpload({
     currentImage,
@@ -106,7 +107,7 @@ export default function ImageUpload({
                     {preview ? (
                         <>
                             <img
-                                src={preview}
+                                src={resolveImageSrc(preview)}
                                 alt="Preview"
                                 className={`w-24 h-24 bg-slate-100 shadow-sm ${previewRounded ? 'rounded-full object-cover' : 'rounded-lg object-contain'} ${previewFramed ? 'border-2 border-white' : 'border border-slate-200'}`}
                             />

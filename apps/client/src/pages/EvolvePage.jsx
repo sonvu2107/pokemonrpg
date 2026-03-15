@@ -4,6 +4,7 @@ import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
 import VipCaughtStar from '../components/VipCaughtStar'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import { resolveImageSrc } from '../utils/imageUrl'
 import { getRarityStyle } from '../utils/rarityStyles'
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
@@ -295,10 +296,10 @@ export default function EvolvePage() {
                                             </div>
 
                                             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 py-1">
-                                                <img src={sprite} alt={displayName} className="w-16 h-16 mx-auto object-contain pixelated" />
+                                                <img src={resolveImageSrc(sprite)} alt={displayName} className="w-16 h-16 mx-auto object-contain pixelated" />
                                                 <span className="text-blue-400 font-black text-lg">→</span>
                                                 {targetSprite ? (
-                                                    <img src={targetSprite} alt={targetName} className="w-16 h-16 mx-auto object-contain pixelated" />
+                                                    <img src={resolveImageSrc(targetSprite)} alt={targetName} className="w-16 h-16 mx-auto object-contain pixelated" />
                                                 ) : (
                                                     <div className="w-16 h-16 mx-auto rounded-full bg-slate-100 border border-slate-200" />
                                                 )}

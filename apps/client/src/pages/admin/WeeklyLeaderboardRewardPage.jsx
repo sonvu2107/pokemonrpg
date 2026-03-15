@@ -4,6 +4,7 @@ import { gameApi } from '../../services/gameApi'
 import { leaderboardRewardApi, userApi } from '../../services/adminApi'
 import { uploadToCloudinary } from '../../utils/cloudinaryUtils'
 import VipUsername from '../../components/VipUsername'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
 
@@ -983,7 +984,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                                     <div className="text-[11px] font-semibold text-slate-700">Danh hiệu cố định</div>
                                                     <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                         {config.titleImageUrl ? (
-                                                            <img src={config.titleImageUrl} alt={`Danh hiệu top ${rank}`} className="max-h-full max-w-full object-contain" />
+                                                            <img src={resolveImageSrc(config.titleImageUrl)} alt={`Danh hiệu top ${rank}`} className="max-h-full max-w-full object-contain" />
                                                         ) : (
                                                             <span className="text-[11px] text-slate-400">Chưa cấu hình danh hiệu</span>
                                                         )}
@@ -1020,7 +1021,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                                     <div className="text-[11px] font-semibold text-slate-700">Khung avatar cố định</div>
                                                     <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                         {config.avatarFrameUrl ? (
-                                                            <img src={config.avatarFrameUrl} alt={`Khung top ${rank}`} className="max-h-full max-w-full object-contain" />
+                                                            <img src={resolveImageSrc(config.avatarFrameUrl)} alt={`Khung top ${rank}`} className="max-h-full max-w-full object-contain" />
                                                         ) : (
                                                             <span className="text-[11px] text-slate-400">Chưa cấu hình khung</span>
                                                         )}
@@ -1216,7 +1217,7 @@ export default function WeeklyLeaderboardRewardPage() {
                                             >
                                                 <div className="w-10 h-10 flex-shrink-0 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                     <img
-                                                        src={entry?.imageUrl || DEFAULT_POKEMON_IMAGE}
+                                                        src={resolveImageSrc(entry?.imageUrl || DEFAULT_POKEMON_IMAGE)}
                                                         alt={entry?.pokemonName || 'Pokemon'}
                                                         className="w-8 h-8 object-contain pixelated"
                                                         onError={(e) => {

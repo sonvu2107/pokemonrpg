@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import SmartImage from '../components/SmartImage'
 import VipCaughtStar from '../components/VipCaughtStar'
 import { useProfileQuery } from '../hooks/queries/gameQueries'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 const SectionHeader = ({ title }) => (
     <div className="bg-gradient-to-t from-blue-600 to-cyan-500 text-white font-bold px-4 py-1.5 text-center border-y border-blue-700 shadow-sm text-sm uppercase tracking-wide">
@@ -282,7 +283,7 @@ export default function PokemonBoxPage() {
                                     <Link key={entry._id} to="/auctions/manage" className="rounded-xl border border-amber-200 bg-white p-3 hover:bg-amber-50 transition-colors">
                                         <div className="flex items-center gap-3">
                                             <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 overflow-hidden shrink-0">
-                                                {entry?.sprite ? <img src={entry.sprite} alt={entry.name} className="h-12 w-12 object-contain pixelated rendering-pixelated" /> : <span className="text-slate-300">?</span>}
+                                                {entry?.sprite ? <img src={resolveImageSrc(entry.sprite)} alt={entry.name} className="h-12 w-12 object-contain pixelated rendering-pixelated" /> : <span className="text-slate-300">?</span>}
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex flex-wrap items-center gap-1">

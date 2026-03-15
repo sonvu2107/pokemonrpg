@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { gameApi } from '../services/gameApi'
 import { useToast } from '../context/ToastContext'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
+import { resolveImageSrc } from '../utils/imageUrl'
 import { getRarityStyle } from '../utils/rarityStyles'
 
 const LIST_PAGE_LIMIT = 24
@@ -510,7 +511,7 @@ export default function FusionPage() {
                                             </div>
 
                                             <div className="flex items-center justify-center py-1">
-                                                <img src={sprite} alt={displayName} className="w-16 h-16 object-contain pixelated" />
+                                                <img src={resolveImageSrc(sprite)} alt={displayName} className="w-16 h-16 object-contain pixelated" />
                                             </div>
 
                                             <div className="text-xs text-slate-600 text-center mt-1">
@@ -674,7 +675,7 @@ export default function FusionPage() {
                     <div className={`rounded-xl border-2 p-3 md:p-4 ${targetRarityStyle.border} ${targetRarityStyle.bg}`}>
                         <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">Pokémon Đích</div>
                         <div className="mt-3 flex items-center gap-3">
-                            <img src={targetSprite} alt={targetName} className="w-20 h-20 object-contain pixelated shrink-0" />
+                            <img src={resolveImageSrc(targetSprite)} alt={targetName} className="w-20 h-20 object-contain pixelated shrink-0" />
                             <div className="min-w-0">
                                 <div className="font-bold text-slate-900 truncate">{targetName}</div>
                                 <div className="text-xs text-slate-600">Cấp {targetLevel}</div>
@@ -694,7 +695,7 @@ export default function FusionPage() {
                         <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">Pokémon Hiến Tế</div>
                         {selectedMaterial ? (
                             <div className="mt-3 flex items-center gap-3">
-                                <img src={resolvePokemonDisplaySprite(selectedMaterial)} alt={resolvePokemonDisplayName(selectedMaterial)} className="w-20 h-20 object-contain pixelated shrink-0" />
+                                <img src={resolveImageSrc(resolvePokemonDisplaySprite(selectedMaterial))} alt={resolvePokemonDisplayName(selectedMaterial)} className="w-20 h-20 object-contain pixelated shrink-0" />
                                 <div className="min-w-0">
                                     <div className="font-bold text-slate-900 truncate">{resolvePokemonDisplayName(selectedMaterial)}</div>
                                     <div className="text-xs text-slate-600">Cấp {Math.max(1, Number(selectedMaterial?.level || 1))}</div>
@@ -978,7 +979,7 @@ export default function FusionPage() {
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-3 mt-1">
-                                            <img src={sprite} alt={displayName} className="w-14 h-14 object-contain pixelated" />
+                                            <img src={resolveImageSrc(sprite)} alt={displayName} className="w-14 h-14 object-contain pixelated" />
                                             <div className="text-xs text-slate-700">
                                                 <div>Cấp {Math.max(1, Number(entry?.level || 1))}</div>
                                                 <div>Dạng: {entryFormLabel}</div>

@@ -4,6 +4,7 @@ import { useNavigate, useParams, useLocation, Link } from 'react-router-dom'
 import { pokemonApi, itemApi } from '../../services/adminApi'
 import ImageUpload from '../../components/ImageUpload'
 import { uploadOneToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const TYPES = [
     'normal', 'fire', 'water', 'grass', 'electric', 'ice',
@@ -2122,7 +2123,7 @@ export default function PokemonFormPage() {
                                                 <div className="flex items-start gap-3">
                                                     <div className="w-14 h-14 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                         {imageUrl
-                                                            ? <img src={imageUrl} alt={target.name} className="w-12 h-12 object-contain pixelated" />
+                                                            ? <img src={resolveImageSrc(imageUrl)} alt={target.name} className="w-12 h-12 object-contain pixelated" />
                                                             : <span className="text-slate-300 text-xs">?</span>}
                                                     </div>
                                                     <div className="min-w-0 flex-1">

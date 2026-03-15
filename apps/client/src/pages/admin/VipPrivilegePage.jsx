@@ -4,6 +4,7 @@ import VipUsername from '../../components/VipUsername'
 import { userApi, vipTierApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
 import { normalizeVipColorList, normalizeVipHexColor, normalizeVipUsernameEffect } from '../../utils/vip'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const VIP_TITLE_UPLOAD_TRANSFORMATION = 'e_trim/c_pad,w_960,h_320,b_transparent/f_auto/q_auto:good'
 const DEFAULT_NAME_COLOR = '#F59E0B'
@@ -1214,12 +1215,12 @@ export default function VipPrivilegePage() {
                                                                 <div className="flex gap-2">
                                                                     <div className="h-6 w-14 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
                                                                         {benefits.titleImageUrl ? (
-                                                                            <img src={benefits.titleImageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
+                                                                            <img src={resolveImageSrc(benefits.titleImageUrl)} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
                                                                         ) : <span className="text-[9px] text-slate-400">Danh hiệu</span>}
                                                                     </div>
                                                                     <div className="h-6 w-14 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">
                                                                         {benefits.avatarFrameUrl ? (
-                                                                            <img src={benefits.avatarFrameUrl} alt="Khung" className="max-h-full max-w-full object-contain" />
+                                                                            <img src={resolveImageSrc(benefits.avatarFrameUrl)} alt="Khung" className="max-h-full max-w-full object-contain" />
                                                                         ) : <span className="text-[9px] text-slate-400">Khung</span>}
                                                                     </div>
                                                                 </div>
@@ -1324,7 +1325,7 @@ export default function VipPrivilegePage() {
                                                         <span>Danh hiệu:</span>
                                                         <div className="h-7 w-16 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                             {benefits.titleImageUrl ? (
-                                                                <img src={benefits.titleImageUrl} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
+                                                                <img src={resolveImageSrc(benefits.titleImageUrl)} alt="Danh hiệu" className="max-h-full max-w-full object-contain" />
                                                             ) : (
                                                                 <span className="text-[10px] text-slate-400">--</span>
                                                             )}
@@ -1334,7 +1335,7 @@ export default function VipPrivilegePage() {
                                                         <span>Khung:</span>
                                                         <div className="h-7 w-16 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
                                                             {benefits.avatarFrameUrl ? (
-                                                                <img src={benefits.avatarFrameUrl} alt="Khung" className="max-h-full max-w-full object-contain" />
+                                                                <img src={resolveImageSrc(benefits.avatarFrameUrl)} alt="Khung" className="max-h-full max-w-full object-contain" />
                                                             ) : (
                                                                 <span className="text-[10px] text-slate-400">--</span>
                                                             )}

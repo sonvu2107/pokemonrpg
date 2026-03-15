@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { badgeAdminApi } from '../../services/adminApi'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const BADGE_IMAGE_TRANSFORMATION = 'e_trim/c_pad,w_512,h_512,b_transparent/f_auto/q_auto:good'
 
@@ -353,7 +354,7 @@ export default function BadgeManagerPage() {
                             <div className="rounded-2xl border border-amber-200 bg-white p-3">
                                 <div className="text-xs font-bold text-slate-500 mb-2">Xem trước</div>
                                 <div className="h-32 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
-                                    {form.imageUrl ? <img src={form.imageUrl} alt="Xem trước huy hiệu" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-slate-400">Chưa có ảnh</span>}
+                                    {form.imageUrl ? <img src={resolveImageSrc(form.imageUrl)} alt="Xem trước huy hiệu" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-slate-400">Chưa có ảnh</span>}
                                 </div>
                             </div>
                         </div>
@@ -448,7 +449,7 @@ export default function BadgeManagerPage() {
                             <article key={badge._id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm space-y-3">
                                 <div className="flex items-start gap-3">
                                     <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
-                                        {badge.imageUrl ? <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
+                                        {badge.imageUrl ? <img src={resolveImageSrc(badge.imageUrl)} alt={badge.name} className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="font-bold text-base leading-5 text-slate-800 break-words">{badge.name}</div>
@@ -519,7 +520,7 @@ export default function BadgeManagerPage() {
                                         <td className="px-3 py-4">
                                             <div className="flex items-start gap-3">
                                                 <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
-                                                    {badge.imageUrl ? <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
+                                                    {badge.imageUrl ? <img src={resolveImageSrc(badge.imageUrl)} alt={badge.name} className="max-h-full max-w-full object-contain" /> : <span className="text-[10px] text-slate-400">Chưa có ảnh</span>}
                                                 </div>
                                                 <div className="space-y-1">
                                                     <div className="font-bold text-[17px] leading-5 text-slate-800">{badge.name}</div>

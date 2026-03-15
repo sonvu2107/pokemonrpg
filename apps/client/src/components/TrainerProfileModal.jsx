@@ -6,6 +6,7 @@ import VipAvatar from './VipAvatar'
 import VipTitleBadge from './VipTitleBadge'
 import VipUsername from './VipUsername'
 import { getPublicRoleLabel } from '../utils/vip'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 const DEFAULT_AVATAR = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
 const PARTY_SLOT_TOTAL = 6
@@ -245,7 +246,7 @@ export default function TrainerProfileModal({
                                 >
                                     <div className="h-16 flex items-center justify-center overflow-hidden rounded border border-slate-200 bg-white mb-2">
                                         {badge?.imageUrl ? (
-                                            <img src={badge.imageUrl} alt={badge.name} className="max-h-full max-w-full object-contain" />
+                                            <img src={resolveImageSrc(badge.imageUrl)} alt={badge.name} className="max-h-full max-w-full object-contain" />
                                         ) : (
                                             <span className="text-xs font-bold text-slate-300">Slot {index + 1}</span>
                                         )}

@@ -9,6 +9,7 @@ import VipCaughtStar from '../components/VipCaughtStar'
 import FeatureUnavailableNotice from '../components/FeatureUnavailableNotice'
 import { resolvePokemonSprite } from '../utils/pokemonFormUtils'
 import { resolveAvatarUrl } from '../utils/avatarUrl'
+import { resolveImageSrc } from '../utils/imageUrl'
 import { hasVipAutoBattleTrainerAccess } from '../utils/vip'
 import { getVipAutoLimitConfig } from '../utils/vipAutoLimits'
 import { battleTrainerDetailQueryOptions, battleTrainersQueryOptions, inventoryQueryOptions, profileLightQueryOptions, profileQueryOptions } from '../hooks/queries/gameQueries'
@@ -852,7 +853,7 @@ const ActiveBattleView = ({
                     )}
 
                     {playerMon?.sprite ? (
-                        <img src={playerMon.sprite} className="w-24 h-24 pixelated object-contain" />
+                        <img src={resolveImageSrc(playerMon.sprite)} className="w-24 h-24 pixelated object-contain" />
                     ) : (
                         <div className="w-24 h-24 bg-slate-100 border border-slate-200 rounded" />
                     )}
@@ -879,7 +880,7 @@ const ActiveBattleView = ({
                     )}
 
                     {enemyMon.sprite ? (
-                        <img src={enemyMon.sprite} className="w-24 h-24 pixelated object-contain mb-2" />
+                        <img src={resolveImageSrc(enemyMon.sprite)} className="w-24 h-24 pixelated object-contain mb-2" />
                     ) : (
                         <div className="w-24 h-24 bg-slate-100 border border-slate-200 rounded mb-2" />
                     )}
@@ -4339,7 +4340,7 @@ export function BattlePage() {
                                                         aria-label={`Đấu lại với ${entry.name}`}
                                                     >
                                                         <img
-                                                            src={entry.image}
+                                                            src={resolveImageSrc(entry.image)}
                                                             className="w-20 h-20 object-contain pixelated"
                                                         />
                                                     </div>
@@ -4359,7 +4360,7 @@ export function BattlePage() {
                                     >
                                         <div className="font-bold text-slate-700 mb-2">Thông tin</div>
                                         <div className="flex gap-2 items-start">
-                                            <img src={hoveredCompletedEntry.image} className="w-12 h-12 object-contain pixelated" />
+                                            <img src={resolveImageSrc(hoveredCompletedEntry.image)} className="w-12 h-12 object-contain pixelated" />
                                             <div>
                                                 <div className="font-bold">Huấn luyện viên {hoveredCompletedEntry.name}:</div>
                                                 <div className="italic text-slate-600">"{hoveredCompletedEntry.quote || 'Đang tải lời thoại...'}"</div>
@@ -4371,7 +4372,7 @@ export function BattlePage() {
                                                 {hoveredCompletedEntry.team.map((poke) => (
                                                     <div key={poke.id} className="flex flex-col items-center">
                                                         {poke.sprite ? (
-                                                            <img src={poke.sprite} className="w-8 h-8 pixelated" />
+                                                            <img src={resolveImageSrc(poke.sprite)} className="w-8 h-8 pixelated" />
                                                         ) : (
                                                             <div className="w-8 h-8 bg-slate-100 border border-slate-200 rounded" />
                                                         )}

@@ -10,6 +10,7 @@ import FeatureUnavailableNotice from '../../components/FeatureUnavailableNotice'
 import { getVipTierLevel, hasVipAutoSearchAccess } from '../../utils/vip'
 import { getVipAutoLimitConfig } from '../../utils/vipAutoLimits'
 import { inventoryQueryOptions } from '../../hooks/queries/gameQueries'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const normalizeFormId = (value) => String(value || '').trim().toLowerCase() || 'normal'
 const sanitizeObjectIdToken = (value) => {
@@ -1531,7 +1532,7 @@ export default function MapPage() {
                                                         <tr key={entry?._id || `${pokemon?._id || pokemon?.name}-${entry?.formId || 'normal'}-${entry?.source || 'normal'}`} className="border-t border-slate-100 hover:bg-slate-50">
                                                             <td className="px-2 py-1.5">
                                                                 <div className="flex items-center gap-2">
-                                                                    <img src={entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || ''} alt={pokemon?.name || 'Pokemon'} className="h-10 w-10 shrink-0 object-contain pixelated" />
+                                                                    <img src={resolveImageSrc(entry?.resolvedImageUrl || pokemon?.imageUrl || pokemon?.sprites?.normal || '')} alt={pokemon?.name || 'Pokemon'} className="h-10 w-10 shrink-0 object-contain pixelated" />
                                                                     <div className="min-w-0">
                                                                         <div className="font-bold text-slate-800 leading-tight">{pokemon?.name || 'Pokemon'}{formName ? ` (${formName})` : ''}</div>
                                                                         <div className="flex items-center gap-1 mt-0.5 flex-wrap">
@@ -1617,7 +1618,7 @@ export default function MapPage() {
                                                         <tr key={entry?._id || item?._id || item?.name} className="border-t border-slate-100 hover:bg-slate-50">
                                                             <td className="px-3 py-2">
                                                                 <div className="flex items-center gap-3">
-                                                                    <img src={item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png'} alt={item?.name || 'Vật phẩm'} className="h-10 w-10 object-contain" />
+                                                                    <img src={resolveImageSrc(item?.imageUrl || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png')} alt={item?.name || 'Vật phẩm'} className="h-10 w-10 object-contain" />
                                                                     <div>
                                                                         <div className="font-bold text-slate-800">{item?.name || 'Vật phẩm'}</div>
                                                                         <div className="text-[11px] text-slate-500">{item?.description || 'Không có mô tả.'}</div>

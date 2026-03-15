@@ -1,6 +1,15 @@
 const CLOUDINARY_UPLOAD_MARKER = '/image/upload/'
+const CLOUDINARY_DELIVERY_ORIGIN = 'https://res.cloudinary.com/'
+const CLOUDINARY_DELIVERY_CDN = 'https://cdn.vnpet.games/'
 const WIDTH_BUCKETS = [32, 48, 64, 80, 96, 128, 160, 240, 320, 480, 640, 960]
 const MANAGED_TRANSFORM_PREFIXES = ['f_', 'q_', 'dpr_', 'c_', 'w_', 'h_']
+
+export const toDeliveryUrl = (url = '') => {
+    const raw = String(url || '').trim()
+    if (!raw) return raw
+
+    return raw.replace(/^https:\/\/res\.cloudinary\.com\//i, CLOUDINARY_DELIVERY_CDN)
+}
 
 const hasAbsoluteProtocol = (value = '') => /^(https?:)?\/\//i.test(value)
 
@@ -38,7 +47,7 @@ const normalizeExtraTransform = (value = '') => {
 }
 
 const isCloudinaryUrl = (value = '') => {
-    return value.includes('res.cloudinary.com') && value.includes(CLOUDINARY_UPLOAD_MARKER)
+    return /(res\.cloudinary\.com|cdn\.vnpet\.games)/i.test(value) && value.includes(CLOUDINARY_UPLOAD_MARKER)
 }
 
 const isAnimatedGif = (value = '') => {
@@ -125,12 +134,15 @@ export const getImageUrl = (value = '', options = {}) => {
     }
 
     if (hasAbsoluteProtocol(raw)) {
-        return withCloudinaryTransform(toHttpsUrl(raw), options)
+        const transformed = withCloudinaryTransform(toHttpsUrl(raw), options)
+        return toDeliveryUrl(transformed)
     }
 
     if (raw.startsWith('/')) {
         return raw
     }
 
-    return raw
+    return toDeliveryUrl(raw)
 }
+
+export const resolveImageSrc = (value = '', options = {}) => getImageUrl(value, options)

@@ -4,6 +4,7 @@ import { pokemonApi, itemApi } from '../../services/adminApi'
 import { parseEvolutionImportCsv } from '../../utils/evolutionImport'
 import { parsePokemonCsvImport } from '../../utils/pokemonCsvImport'
 import { uploadToCloudinary, validateImageFile } from '../../utils/cloudinaryUtils'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const TYPE_COLORS = {
     normal: 'bg-gray-500',
@@ -1198,7 +1199,7 @@ export default function PokemonListPage() {
                     <td className="px-3 py-2">
                         {(defaultForm?.imageUrl || p.imageUrl) ? (
                             <img
-                                src={defaultForm?.imageUrl || p.imageUrl}
+                                src={resolveImageSrc(defaultForm?.imageUrl || p.imageUrl)}
                                 alt={p.name}
                                 className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
                             />
@@ -1311,7 +1312,7 @@ export default function PokemonListPage() {
                             <td className="px-3 py-2">
                                 {(form.imageUrl || p.imageUrl) ? (
                                     <img
-                                        src={form.imageUrl || p.imageUrl}
+                                        src={resolveImageSrc(form.imageUrl || p.imageUrl)}
                                         alt={`${p.name} ${form.formName || form.formId}`.trim()}
                                         className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm"
                                     />
@@ -1666,7 +1667,7 @@ export default function PokemonListPage() {
                                                         <div className="flex flex-col items-center gap-1">
                                                             {(defaultForm?.imageUrl || p.imageUrl) ? (
                                                                 <img
-                                                                    src={defaultForm?.imageUrl || p.imageUrl}
+                                                                    src={resolveImageSrc(defaultForm?.imageUrl || p.imageUrl)}
                                                                     alt={p.name}
                                                                     className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto"
                                                                 />
@@ -1825,7 +1826,7 @@ export default function PokemonListPage() {
                                                                 <div className="flex flex-col items-center gap-1">
                                                                     {(form.imageUrl || p.imageUrl) ? (
                                                                         <img
-                                                                            src={form.imageUrl || p.imageUrl}
+                                                                            src={resolveImageSrc(form.imageUrl || p.imageUrl)}
                                                                             alt={`${p.name} ${form.formName || form.formId}`.trim()}
                                                                             className="w-10 h-10 object-cover rounded border border-slate-200 shadow-sm mx-auto opacity-90"
                                                                         />

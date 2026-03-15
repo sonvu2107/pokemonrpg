@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { gameApi } from '../services/gameApi'
 import VipUsername from '../components/VipUsername'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 const STATUS_OPTIONS = [
     { value: 'all', label: 'Tất cả trạng thái' },
@@ -530,7 +531,7 @@ export default function UserAuctionManagementPage({ embedded = false }) {
                         <div className="p-4 space-y-4">
                             <div className="flex flex-col md:flex-row gap-4">
                                 <div className="w-24 h-24 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-                                    {selectedAuction.rewardSnapshot?.imageUrl ? <img src={selectedAuction.rewardSnapshot.imageUrl} alt={selectedAuction.rewardSnapshot?.name} className="w-16 h-16 object-contain" /> : <span className="text-slate-300">?</span>}
+                                    {selectedAuction.rewardSnapshot?.imageUrl ? <img src={resolveImageSrc(selectedAuction.rewardSnapshot.imageUrl)} alt={selectedAuction.rewardSnapshot?.name} className="w-16 h-16 object-contain" /> : <span className="text-slate-300">?</span>}
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 flex-1 text-sm">
                                     <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2"><span className="font-bold">Tiêu đề:</span> {selectedAuction.title}</div>
@@ -598,7 +599,7 @@ export default function UserAuctionManagementPage({ embedded = false }) {
                                             <button key={pokemon._id} type="button" onClick={() => handleChooseRewardPokemon(pokemon)} className={`w-full rounded-xl border p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 ${String(formData.rewardUserPokemonId || '') === String(pokemon?._id || '') ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 overflow-hidden shrink-0">
-                                                        {pokemon?.sprite ? <img src={pokemon.sprite} alt={pokemon.name} className="h-12 w-12 object-contain pixelated" /> : <span className="text-slate-300">?</span>}
+                                                        {pokemon?.sprite ? <img src={resolveImageSrc(pokemon.sprite)} alt={pokemon.name} className="h-12 w-12 object-contain pixelated" /> : <span className="text-slate-300">?</span>}
                                                     </div>
                                                     <div className="min-w-0 flex-1">
                                                         <div className="font-bold text-slate-800 truncate">{pokemon.nickname ? `${pokemon.nickname} - ${pokemon.name}` : pokemon.name}</div>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { battleTrainerApi, itemApi, pokemonApi } from '../../services/adminApi'
 import { gameApi } from '../../services/gameApi'
 import ImageUpload from '../../components/ImageUpload'
+import { resolveImageSrc } from '../../utils/imageUrl'
 
 const emptyTrainer = {
     name: '',
@@ -2036,7 +2037,7 @@ export default function BattleTrainerPage() {
                                 <div key={trainer._id} className="border border-slate-200 rounded p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                     <div className="flex items-start gap-3">
                                         {trainer.imageUrl ? (
-                                            <img src={trainer.imageUrl} className="w-12 h-12 object-contain pixelated" />
+                                            <img src={resolveImageSrc(trainer.imageUrl)} className="w-12 h-12 object-contain pixelated" />
                                         ) : (
                                             <div className="w-12 h-12 bg-slate-100 border border-slate-200 rounded" />
                                         )}

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import VipUsername from '../components/VipUsername'
 import UserAuctionManagementPage from './UserAuctionManagementPage'
+import { resolveImageSrc } from '../utils/imageUrl'
 
 const STATUS_OPTIONS = [
     { value: 'active', label: 'Đang diễn ra' },
@@ -279,7 +280,7 @@ export default function AuctionsPage() {
                             >
                                 <div className="flex items-start gap-3">
                                     <div className="w-14 h-14 rounded border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden">
-                                        {auction.rewardSnapshot?.imageUrl ? <img src={auction.rewardSnapshot.imageUrl} alt={auction.rewardSnapshot?.name} className="w-10 h-10 object-contain" /> : <span className="text-slate-300 text-xs">?</span>}
+                                        {auction.rewardSnapshot?.imageUrl ? <img src={resolveImageSrc(auction.rewardSnapshot.imageUrl)} alt={auction.rewardSnapshot?.name} className="w-10 h-10 object-contain" /> : <span className="text-slate-300 text-xs">?</span>}
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{auction.code}</div>
@@ -307,7 +308,7 @@ export default function AuctionsPage() {
                         <div className="p-4 space-y-4">
                             <div className="flex flex-col md:flex-row gap-4">
                                 <div className="w-24 h-24 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
-                                    {selectedAuction.rewardSnapshot?.imageUrl ? <img src={selectedAuction.rewardSnapshot.imageUrl} alt={selectedAuction.rewardSnapshot?.name} className="w-16 h-16 object-contain" /> : <span className="text-slate-300">?</span>}
+                                    {selectedAuction.rewardSnapshot?.imageUrl ? <img src={resolveImageSrc(selectedAuction.rewardSnapshot.imageUrl)} alt={selectedAuction.rewardSnapshot?.name} className="w-16 h-16 object-contain" /> : <span className="text-slate-300">?</span>}
                                 </div>
                                 <div className="space-y-2 min-w-0 flex-1">
                                     <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{selectedAuction.code}</div>
