@@ -435,6 +435,7 @@ const getMoveEffectProgressSnapshot = async () => {
                                     $and: [
                                         { $ne: ['$$spec.op', 'flavor_only'] },
                                         { $ne: ['$$spec.op', 'no_op'] },
+                                        { $ne: ['$$spec.op', 'unsupported_rule'] },
                                     ],
                                 },
                             },
@@ -497,7 +498,7 @@ const getMoveEffectProgressSnapshot = async () => {
             },
             {
                 $match: {
-                    'effectSpecs.op': 'flavor_only',
+                    'effectSpecs.op': { $in: ['flavor_only', 'unsupported_rule'] },
                 },
             },
             {
@@ -652,6 +653,7 @@ router.get('/', async (req, res) => {
                                     $and: [
                                         { $ne: ['$$spec.op', 'flavor_only'] },
                                         { $ne: ['$$spec.op', 'no_op'] },
+                                        { $ne: ['$$spec.op', 'unsupported_rule'] },
                                     ],
                                 },
                             },
@@ -729,7 +731,7 @@ router.post('/shop/bulk-apply', async (req, res) => {
         const implementedEffectQuery = {
             effectSpecs: {
                 $elemMatch: {
-                    op: { $nin: ['flavor_only', 'no_op'] },
+                    op: { $nin: ['flavor_only', 'no_op', 'unsupported_rule'] },
                 },
             },
         }
@@ -787,7 +789,7 @@ router.post('/shop/bulk-hide', async (req, res) => {
                 isShopEnabled: true,
                 effectSpecs: {
                     $elemMatch: {
-                        op: { $nin: ['flavor_only', 'no_op'] },
+                        op: { $nin: ['flavor_only', 'no_op', 'unsupported_rule'] },
                     },
                 },
             }

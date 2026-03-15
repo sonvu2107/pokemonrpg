@@ -60,7 +60,7 @@ const summarize = (rows) => {
                 if (!op) return
                 opCounter.set(op, (opCounter.get(op) || 0) + 1)
 
-                if (op !== 'no_op' && op !== 'flavor_only') return
+                if (op !== 'no_op' && op !== 'flavor_only' && op !== 'unsupported_rule') return
                 const reason = normalize(spec?.params?.reason || 'unknown') || 'unknown'
                 incompleteReasonCounter.set(reason, (incompleteReasonCounter.get(reason) || 0) + 1)
                 if (!incompleteReasonSamples.has(reason)) {

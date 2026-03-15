@@ -1,6 +1,11 @@
 import assert from 'assert'
 import { parseMoveEffectText } from '../battle/effects/effectParser.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
+import {
+    getDefaultEffectSpecForOp,
+    getEffectTriggerOptions,
+    isImplementedEffectOp,
+} from '../battle/effects/effectMeta.js'
 
 const runParserTests = () => {
     const parsed = parseMoveEffectText({
@@ -606,6 +611,21 @@ const runParserTests = () => {
     })
     const snowscapeOps = new Set(parsedSnowscape.effectSpecs.map((entry) => String(entry?.op || '').trim()))
     assert(snowscapeOps.has('damage_reduction_shield'), 'Expected Snowscape wording to map to damage_reduction_shield')
+
+    const parsedStickyWeb = parseMoveEffectText({
+        description: "Lowers opponent's Speed when switching into battle.",
+        probability: '—',
+    })
+    const stickyWebSpec = parsedStickyWeb.effectSpecs.find((entry) => String(entry?.op || '').trim() === 'set_entry_hazard')
+    assert(Boolean(stickyWebSpec), 'Expected Sticky Web wording to map to set_entry_hazard')
+    assert(String(stickyWebSpec?.params?.hazard || '') === 'sticky_web', 'Expected Sticky Web hazard id to be sticky_web')
+
+    const parsedRapidSpinHazardClear = parseMoveEffectText({
+        description: 'Removes the effects of entry hazards and substitute.',
+        probability: '—',
+    })
+    const rapidSpinOps = new Set(parsedRapidSpinHazardClear.effectSpecs.map((entry) => String(entry?.op || '').trim()))
+    assert(rapidSpinOps.has('clear_entry_hazards'), 'Expected hazard-clearing wording to map to clear_entry_hazards')
 
     const parsedIonDeluge = parseMoveEffectText({
         description: 'Changes Normal-type moves to Electric-type.',
@@ -1311,12 +1331,69 @@ const runFixedDamageAndStatusTransferTests = () => {
     assert(transferStatus.statePatches?.self?.clearStatus === true, 'Expected user status clear after transfer')
 }
 
+const runEntryHazardRegistryTests = () => {
+    const setHazardResult = applyEffectSpecs({
+        effectSpecs: [{
+            op: 'set_entry_hazard',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: { hazard: 'sticky_web' },
+        }],
+        context: { random: () => 0.5 },
+    })
+    assert(setHazardResult.statePatches?.field?.setEntryHazard?.side === 'opponent', 'Expected set_entry_hazard side to preserve target side')
+    assert(setHazardResult.statePatches?.field?.setEntryHazard?.hazard === 'sticky_web', 'Expected set_entry_hazard hazard id to be preserved')
+
+    const clearHazardResult = applyEffectSpecs({
+        effectSpecs: [{
+            op: 'clear_entry_hazards',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+        }],
+        context: { random: () => 0.5 },
+    })
+    assert(clearHazardResult.statePatches?.field?.clearEntryHazards?.side === 'self', 'Expected clear_entry_hazards side to preserve target side')
+}
+
+const runEffectMetaContractTests = () => {
+    const defaultMultiHit = getDefaultEffectSpecForOp('multi_hit')
+    assert(defaultMultiHit.params?.minHits === 2, 'Expected default multi_hit minHits=2')
+    assert(defaultMultiHit.params?.maxHits === 5, 'Expected default multi_hit maxHits=5')
+
+    const multiHitApplied = applyEffectSpecs({
+        effectSpecs: [defaultMultiHit],
+        context: { random: () => 0.5 },
+    })
+    assert(multiHitApplied.statePatches?.self?.multiHit?.minHits === 2, 'Expected runtime multi-hit minHits to follow default template')
+    assert(multiHitApplied.statePatches?.self?.multiHit?.maxHits === 5, 'Expected runtime multi-hit maxHits to follow default template')
+
+    const defaultApplyBind = getDefaultEffectSpecForOp('apply_bind')
+    assert(defaultApplyBind.params?.minTurns === 4, 'Expected default apply_bind minTurns=4')
+    assert(defaultApplyBind.params?.maxTurns === 5, 'Expected default apply_bind maxTurns=5')
+
+    const bindApplied = applyEffectSpecs({
+        effectSpecs: [defaultApplyBind],
+        context: { random: () => 0 },
+    })
+    assert(bindApplied.statePatches?.opponent?.volatileState?.bindTurns === 4, 'Expected runtime bindTurns to follow default template minTurns')
+
+    const triggerOptions = getEffectTriggerOptions()
+    assert(triggerOptions.includes('end_turn'), 'Expected trigger options to include end_turn')
+
+    assert(isImplementedEffectOp('unsupported_rule') === false, 'Expected unsupported_rule to be treated as incomplete')
+}
+
 const main = () => {
     runParserTests()
     runRegistryTests()
     runTriggerOrderTests()
     runConditionalPowerTests()
     runFixedDamageAndStatusTransferTests()
+    runEntryHazardRegistryTests()
+    runEffectMetaContractTests()
     console.log('Effect engine tests passed')
 }
 

@@ -19,6 +19,7 @@ export default function EvolvePage() {
     const [evolved, setEvolved] = useState(false)
     const [evolutionMessage, setEvolutionMessage] = useState('')
     const [evolutionResult, setEvolutionResult] = useState(null)
+    const [confirmFusionResetChecked, setConfirmFusionResetChecked] = useState(false)
 
     const [zoneLoading, setZoneLoading] = useState(false)
     const [zoneError, setZoneError] = useState('')
@@ -112,6 +113,7 @@ export default function EvolvePage() {
         setEvolved(false)
         setEvolutionMessage('')
         setEvolutionResult(null)
+        setConfirmFusionResetChecked(false)
         loadPokemonDetail()
     }, [id, zonePage, zoneSearch])
 
@@ -127,6 +129,23 @@ export default function EvolvePage() {
         setEvolving(true)
         try {
             const currentSnapshot = pokemon
+            const currentFusionLevel = Math.max(0, Number(currentSnapshot?.fusionLevel || 0))
+            const requiresFusionResetConfirm = currentFusionLevel > 0
+
+            if (requiresFusionResetConfirm && !confirmFusionResetChecked) {
+                showError(`Vui lòng xác nhận reset mốc ghép +${currentFusionLevel} trước khi tiến hóa`)
+                return
+            }
+
+            if (requiresFusionResetConfirm) {
+                const accepted = window.confirm(
+                    `${currentSnapshot?.nickname || currentSnapshot?.pokemonId?.name || 'Pokemon'} đang có mốc ghép +${currentFusionLevel}.\n\nTiến hóa sẽ đặt lại mốc ghép về +0. Bạn có chắc chắn muốn tiếp tục?`
+                )
+                if (!accepted) {
+                    return
+                }
+            }
+
             const snapshotTargetPokemon = currentSnapshot?.evolution?.targetPokemon || null
             const snapshotFromName = currentSnapshot?.nickname || currentSnapshot?.pokemonId?.name || 'Pokemon'
             const snapshotFromSprite = resolvePokemonSprite({
@@ -142,7 +161,9 @@ export default function EvolvePage() {
                 fallback: snapshotTargetPokemon?.sprites?.normal || '',
             })
 
-            const res = await gameApi.evolvePokemon(id)
+            const res = await gameApi.evolvePokemon(id, {
+                confirmFusionReset: requiresFusionResetConfirm,
+            })
             setEvolutionMessage(res.message || '')
             setEvolutionResult({
                 fromName: res?.evolution?.from || snapshotFromName,
@@ -152,6 +173,7 @@ export default function EvolvePage() {
             })
             await loadPokemonDetail()
             setEvolved(true)
+            setConfirmFusionResetChecked(false)
 
             if (res?.evolution?.from && res?.evolution?.to) {
                 showSuccess(`${res.evolution.from} đã tiến hóa thành ${res.evolution.to}!`)
@@ -374,6 +396,8 @@ export default function EvolvePage() {
     const evolutionLevel = pokemon.evolution?.evolutionLevel || null
     const requiredItem = pokemon.evolution?.requiredItem || null
     const canEvolve = Boolean(pokemon.evolution?.canEvolve)
+    const fusionLevel = Math.max(0, Number(pokemon?.fusionLevel || 0))
+    const requiresFusionResetConfirm = fusionLevel > 0
     const displayFromName = evolved ? (evolutionResult?.fromName || currentName) : currentName
     const displayToName = evolved ? (evolutionResult?.toName || targetName) : targetName
     const displayFromSprite = evolved ? (evolutionResult?.fromSprite || currentSprite) : currentSprite
@@ -438,6 +462,23 @@ export default function EvolvePage() {
                             <p className="text-green-700 font-medium text-lg bg-green-50 inline-block px-6 py-2 rounded-full border border-green-100">
                                 <span className="font-bold">{currentName}</span> có thể tiến hóa thành <span className="font-bold">{targetName}</span>{evolutionLevel ? <> (mốc cấp <span className="font-bold">{evolutionLevel}</span>)</> : ''}.
                             </p>
+                            {requiresFusionResetConfirm && (
+                                <div className="max-w-2xl mx-auto rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 text-left">
+                                    <div className="font-bold">Cảnh báo: Tiến hóa sẽ reset mốc ghép</div>
+                                    <div className="mt-1">
+                                        Pokémon này đang có mốc ghép <span className="font-bold">+{fusionLevel}</span>. Sau khi tiến hóa, mốc ghép sẽ về <span className="font-bold">+0</span>.
+                                    </div>
+                                    <label className="mt-3 inline-flex items-start gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={confirmFusionResetChecked}
+                                            onChange={(event) => setConfirmFusionResetChecked(event.target.checked)}
+                                            className="mt-0.5"
+                                        />
+                                        <span className="text-xs font-semibold">Tôi đã hiểu và đồng ý reset mốc ghép khi tiến hóa.</span>
+                                    </label>
+                                </div>
+                            )}
                             {requiredItem && (
                                 <p className="text-indigo-700 font-medium text-sm bg-indigo-50 inline-block px-4 py-2 rounded-full border border-indigo-100">
                                     Dùng <span className="font-bold">{formatNumber(requiredItem.requiredQuantity)} {requiredItem.name}</span>
@@ -450,8 +491,8 @@ export default function EvolvePage() {
                             <div>
                                 <button
                                     onClick={handleEvolve}
-                                    disabled={evolving}
-                                    className={`px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-wider rounded-lg shadow-lg hover:shadow-xl transform active:scale-95 transition-all text-lg ${evolving ? 'opacity-75 cursor-wait' : ''}`}
+                                    disabled={evolving || (requiresFusionResetConfirm && !confirmFusionResetChecked)}
+                                    className={`px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-wider rounded-lg shadow-lg hover:shadow-xl transform active:scale-95 transition-all text-lg ${(evolving || (requiresFusionResetConfirm && !confirmFusionResetChecked)) ? 'opacity-75 cursor-not-allowed' : ''}`}
                                 >
                                     {evolving ? 'Đang tiến hóa...' : 'Tiến hóa'}
                                 </button>

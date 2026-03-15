@@ -170,7 +170,4 @@ const vipPrivilegeTierSchema = new mongoose.Schema(
     }
 )
 
-vipPrivilegeTierSchema.index({ level: 1 })
-vipPrivilegeTierSchema.index({ code: 1 })
-
 export default mongoose.model('VipPrivilegeTier', vipPrivilegeTierSchema)

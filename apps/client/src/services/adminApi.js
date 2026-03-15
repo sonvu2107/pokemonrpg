@@ -508,6 +508,59 @@ export const itemApi = {
     },
 }
 
+export const fusionConfigApi = {
+    async get() {
+        const res = await fetch(`${API_URL}/admin/fusion-config`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải cấu hình ghép Pokemon')
+        }
+        return res.json()
+    },
+
+    async update(payload = {}) {
+        const res = await fetch(`${API_URL}/admin/fusion-config`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể cập nhật cấu hình ghép Pokemon')
+        }
+        return res.json()
+    },
+
+    async getHistory(params = {}) {
+        const query = new URLSearchParams(params).toString()
+        const res = await fetch(`${API_URL}/admin/fusion-config/history${query ? `?${query}` : ''}`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải lịch sử cấu hình ghép Pokemon')
+        }
+        return res.json()
+    },
+
+    async rollback(revisionId, payload = {}) {
+        const res = await fetch(`${API_URL}/admin/fusion-config/rollback/${revisionId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Rollback cấu hình ghép Pokemon thất bại')
+        }
+        return res.json()
+    },
+}
+
 export const badgeAdminApi = {
     async list(params = {}) {
         const query = new URLSearchParams(params).toString()

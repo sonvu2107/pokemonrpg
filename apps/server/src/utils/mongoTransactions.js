@@ -70,6 +70,17 @@ export const runWithOptionalTransaction = async (work, options = {}) => {
         return work(null)
     }
 
+    const isUnsupportedTransactionError = (error) => {
+        const message = String(error?.message || '').toLowerCase()
+        const codeName = String(error?.codeName || '').toLowerCase()
+        return (
+            message.includes('transaction numbers are only allowed')
+            || message.includes('transactions are not supported')
+            || message.includes('cannot run transaction')
+            || codeName === 'illegaloperation'
+        )
+    }
+
     const session = await mongoose.startSession()
     try {
         let result = null
@@ -77,6 +88,14 @@ export const runWithOptionalTransaction = async (work, options = {}) => {
             result = await work(session)
         }, options?.transactionOptions)
         return result
+    } catch (error) {
+        if (isUnsupportedTransactionError(error)) {
+            cachedTransactionSupport = false
+            logStandaloneNotice()
+            console.warn('MongoDB transaction attempt failed, retrying without transaction:', error?.message || error)
+            return work(null)
+        }
+        throw error
     } finally {
         await session.endSession()
     }

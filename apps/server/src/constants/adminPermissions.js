@@ -3,6 +3,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
     POKEMON: 'pokemon',
     MAPS: 'maps',
     ITEMS: 'items',
+    FUSION_CONFIG: 'fusionConfig',
     BADGES: 'badges',
     MOVES: 'moves',
     NEWS: 'news',

@@ -71,9 +71,10 @@ const resolveRuntimeMoveEffectSpecs = ({ moveDoc = null, fallbackMove = null } =
 import {
     EXP_PER_SEARCH,
     expToNext,
-    calcStatsForLevel,
     getRarityExpMultiplier,
 } from '../utils/gameUtils.js'
+import { getFusionTotalStatBonusPercent } from '../utils/fusionUtils.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 import { getOrderedMapsCached } from '../utils/orderedMapsCache.js'
 import { getPokemonDropRatesCached, getItemDropRatesCached } from '../utils/dropRateCache.js'
 import { applyEffectSpecs } from '../battle/effects/effectRegistry.js'
@@ -124,6 +125,7 @@ import {
     normalizeStatStages,
     normalizeStatusTurns,
     normalizeVolatileState,
+    resolveEntryHazardSwitchInOutcome,
     resolveActionAvailabilityByStatus,
     resolveBattleTurnOrder,
     resolveDrowsySleepAtEndTurn,
@@ -213,6 +215,7 @@ import {
 } from '../services/mapProgressionService.js'
 import { hasOwnedPokemonForm } from '../services/userPokemonOwnershipService.js'
 import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -478,6 +481,38 @@ const resolveAbilitySwitchIn = ({ ability = '', weather = '', terrain = '', vola
             ...currentVolatile,
             switchInAbilityAppliedFor: normalizedAbility,
         },
+    }
+}
+
+const applyEntryHazardsOnSwitchIn = ({
+    fieldState = {},
+    side = 'opponent',
+    targetName = 'Pokemon',
+    targetTypes = [],
+    currentHp = 0,
+    maxHp = 1,
+    statStages = {},
+} = {}) => {
+    const normalizedTypes = normalizePokemonTypes(targetTypes)
+    const rockEffectiveness = resolveTypeEffectiveness('rock', normalizedTypes).multiplier
+    const outcome = resolveEntryHazardSwitchInOutcome({
+        fieldState,
+        targetSide: side,
+        targetTypes: normalizedTypes,
+        targetMaxHp: maxHp,
+        rockEffectivenessMultiplier: rockEffectiveness,
+    })
+
+    const safeMaxHp = Math.max(1, Math.floor(Number(maxHp) || 1))
+    const safeCurrentHp = clamp(Math.floor(Number(currentHp) || 0), 0, safeMaxHp)
+    const nextHp = clamp(safeCurrentHp - Math.max(0, Math.floor(Number(outcome.damage) || 0)), 0, safeMaxHp)
+    const nextStatStages = combineStatStageDeltas(statStages, outcome.statStageDelta)
+
+    return {
+        ...outcome,
+        nextHp,
+        nextStatStages,
+        logs: outcome.logLines.map((line) => `${String(targetName || 'Pokemon').trim() || 'Pokemon'}: ${line}`),
     }
 }
 
@@ -815,7 +850,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         const normalizedActivePokemonId = String(activePokemonId || '').trim()
 
         const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
-            .select('pokemonId level experience moves movePpState nickname formId partyIndex ability')
+            .select('pokemonId level experience moves movePpState nickname formId partyIndex ability fusionLevel ivs evs isShiny')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'name baseStats rarity forms defaultFormId types abilities levelUpMoves')
 
@@ -1006,7 +1041,21 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             formId: activePokemon?.formId,
             resolvedForm: attackerForm,
         })
-        const attackerScaledStats = calcStatsForLevel(attackerBaseStats, attackerLevel, attackerSpecies.rarity)
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const fusionBonusPercent = getFusionTotalStatBonusPercent(
+            activePokemon?.fusionLevel,
+            fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+        )
+        const resolvedUserStats = resolveUserPokemonFinalStats({
+            baseStats: attackerBaseStats,
+            level: attackerLevel,
+            rarity: attackerSpecies?.rarity,
+            fusionBonusPercent,
+            ivs: activePokemon?.ivs,
+            evs: activePokemon?.evs,
+            isShiny: Boolean(activePokemon?.isShiny),
+        })
+        const attackerScaledStats = resolvedUserStats.finalStats
         const attackerTypes = normalizePokemonTypes(attackerSpecies.types)
         const attackerAtk = Math.max(
             1,
@@ -1043,9 +1092,12 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
 
         let badgeBonusState = await getPlayerBattleBadgeBonusState()
         let playerMaxHp = resolvePlayerBattleMaxHp({
-            baseHp: attackerBaseStats?.hp,
+            baseStats: attackerBaseStats,
             level: attackerLevel,
             rarity: attackerSpecies?.rarity || 'd',
+            ivs: activePokemon?.ivs,
+            evs: activePokemon?.evs,
+            fusionBonusPercent,
             hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
         })
         const parsedPlayerCurrentHp = Number(player.currentHp)
@@ -1211,9 +1263,12 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
             badgeBonusState = resolveBattleBadgeBonusState(trainerBadgeSummary || trainerSession.badgeSnapshot, attackerTypes)
             cachedPlayerBattleBadgeBonusState = badgeBonusState
             playerMaxHp = resolvePlayerBattleMaxHp({
-                baseHp: attackerBaseStats?.hp,
+                baseStats: attackerBaseStats,
                 level: attackerLevel,
                 rarity: attackerSpecies?.rarity || 'd',
+                ivs: activePokemon?.ivs,
+                evs: activePokemon?.evs,
+                fusionBonusPercent,
                 hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
             })
             playerCurrentHp = clamp(
@@ -1659,6 +1714,7 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
         }
 
         const pendingTurnStartAbilityLogs = []
+        const pendingSwitchInHazardLogs = []
         const weatherToken = String(battleFieldState?.weather || '').trim().toLowerCase()
         const terrainToken = String(battleFieldState?.terrain || '').trim().toLowerCase()
         let didResolveSwitchInAbility = false
@@ -3061,6 +3117,43 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, activeOpponentIndex)
                 if (trainerSession.currentIndex === -1) {
                     trainerSession.currentIndex = trainerSession.team.length
+                } else if (trainerSession.currentIndex !== activeOpponentIndex) {
+                    while (trainerSession.currentIndex >= 0 && trainerSession.currentIndex < trainerSession.team.length) {
+                        const incomingOpponent = trainerSession.team[trainerSession.currentIndex]
+                        if (!incomingOpponent) break
+
+                        const hazardResult = applyEntryHazardsOnSwitchIn({
+                            fieldState: battleFieldState,
+                            side: 'opponent',
+                            targetName: incomingOpponent.name || 'Pokemon doi thu',
+                            targetTypes: incomingOpponent.types,
+                            currentHp: incomingOpponent.currentHp,
+                            maxHp: incomingOpponent.maxHp,
+                            statStages: incomingOpponent.statStages,
+                        })
+
+                        incomingOpponent.currentHp = hazardResult.nextHp
+                        incomingOpponent.statStages = hazardResult.nextStatStages
+                        incomingOpponent.damageGuards = normalizeDamageGuards(incomingOpponent.damageGuards)
+                        incomingOpponent.volatileState = normalizeVolatileState(incomingOpponent.volatileState)
+                        pendingSwitchInHazardLogs.push(...hazardResult.logs)
+
+                        if (incomingOpponent.currentHp > 0) {
+                            break
+                        }
+
+                        incomingOpponent.status = ''
+                        incomingOpponent.statusTurns = 0
+                        incomingOpponent.abilitySuppressed = false
+                        incomingOpponent.damageGuards = {}
+                        incomingOpponent.volatileState = {}
+
+                        trainerSession.currentIndex = getAliveOpponentIndex(trainerSession.team, trainerSession.currentIndex + 1)
+                        if (trainerSession.currentIndex === -1) {
+                            trainerSession.currentIndex = trainerSession.team.length
+                            break
+                        }
+                    }
                 }
             }
             trainerSession.expiresAt = getBattleSessionExpiryDate()
@@ -3249,6 +3342,12 @@ router.post('/battle/attack', authMiddleware, requireActiveGameplayTab({ actionL
                 nextIndex: trainerState.currentIndex,
             })
         }
+        if (pendingSwitchInHazardLogs.length > 0) {
+            appendPhaseLines('forced_switch', 'system', 'entry_hazard', pendingSwitchInHazardLogs, {
+                target: 'opponent',
+                source: 'entry_hazard',
+            })
+        }
 
         const turnPhases = finalizeTurnTimeline(turnTimeline)
         const flattenedBattleLogLines = flattenTurnPhaseLines(turnPhases)
@@ -3406,12 +3505,20 @@ router.post('/battle/trainer/start', authMiddleware, requireActiveGameplayTab({ 
             pokemonLike: attackerSpecies,
             formId: activePokemon?.formId,
         })
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const fusionBonusPercent = getFusionTotalStatBonusPercent(
+            activePokemon?.fusionLevel,
+            fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+        )
         const activeBadgeBonuses = await getCachedActiveBadgeBonuses(userId)
         const badgeBonusState = resolveBattleBadgeBonusState(activeBadgeBonuses, attackerTypes)
         const playerMaxHp = resolvePlayerBattleMaxHp({
-            baseHp: attackerBaseStats?.hp,
+            baseStats: attackerBaseStats,
             level: attackerLevel,
             rarity: attackerSpecies?.rarity || 'd',
+            ivs: activePokemon?.ivs,
+            evs: activePokemon?.evs,
+            fusionBonusPercent,
             hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
         })
 
@@ -3565,6 +3672,7 @@ export const __battleEffectInternals = {
     resolveAbilityStatusGuard,
     resolveAbilityMutations,
     resolveAbilitySuppressionMutations,
+    applyEntryHazardsOnSwitchIn,
 }
 
 export default router

@@ -177,7 +177,6 @@ promoCodeSchema.pre('validate', function (next) {
     next()
 })
 
-promoCodeSchema.index({ code: 1 }, { unique: true })
 promoCodeSchema.index({ isActive: 1, startsAt: 1, endsAt: 1 })
 
 export default mongoose.model('PromoCode', promoCodeSchema)

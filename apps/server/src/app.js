@@ -24,6 +24,7 @@ import promoCodesAdminRoutes from './routes/admin/promoCodes.js'
 import leaderboardRewardsAdminRoutes from './routes/admin/leaderboardRewards.js'
 import auctionsAdminRoutes from './routes/admin/auctions.js'
 import badgesAdminRoutes from './routes/admin/badges.js'
+import fusionConfigAdminRoutes from './routes/admin/fusionConfig.js'
 import messagesRoutes from './routes/messages.js'
 import promoCodeRoutes from './routes/promoCodes.js'
 import friendsRoutes from './routes/friends.js'
@@ -201,6 +202,7 @@ app.use('/api/admin/pokemon', adminLimiter, authMiddleware, requireAdmin, requir
 app.use('/api/admin/maps', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), mapsAdminRoutes)
 app.use('/api/admin/drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), dropRatesAdminRoutes)
 app.use('/api/admin/items', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.ITEMS), itemAdminRoutes)
+app.use('/api/admin/fusion-config', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.FUSION_CONFIG), fusionConfigAdminRoutes)
 app.use('/api/admin/badges', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.BADGES), badgesAdminRoutes)
 app.use('/api/admin/moves', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MOVES), moveAdminRoutes)
 app.use('/api/admin/item-drop-rates', adminLimiter, authMiddleware, requireAdmin, requireAdminPermission(ADMIN_PERMISSIONS.MAPS), itemDropRatesAdminRoutes)

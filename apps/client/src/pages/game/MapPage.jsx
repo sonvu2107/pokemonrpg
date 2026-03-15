@@ -45,7 +45,13 @@ const extractObjectIdLike = (value) => {
 const LAST_ENCOUNTER_STORAGE_PREFIX = 'map:lastEncounter:'
 const SEARCH_SPAM_REPOSITION_THRESHOLD = 24
 const SEARCH_BUTTON_REPOSITION_COOLDOWN_MS = 5 * 60 * 1000
-const SEARCH_CHALLENGE_INTERVAL_MS = 2 * 60 * 1000
+const SEARCH_CHALLENGE_INTERVAL_MIN_MS = 10 * 60 * 1000
+const SEARCH_CHALLENGE_INTERVAL_MAX_MS = 15 * 60 * 1000
+const resolveRandomSearchChallengeIntervalMs = () => {
+    const min = SEARCH_CHALLENGE_INTERVAL_MIN_MS
+    const max = SEARCH_CHALLENGE_INTERVAL_MAX_MS
+    return min + Math.floor(Math.random() * Math.max(1, (max - min + 1)))
+}
 const LOCAL_SEARCH_SPAM_COOLDOWN_MS = 300
 const SEARCH_VERY_FAST_SPAM_INTERVAL_MS = 180
 const SEARCH_VERY_FAST_SPAM_STREAK_THRESHOLD = 3
@@ -344,6 +350,7 @@ export default function MapPage() {
     const autoSearchConfigDirtyRef = useRef(false)
     const lastAutoSearchServerSnapshotRef = useRef('')
     const lastSearchChallengeAtRef = useRef(Date.now())
+    const searchChallengeIntervalMsRef = useRef(resolveRandomSearchChallengeIntervalMs())
     const lastSearchButtonRepositionAtRef = useRef(0)
     const lastSearchSpamAttemptAtRef = useRef(0)
     const searchVeryFastSpamStreakRef = useRef(0)
@@ -453,6 +460,7 @@ export default function MapPage() {
         setSearchChallengeInput('')
         setSearchChallengeError('')
         lastSearchChallengeAtRef.current = Date.now()
+        searchChallengeIntervalMsRef.current = resolveRandomSearchChallengeIntervalMs()
         setIsEncounterDetailExpanded(false)
         setDetailTab('pokemon')
         setPokemonPage(1)
@@ -630,6 +638,7 @@ export default function MapPage() {
 
     const openSearchChallenge = () => {
         lastSearchChallengeAtRef.current = Date.now()
+        searchChallengeIntervalMsRef.current = resolveRandomSearchChallengeIntervalMs()
         setSearchChallenge(createSearchChallenge())
         setSearchChallengeInput('')
         setSearchChallengeError('')
@@ -742,7 +751,11 @@ export default function MapPage() {
 
         const nowMs = Date.now()
         if (shouldUseSearchChallenge()) {
-            const shouldTriggerPeriodicChallenge = (nowMs - Number(lastSearchChallengeAtRef.current || 0)) >= SEARCH_CHALLENGE_INTERVAL_MS
+            const challengeIntervalMs = Math.max(
+                SEARCH_CHALLENGE_INTERVAL_MIN_MS,
+                Number(searchChallengeIntervalMsRef.current) || SEARCH_CHALLENGE_INTERVAL_MIN_MS
+            )
+            const shouldTriggerPeriodicChallenge = (nowMs - Number(lastSearchChallengeAtRef.current || 0)) >= challengeIntervalMs
             if (shouldTriggerPeriodicChallenge) {
                 openSearchChallenge()
                 setLastResult({ encountered: false, message: 'Chú ý: Trả lời mật mã để tiếp tục tìm kiếm.' })

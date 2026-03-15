@@ -99,6 +99,7 @@ export default function RightColumn() {
         { to: '/admin/pokemon', label: 'Quản lý Pokémon', permission: ADMIN_PERMISSIONS.POKEMON },
         { to: '/admin/maps', label: 'Quản lý Bản Đồ', permission: ADMIN_PERMISSIONS.MAPS },
         { to: '/admin/items', label: 'Quản lý Vật Phẩm', permission: ADMIN_PERMISSIONS.ITEMS },
+        { to: '/admin/fusion-config', label: 'Cấu Hình Ghép Pokémon', permission: ADMIN_PERMISSIONS.FUSION_CONFIG },
         { to: '/admin/badges', label: 'Quản lý Huy Hiệu', permission: ADMIN_PERMISSIONS.BADGES },
         { to: '/admin/moves', label: 'Quản lý Kỹ Năng', permission: ADMIN_PERMISSIONS.MOVES },
         { to: '/admin/news', label: 'Quản lý Tin Tức', permission: ADMIN_PERMISSIONS.NEWS },
@@ -166,6 +167,7 @@ export default function RightColumn() {
                 <SidebarLink to="/box">Kho Pokémon</SidebarLink>
                 <SidebarLink to="/party">Thay đổi đội hình</SidebarLink>
                 <SidebarLink to="/evolve">Tiến hóa</SidebarLink>
+                <SidebarLink to="/fusion">Ghép Pokemon</SidebarLink>
                 <SidebarLink to="/pokedex">Pokédex</SidebarLink>
             </SidebarSection>
 

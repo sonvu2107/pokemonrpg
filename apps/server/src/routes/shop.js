@@ -44,6 +44,10 @@ const ITEM_MARKET_EFFECT_LABELS = Object.freeze({
     grantPokemonExp: 'EXP Pokemon',
     grantPokemonLevel: 'Tăng cấp Pokemon',
     transferPokemonLevel: 'Chuyển level Pokemon',
+    fusionStone: 'Đá ghép',
+    fusionLuckyStone: 'Đá may mắn',
+    fusionProtectionStone: 'Đá bảo hộ',
+    superFusionStone: 'Super Fusion',
 })
 
 const resolveVipLevel = (userLike = null) => Math.max(0, Number.parseInt(userLike?.vipTierLevel, 10) || 0)

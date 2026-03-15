@@ -10,12 +10,14 @@ import BattleTrainer from '../../models/BattleTrainer.js'
 import BattleSession from '../../models/BattleSession.js'
 import { emitPlayerState } from '../../socket/index.js'
 import { expToNext, getRarityExpMultiplier } from '../../utils/gameUtils.js'
+import { getFusionTotalStatBonusPercent } from '../../utils/fusionUtils.js'
 import { withActiveUserPokemonFilter } from '../../utils/userPokemonQuery.js'
 import {
     resolveBattleBadgeBonusState,
     resolveOrHydrateBattleBadgeSnapshot,
 } from '../../utils/badgeUtils.js'
 import { resolvePlayerBattleMaxHp } from '../../utils/playerBattleStats.js'
+import { loadFusionRuntimeConfig } from '../../utils/fusionRuntimeConfig.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../../utils/pokemonFormStats.js'
 import {
     getOrCreateTrainerBattleSession,
@@ -175,11 +177,19 @@ router.post('/battle/trainer/switch', authMiddleware, requireActiveGameplayTab({
             formId: targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal',
             resolvedForm,
         })
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const fusionBonusPercent = getFusionTotalStatBonusPercent(
+            targetPokemon?.fusionLevel,
+            fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+        )
 
         const calculatedMaxHp = resolvePlayerBattleMaxHp({
-            baseHp: Number(resolvedBaseStats?.hp || 1),
+            baseStats: resolvedBaseStats,
             level: Math.max(1, Number(targetPokemon.level || 1)),
             rarity: targetPokemon?.pokemonId?.rarity || 'd',
+            ivs: targetPokemon?.ivs,
+            evs: targetPokemon?.evs,
+            fusionBonusPercent,
             hpBonusPercent: badgeHpBonusPercent,
         })
         const requestedMaxHp = clamp(

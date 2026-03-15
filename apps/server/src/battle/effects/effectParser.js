@@ -870,6 +870,30 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
+    if (/hits all adjacent pok[eé]mon|hits all adjacent opponents/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'multi_target_damage',
+            trigger: 'on_hit',
+            target: 'self',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.84,
+        }))
+    }
+
+    if (/the user uses its body like a hammer to attack the target and inflict damage|the user fiercely attacks the target using its entire body|the user attacks by hurling a blizzard-cloaked icicle lance at opposing pok[eé]mon|strikes opponent with leaves/.test(text)) {
+        maybePush(effects, makeEffect({
+            op: 'direct_damage_only',
+            trigger: 'on_hit',
+            target: 'opponent',
+            chance: 1,
+            params: {},
+            sourceText,
+            parserConfidence: 0.84,
+        }))
+    }
+
     if (/suppresses the target's ability if the target has already moved/.test(text)) {
         maybePush(effects, makeEffect({
             op: 'ignore_target_ability',
@@ -1941,15 +1965,19 @@ export const parseMoveEffectText = ({ description = '', probability = null } = {
         }))
     }
 
-    if (/the user engages its gears to raise the attack and sp\. atk stats of ally pok[eé]mon with the plus or minus ability/.test(text)) {
+    if (/the user engages its gears to raise the attack and sp\.?\s*atk stats of ally pok[eé]mon with the plus or minus ability/.test(text)) {
         maybePush(effects, makeEffect({
-            op: 'no_op',
+            op: 'ally_condition_stat_boost',
             trigger: 'on_hit',
             target: 'self',
             chance: 1,
-            params: { reason: 'ally_ability_condition_buff_unsupported' },
+            params: {
+                condition: 'ally_plus_or_minus',
+                stats: ['atk', 'spatk'],
+                delta: 1,
+            },
             sourceText,
-            parserConfidence: 0.68,
+            parserConfidence: 0.82,
         }))
     }
 

@@ -18,7 +18,13 @@ const DESKTOP_COMPLETED_ENTRIES_PER_VIEW = 6
 const TRAINER_ATTACK_SPAM_REPOSITION_THRESHOLD = 24
 const TRAINER_ATTACK_REPOSITION_INTERVAL_MS = 10 * 60 * 1000
 const TRAINER_ATTACK_BUTTON_REPOSITION_COOLDOWN_MS = 10 * 60 * 1000
-const TRAINER_ATTACK_CHALLENGE_INTERVAL_MS = 2 * 60 * 1000
+const TRAINER_ATTACK_CHALLENGE_INTERVAL_MIN_MS = 10 * 60 * 1000
+const TRAINER_ATTACK_CHALLENGE_INTERVAL_MAX_MS = 15 * 60 * 1000
+const resolveRandomTrainerAttackChallengeIntervalMs = () => {
+    const min = TRAINER_ATTACK_CHALLENGE_INTERVAL_MIN_MS
+    const max = TRAINER_ATTACK_CHALLENGE_INTERVAL_MAX_MS
+    return min + Math.floor(Math.random() * Math.max(1, (max - min + 1)))
+}
 const AUTO_TRAINER_ATTACK_INTERVAL_OPTIONS = [
     { value: 450, label: 'Nhanh (0.45s)' },
     { value: 700, label: 'Vừa (0.7s)' },
@@ -1172,6 +1178,7 @@ export function BattlePage() {
     const trainerAttackSpamCountRef = useRef(0)
     const trainerAttackRepositionTimerRef = useRef(null)
     const lastTrainerAttackChallengeAtRef = useRef(Date.now())
+    const trainerAttackChallengeIntervalMsRef = useRef(resolveRandomTrainerAttackChallengeIntervalMs())
     const lastTrainerAttackRepositionAtRef = useRef(0)
     const autoTrainerConfigDirtyRef = useRef(false)
     const warmedTrainerImageSetRef = useRef(new Set())
@@ -2056,9 +2063,18 @@ export function BattlePage() {
 
     const openTrainerAttackChallenge = () => {
         lastTrainerAttackChallengeAtRef.current = Date.now()
+        trainerAttackChallengeIntervalMsRef.current = resolveRandomTrainerAttackChallengeIntervalMs()
         setTrainerAttackChallenge(createTrainerAttackChallenge())
         setTrainerAttackChallengeInput('')
         setTrainerAttackChallengeError('')
+    }
+
+    const shouldTriggerTrainerAttackChallenge = (nowMs = Date.now()) => {
+        const challengeIntervalMs = Math.max(
+            TRAINER_ATTACK_CHALLENGE_INTERVAL_MIN_MS,
+            Number(trainerAttackChallengeIntervalMsRef.current) || TRAINER_ATTACK_CHALLENGE_INTERVAL_MIN_MS
+        )
+        return (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= challengeIntervalMs
     }
 
     const handleTrainerAttackChallengeAnswer = () => {
@@ -2188,7 +2204,7 @@ export function BattlePage() {
 
         if (isTrainerBattle && shouldUseTrainerAttackChallenge()) {
             const nowMs = Date.now()
-            const shouldTriggerPeriodicChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_CHALLENGE_INTERVAL_MS
+            const shouldTriggerPeriodicChallenge = shouldTriggerTrainerAttackChallenge(nowMs)
             if (shouldTriggerPeriodicChallenge) {
                 openTrainerAttackChallenge()
                 setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')
@@ -3298,7 +3314,7 @@ export function BattlePage() {
         }
 
         const nowMs = Date.now()
-        const shouldTriggerPeriodicChallenge = (nowMs - Number(lastTrainerAttackChallengeAtRef.current || 0)) >= TRAINER_ATTACK_CHALLENGE_INTERVAL_MS
+        const shouldTriggerPeriodicChallenge = shouldTriggerTrainerAttackChallenge(nowMs)
         if (shouldTriggerPeriodicChallenge) {
             openTrainerAttackChallenge()
             setActionMessage('Chú ý: Trả lời mật mã để tiếp tục chiến đấu.')

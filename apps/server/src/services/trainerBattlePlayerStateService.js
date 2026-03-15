@@ -1,6 +1,9 @@
 import UserPokemon from '../models/UserPokemon.js'
 import { normalizeBattleStatus, normalizeStatusTurns } from '../battle/battleState.js'
 import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
+import { getFusionTotalStatBonusPercent } from '../utils/fusionUtils.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
@@ -34,13 +37,30 @@ const resolvePokemonAbilitySnapshot = ({ entry = null, existingEntry = null } = 
     return ''
 }
 
-const buildPlayerPartyEntryFromPokemon = (entry = {}, slot = 0, existingEntry = null, hpBonusPercent = 0) => {
+const buildPlayerPartyEntryFromPokemon = (
+    entry = {},
+    slot = 0,
+    existingEntry = null,
+    hpBonusPercent = 0,
+    totalStatBonusPercentByFusionLevel = []
+) => {
     const species = entry?.pokemonId || {}
     const level = Math.max(1, Number(entry?.level || 1))
+    const resolvedBaseStats = resolveEffectivePokemonBaseStats({
+        pokemonLike: species,
+        formId: entry?.formId,
+    })
+    const fusionBonusPercent = getFusionTotalStatBonusPercent(
+        entry?.fusionLevel,
+        totalStatBonusPercentByFusionLevel
+    )
     const calculatedMaxHp = resolvePlayerBattleMaxHp({
-        baseHp: Number(species?.baseStats?.hp || 1),
+        baseStats: resolvedBaseStats,
         level,
         rarity: species?.rarity || 'd',
+        ivs: entry?.ivs,
+        evs: entry?.evs,
+        fusionBonusPercent,
         hpBonusPercent,
     })
     const existingCurrentHp = Number(existingEntry?.currentHp)
@@ -71,6 +91,9 @@ const buildPlayerPartyEntryFromPokemon = (entry = {}, slot = 0, existingEntry = 
 
 export const buildTrainerPlayerPartyState = (partyRows = [], existingEntries = [], options = {}) => {
     const hpBonusPercent = Math.max(0, Number(options?.hpBonusPercent) || 0)
+    const totalStatBonusPercentByFusionLevel = Array.isArray(options?.totalStatBonusPercentByFusionLevel)
+        ? options.totalStatBonusPercentByFusionLevel
+        : []
     const existingMap = new Map(
         (Array.isArray(existingEntries) ? existingEntries : [])
             .map((entry) => [String(entry?.userPokemonId || ''), entry])
@@ -78,7 +101,13 @@ export const buildTrainerPlayerPartyState = (partyRows = [], existingEntries = [
     )
 
     return (Array.isArray(partyRows) ? partyRows : [])
-        .map((entry, index) => buildPlayerPartyEntryFromPokemon(entry, index, existingMap.get(String(entry?._id || '')) || null, hpBonusPercent))
+        .map((entry, index) => buildPlayerPartyEntryFromPokemon(
+            entry,
+            index,
+            existingMap.get(String(entry?._id || '')) || null,
+            hpBonusPercent,
+            totalStatBonusPercentByFusionLevel
+        ))
         .filter((entry) => entry?.userPokemonId)
 }
 
@@ -91,11 +120,16 @@ export const ensureTrainerSessionPlayerParty = async ({ trainerSession, userId, 
             userId,
             location: 'party',
         })
-            .select('_id nickname level pokemonId partyIndex ability')
-            .populate('pokemonId', 'name baseStats rarity abilities')
+            .select('_id nickname level pokemonId partyIndex ability fusionLevel formId ivs evs')
+            .populate('pokemonId', 'name baseStats rarity abilities forms defaultFormId')
             .sort({ partyIndex: 1, _id: 1 })
 
-    const nextPlayerTeam = buildTrainerPlayerPartyState(partyRows, trainerSession.playerTeam, { hpBonusPercent })
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+
+    const nextPlayerTeam = buildTrainerPlayerPartyState(partyRows, trainerSession.playerTeam, {
+        hpBonusPercent,
+        totalStatBonusPercentByFusionLevel: fusionRuntimeConfig.totalStatBonusPercentByFusionLevel,
+    })
     trainerSession.playerTeam = nextPlayerTeam
 
     const preferredId = String(preferredActivePokemonId || trainerSession.playerPokemonId || '').trim()

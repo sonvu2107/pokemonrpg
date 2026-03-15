@@ -12,6 +12,7 @@ const {
     calcResidualStatusDamage,
     applyDamageGuardsToDamage,
     decrementDamageGuards,
+    applyEntryHazardsOnSwitchIn,
 } = __battleEffectInternals
 
 const runStatusLifecycleTests = () => {
@@ -121,6 +122,30 @@ const runNormalizationTests = () => {
     assert(normalizeStatusTurns(-10) === 0, 'Expected status turns clamp to zero')
 }
 
+const runEntryHazardSwitchInTests = () => {
+    const hazardApplied = applyEntryHazardsOnSwitchIn({
+        fieldState: {
+            entryHazards: {
+                opponent: {
+                    spikesLayers: 2,
+                    stealthRock: true,
+                    stickyWeb: true,
+                },
+            },
+        },
+        side: 'opponent',
+        targetName: 'HazardMon',
+        targetTypes: ['fire'],
+        currentHp: 160,
+        maxHp: 160,
+        statStages: {},
+    })
+
+    assert(hazardApplied.nextHp === 94, 'Expected spikes + stealth rock chip to reduce hp by 66')
+    assert(hazardApplied.nextStatStages.spd === -1, 'Expected sticky web to lower speed stage')
+    assert(hazardApplied.logs.some((line) => line.includes('HazardMon:')), 'Expected hazard logs prefixed with target name')
+}
+
 const main = () => {
     runNormalizationTests()
     runStatusLifecycleTests()
@@ -128,6 +153,7 @@ const main = () => {
     runDrowsyTests()
     runDamageGuardTests()
     runVolatileStateTests()
+    runEntryHazardSwitchInTests()
     console.log('Battle attack flow tests passed')
 }
 

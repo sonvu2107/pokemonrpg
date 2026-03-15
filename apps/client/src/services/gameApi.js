@@ -576,10 +576,14 @@ export const gameApi = {
     },
 
     // POST /api/pokemon/:id/evolve
-    async evolvePokemon(id) {
+    async evolvePokemon(id, payload = {}) {
         const res = await fetch(`${API_URL}/pokemon/${id}/evolve`, {
             method: 'POST',
-            headers: getAuthHeader(),
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -603,6 +607,33 @@ export const gameApi = {
         if (!res.ok) {
             const err = await res.json()
             throw new Error(err.message || 'Không thể tải khu vực tiến hóa')
+        }
+        return res.json()
+    },
+
+    // GET /api/pokemon/fusion/config
+    async getFusionConfig() {
+        const res = await fetch(`${API_URL}/pokemon/fusion/config`, {
+            headers: getAuthHeader(),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Không thể tải cấu hình ghép Pokemon')
+        }
+        return res.json()
+    },
+
+    // POST /api/pokemon/:id/fusion
+    async fusePokemon(id, payload = {}) {
+        const res = await fetch(`${API_URL}/pokemon/${id}/fusion`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeader(),
+            },
+            body: JSON.stringify(payload || {}),
+        })
+        if (!res.ok) {
+            await throwApiError(res, 'Ghép Pokemon thất bại')
         }
         return res.json()
     },

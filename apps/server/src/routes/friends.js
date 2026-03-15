@@ -7,9 +7,10 @@ import UserPokemon from '../models/UserPokemon.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import Friendship, { FRIENDSHIP_STATUS, buildFriendPairKey } from '../models/Friendship.js'
 import { emitToUser } from '../socket/index.js'
-import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUtils.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -45,62 +46,21 @@ const resolveSpeciesBaseStats = (species = {}, formId = 'normal') => {
     })
 }
 
-const toStatNumber = (value) => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
-const toSafePositiveInt = (value, fallback = 1) => {
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
-    return Math.max(1, Math.floor(parsed))
-}
-
-const calcPartyCombatPower = (entry, species) => {
-    const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
-    const baseStats = resolveSpeciesBaseStats(species, entry?.formId)
-    const scaledStats = calcStatsForLevel(baseStats, level, species?.rarity || 'd')
-    const ivs = entry?.ivs && typeof entry.ivs === 'object' ? entry.ivs : {}
-    const evs = entry?.evs && typeof entry.evs === 'object' ? entry.evs : {}
-
-    const resolveStat = (key, aliases = []) => {
-        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
-        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
-        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
-        return Math.max(1, Math.floor(base + iv + (ev / 8)))
-    }
-
-    const hp = resolveStat('hp')
-    const atk = resolveStat('atk')
-    const def = resolveStat('def')
-    const spatk = resolveStat('spatk')
-    const spdef = resolveStat('spdef', ['spldef'])
-    const spd = resolveStat('spd')
-
-    const rawPower = (hp * 1.2)
-        + (atk * 1.8)
-        + (def * 1.45)
-        + (spatk * 1.8)
-        + (spdef * 1.45)
-        + (spd * 1.35)
-        + (level * 2)
-    const shinyBonus = entry?.isShiny ? 1.03 : 1
-    return toSafePositiveInt(rawPower * shinyBonus, Math.max(1, level * 10))
-}
-
-const serializePartyPokemon = (entry) => {
+const serializePartyPokemon = (entry, totalStatBonusPercentByFusionLevel = []) => {
     if (!entry?._id || !entry?.pokemonId) return null
     const species = entry.pokemonId
-    const combatPower = calcPartyCombatPower(entry, species)
-    const resolvedStats = calcStatsForLevel(
-        resolveEffectivePokemonBaseStats({
-            pokemonLike: species,
-            formId: entry?.formId,
-        }),
-        Math.max(1, Number(entry?.level || 1)),
-        species?.rarity
-    )
-    const maxHp = Math.max(1, Number(resolvedStats?.maxHp || resolvedStats?.hp || 1))
+    const resolvedUserStats = resolveUserPokemonFinalStats({
+        baseStats: resolveSpeciesBaseStats(species, entry?.formId),
+        level: entry?.level,
+        rarity: species?.rarity,
+        fusionLevel: entry?.fusionLevel,
+        totalStatBonusPercentByFusionLevel,
+        ivs: entry?.ivs,
+        evs: entry?.evs,
+        isShiny: Boolean(entry?.isShiny),
+    })
+    const combatPower = resolvedUserStats.combatPower
+    const maxHp = resolvedUserStats.maxHp
     return {
         _id: String(entry._id),
         nickname: String(entry?.nickname || '').trim(),
@@ -111,7 +71,11 @@ const serializePartyPokemon = (entry) => {
         power: combatPower,
         currentHp: maxHp,
         maxHp,
-        stats: resolvedStats,
+        stats: {
+            ...resolvedUserStats.finalStats,
+            maxHp,
+            currentHp: maxHp,
+        },
         partyIndex: Number.isFinite(Number(entry?.partyIndex)) ? Number(entry.partyIndex) : null,
         pokemonId: {
             _id: String(species?._id || ''),
@@ -311,7 +275,7 @@ const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
             userId: targetUserId,
             location: 'party',
         })
-            .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs')
+            .select('_id userId pokemonId nickname level formId isShiny partyIndex ivs evs fusionLevel')
             .populate({
                 path: 'pokemonId',
                 select: 'name types rarity baseStats imageUrl sprites defaultFormId forms',
@@ -336,9 +300,11 @@ const buildTrainerDetail = async (targetUserId, viewerUserId = '') => {
 
     const effectiveVipBenefits = mergeVipVisualBenefits(user?.vipBenefits, (await vipTier)?.benefits)
 
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+    const totalStatBonusPercentByFusionLevel = fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
     const slots = createEmptyPartySlots()
     for (const entry of partyRows) {
-        const snapshot = serializePartyPokemon(entry)
+        const snapshot = serializePartyPokemon(entry, totalStatBonusPercentByFusionLevel)
         if (!snapshot) continue
 
         const slotIndex = Number(entry?.partyIndex)

@@ -61,6 +61,10 @@ const EFFECT_TYPE_OPTIONS = [
     { value: 'grantPokemonExp', label: 'Cộng EXP cho Pokemon' },
     { value: 'grantPokemonLevel', label: 'Tăng cấp cho Pokemon' },
     { value: 'transferPokemonLevel', label: 'Chuyển level giữa Pokemon' },
+    { value: 'fusionStone', label: 'Đá ghép Pokemon' },
+    { value: 'fusionLuckyStone', label: 'Đá may mắn ghép Pokemon' },
+    { value: 'fusionProtectionStone', label: 'Đá bảo hộ ghép Pokemon' },
+    { value: 'superFusionStone', label: 'Super Fusion Stone' },
 ]
 
 const VIP_DURATION_UNIT_OPTIONS = [
@@ -94,6 +98,18 @@ const buildEffectSummary = (effectType, effectValue, effectValueMp, effectDurati
     }
     if (effectType === 'transferPokemonLevel') {
         return 'Đổi level Pokemon đích thành level hiện tại của Pokemon nguồn, Pokemon nguồn về Lv. 1'
+    }
+    if (effectType === 'fusionStone') {
+        return 'Nguyên liệu bắt buộc cho 1 lượt ghép Pokemon'
+    }
+    if (effectType === 'fusionLuckyStone') {
+        return `Tăng ${Math.min(100, Math.max(0, Number(effectValue) || 0)).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}% tỉ lệ ghép thành công`
+    }
+    if (effectType === 'fusionProtectionStone') {
+        return 'Bảo vệ Pokemon khỏi tụt mốc khi ghép thất bại'
+    }
+    if (effectType === 'superFusionStone') {
+        return 'Vật phẩm đặc biệt cho chế độ ghép nâng cao'
     }
     return 'Không có hiệu ứng'
 }
@@ -232,6 +248,16 @@ export default function ItemFormPage() {
                 payload.effectValueMp = 0
             }
 
+            if (payload.effectType === 'fusionStone' || payload.effectType === 'fusionProtectionStone' || payload.effectType === 'superFusionStone') {
+                payload.effectValue = 0
+                payload.effectValueMp = 0
+            }
+
+            if (payload.effectType === 'fusionLuckyStone') {
+                payload.effectValue = Math.min(100, Math.max(0, Number(payload.effectValue) || 0))
+                payload.effectValueMp = 0
+            }
+
             if (payload.effectType === 'catchMultiplier') {
                 payload.effectValue = Math.min(100, Math.max(0, Number(payload.effectValue) || 0))
             }
@@ -265,6 +291,10 @@ export default function ItemFormPage() {
     const isPokemonLevelEffect = formData.effectType === 'grantPokemonLevel'
     const isPokemonGrowthEffect = isPokemonExpEffect || isPokemonLevelEffect
     const isTransferPokemonLevelEffect = formData.effectType === 'transferPokemonLevel'
+    const isFusionStoneEffect = formData.effectType === 'fusionStone'
+    const isFusionLuckyStoneEffect = formData.effectType === 'fusionLuckyStone'
+    const isFusionProtectionStoneEffect = formData.effectType === 'fusionProtectionStone'
+    const isSuperFusionStoneEffect = formData.effectType === 'superFusionStone'
 
     return (
         <div className="rounded border border-blue-400 bg-white shadow-sm max-w-5xl mx-auto mb-10">
@@ -488,6 +518,18 @@ export default function ItemFormPage() {
                                         <div className="rounded border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-sm text-fuchsia-800">
                                             Dùng vật phẩm này tại trang chi tiết Pokemon để chọn 1 Pokemon nguồn, đặt level Pokemon đích bằng level hiện tại của Pokemon nguồn và đưa Pokemon nguồn về Lv. 1.
                                         </div>
+                                    ) : isFusionStoneEffect ? (
+                                        <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                                            Đánh dấu vật phẩm này là đá ghép cơ bản dùng trong hệ ghép Pokemon.
+                                        </div>
+                                    ) : isFusionProtectionStoneEffect ? (
+                                        <div className="rounded border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-800">
+                                            Đánh dấu vật phẩm này là đá bảo hộ, có tác dụng ngăn tụt mốc khi ghép thất bại.
+                                        </div>
+                                    ) : isSuperFusionStoneEffect ? (
+                                        <div className="rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+                                            Đánh dấu vật phẩm này là Super Fusion Stone cho chế độ ghép nâng cao.
+                                        </div>
                                     ) : isPokemonGrowthEffect ? (
                                         <div>
                                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
@@ -510,17 +552,19 @@ export default function ItemFormPage() {
                                             <label className="block text-slate-700 text-xs font-bold mb-1.5 uppercase">
                                                 {formData.effectType === 'catchMultiplier'
                                                     ? 'Tỉ lệ bắt (%)'
-                                                    : (isVipGrantEffect ? 'Cấp VIP nhận được' : 'Giá trị HP')}
+                                                    : (isFusionLuckyStoneEffect
+                                                        ? 'Tỉ lệ cộng thêm khi ghép (%)'
+                                                        : (isVipGrantEffect ? 'Cấp VIP nhận được' : 'Giá trị HP'))}
                                             </label>
                                             <input
                                                 type="number"
                                                 min={isVipGrantEffect ? '1' : '0'}
-                                                max={formData.effectType === 'catchMultiplier' ? 100 : undefined}
-                                                step={formData.effectType === 'catchMultiplier' ? '0.1' : '1'}
+                                                max={(formData.effectType === 'catchMultiplier' || isFusionLuckyStoneEffect) ? 100 : undefined}
+                                                step={(formData.effectType === 'catchMultiplier' || isFusionLuckyStoneEffect) ? '0.1' : '1'}
                                                 value={formData.effectValue}
                                                 onChange={(e) => {
                                                     const nextValue = Number(e.target.value) || 0
-                                                    const normalizedValue = formData.effectType === 'catchMultiplier'
+                                                    const normalizedValue = (formData.effectType === 'catchMultiplier' || isFusionLuckyStoneEffect)
                                                         ? Math.min(100, Math.max(0, nextValue))
                                                         : (isVipGrantEffect ? Math.max(1, Math.floor(nextValue || 0)) : nextValue)
                                                     setFormData({ ...formData, effectValue: normalizedValue })
@@ -530,11 +574,13 @@ export default function ItemFormPage() {
                                         </div>
                                     )}
                                 </div>
-                                {(isPokemonGrowthEffect || isTransferPokemonLevelEffect) && (
+                                {(isPokemonGrowthEffect || isTransferPokemonLevelEffect || isFusionStoneEffect || isFusionLuckyStoneEffect || isFusionProtectionStoneEffect || isSuperFusionStoneEffect) && (
                                     <div className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                                         {isTransferPokemonLevelEffect
                                             ? 'Dùng vật phẩm này tại trang chi tiết Pokemon để chọn Pokemon nguồn và đổi level Pokemon đang xem theo Pokemon nguồn.'
-                                            : `Dùng vật phẩm này tại trang chi tiết Pokemon để cộng ${isPokemonExpEffect ? 'EXP' : 'cấp'} theo giá trị đã nhập.`}
+                                            : (isPokemonGrowthEffect
+                                                ? `Dùng vật phẩm này tại trang chi tiết Pokemon để cộng ${isPokemonExpEffect ? 'EXP' : 'cấp'} theo giá trị đã nhập.`
+                                                : 'Vật phẩm này được dùng trong trang ghép Pokemon, không dùng trực tiếp ở Túi đồ.')}
                                     </div>
                                 )}
                                 {(isHealEffect || isVipGrantEffect) && (

@@ -55,14 +55,23 @@ export const getRarityStatMultiplier = (rarity) => RARITY_STAT_MULTIPLIER[normal
 
 export const getRarityExpMultiplier = (rarity) => RARITY_EXP_MULTIPLIER[normalizeRarity(rarity)] ?? 1.0
 
-export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
+export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd', fusionLevelOrOptions = 0) => {
     const safeLevel = Math.max(1, Number(level) || 1)
     const specialDefense = baseStats.spdef ?? baseStats.spldef ?? 0
+    const fusionBonusPercentRaw = typeof fusionLevelOrOptions === 'object'
+        ? fusionLevelOrOptions?.fusionBonusPercent
+        : fusionLevelOrOptions
+    const fusionBonusPercent = Math.max(0, Number(fusionBonusPercentRaw) || 0)
+    const fusionMultiplier = 1 + (fusionBonusPercent / 100)
+
     const scaleStat = (baseValue) => {
         const safeBase = Math.max(1, Number(baseValue) || 0)
-        if (safeLevel <= 1) return safeBase
+        if (safeLevel <= 1) {
+            return Math.max(1, Math.round(safeBase * fusionMultiplier))
+        }
         const levelGain = Math.floor((2 * safeBase * safeLevel) / 100)
-        return Math.max(1, safeBase + levelGain)
+        const scaledValue = Math.max(1, safeBase + levelGain)
+        return Math.max(1, Math.round(scaledValue * fusionMultiplier))
     }
 
     return {
@@ -75,7 +84,7 @@ export const calcStatsForLevel = (baseStats = {}, level = 1, rarity = 'd') => {
     }
 }
 
-export const calcMaxHp = (baseHp, level, rarity) => {
-    const stats = calcStatsForLevel({ hp: baseHp }, level, rarity)
+export const calcMaxHp = (baseHp, level, rarity, fusionLevelOrOptions = 0) => {
+    const stats = calcStatsForLevel({ hp: baseHp }, level, rarity, fusionLevelOrOptions)
     return Math.max(10, Math.floor(stats.hp))
 }

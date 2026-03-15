@@ -72,6 +72,7 @@ const UserPokemonSchema = new Schema(
         // Progression
         level: { type: Number, default: 5, min: 1, max: USER_POKEMON_MAX_LEVEL },
         experience: { type: Number, default: 0, min: 0 },
+        fusionLevel: { type: Number, default: 0, min: 0 },
 
         // Genetics / Stats
         // IVs (Individual Values) 0-31
@@ -159,6 +160,9 @@ UserPokemonSchema.pre('validate', function (next) {
 
     const experience = Number.parseInt(this.experience, 10)
     this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
+
+    const fusionLevel = Number.parseInt(this.fusionLevel, 10)
+    this.fusionLevel = Number.isFinite(fusionLevel) && fusionLevel > 0 ? fusionLevel : 0
 
     const offTypeSkillAllowance = Number.parseInt(this.offTypeSkillAllowance, 10)
     const normalizedOffTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0

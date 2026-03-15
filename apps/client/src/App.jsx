@@ -26,6 +26,7 @@ const RankingsPage = lazy(() => import('./pages/RankingsPage'))
 const PokemonRankingsPage = lazy(() => import('./pages/PokemonRankingsPage'))
 const PokemonRarityPage = lazy(() => import('./pages/PokemonRarityPage'))
 const EvolvePage = lazy(() => import('./pages/EvolvePage'))
+const FusionPage = lazy(() => import('./pages/FusionPage'))
 const TradesPage = lazy(() => import('./pages/TradesPage'))
 const ShopSellPage = lazy(() => import('./pages/ShopSellPage'))
 const ItemShopPage = lazy(() => import('./pages/ItemShopPage'))
@@ -41,7 +42,6 @@ const NewsDetailPage = lazy(() => import('./pages/NewsDetailPage'))
 const ValleyPage = lazy(() => import('./pages/ValleyPage'))
 const AuctionsPage = lazy(() => import('./pages/AuctionsPage'))
 const GlobalRateLimitModal = lazy(() => import('./components/GlobalRateLimitModal'))
-
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const PokemonListPage = lazy(() => import('./pages/admin/PokemonListPage'))
 const PokemonFormPage = lazy(() => import('./pages/admin/PokemonFormPage'))
@@ -50,6 +50,7 @@ const MapFormPage = lazy(() => import('./pages/admin/MapFormPage'))
 const DropRateManagerPage = lazy(() => import('./pages/admin/DropRateManagerPage'))
 const ItemListPage = lazy(() => import('./pages/admin/ItemListPage'))
 const ItemFormPage = lazy(() => import('./pages/admin/ItemFormPage'))
+const FusionConfigPage = lazy(() => import('./pages/admin/FusionConfigPage'))
 const BadgeManagerPage = lazy(() => import('./pages/admin/BadgeManagerPage'))
 const MoveListPage = lazy(() => import('./pages/admin/MoveListPage'))
 const MoveFormPage = lazy(() => import('./pages/admin/MoveFormPage'))
@@ -62,7 +63,6 @@ const DailyRewardManagerPage = lazy(() => import('./pages/admin/DailyRewardManag
 const PromoCodeManagerPage = lazy(() => import('./pages/admin/PromoCodeManagerPage'))
 const WeeklyLeaderboardRewardPage = lazy(() => import('./pages/admin/WeeklyLeaderboardRewardPage'))
 const AuctionManagementPage = lazy(() => import('./pages/admin/AuctionManagementPage'))
-
 const RouteLoadingFallback = () => (
     <div className="mx-auto max-w-3xl py-10 text-center text-sm font-bold text-slate-500">
         Đang tải trang...
@@ -100,6 +100,8 @@ export default function App() {
                     <Route path="/items/:id" element={<ItemInfoPage />} />
                     <Route path="/pokemon/:id/evolve" element={<EvolvePage />} />
                     <Route path="/evolve" element={<EvolvePage />} />
+                    <Route path="/pokemon/:id/fusion" element={<FusionPage />} />
+                    <Route path="/fusion" element={<FusionPage />} />
                     <Route path="/party" element={<ChangePartyPage />} />
                     <Route path="/rankings/overall" element={<RankingsPage />} />
                     <Route path="/rankings/pokemon" element={<PokemonRankingsPage />} />
@@ -138,6 +140,7 @@ export default function App() {
                     <Route path="/admin/items" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemListPage /></AdminRouteGuard>} />
                     <Route path="/admin/items/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
                     <Route path="/admin/items/:id/edit" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.ITEMS}><ItemFormPage /></AdminRouteGuard>} />
+                    <Route path="/admin/fusion-config" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.FUSION_CONFIG}><FusionConfigPage /></AdminRouteGuard>} />
                     <Route path="/admin/badges" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.BADGES}><BadgeManagerPage /></AdminRouteGuard>} />
                     <Route path="/admin/moves" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveListPage /></AdminRouteGuard>} />
                     <Route path="/admin/moves/create" element={<AdminRouteGuard permission={ADMIN_PERMISSIONS.MOVES}><MoveFormPage /></AdminRouteGuard>} />

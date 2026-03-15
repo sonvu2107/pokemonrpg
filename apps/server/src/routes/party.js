@@ -1,11 +1,12 @@
 import express from 'express'
 import UserPokemon from '../models/UserPokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { enforcePartyUniqueSpeciesForUser } from '../utils/partyDuplicateUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const router = express.Router()
 
@@ -18,13 +19,28 @@ const resolveFormStats = (species = {}, formId = null) => {
     })
 }
 
-const serializePartyPokemon = ({ entry, moveLookupMap }) => {
+const serializePartyPokemon = ({ entry, moveLookupMap, totalStatBonusPercentByFusionLevel = [] }) => {
     if (!entry) return null
 
     const base = entry.pokemonId || {}
-    const stats = calcStatsForLevel(resolveFormStats(base, entry.formId), entry.level, base.rarity)
+    const resolvedUserStats = resolveUserPokemonFinalStats({
+        baseStats: resolveFormStats(base, entry.formId),
+        level: entry?.level,
+        rarity: base?.rarity,
+        fusionLevel: entry?.fusionLevel,
+        totalStatBonusPercentByFusionLevel,
+        ivs: entry?.ivs,
+        evs: entry?.evs,
+        isShiny: Boolean(entry?.isShiny),
+    })
     const plainEntry = entry.toObject()
-    plainEntry.stats = stats
+    plainEntry.stats = {
+        ...resolvedUserStats.finalStats,
+        maxHp: resolvedUserStats.maxHp,
+        currentHp: resolvedUserStats.maxHp,
+    }
+    plainEntry.combatPower = resolvedUserStats.combatPower
+    plainEntry.power = resolvedUserStats.combatPower
 
     const mergedMoveNames = mergeKnownMovesWithFallback(plainEntry.moves)
     const movePpState = buildMovePpStateFromMoves({
@@ -64,11 +80,13 @@ router.get('/', async (req, res) => {
             .map((entry) => mergeKnownMovesWithFallback(entry.moves))
             .flat()
         const moveLookupMap = await buildMoveLookupByName(allMoveNames)
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const totalStatBonusPercentByFusionLevel = fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
 
         // Ensure we always return 6 slots, even if empty
         const slots = Array(6).fill(null)
         party.forEach((entry) => {
-            const payload = serializePartyPokemon({ entry, moveLookupMap })
+            const payload = serializePartyPokemon({ entry, moveLookupMap, totalStatBonusPercentByFusionLevel })
             if (!payload) return
 
             const requestedSlotIndex = Number(entry?.partyIndex)

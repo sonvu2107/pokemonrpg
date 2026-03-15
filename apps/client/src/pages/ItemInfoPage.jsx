@@ -49,6 +49,9 @@ const formatCatchPercent = (value) => {
     return `${clampedValue.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
 }
 
+const POKEMON_DETAIL_USE_EFFECT_TYPES = ['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel']
+const FUSION_USE_EFFECT_TYPES = ['fusionStone', 'fusionLuckyStone', 'fusionProtectionStone', 'superFusionStone']
+
 const resolveEffectSummary = (item) => {
     const effectType = String(item?.effectType || 'none')
     if (effectType === 'catchMultiplier') {
@@ -76,6 +79,18 @@ const resolveEffectSummary = (item) => {
     }
     if (effectType === 'transferPokemonLevel') {
         return 'Dùng lên 1 Pokemon để level của Pokemon đó đổi thành level của 1 Pokemon khác, Pokemon nguồn sẽ về Lv. 1'
+    }
+    if (effectType === 'fusionStone') {
+        return 'Đá ghép cơ bản dùng cho 1 lượt ghép Pokemon'
+    }
+    if (effectType === 'fusionLuckyStone') {
+        return `Tăng ${formatCatchPercent(item?.effectValue)} tỉ lệ ghép thành công`
+    }
+    if (effectType === 'fusionProtectionStone') {
+        return 'Bảo vệ Pokemon khỏi tụt mốc khi ghép thất bại'
+    }
+    if (effectType === 'superFusionStone') {
+        return 'Vật phẩm đặc biệt dùng cho chế độ ghép nâng cao'
     }
     return 'Không có hiệu ứng'
 }
@@ -119,6 +134,9 @@ export default function ItemInfoPage() {
     const typeMeta = TYPE_META[item?.type] || TYPE_META.misc
     const rarityMeta = RARITY_META[item?.rarity] || RARITY_META.common
     const effectSummary = useMemo(() => resolveEffectSummary(item), [item])
+    const effectType = String(item?.effectType || '')
+    const isPokemonDetailUseOnlyItem = POKEMON_DETAIL_USE_EFFECT_TYPES.includes(effectType)
+    const isFusionUseOnlyItem = FUSION_USE_EFFECT_TYPES.includes(effectType)
     const isOnSale = Boolean(item?.isShopEnabled && Number(item?.shopPrice || 0) > 0)
     const canUseDirectly = String(item?.effectType || '') === 'grantVipTier' && inventoryQuantity > 0
     const currentVipTierLevel = Math.max(0, Number(user?.vipTierLevel || 0))
@@ -256,9 +274,14 @@ export default function ItemInfoPage() {
                     Mở Cửa Hàng Vật Phẩm
                 </Link>
             </div>
-            {['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'].includes(String(item?.effectType || '')) && inventoryQuantity > 0 && (
+            {isPokemonDetailUseOnlyItem && inventoryQuantity > 0 && (
                 <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
                     Vật phẩm này dùng tại trang chi tiết Pokemon để áp dụng lên Pokemon bạn chọn.
+                </div>
+            )}
+            {isFusionUseOnlyItem && inventoryQuantity > 0 && (
+                <div className="mt-3 rounded border border-sky-200 bg-sky-50 px-4 py-3 text-center text-sm font-semibold text-sky-800">
+                    Vật phẩm này dùng tại trang ghép Pokemon.
                 </div>
             )}
             {canUseDirectly && (

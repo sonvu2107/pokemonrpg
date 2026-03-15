@@ -65,6 +65,33 @@ const resolvePokemonDisplay = (entry) => {
     }
 }
 
+const TYPE_BADGE_CLASS = {
+    normal: 'bg-slate-200 text-slate-700 border-slate-300',
+    fire: 'bg-red-100 text-red-700 border-red-200',
+    water: 'bg-blue-100 text-blue-700 border-blue-200',
+    electric: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    grass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    ice: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    fighting: 'bg-orange-100 text-orange-700 border-orange-200',
+    poison: 'bg-purple-100 text-purple-700 border-purple-200',
+    ground: 'bg-amber-100 text-amber-700 border-amber-200',
+    flying: 'bg-sky-100 text-sky-700 border-sky-200',
+    psychic: 'bg-pink-100 text-pink-700 border-pink-200',
+    bug: 'bg-lime-100 text-lime-700 border-lime-200',
+    rock: 'bg-stone-200 text-stone-700 border-stone-300',
+    ghost: 'bg-violet-100 text-violet-700 border-violet-200',
+    dragon: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    dark: 'bg-slate-300 text-slate-800 border-slate-400',
+    steel: 'bg-zinc-200 text-zinc-700 border-zinc-300',
+    fairy: 'bg-rose-100 text-rose-700 border-rose-200',
+}
+
+const formatTypeLabel = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return '--'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+}
+
 export default function PokemonBoxPage() {
     const { data: profilePayload } = useProfileQuery()
     const [pokemon, setPokemon] = useState([])
@@ -378,7 +405,7 @@ export default function PokemonBoxPage() {
                                 Không tìm thấy Pokémon nào.
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                                 {pokemon.map((p) => {
                                     const display = resolvePokemonDisplay(p)
                                     const species = display.species
@@ -389,6 +416,10 @@ export default function PokemonBoxPage() {
                                     const isEvolvable = canEvolve(p)
                                     const isNewlyCaught = isRecentlyCaughtPokemon(p, nowMs)
                                     const showFormLabel = Boolean(display.formName) && display.formId !== 'normal'
+                                    const fusionLevel = Math.max(0, Number(p?.fusionLevel || 0))
+                                    const types = Array.isArray(species?.types)
+                                        ? species.types.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean).slice(0, 2)
+                                        : []
 
                                     return (
                                         <div key={p._id} className={`group relative flex flex-col items-center p-2 rounded cursor-pointer transition-all hover:scale-105 ${style.border} ${style.bg} ${style.shadow} ${style.frameClass}`}>
@@ -430,6 +461,14 @@ export default function PokemonBoxPage() {
                                                     <span className="text-[10px] bg-white/80 px-1.5 py-0.5 rounded text-slate-700 font-bold border border-slate-200">
                                                         Lv.{p.level}
                                                     </span>
+                                                    {fusionLevel > 0 && (
+                                                        <span
+                                                            className="text-[9px] text-indigo-700 font-bold bg-indigo-50/90 px-1.5 py-0.5 rounded border border-indigo-200 shadow-sm"
+                                                            title={`Mốc ghép +${fusionLevel}`}
+                                                        >
+                                                            +{fusionLevel}
+                                                        </span>
+                                                    )}
                                                     {p.isShiny && (
                                                         <span className="text-[9px] text-amber-500 font-bold bg-amber-50/80 px-1.5 py-0.5 rounded border border-amber-200 shadow-sm" title="Shiny">SHINY</span>
                                                     )}
@@ -439,6 +478,18 @@ export default function PokemonBoxPage() {
                                                         </span>
                                                     )}
                                                 </div>
+                                                {types.length > 0 && (
+                                                    <div className="flex flex-wrap items-center justify-center gap-1 mt-1 text-center w-full">
+                                                        {types.map((type) => (
+                                                            <span
+                                                                key={`${p._id}-${type}`}
+                                                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shadow-sm ${TYPE_BADGE_CLASS[type] || 'bg-slate-100 text-slate-700 border-slate-200'}`}
+                                                            >
+                                                                {formatTypeLabel(type)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </Link>
                                             {p.location !== 'party' && (
                                                 <button

@@ -1,11 +1,13 @@
 import UserPokemon from '../models/UserPokemon.js'
-import { calcStatsForLevel } from '../utils/gameUtils.js'
+import { getFusionTotalStatBonusPercent } from '../utils/fusionUtils.js'
 import { normalizePokemonTypes } from '../battle/typeSystem.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { loadBattleBadgeBonusStateForUser } from '../utils/badgeUtils.js'
 import { getSpecialDefenseStat } from './trainerBattleStateService.js'
 import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const LOW_HP_CATCH_BONUS_CAP_BY_RARITY = Object.freeze({
     'sss+': 10,
@@ -108,12 +110,29 @@ export const resolveWildPlayerBattleSnapshot = async (userId) => {
         formId: leadPartyPokemon.formId,
         resolvedForm,
     })
-    const scaledStats = calcStatsForLevel(baseStats, level, species.rarity)
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+    const fusionBonusPercent = getFusionTotalStatBonusPercent(
+        leadPartyPokemon?.fusionLevel,
+        fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+    )
+    const resolvedUserStats = resolveUserPokemonFinalStats({
+        baseStats,
+        level,
+        rarity: species?.rarity,
+        fusionBonusPercent,
+        ivs: leadPartyPokemon?.ivs,
+        evs: leadPartyPokemon?.evs,
+        isShiny: Boolean(leadPartyPokemon?.isShiny),
+    })
+    const scaledStats = resolvedUserStats.finalStats
     const badgeBonusState = await loadBattleBadgeBonusStateForUser(userId, normalizePokemonTypes(species.types))
     const maxHp = resolvePlayerBattleMaxHp({
-        baseHp: baseStats?.hp,
+        baseStats,
         level,
         rarity: species?.rarity || 'd',
+        ivs: leadPartyPokemon?.ivs,
+        evs: leadPartyPokemon?.evs,
+        fusionBonusPercent,
         hpBonusPercent: badgeBonusState?.hpBonusPercent || 0,
     })
     const defense = Math.max(

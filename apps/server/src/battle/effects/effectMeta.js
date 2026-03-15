@@ -66,7 +66,6 @@ const VI_WORD_OVERRIDES = {
     spatk: 'tan cong dac biet',
     spdef: 'phong thu dac biet',
     spd: 'toc do',
-    random: 'ngau nhien',
     current: 'hien tai',
     value: 'gia tri',
     from: 'tu',
@@ -95,6 +94,7 @@ const OP_META_OVERRIDES = {
     crash_damage_on_miss_fraction_max_hp: { nameVi: 'Tu gay sat thuong khi hut don' },
     crit_rate: { nameVi: 'Tang ti le chi mang' },
     delayed_damage: { nameVi: 'Gay sat thuong tre sau mot so luot' },
+    direct_damage_only: { nameVi: 'Chi gay sat thuong truc tiep' },
     damage_fraction_target_current_hp: { nameVi: 'Gay sat thuong theo HP hien tai cua muc tieu' },
     damage_reduction_shield: { nameEn: 'Damage Shield', nameVi: 'La chan giam sat thuong' },
     enforce_target_survive: { nameVi: 'Khong de muc tieu bi ha guc' },
@@ -237,7 +237,9 @@ const toVietnameseLikeLabel = (value = '') => {
 export const isImplementedEffectOp = (op = '') => {
     const normalized = String(op || '').trim().toLowerCase()
     if (!normalized) return false
-    return normalized !== 'flavor_only' && normalized !== 'no_op'
+    return normalized !== 'flavor_only'
+        && normalized !== 'no_op'
+        && normalized !== 'unsupported_rule'
 }
 
 export const buildEffectOpMeta = (op = '') => {
@@ -270,7 +272,7 @@ export const buildEffectReasonMeta = (reason = '') => {
     }
 }
 
-const DEFAULT_TRIGGER_OPTIONS = ['on_hit', 'after_damage', 'on_calculate_damage', 'on_select_move', 'before_accuracy_check', 'before_opponent_accuracy_check', 'before_damage_taken', 'on_miss']
+const DEFAULT_TRIGGER_OPTIONS = ['on_hit', 'after_damage', 'end_turn', 'on_calculate_damage', 'on_select_move', 'before_accuracy_check', 'before_opponent_accuracy_check', 'before_damage_taken', 'on_miss']
 const DEFAULT_TARGET_OPTIONS = ['self', 'opponent', 'field']
 
 const EFFECT_TEMPLATE_OVERRIDES = {
@@ -282,8 +284,8 @@ const EFFECT_TEMPLATE_OVERRIDES = {
     stat_stage_if: { trigger: 'on_hit', target: 'self', chance: 1, params: { condition: 'target_was_damaged_last_turn', stat: 'atk', delta: 1 } },
     power_modifier_if: { trigger: 'on_calculate_damage', target: 'self', chance: 1, params: { condition: 'weather_sunny', multiplier: 1.5 } },
     power_modifier_by_user_hp: { trigger: 'on_calculate_damage', target: 'self', chance: 1, params: { mode: 'higher' } },
-    multi_hit: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { min: 2, max: 5 } },
-    apply_bind: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { turns: 4, fraction: 0.125 } },
+    multi_hit: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { minHits: 2, maxHits: 5 } },
+    apply_bind: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { minTurns: 4, maxTurns: 5, fraction: 0.125 } },
     heal_fraction_damage: { trigger: 'after_damage', target: 'self', chance: 1, params: { fraction: 0.5 } },
     heal_fraction_max_hp: { trigger: 'on_hit', target: 'self', chance: 1, params: { fraction: 0.5 } },
     set_drowsy: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { turns: 2 } },
@@ -292,6 +294,7 @@ const EFFECT_TEMPLATE_OVERRIDES = {
     set_escape_lock: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { turns: 4 } },
     multi_target_damage: { trigger: 'on_hit', target: 'self', chance: 1, params: {} },
     delayed_damage: { trigger: 'on_hit', target: 'self', chance: 1, params: { turns: 2 } },
+    direct_damage_only: { trigger: 'on_hit', target: 'opponent', chance: 1, params: {} },
     reduce_target_pp: { trigger: 'on_hit', target: 'opponent', chance: 1, params: { amount: 3 } },
     override_ghost_immunity: { trigger: 'on_hit', target: 'self', chance: 1, params: {} },
     remove_user_type: { trigger: 'on_hit', target: 'self', chance: 1, params: { type: 'fire' } },

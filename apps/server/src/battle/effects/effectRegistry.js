@@ -907,6 +907,14 @@ const handlers = {
         return result
     },
 
+    direct_damage_only: (context, effect) => {
+        const result = createBaseResult()
+        if (!shouldProc(effect?.chance, context?.random?.())) return result
+        result.applied = true
+        result.statePatches.self.directDamageOnly = true
+        return result
+    },
+
     delayed_damage: (context, effect) => {
         const result = createBaseResult()
         if (!shouldProc(effect?.chance, context?.random?.())) return result
@@ -1293,9 +1301,13 @@ const handlers = {
         if (!shouldProc(effect?.chance, context?.random?.())) return result
 
         const hazard = String(effect?.params?.hazard || '').trim().toLowerCase() || 'generic_hazard'
+        const side = effect?.target === 'self' ? 'self' : 'opponent'
         result.applied = true
-        result.statePatches.self.setEntryHazard = hazard
-        appendEffectLog(result, 'Sân đấu được thiết lập bẫy khi đổi Pokemon.')
+        result.statePatches.field.setEntryHazard = {
+            side,
+            hazard,
+        }
+        appendEffectLog(result, 'Sân đấu được thiết lập bẫy khi doi Pokemon.')
         return result
     },
 
@@ -1304,9 +1316,11 @@ const handlers = {
         if (!shouldProc(effect?.chance, context?.random?.())) return result
 
         result.applied = true
-        result.statePatches.self.clearEntryHazards = true
-        result.statePatches.opponent.clearEntryHazards = true
-        appendEffectLog(result, 'Hiệu ứng bẫy khi đổi Pokemon bị xóa khỏi sân.')
+        const side = effect?.target === 'self'
+            ? 'self'
+            : (effect?.target === 'opponent' ? 'opponent' : 'both')
+        result.statePatches.field.clearEntryHazards = { side }
+        appendEffectLog(result, 'Hieu ung bay khi doi Pokemon bi xoa khoi san.')
         return result
     },
 

@@ -1,6 +1,8 @@
 import Move from '../models/Move.js'
-import { calcMaxHp, calcStatsForLevel } from '../utils/gameUtils.js'
+import { getFusionTotalStatBonusPercent } from '../utils/fusionUtils.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 import { normalizeVolatileState, resolveActionAvailabilityByStatus } from '../battle/battleState.js'
 import { applyAbilityHook } from '../battle/abilities/abilityRuntime.js'
 import { resolveAbilityBypassDecision } from '../battle/abilities/abilityBypassPolicy.js'
@@ -437,17 +439,25 @@ const extractStatusFromEffectSpecs = (effectSpecs = []) => {
     return ''
 }
 
-const buildPlayerBattleStats = (targetPokemon, fallbackMaxHp = 1) => {
+const buildPlayerBattleStats = (targetPokemon, fallbackMaxHp = 1, fusionBonusPercent = 0) => {
     const species = targetPokemon?.pokemonId || {}
     const level = Math.max(1, Number(targetPokemon?.level || 1))
     const formId = String(targetPokemon?.formId || species?.defaultFormId || 'normal').trim().toLowerCase() || 'normal'
     const resolvedForm = resolvePokemonFormEntry(species, formId)
     const baseStats = resolveEffectivePokemonBaseStats({ pokemonLike: species, formId, resolvedForm })
-    const scaledStats = calcStatsForLevel(baseStats, level, species?.rarity || 'd')
-    const maxHp = Math.max(1, Number(fallbackMaxHp) || calcMaxHp(baseStats?.hp, level, species?.rarity || 'd'))
+    const resolvedUserStats = resolveUserPokemonFinalStats({
+        baseStats,
+        level,
+        rarity: species?.rarity || 'd',
+        fusionBonusPercent,
+        ivs: targetPokemon?.ivs,
+        evs: targetPokemon?.evs,
+        isShiny: Boolean(targetPokemon?.isShiny),
+    })
+    const maxHp = Math.max(1, Number(fallbackMaxHp) || resolvedUserStats.maxHp)
     return {
         level,
-        stats: scaledStats,
+        stats: resolvedUserStats.finalStats,
         maxHp,
         name: String(targetPokemon?.nickname || species?.name || 'Pokemon').trim() || 'Pokemon',
         types: normalizeTrainerTypes(species?.types),
@@ -649,7 +659,12 @@ export const applyTrainerPenaltyTurn = async ({
         }
     }
 
-    const playerBattleStats = buildPlayerBattleStats(targetPokemon, normalizedPlayerMaxHp)
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+    const fusionBonusPercent = getFusionTotalStatBonusPercent(
+        targetPokemon?.fusionLevel,
+        fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+    )
+    const playerBattleStats = buildPlayerBattleStats(targetPokemon, normalizedPlayerMaxHp, fusionBonusPercent)
     const preActionLogs = (opponentStatusCheck.reason === 'wakeup' || opponentStatusCheck.reason === 'thaw' || opponentStatusCheck.reason === 'confuse_end')
         ? [opponentStatusCheck.log].filter(Boolean)
         : []

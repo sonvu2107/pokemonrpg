@@ -860,6 +860,7 @@ export default function PokemonInfoPage() {
                         <div className="text-xs font-bold mt-1 flex gap-2">
                             <span className="bg-slate-200 px-2 py-0.5 rounded text-slate-700">Lv. {pokemon.level}</span>
                             <span className="bg-rose-100 px-2 py-0.5 rounded text-rose-700">LC {combatPower.toLocaleString('vi-VN')}</span>
+                            <span className="bg-indigo-100 px-2 py-0.5 rounded text-indigo-700">+{Math.max(0, Number(pokemon.fusionLevel || 0))}</span>
                             <span className={`bg-slate-100 px-2 py-0.5 rounded uppercase ${rarityColor}`}>
                                 {base.rarity.toUpperCase()}
                             </span>
@@ -1217,6 +1218,7 @@ export default function PokemonInfoPage() {
             </div>
 
             <div className="mt-4 text-center text-xs font-bold text-blue-800 space-x-4">
+                {isOwnerViewing && <Link to={`/pokemon/${id}/fusion`} className="hover:underline hover:text-fuchsia-500">Khu Ghép Pokémon</Link>}
                 <Link to="/rankings/pokemon" className="hover:underline hover:text-red-500">Bảng Xếp Hạng Pokémon</Link>
                 <a href="#pokemon-history" className="hover:underline hover:text-red-500">
                     Lịch Sử Pokémon

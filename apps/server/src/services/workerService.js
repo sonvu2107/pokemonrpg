@@ -14,6 +14,8 @@ import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { buildMoveLookupByName, buildMovePpStateFromMoves, mergeKnownMovesWithFallback, normalizeMoveName } from '../utils/movePpUtils.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const normalizeFormId = (value = 'normal') => String(value || '').trim().toLowerCase() || 'normal'
 
@@ -78,14 +80,31 @@ export const getPartyDirect = async (userId) => {
         .map((entry) => mergeKnownMovesWithFallback(entry.moves))
         .flat()
     const moveLookupMap = await buildMoveLookupByName(allMoveNames)
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+    const totalStatBonusPercentByFusionLevel = fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
 
     const slots = Array(6).fill(null)
     party.forEach((entry) => {
         if (!entry) return
         const base = entry.pokemonId || {}
-        const stats = calcStatsForLevel(resolveFormStats(base, entry.formId), entry.level, base.rarity)
+        const resolvedUserStats = resolveUserPokemonFinalStats({
+            baseStats: resolveFormStats(base, entry.formId),
+            level: entry?.level,
+            rarity: base?.rarity,
+            fusionLevel: entry?.fusionLevel,
+            totalStatBonusPercentByFusionLevel,
+            ivs: entry?.ivs,
+            evs: entry?.evs,
+            isShiny: Boolean(entry?.isShiny),
+        })
         const plainEntry = entry.toObject()
-        plainEntry.stats = stats
+        plainEntry.stats = {
+            ...resolvedUserStats.finalStats,
+            maxHp: resolvedUserStats.maxHp,
+            currentHp: resolvedUserStats.maxHp,
+        }
+        plainEntry.combatPower = resolvedUserStats.combatPower
+        plainEntry.power = resolvedUserStats.combatPower
 
         const mergedMoveNames = mergeKnownMovesWithFallback(plainEntry.moves)
         const movePpState = buildMovePpStateFromMoves({

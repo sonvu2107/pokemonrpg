@@ -13,9 +13,11 @@ import { createActionGuard } from '../middleware/actionGuard.js'
 import { getIO } from '../socket/index.js'
 import { syncUserPokemonMovesAndPp, normalizeMoveName, buildMoveLookupByName } from '../utils/movePpUtils.js'
 import { expToNext } from '../utils/gameUtils.js'
+import { getFusionTotalStatBonusPercent } from '../utils/fusionUtils.js'
 import { resolveBattleBadgeBonusState, resolveOrHydrateBattleBadgeSnapshot } from '../utils/badgeUtils.js'
 import { resolveEffectivePokemonBaseStats, resolvePokemonFormEntry } from '../utils/pokemonFormStats.js'
 import { resolvePlayerBattleMaxHp } from '../utils/playerBattleStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { getMaxCatchAttempts } from '../utils/autoTrainerUtils.js'
 import { applyTrainerPenaltyTurn } from '../services/trainerPenaltyTurnService.js'
@@ -536,7 +538,7 @@ router.get('/', async (req, res) => {
     try {
         const userId = req.user.userId
         const [items, playerState] = await Promise.all([
-            UserInventory.find({ userId })
+            UserInventory.find({ userId, quantity: { $gt: 0 } })
                 .populate('itemId')
                 .lean(),
             PlayerState.findOne({ userId })
@@ -1266,10 +1268,18 @@ router.post('/use', useItemActionGuard, async (req, res) => {
                         formId: targetPokemon?.formId || targetPokemon?.pokemonId?.defaultFormId || 'normal',
                         resolvedForm,
                     })
+                    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+                    const fusionBonusPercent = getFusionTotalStatBonusPercent(
+                        targetPokemon?.fusionLevel,
+                        fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
+                    )
                     const calculatedMaxHp = resolvePlayerBattleMaxHp({
-                        baseHp: Number(resolvedBaseStats?.hp || 1),
+                        baseStats: resolvedBaseStats,
                         level: Math.max(1, Number(targetPokemon.level || 1)),
                         rarity: targetPokemon?.pokemonId?.rarity || 'd',
+                        ivs: targetPokemon?.ivs,
+                        evs: targetPokemon?.evs,
+                        fusionBonusPercent,
                         hpBonusPercent: trainerSessionHpBonusPercent,
                     })
                     const requestedMaxHp = Number.isFinite(itemUseContext.playerMaxHp)

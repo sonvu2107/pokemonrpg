@@ -33,6 +33,46 @@ const clampGuardMultiplier = (value = 1) => {
     return Math.max(0, Math.min(1, parsed))
 }
 
+const normalizeEntryHazardSideToken = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'self' || normalized === 'player') return 'player'
+    if (normalized === 'opponent' || normalized === 'target') return 'opponent'
+    if (normalized === 'both' || normalized === 'all' || normalized === 'field') return 'both'
+    return ''
+}
+
+const normalizeEntryHazardName = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return ''
+    if (normalized === 'chip_damage' || normalized === 'generic_hazard') return 'spikes'
+    if (normalized === 'spikes') return 'spikes'
+    if (normalized === 'stealth_rock') return 'stealth_rock'
+    if (normalized === 'sticky_web') return 'sticky_web'
+    return ''
+}
+
+const normalizeEntryHazardSideState = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const spikesLayers = clamp(Math.floor(Number(source.spikesLayers) || 0), 0, 3)
+    const stealthRock = Boolean(source.stealthRock)
+    const stickyWeb = Boolean(source.stickyWeb)
+    return {
+        ...(spikesLayers > 0 ? { spikesLayers } : {}),
+        ...(stealthRock ? { stealthRock: true } : {}),
+        ...(stickyWeb ? { stickyWeb: true } : {}),
+    }
+}
+
+const normalizeEntryHazardsState = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const player = normalizeEntryHazardSideState(source.player)
+    const opponent = normalizeEntryHazardSideState(source.opponent)
+    return {
+        ...(Object.keys(player).length > 0 ? { player } : {}),
+        ...(Object.keys(opponent).length > 0 ? { opponent } : {}),
+    }
+}
+
 const normalizeDamageGuardEntry = (value = null) => {
     if (!value || typeof value !== 'object') return null
     const turns = normalizeStatusTurns(value.turns)
@@ -189,11 +229,13 @@ export const normalizeFieldState = (value = {}) => {
     const weatherTurns = weather ? normalizeStatusTurns(source.weatherTurns) : 0
     const terrainTurns = terrain ? normalizeStatusTurns(source.terrainTurns) : 0
     const normalMovesBecomeElectricTurns = normalizeStatusTurns(source.normalMovesBecomeElectricTurns)
+    const entryHazards = normalizeEntryHazardsState(source.entryHazards)
 
     return {
         ...(weather && weatherTurns > 0 ? { weather, weatherTurns } : {}),
         ...(terrain && terrainTurns > 0 ? { terrain, terrainTurns } : {}),
         ...(normalMovesBecomeElectricTurns > 0 ? { normalMovesBecomeElectricTurns } : {}),
+        ...(Object.keys(entryHazards).length > 0 ? { entryHazards } : {}),
     }
 }
 
@@ -224,6 +266,52 @@ export const mergeFieldState = (base = {}, patch = {}) => {
 
     if (normalizeStatusTurns(next.normalMovesBecomeElectricTurns) > 0) {
         merged.normalMovesBecomeElectricTurns = Math.max(1, normalizeStatusTurns(next.normalMovesBecomeElectricTurns))
+    }
+
+    const mergedEntryHazards = {
+        player: normalizeEntryHazardSideState(current.entryHazards?.player),
+        opponent: normalizeEntryHazardSideState(current.entryHazards?.opponent),
+    }
+
+    const clearHazardValue = next.clearEntryHazards
+    if (clearHazardValue) {
+        const clearSpec = clearHazardValue && typeof clearHazardValue === 'object'
+            ? clearHazardValue
+            : { side: clearHazardValue }
+        const clearSide = normalizeEntryHazardSideToken(clearSpec?.side || clearSpec?.target || clearSpec)
+        if (clearSide === 'both') {
+            mergedEntryHazards.player = {}
+            mergedEntryHazards.opponent = {}
+        } else if (clearSide === 'player' || clearSide === 'opponent') {
+            mergedEntryHazards[clearSide] = {}
+        }
+    }
+
+    const setHazardValue = next.setEntryHazard
+    if (setHazardValue) {
+        const setSpec = setHazardValue && typeof setHazardValue === 'object'
+            ? setHazardValue
+            : { hazard: setHazardValue, side: 'opponent' }
+        const hazard = normalizeEntryHazardName(setSpec?.hazard)
+        const side = normalizeEntryHazardSideToken(setSpec?.side || setSpec?.target || 'opponent')
+        if (hazard && (side === 'player' || side === 'opponent')) {
+            const sideState = normalizeEntryHazardSideState(mergedEntryHazards[side])
+            if (hazard === 'spikes') {
+                sideState.spikesLayers = clamp((sideState.spikesLayers || 0) + 1, 0, 3)
+            } else if (hazard === 'stealth_rock') {
+                sideState.stealthRock = true
+            } else if (hazard === 'sticky_web') {
+                sideState.stickyWeb = true
+            }
+            mergedEntryHazards[side] = normalizeEntryHazardSideState(sideState)
+        }
+    }
+
+    const normalizedEntryHazards = normalizeEntryHazardsState(mergedEntryHazards)
+    if (Object.keys(normalizedEntryHazards).length > 0) {
+        merged.entryHazards = normalizedEntryHazards
+    } else {
+        delete merged.entryHazards
     }
 
     return normalizeFieldState(merged)
@@ -263,6 +351,54 @@ export const decrementFieldState = (value = {}) => {
     }
 
     return normalizeFieldState(next)
+}
+
+export const resolveEntryHazardSwitchInOutcome = ({ fieldState = {}, targetSide = 'opponent', targetTypes = [], targetMaxHp = 1, rockEffectivenessMultiplier = 1 } = {}) => {
+    const normalizedField = normalizeFieldState(fieldState)
+    const side = normalizeEntryHazardSideToken(targetSide)
+    const resolvedSide = side === 'player' || side === 'opponent' ? side : 'opponent'
+    const hazards = normalizeEntryHazardSideState(normalizedField.entryHazards?.[resolvedSide])
+    const maxHp = Math.max(1, Math.floor(Number(targetMaxHp) || 1))
+
+    let damage = 0
+    const logLines = []
+
+    const spikesLayers = clamp(Math.floor(Number(hazards.spikesLayers) || 0), 0, 3)
+    if (spikesLayers > 0) {
+        const spikesFraction = spikesLayers >= 3 ? 1 / 4 : (spikesLayers === 2 ? 1 / 6 : 1 / 8)
+        const spikesDamage = Math.max(1, Math.floor(maxHp * spikesFraction))
+        damage += spikesDamage
+        logLines.push(`Spikes gay ${spikesDamage} sat thuong khi vao san.`)
+    }
+
+    if (hazards.stealthRock) {
+        const effectiveness = Math.max(0, Number(rockEffectivenessMultiplier) || 0)
+        if (effectiveness > 0) {
+            const stealthRockFraction = clampFraction((1 / 8) * effectiveness, 0)
+            if (stealthRockFraction > 0) {
+                const stealthRockDamage = Math.max(1, Math.floor(maxHp * stealthRockFraction))
+                damage += stealthRockDamage
+                logLines.push(`Stealth Rock gay ${stealthRockDamage} sat thuong khi vao san.`)
+            }
+        }
+    }
+
+    const statStageDelta = hazards.stickyWeb
+        ? { spd: -1 }
+        : {}
+    if (hazards.stickyWeb) {
+        logLines.push('Sticky Web lam giam 1 bac Toc do khi vao san.')
+    }
+
+    return {
+        hasHazard: Object.keys(hazards).length > 0,
+        damage: Math.max(0, damage),
+        statStageDelta,
+        logLines,
+        hazards,
+        targetSide: resolvedSide,
+        targetTypes: Array.isArray(targetTypes) ? targetTypes : [],
+    }
 }
 
 export const mergeVolatileState = (base = {}, patch = {}) => {

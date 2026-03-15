@@ -52,6 +52,18 @@ const buildEffectSummary = (item = {}) => {
     if (effectType === 'transferPokemonLevel') {
         return 'Chuyen level Pokemon'
     }
+    if (effectType === 'fusionStone') {
+        return 'Da ghep Pokemon'
+    }
+    if (effectType === 'fusionLuckyStone') {
+        return `Da may man +${Number(item?.effectValue || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`
+    }
+    if (effectType === 'fusionProtectionStone') {
+        return 'Da bao ho ghep Pokemon'
+    }
+    if (effectType === 'superFusionStone') {
+        return 'Super Fusion'
+    }
     return '--'
 }
 

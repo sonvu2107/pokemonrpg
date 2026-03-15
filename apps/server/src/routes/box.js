@@ -6,7 +6,7 @@ import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 
 const router = express.Router()
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level formId isShiny location obtainedAt createdAt obtainedVipMapLevel'
+const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level fusionLevel formId isShiny location obtainedAt createdAt obtainedVipMapLevel'
 const BOX_POKEMON_SELECT = '_id name pokedexNumber rarity imageUrl sprites defaultFormId forms evolution'
 const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 const getPokemonRarityRank = (rarity = '') => {
@@ -54,7 +54,10 @@ router.get('/', async (req, res) => {
         let sortOptions = {}
         switch (sort) {
             case 'level':
-                sortOptions = { level: -1 }
+                sortOptions = { level: -1, fusionLevel: -1, createdAt: -1 }
+                break
+            case 'fusion':
+                sortOptions = { fusionLevel: -1, level: -1, createdAt: -1 }
                 break
             case 'id':
                 sortOptions = { pokemonId: 1 }

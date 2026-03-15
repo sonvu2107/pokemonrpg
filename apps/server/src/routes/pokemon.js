@@ -1,5 +1,6 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import Move from '../models/Move.js'
@@ -8,7 +9,6 @@ import UserMoveInventory from '../models/UserMoveInventory.js'
 import UserInventory from '../models/UserInventory.js'
 import Item from '../models/Item.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
-import { calcStatsForLevel, calcMaxHp } from '../utils/gameUtils.js'
 import {
     buildMoveLookupByName,
     buildMovePpStateFromMoves,
@@ -19,6 +19,17 @@ import { authMiddleware } from '../middleware/auth.js'
 import { withActiveUserPokemonFilter } from '../utils/userPokemonQuery.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
 import { getUserPokedexFormSet } from '../services/userPokedexService.js'
+import { getSessionOptions, runWithOptionalTransaction } from '../utils/mongoTransactions.js'
+import {
+    FUSION_ITEM_EFFECT_TYPES,
+    FUSION_ITEM_FIELD_BY_EFFECT_TYPE,
+    FUSION_ITEM_SLOT_META,
+    normalizeFusionLevel,
+    getFusionFailurePenalty,
+    computeFusionFinalSuccessRate,
+} from '../utils/fusionUtils.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const router = express.Router()
 
@@ -36,6 +47,15 @@ const normalizeOptionalFormId = (value = '') => {
 const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN')
 const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
+
+const createHttpError = (status, message) => {
+    const error = new Error(message)
+    error.status = status
+    return error
+}
+
+const normalizeObjectIdLike = (value) => String(value || '').trim()
+const getPokemonRarityIndex = (rarity = '') => POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
 const normalizePokemonRarity = (value = '') => String(value || '').trim().toLowerCase()
 const isEvolutionItemAllowedForRarity = (itemLike = {}, rarity = '') => {
     const rarityIndex = POKEMON_RARITY_ORDER.indexOf(normalizePokemonRarity(rarity))
@@ -543,46 +563,6 @@ const resolveFormStats = (pokemonLike, requestedFormId = null) => {
         pokemonLike,
         formId: requestedFormId,
     })
-}
-
-const toStatNumber = (value) => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
-const toSafePositiveInt = (value, fallback = 1) => {
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
-    return Math.max(1, Math.floor(parsed))
-}
-
-const calcPokemonCombatPower = ({ userPokemon, scaledStats, level }) => {
-    const ivs = userPokemon?.ivs && typeof userPokemon.ivs === 'object' ? userPokemon.ivs : {}
-    const evs = userPokemon?.evs && typeof userPokemon.evs === 'object' ? userPokemon.evs : {}
-
-    const resolveStat = (key, aliases = []) => {
-        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
-        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
-        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
-        return Math.max(1, Math.floor(base + iv + (ev / 8)))
-    }
-
-    const hp = resolveStat('hp')
-    const atk = resolveStat('atk')
-    const def = resolveStat('def')
-    const spatk = resolveStat('spatk')
-    const spdef = resolveStat('spdef', ['spldef'])
-    const spd = resolveStat('spd')
-
-    const rawPower = (hp * 1.2)
-        + (atk * 1.8)
-        + (def * 1.45)
-        + (spatk * 1.8)
-        + (spdef * 1.45)
-        + (spd * 1.35)
-        + (Math.max(1, Number(level || 1)) * 2)
-    const shinyBonus = userPokemon?.isShiny ? 1.03 : 1
-    return toSafePositiveInt(rawPower * shinyBonus, Math.max(1, Number(level || 1) * 10))
 }
 
 const getPokedexFallbackSprite = (pokedexNumber) => {
@@ -1177,7 +1157,7 @@ router.get('/:id', async (req, res) => {
         const ownerUserId = String(userPokemon?.userId?._id || userPokemon?.userId || '').trim()
         const canViewMoves = Boolean(viewerUserId && ownerUserId && viewerUserId === ownerUserId)
 
-        // Calculate actual stats based on level, rarity, (and potentially IVs/EVs in future)
+        // Calculate actual stats based on level, fusion, IVs and EVs
         const level = userPokemon.level || 1
         const rarity = basePokemon.rarity
         const mergedMoves = resolveKnownMoveList(userPokemon, 4)
@@ -1213,18 +1193,21 @@ router.get('/:id', async (req, res) => {
 
         const currentFormId = normalizeFormId(userPokemon.formId || basePokemon.defaultFormId || 'normal')
         const resolvedStatsSource = resolveFormStats(basePokemon, currentFormId)
-
-        // Base stats from species/form
-        const stats = calcStatsForLevel(resolvedStatsSource, level, rarity)
-        const maxHp = calcMaxHp(resolvedStatsSource?.hp, level, rarity)
-        const combatPower = calcPokemonCombatPower({
-            userPokemon,
-            scaledStats: {
-                ...stats,
-                hp: maxHp,
-            },
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const fusionLevel = Math.max(0, Number(userPokemon?.fusionLevel || 0))
+        const resolvedUserStats = resolveUserPokemonFinalStats({
+            baseStats: resolvedStatsSource,
             level,
+            rarity,
+            fusionLevel,
+            totalStatBonusPercentByFusionLevel: fusionRuntimeConfig.totalStatBonusPercentByFusionLevel,
+            ivs: userPokemon?.ivs,
+            evs: userPokemon?.evs,
+            isShiny: Boolean(userPokemon?.isShiny),
         })
+        const stats = resolvedUserStats.finalStats
+        const maxHp = resolvedUserStats.maxHp
+        const combatPower = resolvedUserStats.combatPower
 
         // Enhance response with calculated stats
         const responseOffTypeSkillAllowance = getOffTypeSkillAllowance(userPokemon, {
@@ -1921,6 +1904,414 @@ router.post('/:id/remove-skill', authMiddleware, async (req, res) => {
     }
 })
 
+// GET /api/pokemon/fusion/config (protected)
+router.get('/fusion/config', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+        const fusionItems = await Item.find({
+            effectType: { $in: FUSION_ITEM_EFFECT_TYPES },
+        })
+            .select('_id name nameLower type rarity imageUrl description effectType effectValue')
+            .sort({ effectType: 1, rarity: 1, nameLower: 1, _id: 1 })
+            .lean()
+
+        const fusionItemIds = fusionItems.map((entry) => entry?._id).filter(Boolean)
+        const inventoryRows = fusionItemIds.length > 0
+            ? await UserInventory.find({
+                userId,
+                itemId: { $in: fusionItemIds },
+            })
+                .select('itemId quantity')
+                .lean()
+            : []
+
+        const inventoryByItemId = new Map(
+            inventoryRows.map((entry) => [String(entry?.itemId || '').trim(), Math.max(0, Number(entry?.quantity || 0))])
+        )
+
+        const slotRows = FUSION_ITEM_EFFECT_TYPES.map((effectType) => {
+            const meta = FUSION_ITEM_SLOT_META[effectType] || {}
+            const items = fusionItems
+                .filter((entry) => String(entry?.effectType || '').trim() === effectType)
+                .map((entry) => ({
+                    _id: entry._id,
+                    name: entry.name,
+                    type: entry.type,
+                    rarity: entry.rarity,
+                    imageUrl: entry.imageUrl || '',
+                    description: entry.description || '',
+                    effectType,
+                    effectValue: Number(entry?.effectValue || 0),
+                    inventoryQuantity: Math.max(0, Number(inventoryByItemId.get(String(entry?._id || '').trim()) || 0)),
+                }))
+
+            return {
+                effectType,
+                label: meta.label || effectType,
+                required: meta.required === true,
+                description: meta.description || '',
+                requestField: FUSION_ITEM_FIELD_BY_EFFECT_TYPE[effectType],
+                items,
+            }
+        })
+
+        return res.json({
+            ok: true,
+            fusion: {
+                itemSlots: slotRows,
+                rulePreview: {
+                    strictMaterialUntilFusionLevel: fusionRuntimeConfig.strictMaterialUntilFusionLevel,
+                    superFusionStoneBonusPercent: fusionRuntimeConfig.superFusionStoneBonusPercent,
+                    finalSuccessRateCapPercent: fusionRuntimeConfig.finalSuccessRateCapPercent,
+                    baseSuccessRateByFusionLevel: fusionRuntimeConfig.baseSuccessRateByFusionLevel,
+                    totalStatBonusPercentByFusionLevel: fusionRuntimeConfig.totalStatBonusPercentByFusionLevel,
+                    milestones: fusionRuntimeConfig.milestones,
+                    failurePenaltyByLevelBracket: fusionRuntimeConfig.failurePenaltyByLevelBracket,
+                    failureLevelThresholdByBracket: fusionRuntimeConfig.failureLevelThresholdByBracket,
+                },
+            },
+        })
+    } catch (error) {
+        console.error('GET /api/pokemon/fusion/config error:', error)
+        return res.status(500).json({ ok: false, message: 'Không thể tải cấu hình ghép Pokemon' })
+    }
+})
+
+// POST /api/pokemon/:id/fusion (protected)
+router.post('/:id/fusion', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.userId
+        const targetPokemonId = normalizeObjectIdLike(req.params.id)
+        const materialPokemonId = normalizeObjectIdLike(req.body?.materialPokemonId)
+
+        if (!mongoose.Types.ObjectId.isValid(targetPokemonId)) {
+            return res.status(400).json({ ok: false, message: 'Pokemon đích không hợp lệ' })
+        }
+        if (!mongoose.Types.ObjectId.isValid(materialPokemonId)) {
+            return res.status(400).json({ ok: false, message: 'Pokemon nguyên liệu không hợp lệ' })
+        }
+        if (targetPokemonId === materialPokemonId) {
+            return res.status(400).json({ ok: false, message: 'Pokemon đích và Pokemon nguyên liệu phải khác nhau' })
+        }
+
+        const requestedFusionItems = FUSION_ITEM_EFFECT_TYPES.map((effectType) => ({
+            effectType,
+            requestField: FUSION_ITEM_FIELD_BY_EFFECT_TYPE[effectType],
+            required: FUSION_ITEM_SLOT_META[effectType]?.required === true,
+            itemId: normalizeObjectIdLike(req.body?.[FUSION_ITEM_FIELD_BY_EFFECT_TYPE[effectType]]),
+        }))
+
+        for (const requestedItem of requestedFusionItems) {
+            if (requestedItem.required && !requestedItem.itemId) {
+                const slotLabel = FUSION_ITEM_SLOT_META[requestedItem.effectType]?.label || requestedItem.effectType
+                return res.status(400).json({ ok: false, message: `Thiếu ${slotLabel}` })
+            }
+            if (requestedItem.itemId && !mongoose.Types.ObjectId.isValid(requestedItem.itemId)) {
+                return res.status(400).json({ ok: false, message: `${requestedItem.requestField} không hợp lệ` })
+            }
+        }
+
+        const selectedItemIds = requestedFusionItems
+            .map((entry) => entry.itemId)
+            .filter(Boolean)
+
+        const selectedItemIdSet = new Set(selectedItemIds)
+        if (selectedItemIdSet.size !== selectedItemIds.length) {
+            return res.status(400).json({ ok: false, message: 'Không thể dùng cùng một vật phẩm cho nhiều ô đá ghép' })
+        }
+
+        const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+
+        const fusionResult = await runWithOptionalTransaction(async (session) => {
+            const withSession = (query) => (session ? query.session(session) : query)
+            const standaloneRollbackState = {
+                consumedInventoryRows: [],
+                targetPokemonId: '',
+                targetFusionLevelBefore: 0,
+                targetFusionLevelUpdated: false,
+            }
+
+            const rollbackStandaloneFusionWrites = async () => {
+                if (session) return
+
+                if (standaloneRollbackState.targetFusionLevelUpdated && standaloneRollbackState.targetPokemonId) {
+                    await UserPokemon.updateOne(
+                        {
+                            _id: standaloneRollbackState.targetPokemonId,
+                            userId,
+                        },
+                        {
+                            $set: { fusionLevel: standaloneRollbackState.targetFusionLevelBefore },
+                        }
+                    )
+                }
+
+                for (const row of standaloneRollbackState.consumedInventoryRows) {
+                    if (!row?.itemId || Number(row?.quantity || 0) <= 0) continue
+                    await UserInventory.updateOne(
+                        {
+                            userId,
+                            itemId: row.itemId,
+                        },
+                        {
+                            $inc: { quantity: Number(row.quantity || 0) },
+                        },
+                        { upsert: true }
+                    )
+                }
+            }
+
+            const [targetPokemon, materialPokemon] = await Promise.all([
+                withSession(
+                    UserPokemon.findOne(withActiveUserPokemonFilter({
+                        _id: targetPokemonId,
+                        userId,
+                        location: 'box',
+                    }))
+                        .select('_id userId pokemonId nickname level formId fusionLevel location')
+                        .populate('pokemonId', 'name rarity')
+                ),
+                withSession(
+                    UserPokemon.findOne(withActiveUserPokemonFilter({
+                        _id: materialPokemonId,
+                        userId,
+                        location: 'box',
+                    }))
+                        .select('_id userId pokemonId nickname level formId fusionLevel location')
+                        .populate('pokemonId', 'name rarity')
+                ),
+            ])
+
+            if (!targetPokemon) {
+                throw createHttpError(404, 'Không tìm thấy Pokemon đích trong hộp đồ')
+            }
+            if (!materialPokemon) {
+                throw createHttpError(404, 'Không tìm thấy Pokemon nguyên liệu trong hộp đồ')
+            }
+
+            const targetSpecies = targetPokemon?.pokemonId
+            const materialSpecies = materialPokemon?.pokemonId
+            if (!targetSpecies || !materialSpecies) {
+                throw createHttpError(400, 'Thiếu dữ liệu loài Pokemon để ghép')
+            }
+
+            const targetFusionLevel = normalizeFusionLevel(targetPokemon?.fusionLevel)
+            const targetSpeciesId = normalizeObjectIdLike(targetSpecies?._id)
+            const materialSpeciesId = normalizeObjectIdLike(materialSpecies?._id)
+            const targetFormId = normalizeFormId(targetPokemon?.formId || 'normal')
+            const materialFormId = normalizeFormId(materialPokemon?.formId || 'normal')
+
+            if (targetFusionLevel < fusionRuntimeConfig.strictMaterialUntilFusionLevel) {
+                if (targetSpeciesId !== materialSpeciesId) {
+                    throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng loài với Pokemon đích')
+                }
+                if (targetFormId !== materialFormId) {
+                    throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng dạng với Pokemon đích')
+                }
+                if (Number(targetPokemon?.level || 1) !== Number(materialPokemon?.level || 1)) {
+                    throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng cấp với Pokemon đích')
+                }
+            } else {
+                const targetRarityIndex = getPokemonRarityIndex(targetSpecies?.rarity)
+                const materialRarityIndex = getPokemonRarityIndex(materialSpecies?.rarity)
+                if (targetRarityIndex < 0 || materialRarityIndex < 0 || materialRarityIndex < targetRarityIndex) {
+                    throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu có độ hiếm bằng hoặc cao hơn Pokemon đích')
+                }
+            }
+
+            const requestedItemIds = selectedItemIds
+            const itemDocs = requestedItemIds.length > 0
+                ? await withSession(
+                    Item.find({ _id: { $in: requestedItemIds } })
+                        .select('_id name effectType effectValue imageUrl')
+                        .lean()
+                )
+                : []
+
+            const itemById = new Map(
+                itemDocs.map((entry) => [normalizeObjectIdLike(entry?._id), entry])
+            )
+
+            const consumedItems = []
+            for (const requestedItem of requestedFusionItems) {
+                if (!requestedItem.itemId) continue
+                const itemDoc = itemById.get(requestedItem.itemId)
+                if (!itemDoc) {
+                    throw createHttpError(400, `${requestedItem.requestField} không tồn tại`)
+                }
+
+                const actualEffectType = String(itemDoc?.effectType || '').trim()
+                if (actualEffectType !== requestedItem.effectType) {
+                    const expectedLabel = FUSION_ITEM_SLOT_META[requestedItem.effectType]?.label || requestedItem.effectType
+                    throw createHttpError(400, `${itemDoc.name || 'Vật phẩm'} không phải ${expectedLabel}`)
+                }
+
+                const updatedInventory = await UserInventory.findOneAndUpdate(
+                    {
+                        userId,
+                        itemId: itemDoc._id,
+                        quantity: { $gte: 1 },
+                    },
+                    { $inc: { quantity: -1 } },
+                    getSessionOptions(session, { new: true })
+                )
+
+                if (!updatedInventory) {
+                    throw createHttpError(400, `Bạn không đủ ${itemDoc.name || 'vật phẩm ghép'} trong túi đồ`)
+                }
+
+                const remainingQuantity = Math.max(0, Number(updatedInventory?.quantity || 0))
+                if (remainingQuantity <= 0) {
+                    await UserInventory.deleteOne(
+                        { _id: updatedInventory._id, quantity: { $lte: 0 } },
+                        getSessionOptions(session)
+                    )
+                }
+                standaloneRollbackState.consumedInventoryRows.push({ itemId: itemDoc._id, quantity: 1 })
+
+                consumedItems.push({
+                    _id: itemDoc._id,
+                    name: itemDoc.name,
+                    imageUrl: itemDoc.imageUrl || '',
+                    effectType: actualEffectType,
+                    effectValue: Number(itemDoc?.effectValue || 0),
+                    consumedQuantity: 1,
+                    remainingQuantity,
+                })
+            }
+
+            const luckyItem = consumedItems.find((entry) => entry.effectType === 'fusionLuckyStone') || null
+            const protectionItem = consumedItems.find((entry) => entry.effectType === 'fusionProtectionStone') || null
+            const superFusionItem = consumedItems.find((entry) => entry.effectType === 'superFusionStone') || null
+
+            const luckyBonusPercent = luckyItem
+                ? Math.min(100, Math.max(0, Number(luckyItem.effectValue || 0)))
+                : 0
+            const successRate = computeFusionFinalSuccessRate({
+                fusionLevel: targetFusionLevel,
+                luckyBonusPercent,
+                hasSuperFusionStone: Boolean(superFusionItem),
+                baseSuccessRateByFusionLevel: fusionRuntimeConfig.baseSuccessRateByFusionLevel,
+                superFusionStoneBonusPercent: fusionRuntimeConfig.superFusionStoneBonusPercent,
+                finalSuccessRateCapPercent: fusionRuntimeConfig.finalSuccessRateCapPercent,
+            })
+            const rollPercent = Math.random() * 100
+            const isSuccess = rollPercent < successRate.finalSuccessRate
+
+            const fusionLevelBefore = targetFusionLevel
+            let fusionLevelAfter = fusionLevelBefore
+            let failurePenalty = 0
+            standaloneRollbackState.targetPokemonId = String(targetPokemon?._id || '')
+            standaloneRollbackState.targetFusionLevelBefore = fusionLevelBefore
+
+            try {
+                if (isSuccess) {
+                    fusionLevelAfter = fusionLevelBefore + 1
+                } else if (!protectionItem) {
+                    failurePenalty = getFusionFailurePenalty(
+                        fusionLevelBefore,
+                        fusionRuntimeConfig.failurePenaltyByLevelBracket,
+                        fusionRuntimeConfig.failureLevelThresholdByBracket
+                    )
+                    fusionLevelAfter = Math.max(0, fusionLevelBefore - failurePenalty)
+                }
+
+                targetPokemon.fusionLevel = fusionLevelAfter
+                await targetPokemon.save(getSessionOptions(session))
+                standaloneRollbackState.targetFusionLevelUpdated = true
+
+                const materialDeleteResult = await UserPokemon.deleteOne(
+                    { _id: materialPokemon._id, userId, location: 'box' },
+                    getSessionOptions(session)
+                )
+
+                if (Number(materialDeleteResult?.deletedCount || 0) !== 1) {
+                    throw createHttpError(409, 'Pokémon hiến tế không còn trong kho để ghép')
+                }
+            } catch (writeError) {
+                if (!session) {
+                    try {
+                        await rollbackStandaloneFusionWrites()
+                    } catch (rollbackError) {
+                        console.error('Fusion standalone rollback failed:', rollbackError)
+                    }
+                }
+                throw writeError
+            }
+
+            const targetDisplayName = String(targetPokemon?.nickname || targetSpecies?.name || 'Pokemon').trim() || 'Pokemon'
+            const materialDisplayName = String(materialPokemon?.nickname || materialSpecies?.name || 'Pokemon').trim() || 'Pokemon'
+
+            const message = isSuccess
+                ? `${targetDisplayName} ghép thành công và tăng lên mốc +${fusionLevelAfter}.`
+                : (protectionItem
+                    ? `${targetDisplayName} ghép thất bại, nhưng đã được bảo hộ nên giữ nguyên mốc +${fusionLevelAfter}.`
+                    : `${targetDisplayName} ghép thất bại và bị tụt ${failurePenalty} mốc về +${fusionLevelAfter}.`)
+
+            return {
+                message,
+                fusion: {
+                    success: isSuccess,
+                    baseSuccessRate: successRate.baseSuccessRate,
+                    luckyBonusPercent: successRate.luckyBonusPercent,
+                    superBonusPercent: successRate.superBonusPercent,
+                    finalSuccessRate: successRate.finalSuccessRate,
+                    rollPercent: Number(rollPercent.toFixed(4)),
+                    failurePenalty,
+                    consumedMaterialPokemonId: materialPokemon._id,
+                    consumedMaterialPokemonName: materialDisplayName,
+                    protectionApplied: Boolean(protectionItem),
+                    target: {
+                        _id: targetPokemon._id,
+                        name: targetDisplayName,
+                        speciesName: targetSpecies?.name || '',
+                        formId: targetFormId,
+                        level: Number(targetPokemon?.level || 1),
+                        fusionLevelBefore,
+                        fusionLevelAfter,
+                    },
+                    consumedItems,
+                },
+            }
+        })
+
+        return res.json({
+            ok: true,
+            message: fusionResult.message,
+            fusion: fusionResult.fusion,
+        })
+    } catch (error) {
+        const status = Number(error?.status || 0)
+        if (status >= 400 && status < 500) {
+            return res.status(status).json({ ok: false, message: error.message || 'Ghép Pokemon thất bại' })
+        }
+
+        const fallbackMessage = String(error?.message || '').trim()
+        const userFacingValidationPatterns = [
+            'không hợp lệ',
+            'không tìm thấy',
+            'thiếu',
+            'không đủ',
+            'yêu cầu',
+            'không phải',
+            'thất bại',
+        ]
+        if (fallbackMessage) {
+            const normalizedMessage = fallbackMessage.toLowerCase()
+            if (userFacingValidationPatterns.some((pattern) => normalizedMessage.includes(pattern))) {
+                return res.status(400).json({ ok: false, message: fallbackMessage })
+            }
+        }
+
+        console.error('POST /api/pokemon/:id/fusion error:', error)
+        const debugMessage = process.env.NODE_ENV !== 'production' && fallbackMessage
+            ? `Lỗi máy chủ: ${fallbackMessage}`
+            : 'Lỗi máy chủ'
+        return res.status(500).json({ ok: false, message: debugMessage })
+    }
+})
+
 // POST /api/pokemon/:id/evolve (protected)
 router.post('/:id/evolve', authMiddleware, async (req, res) => {
     try {
@@ -2027,8 +2418,24 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
                 : (String(targetSpecies.defaultFormId || '').trim().toLowerCase() || 'normal'))
 
         const fromName = currentSpecies.name
+        const fusionLevelBeforeEvolution = Math.max(0, Number.parseInt(userPokemon.fusionLevel, 10) || 0)
+        const confirmFusionReset = toBoolean(req.body?.confirmFusionReset)
+        if (fusionLevelBeforeEvolution > 0 && !confirmFusionReset) {
+            return res.status(400).json({
+                ok: false,
+                code: 'FUSION_RESET_CONFIRM_REQUIRED',
+                message: `Pokemon này đang có mốc ghép +${fusionLevelBeforeEvolution}. Vui lòng xác nhận reset mốc ghép trước khi tiến hóa.`,
+                fusionReset: {
+                    required: true,
+                    before: fusionLevelBeforeEvolution,
+                    after: 0,
+                },
+            })
+        }
+
         userPokemon.pokemonId = targetSpecies._id
         userPokemon.formId = nextFormId
+        userPokemon.fusionLevel = 0
         await syncUserPokemonMovesAndPp(userPokemon)
         await userPokemon.save()
         await userPokemon.populate('pokemonId')
@@ -2036,14 +2443,19 @@ router.post('/:id/evolve', authMiddleware, async (req, res) => {
         res.json({
             ok: true,
             message: consumedItem
-                ? `${fromName} đã tiến hóa thành ${targetSpecies.name}! Đã dùng ${consumedItem.quantity} ${consumedItem.name}.`
-                : `${fromName} đã tiến hóa thành ${targetSpecies.name}!`,
+                ? `${fromName} đã tiến hóa thành ${targetSpecies.name}! Đã dùng ${consumedItem.quantity} ${consumedItem.name}.${fusionLevelBeforeEvolution > 0 ? ` Mốc ghép +${fusionLevelBeforeEvolution} đã được đặt lại về +0.` : ''}`
+                : `${fromName} đã tiến hóa thành ${targetSpecies.name}!${fusionLevelBeforeEvolution > 0 ? ` Mốc ghép +${fusionLevelBeforeEvolution} đã được đặt lại về +0.` : ''}`,
             evolution: {
                 from: fromName,
                 to: targetSpecies.name,
                 level: userPokemon.level,
                 targetFormId: nextFormId,
                 consumedItem,
+                fusionReset: {
+                    required: fusionLevelBeforeEvolution > 0,
+                    before: fusionLevelBeforeEvolution,
+                    after: 0,
+                },
             },
             pokemon: userPokemon,
         })

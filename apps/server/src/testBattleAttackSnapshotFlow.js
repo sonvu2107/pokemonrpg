@@ -18,11 +18,13 @@ import {
 import {
     createBadgeSnapshot,
     createPartyPokemon,
+    createTrainerOpponent,
     createTrainerSession,
     createTrainerDoc,
 } from './test/helpers/battleSessionFactory.js'
 import {
     assertNoLiveBadgeRead,
+    assertForcedSwitchHazardSequence,
     assertOkResponse,
     assertPlayerMaxHpFromSnapshot,
     assertSnapshotUnchanged,
@@ -39,6 +41,20 @@ const ACTIVE_POKEMON_ID = '64b000000000000000000111'
 const BADGE_ID = '64b000000000000000000222'
 
 const attackHandler = getRouteHandler(gameRouter, '/battle/attack', { handlerIndex: 'last' })
+
+const buildOpponentEntryHazardsFieldState = ({
+    spikesLayers = 0,
+    stealthRock = false,
+    stickyWeb = false,
+} = {}) => ({
+    entryHazards: {
+        opponent: {
+            spikesLayers,
+            stealthRock,
+            stickyWeb,
+        },
+    },
+})
 
 const createThenableRowsQuery = (rows = []) => ({
     select() { return this },
@@ -272,9 +288,267 @@ const testAttackKeepsSnapshotAfterProfileBadgeChange = async () => {
     })
 }
 
+const testAttackAppliesEntryHazardsOnForcedOpponentSwitch = async () => {
+    const userId = USER_IDS.snapshotOnly
+    const partyPokemon = createPartyPokemon({
+        _id: ACTIVE_POKEMON_ID,
+        name: 'Hazard Tester',
+        level: 40,
+        baseHp: 96,
+        moves: ['Tackle'],
+    })
+
+    const trainerSession = createTrainerSession({
+        trainerId: TRAINER_ID,
+        badgeSnapshot: createBadgeSnapshot({ partyHpPercent: 10 }),
+        playerPokemonId: ACTIVE_POKEMON_ID,
+        playerCurrentHp: 120,
+        playerMaxHp: 120,
+        team: [
+            createTrainerOpponent({
+                slot: 0,
+                name: 'Lead Opponent',
+                currentHp: 1,
+                maxHp: 120,
+                types: ['normal'],
+            }),
+            createTrainerOpponent({
+                slot: 1,
+                name: 'Hazard Target',
+                currentHp: 160,
+                maxHp: 160,
+                types: ['fire'],
+            }),
+        ],
+        currentIndex: 0,
+        fieldState: buildOpponentEntryHazardsFieldState({
+            spikesLayers: 2,
+            stealthRock: true,
+            stickyWeb: true,
+        }),
+    })
+
+    const { res } = await runAttackRequest({
+        userId,
+        trainerSession,
+        partyRows: [partyPokemon],
+        liveBadgeBonusPercent: 10,
+        throwOnLiveBadgeRead: true,
+    })
+
+    assertOkResponse(res)
+    assertForcedSwitchHazardSequence({
+        turnPhases: res.payload?.battle?.turnPhases,
+        expectedLogSnippets: ['Hazard Target vào sân thay thế.', 'Hazard Target: Stealth Rock'],
+        phaseMessage: 'Expected forced_switch phase when lead opponent faints',
+    })
+}
+
+const testAttackChainsForcedSwitchWhenSpikesKOsIncomingOpponent = async () => {
+    const userId = USER_IDS.snapshotOnly
+    const partyPokemon = createPartyPokemon({
+        _id: ACTIVE_POKEMON_ID,
+        name: 'Hazard Chain Tester',
+        level: 40,
+        baseHp: 96,
+        moves: ['Tackle'],
+    })
+
+    const trainerSession = createTrainerSession({
+        trainerId: TRAINER_ID,
+        badgeSnapshot: createBadgeSnapshot({ partyHpPercent: 10 }),
+        playerPokemonId: ACTIVE_POKEMON_ID,
+        playerCurrentHp: 120,
+        playerMaxHp: 120,
+        team: [
+            createTrainerOpponent({
+                slot: 0,
+                name: 'Lead Opponent',
+                currentHp: 1,
+                maxHp: 120,
+                types: ['normal'],
+            }),
+            createTrainerOpponent({
+                slot: 1,
+                name: 'Spike Victim',
+                currentHp: 25,
+                maxHp: 120,
+                types: ['normal'],
+            }),
+            createTrainerOpponent({
+                slot: 2,
+                name: 'Final Opponent',
+                currentHp: 120,
+                maxHp: 120,
+                types: ['normal'],
+            }),
+        ],
+        currentIndex: 0,
+        fieldState: buildOpponentEntryHazardsFieldState({
+            spikesLayers: 3,
+        }),
+    })
+
+    const { res } = await runAttackRequest({
+        userId,
+        trainerSession,
+        partyRows: [partyPokemon],
+        liveBadgeBonusPercent: 10,
+        throwOnLiveBadgeRead: true,
+    })
+
+    assertOkResponse(res)
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.currentIndex || -1), 2, 'Expected chain switch to third opponent')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[1]?.currentHp || 0), 0, 'Expected second opponent to faint on entry hazards')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[2]?.currentHp || 0), 90, 'Expected third opponent HP to be reduced by Spikes')
+
+    const forcedSwitchPhase = assertForcedSwitchHazardSequence({
+        turnPhases: res.payload?.battle?.turnPhases,
+        expectedEntryHazardEventCount: 2,
+        expectedLogSnippets: [
+            'Final Opponent vào sân thay thế.',
+            'Spike Victim: Spikes gay',
+            'Final Opponent: Spikes gay',
+        ],
+        phaseMessage: 'Expected forced_switch phase for opponent chain switch',
+    })
+
+    const forcedSwitchEvent = (forcedSwitchPhase.events || []).find((event) => event?.kind === 'forced_switch')
+    assert.strictEqual(Number(forcedSwitchEvent?.nextIndex || -1), 2)
+}
+
+const testAttackStickyWebOnlyAppliesSpeedDropWithoutChainSwitch = async () => {
+    const userId = USER_IDS.snapshotOnly
+    const partyPokemon = createPartyPokemon({
+        _id: ACTIVE_POKEMON_ID,
+        name: 'Sticky Web Tester',
+        level: 36,
+        baseHp: 90,
+        moves: ['Tackle'],
+    })
+
+    const trainerSession = createTrainerSession({
+        trainerId: TRAINER_ID,
+        badgeSnapshot: createBadgeSnapshot({ partyHpPercent: 5 }),
+        playerPokemonId: ACTIVE_POKEMON_ID,
+        playerCurrentHp: 120,
+        playerMaxHp: 120,
+        team: [
+            createTrainerOpponent({
+                slot: 0,
+                name: 'Lead Opponent',
+                currentHp: 1,
+                maxHp: 100,
+                types: ['normal'],
+            }),
+            createTrainerOpponent({
+                slot: 1,
+                name: 'Web Target',
+                currentHp: 140,
+                maxHp: 140,
+                types: ['electric'],
+                statStages: {},
+            }),
+        ],
+        currentIndex: 0,
+        fieldState: buildOpponentEntryHazardsFieldState({
+            stickyWeb: true,
+        }),
+    })
+
+    const { res } = await runAttackRequest({
+        userId,
+        trainerSession,
+        partyRows: [partyPokemon],
+        liveBadgeBonusPercent: 5,
+        throwOnLiveBadgeRead: true,
+    })
+
+    assertOkResponse(res)
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.currentIndex || -1), 1, 'Expected switch to second opponent without chain')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[1]?.currentHp || 0), 140, 'Expected Sticky Web to deal no HP damage')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[1]?.statStages?.spd || 0), -1, 'Expected Sticky Web to apply speed drop')
+
+    assertForcedSwitchHazardSequence({
+        turnPhases: res.payload?.battle?.turnPhases,
+        expectedEntryHazardEventCount: 1,
+        expectedLogSnippets: ['Web Target vào sân thay thế.', 'Web Target: Sticky Web'],
+        phaseMessage: 'Expected forced_switch phase for incoming opponent',
+    })
+}
+
+const testAttackStealthRockAndStickyWebApplyInOrderOnSameSwitchIn = async () => {
+    const userId = USER_IDS.snapshotOnly
+    const partyPokemon = createPartyPokemon({
+        _id: ACTIVE_POKEMON_ID,
+        name: 'Mixed Hazard Tester',
+        level: 38,
+        baseHp: 94,
+        moves: ['Tackle'],
+    })
+
+    const trainerSession = createTrainerSession({
+        trainerId: TRAINER_ID,
+        badgeSnapshot: createBadgeSnapshot({ partyHpPercent: 8 }),
+        playerPokemonId: ACTIVE_POKEMON_ID,
+        playerCurrentHp: 120,
+        playerMaxHp: 120,
+        team: [
+            createTrainerOpponent({
+                slot: 0,
+                name: 'Lead Opponent',
+                currentHp: 1,
+                maxHp: 100,
+                types: ['normal'],
+            }),
+            createTrainerOpponent({
+                slot: 1,
+                name: 'Rock Web Target',
+                currentHp: 160,
+                maxHp: 160,
+                types: ['fire'],
+                statStages: {},
+            }),
+        ],
+        currentIndex: 0,
+        fieldState: buildOpponentEntryHazardsFieldState({
+            stealthRock: true,
+            stickyWeb: true,
+        }),
+    })
+
+    const { res } = await runAttackRequest({
+        userId,
+        trainerSession,
+        partyRows: [partyPokemon],
+        liveBadgeBonusPercent: 8,
+        throwOnLiveBadgeRead: true,
+    })
+
+    assertOkResponse(res)
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.currentIndex || -1), 1, 'Expected switch to second opponent without chain')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[1]?.currentHp || 0), 120, 'Expected Stealth Rock to deal 40 HP to Fire-type target')
+    assert.strictEqual(Number(res.payload?.battle?.opponent?.team?.[1]?.statStages?.spd || 0), -1, 'Expected Sticky Web to apply speed drop alongside Stealth Rock')
+
+    assertForcedSwitchHazardSequence({
+        turnPhases: res.payload?.battle?.turnPhases,
+        expectedEntryHazardEventCount: 2,
+        expectedLogSnippets: [
+            'Rock Web Target vào sân thay thế.',
+            'Rock Web Target: Stealth Rock gay 40 sat thuong khi vao san.',
+            'Rock Web Target: Sticky Web lam giam 1 bac Toc do khi vao san.',
+        ],
+        phaseMessage: 'Expected forced_switch phase for multi-effect hazard switch-in',
+    })
+}
+
 const main = async () => {
     await testAttackUsesSessionSnapshotWithoutLiveBadgeRead()
     await testAttackKeepsSnapshotAfterProfileBadgeChange()
+    await testAttackAppliesEntryHazardsOnForcedOpponentSwitch()
+    await testAttackChainsForcedSwitchWhenSpikesKOsIncomingOpponent()
+    await testAttackStickyWebOnlyAppliesSpeedDropWithoutChainSwitch()
+    await testAttackStealthRockAndStickyWebApplyInOrderOnSameSwitchIn()
     console.log('Battle attack snapshot flow tests passed')
 }
 

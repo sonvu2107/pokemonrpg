@@ -51,6 +51,7 @@ const toNumberOrNull = (value) => {
 const FALLBACK_EFFECT_TRIGGER_OPTIONS = [
     'on_hit',
     'after_damage',
+    'end_turn',
     'on_calculate_damage',
     'on_select_move',
     'before_accuracy_check',
@@ -65,6 +66,7 @@ const EFFECT_PICKER_PAGE_SIZE = 12
 const EFFECT_TRIGGER_LABELS = {
     on_hit: 'Kích hoạt khi chiêu trúng mục tiêu',
     after_damage: 'Kích hoạt sau khi gây sát thương',
+    end_turn: 'Kích hoạt vào cuối lượt',
     on_calculate_damage: 'Kích hoạt ở bước tính sát thương',
     on_select_move: 'Kích hoạt khi chọn chiêu',
     before_accuracy_check: 'Kích hoạt trước khi kiểm tra độ chính xác',

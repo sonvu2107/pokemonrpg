@@ -21,6 +21,22 @@ export const ITEM_RARITIES = [
 
 export const POKEMON_RARITY_TIERS = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
 
+export const ITEM_EFFECT_TYPES = [
+    'none',
+    'catchMultiplier',
+    'heal',
+    'healAmount',
+    'grantVipTier',
+    'allowOffTypeSkills',
+    'grantPokemonExp',
+    'grantPokemonLevel',
+    'transferPokemonLevel',
+    'fusionStone',
+    'fusionLuckyStone',
+    'fusionProtectionStone',
+    'superFusionStone',
+]
+
 const itemSchema = new Schema(
     {
         name: {
@@ -111,7 +127,7 @@ const itemSchema = new Schema(
         },
         effectType: {
             type: String,
-            enum: ['none', 'catchMultiplier', 'heal', 'healAmount', 'grantVipTier', 'allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'],
+            enum: ITEM_EFFECT_TYPES,
             default: 'none',
         },
         effectValue: {

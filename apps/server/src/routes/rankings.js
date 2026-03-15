@@ -8,8 +8,9 @@ import BattleTrainer from '../models/BattleTrainer.js'
 import Pokemon from '../models/Pokemon.js'
 import VipPrivilegeTier from '../models/VipPrivilegeTier.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { calcStatsForLevel } from '../utils/gameUtils.js'
 import { resolveEffectivePokemonBaseStats } from '../utils/pokemonFormStats.js'
+import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
+import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const router = express.Router()
 const DEFAULT_AVATAR_URL = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'
@@ -570,48 +571,27 @@ const resolvePokemonBaseStats = (entry) => {
     })
 }
 
-const toStatNumber = (value) => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
 const toSafePositiveInt = (value, fallback = 1) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed) || parsed <= 0) return Math.max(1, Number(fallback) || 1)
     return Math.max(1, Math.floor(parsed))
 }
 
-const calcPokemonCombatPower = (entry) => {
+const calcPokemonCombatPower = (entry, totalStatBonusPercentByFusionLevel = []) => {
     const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
     const pokemon = entry?.pokemon || {}
     const baseStats = resolvePokemonBaseStats(entry)
-    const scaledStats = calcStatsForLevel(baseStats, level, pokemon.rarity || 'd')
-    const ivs = entry?.ivs && typeof entry.ivs === 'object' ? entry.ivs : {}
-    const evs = entry?.evs && typeof entry.evs === 'object' ? entry.evs : {}
-
-    const resolveStat = (key, aliases = []) => {
-        const iv = toStatNumber(ivs[key] ?? aliases.map((alias) => ivs[alias]).find((value) => value != null))
-        const ev = toStatNumber(evs[key] ?? aliases.map((alias) => evs[alias]).find((value) => value != null))
-        const base = toStatNumber(scaledStats[key] ?? aliases.map((alias) => scaledStats[alias]).find((value) => value != null))
-        return Math.max(1, Math.floor(base + iv + (ev / 8)))
-    }
-
-    const hp = resolveStat('hp')
-    const atk = resolveStat('atk')
-    const def = resolveStat('def')
-    const spatk = resolveStat('spatk')
-    const spdef = resolveStat('spdef', ['spldef'])
-    const spd = resolveStat('spd')
-
-    const rawPower = (hp * 1.2)
-        + (atk * 1.8)
-        + (def * 1.45)
-        + (spatk * 1.8)
-        + (spdef * 1.45)
-        + (spd * 1.35)
-        + (level * 2)
-    const shinyBonus = entry?.isShiny ? 1.03 : 1
-    return toSafePositiveInt(rawPower * shinyBonus, 1)
+    const resolvedUserStats = resolveUserPokemonFinalStats({
+        baseStats,
+        level,
+        rarity: pokemon?.rarity || 'd',
+        fusionLevel: entry?.fusionLevel,
+        totalStatBonusPercentByFusionLevel,
+        ivs: entry?.ivs,
+        evs: entry?.evs,
+        isShiny: Boolean(entry?.isShiny),
+    })
+    return toSafePositiveInt(resolvedUserStats.combatPower, Math.max(1, level * 10))
 }
 
 const countDexEntriesForSpecies = (species = {}) => {
@@ -670,13 +650,15 @@ const getPokemonPowerMetaLookup = async (options = {}) => {
 
 const buildPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
     const pokemonLookup = await getPokemonPowerMetaLookup(options)
+    const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+    const totalStatBonusPercentByFusionLevel = fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
     const baseMatch = {}
     if (Array.isArray(adminUserIds) && adminUserIds.length > 0) {
         baseMatch.userId = { $nin: adminUserIds }
     }
 
     const rows = await UserPokemon.find(baseMatch)
-        .select('_id userId pokemonId level experience nickname isShiny formId ivs evs')
+        .select('_id userId pokemonId level experience nickname isShiny formId ivs evs fusionLevel')
         .lean()
 
     const normalizedRows = []
@@ -689,7 +671,10 @@ const buildPowerRankingSnapshot = async (adminUserIds = [], options = {}) => {
 
         const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
         const experience = Math.max(0, Number(entry?.experience || 0))
-        const combatPower = toSafePositiveInt(calcPokemonCombatPower({ ...entry, pokemon }), Math.max(1, level * 10))
+        const combatPower = toSafePositiveInt(
+            calcPokemonCombatPower({ ...entry, pokemon }, totalStatBonusPercentByFusionLevel),
+            Math.max(1, level * 10)
+        )
 
         normalizedRows.push({
             sortId: String(entry?._id || '').trim(),
@@ -942,11 +927,13 @@ router.get('/overall', async (req, res, next) => {
             }
 
             const activeOwnerIds = Array.from(weeklyActiveUserIdSet)
+            const fusionRuntimeConfig = await loadFusionRuntimeConfig()
+            const totalStatBonusPercentByFusionLevel = fusionRuntimeConfig.totalStatBonusPercentByFusionLevel
             const partyRows = await UserPokemon.find({
                 userId: { $in: activeOwnerIds },
                 location: 'party',
             })
-                .select('userId pokemonId level formId isShiny ivs evs')
+                .select('userId pokemonId level formId isShiny ivs evs fusionLevel')
                 .lean()
 
             const pokemonLookup = await getPokemonPowerMetaLookup()
@@ -964,7 +951,7 @@ router.get('/overall', async (req, res, next) => {
 
                 const level = Math.max(1, Number.parseInt(entry?.level, 10) || 1)
                 const combatPower = toSafePositiveInt(
-                    calcPokemonCombatPower({ ...entry, pokemon }),
+                    calcPokemonCombatPower({ ...entry, pokemon }, totalStatBonusPercentByFusionLevel),
                     Math.max(1, level * 10)
                 )
 

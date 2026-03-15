@@ -8,8 +8,11 @@ import {
 import { calcBattleDamage, estimateBattleDamage } from '../battle/battleCalc.js'
 import {
     applyStatusPatch,
+    mergeFieldState,
+    normalizeFieldState,
     normalizeBattleStatus,
     normalizeStatusTurns,
+    resolveEntryHazardSwitchInOutcome,
     resolveActionAvailabilityByStatus,
 } from '../battle/battleState.js'
 import {
@@ -113,6 +116,38 @@ const runBattleStateTests = () => {
         random: () => 0.9,
     })
     assert(frozenBlocked.canAct === false)
+
+    const hazardField = mergeFieldState({}, {
+        setEntryHazard: { side: 'opponent', hazard: 'spikes' },
+    })
+    const hazardFieldWithSecondLayer = mergeFieldState(hazardField, {
+        setEntryHazard: { side: 'opponent', hazard: 'spikes' },
+    })
+    const hazardFieldWithStickyWeb = mergeFieldState(hazardFieldWithSecondLayer, {
+        setEntryHazard: { side: 'opponent', hazard: 'sticky_web' },
+    })
+    const hazardFieldWithStealthRock = mergeFieldState(hazardFieldWithStickyWeb, {
+        setEntryHazard: { side: 'opponent', hazard: 'stealth_rock' },
+    })
+
+    const normalizedHazardField = normalizeFieldState(hazardFieldWithStealthRock)
+    assert(normalizedHazardField?.entryHazards?.opponent?.spikesLayers === 2)
+    assert(normalizedHazardField?.entryHazards?.opponent?.stickyWeb === true)
+    assert(normalizedHazardField?.entryHazards?.opponent?.stealthRock === true)
+
+    const hazardOutcome = resolveEntryHazardSwitchInOutcome({
+        fieldState: normalizedHazardField,
+        targetSide: 'opponent',
+        targetMaxHp: 160,
+        rockEffectivenessMultiplier: 2,
+    })
+    assert(hazardOutcome.damage === 66)
+    assert(hazardOutcome.statStageDelta?.spd === -1)
+
+    const clearedHazardField = mergeFieldState(normalizedHazardField, {
+        clearEntryHazards: { side: 'opponent' },
+    })
+    assert(!clearedHazardField?.entryHazards?.opponent)
 }
 
 const runCounterMoveTests = () => {

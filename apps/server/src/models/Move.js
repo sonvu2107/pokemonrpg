@@ -122,12 +122,12 @@ const moveSchema = new Schema(
             max: 40,
         },
 
-        // Priority (-6 to +6, 0 is normal)
+        // Priority (-7 to +7, 0 is normal)
         priority: {
             type: Number,
             default: 0,
-            min: -6,
-            max: 6,
+            min: -7,
+            max: 7,
         },
 
         // Description

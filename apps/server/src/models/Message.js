@@ -130,8 +130,7 @@ const messageSchema = new mongoose.Schema({
   },
   timestamp: {
     type: Date,
-    default: Date.now,
-    index: true
+    default: Date.now
   },
   isDeleted: {
     type: Boolean,

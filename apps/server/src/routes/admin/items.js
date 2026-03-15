@@ -1,6 +1,6 @@
 import express from 'express'
 import mongoose from 'mongoose'
-import Item, { ITEM_TYPES, ITEM_RARITIES, POKEMON_RARITY_TIERS } from '../../models/Item.js'
+import Item, { ITEM_TYPES, ITEM_RARITIES, POKEMON_RARITY_TIERS, ITEM_EFFECT_TYPES } from '../../models/Item.js'
 import ItemPurchaseLog from '../../models/ItemPurchaseLog.js'
 
 const router = express.Router()
@@ -25,6 +25,11 @@ const validateEvolutionRarityRange = (fromTier, toTier) => {
 }
 
 const isInvalidPurchaseLimit = (value) => value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)
+const FUSION_EFFECT_TYPES = new Set(['fusionStone', 'fusionLuckyStone', 'fusionProtectionStone', 'superFusionStone'])
+const normalizeItemEffectType = (value, fallback = 'none') => {
+    const normalized = String(value || '').trim()
+    return ITEM_EFFECT_TYPES.includes(normalized) ? normalized : fallback
+}
 
 // GET /api/admin/items - List items with search & pagination
 router.get('/', async (req, res) => {
@@ -293,7 +298,11 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Đơn vị thời hạn không hợp lệ' })
         }
 
-        const resolvedEffectType = effectType || 'none'
+        if (effectType !== undefined && !ITEM_EFFECT_TYPES.includes(String(effectType).trim())) {
+            return res.status(400).json({ ok: false, message: 'Loại hiệu ứng không hợp lệ' })
+        }
+
+        const resolvedEffectType = normalizeItemEffectType(effectType, 'none')
         if (resolvedEffectType === 'catchMultiplier') {
             const catchChancePercent = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
             if (catchChancePercent < 0 || catchChancePercent > 100) {
@@ -322,6 +331,12 @@ router.post('/', async (req, res) => {
                 return res.status(400).json({ ok: false, message: 'Vật phẩm chuyển level Pokemon không hợp lệ' })
             }
         }
+        if (resolvedEffectType === 'fusionLuckyStone') {
+            const fusionBonusPercent = Number.isFinite(Number(effectValue)) ? Number(effectValue) : 0
+            if (fusionBonusPercent < 0 || fusionBonusPercent > 100) {
+                return res.status(400).json({ ok: false, message: 'Đá may mắn chỉ nhận giá trị 0-100%' })
+            }
+        }
 
         const existing = await Item.findOne({ name })
 
@@ -344,6 +359,33 @@ router.post('/', async (req, res) => {
             ? Math.max(0, Number(moonShopPurchaseLimit))
             : resolvedLegacyPurchaseLimit
 
+        const resolvedEffectValue = (() => {
+            if (resolvedEffectType === 'catchMultiplier') {
+                return Math.min(100, Math.max(0, Number(effectValue) || 0))
+            }
+            if (resolvedEffectType === 'allowOffTypeSkills' || resolvedEffectType === 'transferPokemonLevel') {
+                return 0
+            }
+            if (resolvedEffectType === 'fusionLuckyStone') {
+                return Math.min(100, Math.max(0, Number(effectValue) || 0))
+            }
+            if (FUSION_EFFECT_TYPES.has(resolvedEffectType)) {
+                return 0
+            }
+            if (resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel') {
+                return Math.max(1, Math.floor(Number(effectValue) || 0))
+            }
+            return effectValue !== undefined ? Number(effectValue) : 0
+        })()
+
+        const resolvedEffectValueMp = (resolvedEffectType === 'allowOffTypeSkills'
+            || resolvedEffectType === 'grantPokemonExp'
+            || resolvedEffectType === 'grantPokemonLevel'
+            || resolvedEffectType === 'transferPokemonLevel'
+            || FUSION_EFFECT_TYPES.has(resolvedEffectType))
+            ? 0
+            : (effectValueMp !== undefined ? Number(effectValueMp) : 0)
+
         const item = new Item({
             name,
             type: type || 'misc',
@@ -365,18 +407,8 @@ router.post('/', async (req, res) => {
             evolutionRarityFrom: resolvedEvolutionRarityFrom,
             evolutionRarityTo: resolvedEvolutionRarityTo,
             effectType: resolvedEffectType,
-            effectValue: resolvedEffectType === 'catchMultiplier'
-                ? Math.min(100, Math.max(0, Number(effectValue) || 0))
-                : (resolvedEffectType === 'allowOffTypeSkills'
-                    ? 0
-                    : (resolvedEffectType === 'transferPokemonLevel'
-                        ? 0
-                    : ((resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel')
-                        ? Math.max(1, Math.floor(Number(effectValue) || 0))
-                        : (effectValue !== undefined ? Number(effectValue) : 0)))),
-            effectValueMp: (resolvedEffectType === 'allowOffTypeSkills' || resolvedEffectType === 'grantPokemonExp' || resolvedEffectType === 'grantPokemonLevel' || resolvedEffectType === 'transferPokemonLevel')
-                ? 0
-                : (effectValueMp !== undefined ? Number(effectValueMp) : 0),
+            effectValue: resolvedEffectValue,
+            effectValueMp: resolvedEffectValueMp,
             effectDurationUnit: ['month', 'week'].includes(String(effectDurationUnit || '').trim().toLowerCase())
                 ? String(effectDurationUnit).trim().toLowerCase()
                 : 'month',
@@ -463,7 +495,13 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ ok: false, message: 'Đơn vị thời hạn không hợp lệ' })
         }
 
-        const nextEffectType = effectType !== undefined ? effectType : item.effectType
+        if (effectType !== undefined && !ITEM_EFFECT_TYPES.includes(String(effectType).trim())) {
+            return res.status(400).json({ ok: false, message: 'Loại hiệu ứng không hợp lệ' })
+        }
+
+        const nextEffectType = effectType !== undefined
+            ? normalizeItemEffectType(effectType, item.effectType)
+            : normalizeItemEffectType(item.effectType, 'none')
         if (nextEffectType === 'catchMultiplier' && effectValue !== undefined) {
             const catchChancePercent = Number(effectValue)
             if (catchChancePercent < 0 || catchChancePercent > 100) {
@@ -490,6 +528,12 @@ router.put('/:id', async (req, res) => {
             const transferFlag = effectValue !== undefined ? Number(effectValue) : Number(item.effectValue)
             if (!Number.isFinite(transferFlag) || transferFlag < 0) {
                 return res.status(400).json({ ok: false, message: 'Vật phẩm chuyển level Pokemon không hợp lệ' })
+            }
+        }
+        if (nextEffectType === 'fusionLuckyStone') {
+            const fusionBonusPercent = effectValue !== undefined ? Number(effectValue) : Number(item.effectValue)
+            if (!Number.isFinite(fusionBonusPercent) || fusionBonusPercent < 0 || fusionBonusPercent > 100) {
+                return res.status(400).json({ ok: false, message: 'Đá may mắn chỉ nhận giá trị 0-100%' })
             }
         }
 
@@ -545,9 +589,16 @@ router.put('/:id', async (req, res) => {
         }
         if (evolutionRarityFrom !== undefined) item.evolutionRarityFrom = nextEvolutionRarityFrom
         if (evolutionRarityTo !== undefined) item.evolutionRarityTo = nextEvolutionRarityTo
-        if (effectType !== undefined) item.effectType = effectType
-        if (nextEffectType === 'allowOffTypeSkills' || nextEffectType === 'transferPokemonLevel') {
+        if (effectType !== undefined) item.effectType = nextEffectType
+        if (nextEffectType === 'allowOffTypeSkills' || nextEffectType === 'transferPokemonLevel' || nextEffectType === 'fusionStone' || nextEffectType === 'fusionProtectionStone' || nextEffectType === 'superFusionStone') {
             item.effectValue = 0
+            item.effectValueMp = 0
+        } else if (nextEffectType === 'fusionLuckyStone') {
+            if (effectValue !== undefined) {
+                item.effectValue = Math.min(100, Math.max(0, Number(effectValue) || 0))
+            } else {
+                item.effectValue = Math.min(100, Math.max(0, Number(item.effectValue) || 0))
+            }
             item.effectValueMp = 0
         } else if (nextEffectType === 'grantPokemonExp' || nextEffectType === 'grantPokemonLevel') {
             if (effectValue !== undefined) {
@@ -563,7 +614,7 @@ router.put('/:id', async (req, res) => {
         } else if (nextEffectType === 'catchMultiplier') {
             item.effectValue = Math.min(100, Math.max(0, Number(item.effectValue) || 0))
         }
-        if (!['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel'].includes(nextEffectType) && effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
+        if (!['allowOffTypeSkills', 'grantPokemonExp', 'grantPokemonLevel', 'transferPokemonLevel', 'fusionStone', 'fusionLuckyStone', 'fusionProtectionStone', 'superFusionStone'].includes(nextEffectType) && effectValueMp !== undefined) item.effectValueMp = Number(effectValueMp)
         if (effectDurationUnit !== undefined) item.effectDurationUnit = String(effectDurationUnit || '').trim().toLowerCase() || 'month'
 
         await item.save()
