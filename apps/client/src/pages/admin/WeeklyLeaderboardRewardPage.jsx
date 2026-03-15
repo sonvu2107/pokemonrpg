@@ -982,11 +982,11 @@ export default function WeeklyLeaderboardRewardPage() {
                                             {selectedRewardTypes.titleImage && (
                                                 <div className="space-y-2">
                                                     <div className="text-[11px] font-semibold text-slate-700">Danh hiệu cố định</div>
-                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
                                                         {config.titleImageUrl ? (
                                                             <img src={resolveImageSrc(config.titleImageUrl)} alt={`Danh hiệu top ${rank}`} className="max-h-full max-w-full object-contain" />
                                                         ) : (
-                                                            <span className="text-[11px] text-slate-400">Chưa cấu hình danh hiệu</span>
+                                                            <span className="text-[11px] text-slate-400">Chưa có ảnh danh hiệu</span>
                                                         )}
                                                     </div>
                                                     <input
@@ -1019,11 +1019,11 @@ export default function WeeklyLeaderboardRewardPage() {
                                             {selectedRewardTypes.avatarFrame && (
                                                 <div className="space-y-2">
                                                     <div className="text-[11px] font-semibold text-slate-700">Khung avatar cố định</div>
-                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden">
+                                                    <div className="h-16 rounded border border-dashed border-slate-300 bg-white flex items-center justify-center overflow-hidden">
                                                         {config.avatarFrameUrl ? (
                                                             <img src={resolveImageSrc(config.avatarFrameUrl)} alt={`Khung top ${rank}`} className="max-h-full max-w-full object-contain" />
                                                         ) : (
-                                                            <span className="text-[11px] text-slate-400">Chưa cấu hình khung</span>
+                                                            <span className="text-[11px] text-slate-400">Chưa có ảnh khung</span>
                                                         )}
                                                     </div>
                                                     <input

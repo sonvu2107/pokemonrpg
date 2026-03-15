@@ -67,6 +67,16 @@ export const hasVipVisualAccess = (userLike) => {
     return isVipRole(userLike) || isAdminRole(userLike)
 }
 
+const hasEquippedVipCosmetic = (userLike) => {
+    const titleImageUrl = String(userLike?.vipBenefits?.titleImageUrl || '').trim()
+    const avatarFrameUrl = String(userLike?.vipBenefits?.avatarFrameUrl || '').trim()
+    return Boolean(titleImageUrl || avatarFrameUrl)
+}
+
+const hasVipCosmeticAccess = (userLike) => {
+    return hasVipVisualAccess(userLike) || hasEquippedVipCosmetic(userLike)
+}
+
 export const getPublicRoleLabel = (userLike) => {
     if (isAdminRole(userLike)) return 'Admin'
     return isVipRole(userLike) ? getVipBadgeLabel(userLike) : '--'
@@ -78,12 +88,12 @@ export const getVipTitle = (userLike) => {
 }
 
 export const getVipTitleImageUrl = (userLike) => {
-    if (!hasVipVisualAccess(userLike)) return ''
+    if (!hasVipCosmeticAccess(userLike)) return ''
     return String(userLike?.vipBenefits?.titleImageUrl || '').trim()
 }
 
 export const getVipAvatarFrameUrl = (userLike) => {
-    if (!hasVipVisualAccess(userLike)) return ''
+    if (!hasVipCosmeticAccess(userLike)) return ''
     return String(userLike?.vipBenefits?.avatarFrameUrl || '').trim()
 }
 
