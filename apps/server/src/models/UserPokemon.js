@@ -151,30 +151,49 @@ UserPokemonSchema.index({ experience: -1, level: -1, _id: -1 })
 UserPokemonSchema.index({ obtainedAt: -1, _id: -1 })
 
 UserPokemonSchema.pre('validate', function (next) {
-    const level = Number.parseInt(this.level, 10)
-    if (!Number.isFinite(level) || level < 1) {
-        this.level = 1
-    } else if (level > USER_POKEMON_MAX_LEVEL) {
-        this.level = USER_POKEMON_MAX_LEVEL
+    const shouldNormalizePath = (path) => {
+        if (this.isNew) return true
+        if (typeof this.isModified === 'function' && this.isModified(path)) return true
+        if (typeof this.isSelected === 'function') {
+            return this.isSelected(path) !== false
+        }
+        return true
     }
 
-    const experience = Number.parseInt(this.experience, 10)
-    this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
+    const shouldNormalizeLevel = shouldNormalizePath('level')
+    if (shouldNormalizeLevel) {
+        const level = Number.parseInt(this.level, 10)
+        if (!Number.isFinite(level) || level < 1) {
+            this.level = 1
+        } else if (level > USER_POKEMON_MAX_LEVEL) {
+            this.level = USER_POKEMON_MAX_LEVEL
+        }
+    }
 
-    const fusionLevel = Number.parseInt(this.fusionLevel, 10)
-    this.fusionLevel = Number.isFinite(fusionLevel) && fusionLevel > 0 ? fusionLevel : 0
+    const shouldNormalizeExperience = shouldNormalizePath('experience')
+    if (shouldNormalizeExperience) {
+        const experience = Number.parseInt(this.experience, 10)
+        this.experience = Number.isFinite(experience) && experience > 0 ? experience : 0
+    }
 
-    const offTypeSkillAllowance = Number.parseInt(this.offTypeSkillAllowance, 10)
-    const normalizedOffTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0
-        ? offTypeSkillAllowance
-        : (this.allowOffTypeSkills ? 1 : 0)
-    this.offTypeSkillAllowance = normalizedOffTypeSkillAllowance
-
-    if (this.level >= USER_POKEMON_MAX_LEVEL) {
+    if (shouldNormalizeLevel && shouldNormalizeExperience && this.level >= USER_POKEMON_MAX_LEVEL) {
         this.experience = 0
     }
 
-    this.allowOffTypeSkills = this.offTypeSkillAllowance > 0
+    if (shouldNormalizePath('fusionLevel')) {
+        const fusionLevel = Number.parseInt(this.fusionLevel, 10)
+        this.fusionLevel = Number.isFinite(fusionLevel) && fusionLevel > 0 ? fusionLevel : 0
+    }
+
+    const shouldNormalizeOffType = shouldNormalizePath('offTypeSkillAllowance') || shouldNormalizePath('allowOffTypeSkills')
+    if (shouldNormalizeOffType) {
+        const offTypeSkillAllowance = Number.parseInt(this.offTypeSkillAllowance, 10)
+        const normalizedOffTypeSkillAllowance = Number.isFinite(offTypeSkillAllowance) && offTypeSkillAllowance > 0
+            ? offTypeSkillAllowance
+            : (this.allowOffTypeSkills ? 1 : 0)
+        this.offTypeSkillAllowance = normalizedOffTypeSkillAllowance
+        this.allowOffTypeSkills = this.offTypeSkillAllowance > 0
+    }
 
     next()
 })

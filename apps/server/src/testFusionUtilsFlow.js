@@ -7,11 +7,13 @@ import {
     FUSION_MILESTONE_PRESETS,
     FUSION_SUPER_STONE_BONUS_PERCENT,
     FUSION_TOTAL_STAT_BONUS_PERCENT_BY_LEVEL,
+    buildDefaultStrictMaterialRulesByRarity,
     normalizeFusionRuntimeConfig,
     normalizeFusionLevel,
     getFusionBaseSuccessRate,
     getFusionFailurePenalty,
     getFusionTotalStatBonusPercent,
+    resolveFusionStrictMaterialRule,
     computeFusionFinalSuccessRate,
     resolveFusionMilestoneLabel,
 } from './utils/fusionUtils.js'
@@ -107,6 +109,7 @@ const testNormalizeRuntimeConfig = () => {
     })
 
     assert.strictEqual(normalized.strictMaterialUntilFusionLevel, 0)
+    assert.strictEqual(Boolean(normalized.strictMaterialRulesByRarity?.d), true)
     assert.strictEqual(normalized.superFusionStoneBonusPercent, 100)
     assert.strictEqual(normalized.finalSuccessRateCapPercent, 100)
     assert.deepStrictEqual(normalized.baseSuccessRateByFusionLevel, [100, 0, 45])
@@ -127,6 +130,48 @@ const testTotalStatBonusByLevel = () => {
     )
 }
 
+const testStrictMaterialRuleByRarity = () => {
+    const defaultRules = buildDefaultStrictMaterialRulesByRarity(5)
+    const strictAtLowLevel = resolveFusionStrictMaterialRule({
+        fusionLevel: 3,
+        targetRarity: 'a',
+        strictMaterialRulesByRarity: defaultRules,
+        strictMaterialUntilFusionLevel: 5,
+    })
+    assert.strictEqual(strictAtLowLevel.isStrict, true)
+    assert.strictEqual(strictAtLowLevel.requireSameSpecies, true)
+    assert.strictEqual(strictAtLowLevel.requireSameForm, true)
+    assert.strictEqual(strictAtLowLevel.requireSameLevel, true)
+
+    const customRules = {
+        ...defaultRules,
+        a: {
+            enabled: true,
+            fromFusionLevel: 0,
+            toFusionLevel: 7,
+            requireSameSpecies: true,
+            requireSameForm: true,
+            requireSameLevel: false,
+        },
+    }
+    const strictCustom = resolveFusionStrictMaterialRule({
+        fusionLevel: 6,
+        targetRarity: 'a',
+        strictMaterialRulesByRarity: customRules,
+        strictMaterialUntilFusionLevel: 5,
+    })
+    assert.strictEqual(strictCustom.isStrict, true)
+    assert.strictEqual(strictCustom.requireSameLevel, false)
+
+    const nonStrictAtHighLevel = resolveFusionStrictMaterialRule({
+        fusionLevel: 8,
+        targetRarity: 'a',
+        strictMaterialRulesByRarity: customRules,
+        strictMaterialUntilFusionLevel: 5,
+    })
+    assert.strictEqual(nonStrictAtHighLevel.isStrict, false)
+}
+
 const testMilestonesShape = () => {
     assert(Array.isArray(FUSION_MILESTONE_PRESETS) && FUSION_MILESTONE_PRESETS.length >= 3)
     const first = FUSION_MILESTONE_PRESETS[0]
@@ -144,6 +189,7 @@ const run = () => {
     testFinalSuccessRateComputation()
     testMilestonesShape()
     testTotalStatBonusByLevel()
+    testStrictMaterialRuleByRarity()
     testNormalizeRuntimeConfig()
     console.log('testFusionUtilsFlow passed')
 }

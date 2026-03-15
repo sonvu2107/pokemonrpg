@@ -30,6 +30,36 @@ const fusionMilestoneSchema = new mongoose.Schema(
     }
 )
 
+const fusionStrictMaterialRuleSchema = new mongoose.Schema(
+    {
+        enabled: { type: Boolean, required: true, default: true },
+        fromFusionLevel: { type: Number, required: true, min: 0, max: 999, default: 0 },
+        toFusionLevel: { type: Number, required: true, min: 0, max: 999, default: 4 },
+        requireSameSpecies: { type: Boolean, required: true, default: true },
+        requireSameForm: { type: Boolean, required: true, default: true },
+        requireSameLevel: { type: Boolean, required: true, default: true },
+    },
+    {
+        _id: false,
+    }
+)
+
+const fusionStrictMaterialRulesByRaritySchema = new mongoose.Schema(
+    {
+        d: { type: fusionStrictMaterialRuleSchema, default: null },
+        c: { type: fusionStrictMaterialRuleSchema, default: null },
+        b: { type: fusionStrictMaterialRuleSchema, default: null },
+        a: { type: fusionStrictMaterialRuleSchema, default: null },
+        s: { type: fusionStrictMaterialRuleSchema, default: null },
+        ss: { type: fusionStrictMaterialRuleSchema, default: null },
+        sss: { type: fusionStrictMaterialRuleSchema, default: null },
+        'sss+': { type: fusionStrictMaterialRuleSchema, default: null },
+    },
+    {
+        _id: false,
+    }
+)
+
 const fusionConfigSchema = new mongoose.Schema(
     {
         key: {
@@ -46,6 +76,11 @@ const fusionConfigSchema = new mongoose.Schema(
             min: 0,
             max: 999,
             default: DEFAULT_FUSION_RUNTIME_CONFIG.strictMaterialUntilFusionLevel,
+        },
+        strictMaterialRulesByRarity: {
+            type: fusionStrictMaterialRulesByRaritySchema,
+            required: true,
+            default: DEFAULT_FUSION_RUNTIME_CONFIG.strictMaterialRulesByRarity,
         },
         superFusionStoneBonusPercent: {
             type: Number,
@@ -135,6 +170,7 @@ const fusionConfigSchema = new mongoose.Schema(
 fusionConfigSchema.pre('validate', function (next) {
     const normalized = normalizeFusionRuntimeConfig({
         strictMaterialUntilFusionLevel: this.strictMaterialUntilFusionLevel,
+        strictMaterialRulesByRarity: this.strictMaterialRulesByRarity,
         superFusionStoneBonusPercent: this.superFusionStoneBonusPercent,
         finalSuccessRateCapPercent: this.finalSuccessRateCapPercent,
         baseSuccessRateByFusionLevel: this.baseSuccessRateByFusionLevel,
@@ -145,6 +181,7 @@ fusionConfigSchema.pre('validate', function (next) {
     })
 
     this.strictMaterialUntilFusionLevel = normalized.strictMaterialUntilFusionLevel
+    this.strictMaterialRulesByRarity = normalized.strictMaterialRulesByRarity
     this.superFusionStoneBonusPercent = normalized.superFusionStoneBonusPercent
     this.finalSuccessRateCapPercent = normalized.finalSuccessRateCapPercent
     this.baseSuccessRateByFusionLevel = normalized.baseSuccessRateByFusionLevel

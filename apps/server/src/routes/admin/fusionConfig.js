@@ -17,6 +17,7 @@ const toChangeNote = (value = '') => String(value || '').trim().slice(0, 300)
 const toRevisionPayload = (entry = null) => {
     const normalized = normalizeFusionRuntimeConfig({
         strictMaterialUntilFusionLevel: entry?.strictMaterialUntilFusionLevel,
+        strictMaterialRulesByRarity: entry?.strictMaterialRulesByRarity,
         superFusionStoneBonusPercent: entry?.superFusionStoneBonusPercent,
         finalSuccessRateCapPercent: entry?.finalSuccessRateCapPercent,
         baseSuccessRateByFusionLevel: entry?.baseSuccessRateByFusionLevel,
@@ -28,6 +29,7 @@ const toRevisionPayload = (entry = null) => {
 
     return {
         strictMaterialUntilFusionLevel: normalized.strictMaterialUntilFusionLevel,
+        strictMaterialRulesByRarity: normalized.strictMaterialRulesByRarity,
         superFusionStoneBonusPercent: normalized.superFusionStoneBonusPercent,
         finalSuccessRateCapPercent: normalized.finalSuccessRateCapPercent,
         baseSuccessRateByFusionLevel: normalized.baseSuccessRateByFusionLevel,

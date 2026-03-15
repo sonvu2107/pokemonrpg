@@ -26,6 +26,7 @@ import {
     FUSION_ITEM_SLOT_META,
     normalizeFusionLevel,
     getFusionFailurePenalty,
+    resolveFusionStrictMaterialRule,
     computeFusionFinalSuccessRate,
 } from '../utils/fusionUtils.js'
 import { loadFusionRuntimeConfig } from '../utils/fusionRuntimeConfig.js'
@@ -1962,6 +1963,7 @@ router.get('/fusion/config', authMiddleware, async (req, res) => {
                 itemSlots: slotRows,
                 rulePreview: {
                     strictMaterialUntilFusionLevel: fusionRuntimeConfig.strictMaterialUntilFusionLevel,
+                    strictMaterialRulesByRarity: fusionRuntimeConfig.strictMaterialRulesByRarity,
                     superFusionStoneBonusPercent: fusionRuntimeConfig.superFusionStoneBonusPercent,
                     finalSuccessRateCapPercent: fusionRuntimeConfig.finalSuccessRateCapPercent,
                     baseSuccessRateByFusionLevel: fusionRuntimeConfig.baseSuccessRateByFusionLevel,
@@ -2101,15 +2103,21 @@ router.post('/:id/fusion', authMiddleware, async (req, res) => {
             const materialSpeciesId = normalizeObjectIdLike(materialSpecies?._id)
             const targetFormId = normalizeFormId(targetPokemon?.formId || 'normal')
             const materialFormId = normalizeFormId(materialPokemon?.formId || 'normal')
+            const strictMaterialRule = resolveFusionStrictMaterialRule({
+                fusionLevel: targetFusionLevel,
+                targetRarity: targetSpecies?.rarity,
+                strictMaterialRulesByRarity: fusionRuntimeConfig.strictMaterialRulesByRarity,
+                strictMaterialUntilFusionLevel: fusionRuntimeConfig.strictMaterialUntilFusionLevel,
+            })
 
-            if (targetFusionLevel < fusionRuntimeConfig.strictMaterialUntilFusionLevel) {
-                if (targetSpeciesId !== materialSpeciesId) {
+            if (strictMaterialRule.isStrict) {
+                if (strictMaterialRule.requireSameSpecies && targetSpeciesId !== materialSpeciesId) {
                     throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng loài với Pokemon đích')
                 }
-                if (targetFormId !== materialFormId) {
+                if (strictMaterialRule.requireSameForm && targetFormId !== materialFormId) {
                     throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng dạng với Pokemon đích')
                 }
-                if (Number(targetPokemon?.level || 1) !== Number(materialPokemon?.level || 1)) {
+                if (strictMaterialRule.requireSameLevel && Number(targetPokemon?.level || 1) !== Number(materialPokemon?.level || 1)) {
                     throw createHttpError(400, 'Mốc ghép hiện tại yêu cầu Pokemon nguyên liệu cùng cấp với Pokemon đích')
                 }
             } else {

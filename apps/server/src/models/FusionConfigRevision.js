@@ -9,6 +9,32 @@ const fusionConfigMilestoneRevisionSchema = new mongoose.Schema(
     { _id: false }
 )
 
+const fusionStrictMaterialRuleRevisionSchema = new mongoose.Schema(
+    {
+        enabled: { type: Boolean, required: true, default: true },
+        fromFusionLevel: { type: Number, required: true, min: 0, max: 999, default: 0 },
+        toFusionLevel: { type: Number, required: true, min: 0, max: 999, default: 4 },
+        requireSameSpecies: { type: Boolean, required: true, default: true },
+        requireSameForm: { type: Boolean, required: true, default: true },
+        requireSameLevel: { type: Boolean, required: true, default: true },
+    },
+    { _id: false }
+)
+
+const fusionStrictMaterialRulesByRarityRevisionSchema = new mongoose.Schema(
+    {
+        d: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        c: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        b: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        a: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        s: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        ss: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        sss: { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+        'sss+': { type: fusionStrictMaterialRuleRevisionSchema, default: null },
+    },
+    { _id: false }
+)
+
 const fusionConfigRevisionSchema = new mongoose.Schema(
     {
         key: {
@@ -37,6 +63,10 @@ const fusionConfigRevisionSchema = new mongoose.Schema(
             default: null,
         },
         strictMaterialUntilFusionLevel: { type: Number, required: true, min: 0, max: 999 },
+        strictMaterialRulesByRarity: {
+            type: fusionStrictMaterialRulesByRarityRevisionSchema,
+            required: true,
+        },
         superFusionStoneBonusPercent: { type: Number, required: true, min: 0, max: 100 },
         finalSuccessRateCapPercent: { type: Number, required: true, min: 0, max: 100 },
         baseSuccessRateByFusionLevel: { type: [Number], required: true, default: [] },

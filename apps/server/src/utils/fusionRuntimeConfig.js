@@ -34,7 +34,7 @@ export const loadFusionRuntimeConfig = async ({ forceRefresh = false } = {}) => 
     }
 
     fusionRuntimeConfigInFlight = FusionConfig.findOne({ key: FUSION_CONFIG_KEY })
-        .select('strictMaterialUntilFusionLevel superFusionStoneBonusPercent finalSuccessRateCapPercent baseSuccessRateByFusionLevel totalStatBonusPercentByFusionLevel failurePenaltyByLevelBracket failureLevelThresholdByBracket milestones')
+        .select('strictMaterialUntilFusionLevel strictMaterialRulesByRarity superFusionStoneBonusPercent finalSuccessRateCapPercent baseSuccessRateByFusionLevel totalStatBonusPercentByFusionLevel failurePenaltyByLevelBracket failureLevelThresholdByBracket milestones')
         .lean()
         .then((configDoc) => {
             if (!configDoc) {
@@ -43,6 +43,7 @@ export const loadFusionRuntimeConfig = async ({ forceRefresh = false } = {}) => 
 
             return normalizeFusionRuntimeConfig({
                 strictMaterialUntilFusionLevel: configDoc.strictMaterialUntilFusionLevel,
+                strictMaterialRulesByRarity: configDoc.strictMaterialRulesByRarity,
                 superFusionStoneBonusPercent: configDoc.superFusionStoneBonusPercent,
                 finalSuccessRateCapPercent: configDoc.finalSuccessRateCapPercent,
                 baseSuccessRateByFusionLevel: configDoc.baseSuccessRateByFusionLevel,

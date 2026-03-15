@@ -35,6 +35,7 @@ export const FUSION_TOTAL_STAT_BONUS_PERCENT_BY_LEVEL = Object.freeze([0, 1, 2, 
 export const FUSION_SUPER_STONE_BONUS_PERCENT = 10
 export const FUSION_FINAL_SUCCESS_RATE_CAP_PERCENT = 99
 export const FUSION_STRICT_MATERIAL_UNTIL_LEVEL = 5
+export const FUSION_STRICT_RULE_RARITY_ORDER = Object.freeze(['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+'])
 export const FUSION_FAILURE_PENALTY_BY_LEVEL_BRACKET = Object.freeze({
     fromLevel5: 1,
     fromLevel10: 2,
@@ -53,8 +54,40 @@ export const FUSION_MILESTONE_PRESETS = Object.freeze([
     { from: 15, to: null, label: '5 sao đỏ' },
 ])
 
+const toSafeBoolean = (value, fallback = false) => {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value !== 0
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return fallback
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+    return fallback
+}
+
+const normalizeFusionRarity = (value = 'd') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (FUSION_STRICT_RULE_RARITY_ORDER.includes(normalized)) return normalized
+    return 'd'
+}
+
+export const buildDefaultStrictMaterialRulesByRarity = (strictMaterialUntilFusionLevel = FUSION_STRICT_MATERIAL_UNTIL_LEVEL) => {
+    const strictToLevel = Math.max(0, Number.parseInt(strictMaterialUntilFusionLevel, 10) - 1)
+    return FUSION_STRICT_RULE_RARITY_ORDER.reduce((acc, rarity) => {
+        acc[rarity] = {
+            enabled: strictToLevel >= 0,
+            fromFusionLevel: 0,
+            toFusionLevel: strictToLevel,
+            requireSameSpecies: true,
+            requireSameForm: true,
+            requireSameLevel: true,
+        }
+        return acc
+    }, {})
+}
+
 export const DEFAULT_FUSION_RUNTIME_CONFIG = Object.freeze({
     strictMaterialUntilFusionLevel: FUSION_STRICT_MATERIAL_UNTIL_LEVEL,
+    strictMaterialRulesByRarity: buildDefaultStrictMaterialRulesByRarity(FUSION_STRICT_MATERIAL_UNTIL_LEVEL),
     superFusionStoneBonusPercent: FUSION_SUPER_STONE_BONUS_PERCENT,
     finalSuccessRateCapPercent: FUSION_FINAL_SUCCESS_RATE_CAP_PERCENT,
     baseSuccessRateByFusionLevel: [...FUSION_BASE_SUCCESS_RATE_BY_LEVEL],
@@ -150,14 +183,59 @@ const normalizeMilestones = (value = []) => {
     return normalized
 }
 
-export const normalizeFusionRuntimeConfig = (value = {}) => {
+const normalizeStrictMaterialRulesByRarity = (
+    value = {},
+    strictMaterialUntilFusionLevel = FUSION_STRICT_MATERIAL_UNTIL_LEVEL
+) => {
     const source = value && typeof value === 'object' ? value : {}
-    return {
-        strictMaterialUntilFusionLevel: toSafeInteger(
-            source.strictMaterialUntilFusionLevel,
-            FUSION_STRICT_MATERIAL_UNTIL_LEVEL,
+    const fallbackRules = buildDefaultStrictMaterialRulesByRarity(strictMaterialUntilFusionLevel)
+
+    return FUSION_STRICT_RULE_RARITY_ORDER.reduce((acc, rarity) => {
+        const fallbackRule = fallbackRules[rarity]
+        const inputRule = source?.[rarity] && typeof source[rarity] === 'object'
+            ? source[rarity]
+            : {}
+
+        const fromFusionLevel = toSafeInteger(
+            inputRule.fromFusionLevel,
+            fallbackRule.fromFusionLevel,
             0,
             999
+        )
+        const toFusionLevelRaw = toSafeInteger(
+            inputRule.toFusionLevel,
+            fallbackRule.toFusionLevel,
+            0,
+            999
+        )
+        const toFusionLevel = Math.max(fromFusionLevel, toFusionLevelRaw)
+
+        acc[rarity] = {
+            enabled: toSafeBoolean(inputRule.enabled, fallbackRule.enabled),
+            fromFusionLevel,
+            toFusionLevel,
+            requireSameSpecies: toSafeBoolean(inputRule.requireSameSpecies, fallbackRule.requireSameSpecies),
+            requireSameForm: toSafeBoolean(inputRule.requireSameForm, fallbackRule.requireSameForm),
+            requireSameLevel: toSafeBoolean(inputRule.requireSameLevel, fallbackRule.requireSameLevel),
+        }
+        return acc
+    }, {})
+}
+
+export const normalizeFusionRuntimeConfig = (value = {}) => {
+    const source = value && typeof value === 'object' ? value : {}
+    const strictMaterialUntilFusionLevel = toSafeInteger(
+        source.strictMaterialUntilFusionLevel,
+        FUSION_STRICT_MATERIAL_UNTIL_LEVEL,
+        0,
+        999
+    )
+
+    return {
+        strictMaterialUntilFusionLevel,
+        strictMaterialRulesByRarity: normalizeStrictMaterialRulesByRarity(
+            source.strictMaterialRulesByRarity,
+            strictMaterialUntilFusionLevel
         ),
         superFusionStoneBonusPercent: clampNumber(
             source.superFusionStoneBonusPercent,
@@ -250,6 +328,40 @@ export const getFusionTotalStatBonusPercent = (
         return Number(rows[rows.length - 1] || 0)
     }
     return Number(rows[normalizedLevel] || 0)
+}
+
+export const resolveFusionStrictMaterialRule = ({
+    fusionLevel = 0,
+    targetRarity = 'd',
+    strictMaterialRulesByRarity = {},
+    strictMaterialUntilFusionLevel = FUSION_STRICT_MATERIAL_UNTIL_LEVEL,
+} = {}) => {
+    const normalizedLevel = normalizeFusionLevel(fusionLevel)
+    const normalizedRarity = normalizeFusionRarity(targetRarity)
+    const normalizedRules = normalizeStrictMaterialRulesByRarity(
+        strictMaterialRulesByRarity,
+        strictMaterialUntilFusionLevel
+    )
+    const rule = normalizedRules[normalizedRarity] || null
+    const hasAnyStrictRequirement = Boolean(
+        rule?.requireSameSpecies
+        || rule?.requireSameForm
+        || rule?.requireSameLevel
+    )
+    const isInStrictRange = normalizedLevel >= Number(rule?.fromFusionLevel || 0)
+        && normalizedLevel <= Number(rule?.toFusionLevel || 0)
+    const isStrict = Boolean(rule?.enabled) && hasAnyStrictRequirement && isInStrictRange
+
+    return {
+        rarity: normalizedRarity,
+        enabled: Boolean(rule?.enabled),
+        fromFusionLevel: Number(rule?.fromFusionLevel || 0),
+        toFusionLevel: Number(rule?.toFusionLevel || 0),
+        requireSameSpecies: Boolean(rule?.requireSameSpecies),
+        requireSameForm: Boolean(rule?.requireSameForm),
+        requireSameLevel: Boolean(rule?.requireSameLevel),
+        isStrict,
+    }
 }
 
 export const computeFusionFinalSuccessRate = ({

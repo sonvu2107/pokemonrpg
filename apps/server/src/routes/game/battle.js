@@ -474,7 +474,7 @@ router.post('/battle/resolve', authMiddleware, requireActiveGameplayTab({ action
         const happinessAwarded = 13
 
         const party = await UserPokemon.find(withActiveUserPokemonFilter({ userId, location: 'party' }))
-            .select('pokemonId level experience friendship nickname formId isShiny partyIndex')
+            .select('pokemonId level experience friendship nickname formId isShiny partyIndex fusionLevel offTypeSkillAllowance allowOffTypeSkills')
             .sort({ partyIndex: 1 })
             .populate('pokemonId', 'rarity name imageUrl sprites forms defaultFormId')
         const activePokemon = party.find((entry) => entry) || null

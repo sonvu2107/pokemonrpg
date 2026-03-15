@@ -68,7 +68,6 @@ const resolveRarityRank = (rarity = 'd') => {
         b: 3,
         c: 2,
         d: 1,
-        e: 0,
     }
     return Number(ranking[normalized] || 0)
 }
@@ -78,6 +77,68 @@ const resolveMaterialServerSort = (value = 'recommended') => {
     if (normalized === 'fusionDesc') return 'fusion'
     if (normalized === 'rarityDesc') return 'rarity'
     return 'level'
+}
+
+const STRICT_RULE_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
+
+const toBoolean = (value, fallback = false) => {
+    if (typeof value === 'boolean') return value
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized) return fallback
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+    return fallback
+}
+
+const normalizeRarityToken = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (STRICT_RULE_RARITY_ORDER.includes(normalized)) return normalized
+    return 'd'
+}
+
+const resolveStrictRuleForTarget = ({
+    rulePreview = {},
+    targetRarity = 'd',
+    targetFusionLevel = 0,
+} = {}) => {
+    const strictMaterialUntilLevel = Math.max(0, Number(rulePreview?.strictMaterialUntilFusionLevel || 0))
+    const fallbackRule = {
+        enabled: strictMaterialUntilLevel > 0,
+        fromFusionLevel: 0,
+        toFusionLevel: Math.max(0, strictMaterialUntilLevel - 1),
+        requireSameSpecies: true,
+        requireSameForm: true,
+        requireSameLevel: true,
+    }
+
+    const rarityToken = normalizeRarityToken(targetRarity)
+    const sourceRule = rulePreview?.strictMaterialRulesByRarity?.[rarityToken]
+    const rawRule = sourceRule && typeof sourceRule === 'object'
+        ? sourceRule
+        : fallbackRule
+
+    const fromFusionLevel = Math.max(0, Number.parseInt(rawRule?.fromFusionLevel, 10) || 0)
+    const toFusionLevel = Math.max(fromFusionLevel, Number.parseInt(rawRule?.toFusionLevel, 10) || 0)
+    const requireSameSpecies = toBoolean(rawRule?.requireSameSpecies, fallbackRule.requireSameSpecies)
+    const requireSameForm = toBoolean(rawRule?.requireSameForm, fallbackRule.requireSameForm)
+    const requireSameLevel = toBoolean(rawRule?.requireSameLevel, fallbackRule.requireSameLevel)
+    const enabled = toBoolean(rawRule?.enabled, fallbackRule.enabled)
+    const hasAnyRequirement = requireSameSpecies || requireSameForm || requireSameLevel
+    const isStrict = enabled
+        && hasAnyRequirement
+        && Number(targetFusionLevel || 0) >= fromFusionLevel
+        && Number(targetFusionLevel || 0) <= toFusionLevel
+
+    return {
+        rarityToken,
+        enabled,
+        fromFusionLevel,
+        toFusionLevel,
+        requireSameSpecies,
+        requireSameForm,
+        requireSameLevel,
+        isStrict,
+    }
 }
 
 export default function FusionPage() {
@@ -530,8 +591,11 @@ export default function FusionPage() {
     const targetSprite = resolvePokemonDisplaySprite(targetPokemon)
     const targetSpecies = targetPokemon?.pokemonId || {}
     const targetRarityStyle = getRarityStyle(targetSpecies?.rarity || 'd')
-    const strictMaterialUntilLevel = Math.max(0, Number(rulePreview?.strictMaterialUntilFusionLevel || 0))
-    const targetStrictRule = targetFusionLevel < strictMaterialUntilLevel
+    const targetStrictRule = resolveStrictRuleForTarget({
+        rulePreview,
+        targetRarity: targetSpecies?.rarity,
+        targetFusionLevel,
+    })
     const selectedMaterial = materialRows.find((entry) => normalizeId(entry?._id) === normalizeId(selectedMaterialPokemonId)) || null
     const targetSpeciesId = normalizeId(targetSpecies?._id || targetSpecies?.id)
     const targetFormId = normalizeFormId(targetPokemon?.formId || targetSpecies?.defaultFormId || 'normal')
@@ -540,11 +604,15 @@ export default function FusionPage() {
 
     const isMaterialCompatiblePreview = (entry = null) => {
         if (!entry) return false
-        if (targetStrictRule) {
+        if (targetStrictRule.isStrict) {
             const sameSpecies = normalizeId(entry?.pokemonId?._id || entry?.pokemonId?.id) === targetSpeciesId
             const sameForm = normalizeFormId(entry?.formId || entry?.pokemonId?.defaultFormId || 'normal') === targetFormId
             const sameLevel = Math.max(1, Number(entry?.level || 1)) === targetLevel
-            return sameSpecies && sameForm && sameLevel
+
+            if (targetStrictRule.requireSameSpecies && !sameSpecies) return false
+            if (targetStrictRule.requireSameForm && !sameForm) return false
+            if (targetStrictRule.requireSameLevel && !sameLevel) return false
+            return true
         }
 
         const entryRarityRank = resolveRarityRank(entry?.pokemonId?.rarity || 'd')
@@ -580,6 +648,11 @@ export default function FusionPage() {
         return !normalizeId(selectedFusionItemByField?.[requestField])
     }) || null
     const canFuse = Boolean(selectedMaterialPokemonId) && !missingRequiredSlot && !fusing
+    const strictRequirementLabels = [
+        targetStrictRule.requireSameSpecies ? 'cùng loài' : null,
+        targetStrictRule.requireSameForm ? 'cùng dạng' : null,
+        targetStrictRule.requireSameLevel ? 'cùng cấp' : null,
+    ].filter(Boolean)
 
     const scrollToMaterialSection = () => {
         materialSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -686,8 +759,8 @@ export default function FusionPage() {
                         )}
 
                         <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                            {targetStrictRule
-                                ? `Mốc hiện tại (+${targetFusionLevel}) yêu cầu Pokémon hiến tế cùng loài, cùng dạng và cùng cấp.`
+                            {targetStrictRule.isStrict
+                                ? `Mốc hiện tại (+${targetFusionLevel}) đang áp ràng buộc cho độ hiếm ${String(targetStrictRule.rarityToken || '').toUpperCase()}: Pokémon hiến tế cần ${strictRequirementLabels.join(', ')}.`
                                 : `Mốc hiện tại (+${targetFusionLevel}) đã mở rộng: Pokémon hiến tế cần có độ hiếm bằng hoặc cao hơn Pokémon đích.`}
                         </div>
 

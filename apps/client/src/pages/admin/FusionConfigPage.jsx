@@ -2,8 +2,36 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fusionConfigApi } from '../../services/adminApi'
 
+const STRICT_RULE_RARITY_ROWS = [
+    { value: 'd', label: 'D' },
+    { value: 'c', label: 'C' },
+    { value: 'b', label: 'B' },
+    { value: 'a', label: 'A' },
+    { value: 's', label: 'S' },
+    { value: 'ss', label: 'SS' },
+    { value: 'sss', label: 'SSS' },
+    { value: 'sss+', label: 'SSS+' },
+]
+
+const buildDefaultStrictMaterialRulesByRarity = (strictMaterialUntilFusionLevel = 5) => {
+    const safeUntil = Math.max(0, Number.parseInt(strictMaterialUntilFusionLevel, 10) || 0)
+    const toFusionLevel = Math.max(0, safeUntil - 1)
+    return STRICT_RULE_RARITY_ROWS.reduce((acc, entry) => {
+        acc[entry.value] = {
+            enabled: true,
+            fromFusionLevel: 0,
+            toFusionLevel,
+            requireSameSpecies: true,
+            requireSameForm: true,
+            requireSameLevel: true,
+        }
+        return acc
+    }, {})
+}
+
 const buildDefaultForm = () => ({
     strictMaterialUntilFusionLevel: 5,
+    strictMaterialRulesByRarity: buildDefaultStrictMaterialRulesByRarity(5),
     superFusionStoneBonusPercent: 10,
     finalSuccessRateCapPercent: 99,
     baseSuccessRateByFusionLevel: [90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15],
@@ -42,6 +70,12 @@ const toSafeNumber = (value, fallback = 0, min = 0, max = 100) => {
 
 const normalizeForSubmit = (formData) => {
     const fallback = buildDefaultForm()
+    const strictMaterialUntilFusionLevel = toSafeInt(
+        formData?.strictMaterialUntilFusionLevel,
+        fallback.strictMaterialUntilFusionLevel,
+        0,
+        999
+    )
 
     const baseSuccessRateByFusionLevel = (Array.isArray(formData?.baseSuccessRateByFusionLevel)
         ? formData.baseSuccessRateByFusionLevel
@@ -82,8 +116,45 @@ const normalizeForSubmit = (formData) => {
         throw new Error('Bạn cần có ít nhất 1 mốc sao hiển thị')
     }
 
+    const strictMaterialRulesByRarity = STRICT_RULE_RARITY_ROWS.reduce((acc, entry) => {
+        const rarity = entry.value
+        const fallbackRule = fallback.strictMaterialRulesByRarity?.[rarity] || {
+            enabled: true,
+            fromFusionLevel: 0,
+            toFusionLevel: Math.max(0, strictMaterialUntilFusionLevel - 1),
+            requireSameSpecies: true,
+            requireSameForm: true,
+            requireSameLevel: true,
+        }
+        const sourceRule = formData?.strictMaterialRulesByRarity?.[rarity] || {}
+        const fromFusionLevel = toSafeInt(sourceRule.fromFusionLevel, fallbackRule.fromFusionLevel, 0, 999)
+        const toFusionLevel = Math.max(
+            fromFusionLevel,
+            toSafeInt(sourceRule.toFusionLevel, fallbackRule.toFusionLevel, 0, 999)
+        )
+        const toBool = (value, fallbackValue = false) => {
+            if (typeof value === 'boolean') return value
+            const normalized = String(value || '').trim().toLowerCase()
+            if (!normalized) return fallbackValue
+            if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+            if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+            return fallbackValue
+        }
+
+        acc[rarity] = {
+            enabled: toBool(sourceRule.enabled, fallbackRule.enabled),
+            fromFusionLevel,
+            toFusionLevel,
+            requireSameSpecies: toBool(sourceRule.requireSameSpecies, fallbackRule.requireSameSpecies),
+            requireSameForm: toBool(sourceRule.requireSameForm, fallbackRule.requireSameForm),
+            requireSameLevel: toBool(sourceRule.requireSameLevel, fallbackRule.requireSameLevel),
+        }
+        return acc
+    }, {})
+
     return {
-        strictMaterialUntilFusionLevel: toSafeInt(formData?.strictMaterialUntilFusionLevel, fallback.strictMaterialUntilFusionLevel, 0, 999),
+        strictMaterialUntilFusionLevel,
+        strictMaterialRulesByRarity,
         superFusionStoneBonusPercent: toSafeNumber(formData?.superFusionStoneBonusPercent, fallback.superFusionStoneBonusPercent, 0, 100),
         finalSuccessRateCapPercent: toSafeNumber(formData?.finalSuccessRateCapPercent, fallback.finalSuccessRateCapPercent, 0, 100),
         baseSuccessRateByFusionLevel,
@@ -113,6 +184,7 @@ export default function FusionConfigPage() {
     const [historyRows, setHistoryRows] = useState([])
     const [historyLoading, setHistoryLoading] = useState(false)
     const [saveChangeNote, setSaveChangeNote] = useState('')
+    const [isStrictRuleSectionExpanded, setIsStrictRuleSectionExpanded] = useState(true)
     const [isBaseRateSectionExpanded, setIsBaseRateSectionExpanded] = useState(true)
     const [isStatBonusSectionExpanded, setIsStatBonusSectionExpanded] = useState(true)
     const [historyPage, setHistoryPage] = useState(1)
@@ -133,8 +205,24 @@ export default function FusionConfigPage() {
             setError('')
             const data = await fusionConfigApi.get()
             const payload = data?.config || {}
+            const strictMaterialUntilFusionLevel = Number(payload?.strictMaterialUntilFusionLevel ?? 5)
+            const strictFallbackRules = buildDefaultStrictMaterialRulesByRarity(strictMaterialUntilFusionLevel)
             setFormData({
-                strictMaterialUntilFusionLevel: Number(payload?.strictMaterialUntilFusionLevel ?? 5),
+                strictMaterialUntilFusionLevel,
+                strictMaterialRulesByRarity: STRICT_RULE_RARITY_ROWS.reduce((acc, entry) => {
+                    const rarity = entry.value
+                    const payloadRule = payload?.strictMaterialRulesByRarity?.[rarity] || {}
+                    const fallbackRule = strictFallbackRules[rarity]
+                    acc[rarity] = {
+                        enabled: typeof payloadRule?.enabled === 'boolean' ? payloadRule.enabled : fallbackRule.enabled,
+                        fromFusionLevel: Number(payloadRule?.fromFusionLevel ?? fallbackRule.fromFusionLevel),
+                        toFusionLevel: Number(payloadRule?.toFusionLevel ?? fallbackRule.toFusionLevel),
+                        requireSameSpecies: typeof payloadRule?.requireSameSpecies === 'boolean' ? payloadRule.requireSameSpecies : fallbackRule.requireSameSpecies,
+                        requireSameForm: typeof payloadRule?.requireSameForm === 'boolean' ? payloadRule.requireSameForm : fallbackRule.requireSameForm,
+                        requireSameLevel: typeof payloadRule?.requireSameLevel === 'boolean' ? payloadRule.requireSameLevel : fallbackRule.requireSameLevel,
+                    }
+                    return acc
+                }, {}),
                 superFusionStoneBonusPercent: Number(payload?.superFusionStoneBonusPercent ?? 10),
                 finalSuccessRateCapPercent: Number(payload?.finalSuccessRateCapPercent ?? 99),
                 baseSuccessRateByFusionLevel: Array.isArray(payload?.baseSuccessRateByFusionLevel)
@@ -237,6 +325,48 @@ export default function FusionConfigPage() {
             rate: Number(rate || 0),
         }))
     }, [formData])
+
+    const strictRuleRows = useMemo(() => STRICT_RULE_RARITY_ROWS.map((entry) => {
+        const fallbackRule = buildDefaultStrictMaterialRulesByRarity(formData?.strictMaterialUntilFusionLevel)?.[entry.value] || {
+            enabled: true,
+            fromFusionLevel: 0,
+            toFusionLevel: Math.max(0, Number(formData?.strictMaterialUntilFusionLevel || 0) - 1),
+            requireSameSpecies: true,
+            requireSameForm: true,
+            requireSameLevel: true,
+        }
+        const row = formData?.strictMaterialRulesByRarity?.[entry.value] || fallbackRule
+        return {
+            rarity: entry.value,
+            rarityLabel: entry.label,
+            enabled: Boolean(row?.enabled),
+            fromFusionLevel: Number(row?.fromFusionLevel ?? fallbackRule.fromFusionLevel),
+            toFusionLevel: Number(row?.toFusionLevel ?? fallbackRule.toFusionLevel),
+            requireSameSpecies: Boolean(row?.requireSameSpecies),
+            requireSameForm: Boolean(row?.requireSameForm),
+            requireSameLevel: Boolean(row?.requireSameLevel),
+        }
+    }), [formData])
+
+    const updateStrictRuleByRarity = (rarity, patch = {}) => {
+        const rarityKey = String(rarity || '').trim().toLowerCase()
+        if (!rarityKey) return
+        setFormData((prev) => {
+            const strictMaterialRulesByRarity = {
+                ...(prev?.strictMaterialRulesByRarity && typeof prev.strictMaterialRulesByRarity === 'object'
+                    ? prev.strictMaterialRulesByRarity
+                    : {}),
+            }
+            strictMaterialRulesByRarity[rarityKey] = {
+                ...(strictMaterialRulesByRarity[rarityKey] || {}),
+                ...patch,
+            }
+            return {
+                ...prev,
+                strictMaterialRulesByRarity,
+            }
+        })
+    }
 
     const updateBaseRate = (index, nextValue) => {
         setFormData((prev) => {
@@ -368,8 +498,24 @@ export default function FusionConfigPage() {
             }
             const data = await fusionConfigApi.update(payload)
             const savedConfig = data?.config || payload
+            const strictMaterialUntilFusionLevel = Number(savedConfig?.strictMaterialUntilFusionLevel ?? 5)
+            const strictFallbackRules = buildDefaultStrictMaterialRulesByRarity(strictMaterialUntilFusionLevel)
             setFormData({
                 ...savedConfig,
+                strictMaterialRulesByRarity: STRICT_RULE_RARITY_ROWS.reduce((acc, entry) => {
+                    const rarity = entry.value
+                    const sourceRule = savedConfig?.strictMaterialRulesByRarity?.[rarity] || {}
+                    const fallbackRule = strictFallbackRules[rarity]
+                    acc[rarity] = {
+                        enabled: typeof sourceRule?.enabled === 'boolean' ? sourceRule.enabled : fallbackRule.enabled,
+                        fromFusionLevel: Number(sourceRule?.fromFusionLevel ?? fallbackRule.fromFusionLevel),
+                        toFusionLevel: Number(sourceRule?.toFusionLevel ?? fallbackRule.toFusionLevel),
+                        requireSameSpecies: typeof sourceRule?.requireSameSpecies === 'boolean' ? sourceRule.requireSameSpecies : fallbackRule.requireSameSpecies,
+                        requireSameForm: typeof sourceRule?.requireSameForm === 'boolean' ? sourceRule.requireSameForm : fallbackRule.requireSameForm,
+                        requireSameLevel: typeof sourceRule?.requireSameLevel === 'boolean' ? sourceRule.requireSameLevel : fallbackRule.requireSameLevel,
+                    }
+                    return acc
+                }, {}),
                 milestones: Array.isArray(savedConfig?.milestones)
                     ? savedConfig.milestones.map((entry) => ({
                         ...entry,
@@ -404,9 +550,25 @@ export default function FusionConfigPage() {
             })
             const savedConfig = data?.config || null
             if (savedConfig) {
+                const strictMaterialUntilFusionLevel = Number(savedConfig?.strictMaterialUntilFusionLevel ?? 5)
+                const strictFallbackRules = buildDefaultStrictMaterialRulesByRarity(strictMaterialUntilFusionLevel)
                 setFormData((prev) => ({
                     ...prev,
                     ...savedConfig,
+                    strictMaterialRulesByRarity: STRICT_RULE_RARITY_ROWS.reduce((acc, entry) => {
+                        const rarity = entry.value
+                        const sourceRule = savedConfig?.strictMaterialRulesByRarity?.[rarity] || {}
+                        const fallbackRule = strictFallbackRules[rarity]
+                        acc[rarity] = {
+                            enabled: typeof sourceRule?.enabled === 'boolean' ? sourceRule.enabled : fallbackRule.enabled,
+                            fromFusionLevel: Number(sourceRule?.fromFusionLevel ?? fallbackRule.fromFusionLevel),
+                            toFusionLevel: Number(sourceRule?.toFusionLevel ?? fallbackRule.toFusionLevel),
+                            requireSameSpecies: typeof sourceRule?.requireSameSpecies === 'boolean' ? sourceRule.requireSameSpecies : fallbackRule.requireSameSpecies,
+                            requireSameForm: typeof sourceRule?.requireSameForm === 'boolean' ? sourceRule.requireSameForm : fallbackRule.requireSameForm,
+                            requireSameLevel: typeof sourceRule?.requireSameLevel === 'boolean' ? sourceRule.requireSameLevel : fallbackRule.requireSameLevel,
+                        }
+                        return acc
+                    }, {}),
                     milestones: Array.isArray(savedConfig?.milestones)
                         ? savedConfig.milestones.map((entry) => ({
                             ...entry,
@@ -471,7 +633,7 @@ export default function FusionConfigPage() {
                 </div>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Mốc bắt buộc cùng loài / cùng dạng / cùng cấp</label>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Mốc ràng buộc mặc định (dự phòng)</label>
                         <input
                             type="number"
                             min="0"
@@ -480,7 +642,7 @@ export default function FusionConfigPage() {
                             onChange={(event) => setFormData((prev) => ({ ...prev, strictMaterialUntilFusionLevel: event.target.value }))}
                             className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                        <p className="mt-1 text-xs text-slate-500">Ví dụ: 5 nghĩa là từ +0 đến +4 bắt buộc giống hệt.</p>
+                        <p className="mt-1 text-xs text-slate-500">Ví dụ: 5 nghĩa là từ +0 đến +4 bị ràng buộc. Giá trị này dùng làm mặc định khi thiếu cấu hình theo độ hiếm.</p>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Bonus của Super Fusion Stone (%)</label>
@@ -506,6 +668,97 @@ export default function FusionConfigPage() {
                             className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
+                </div>
+            </section>
+
+            <section className="bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 border-b border-blue-600 flex items-center justify-between gap-2">
+                    <h2 className="text-sm font-bold text-white uppercase tracking-wider">Quy tắc ràng buộc theo độ hiếm</h2>
+                    <button
+                        type="button"
+                        onClick={() => setIsStrictRuleSectionExpanded((prev) => !prev)}
+                        className="px-2 py-1 text-xs rounded bg-white/90 text-blue-700 font-bold hover:bg-white"
+                    >
+                        {isStrictRuleSectionExpanded ? 'Thu gọn' : 'Mở rộng'}
+                    </button>
+                </div>
+                <div className="p-4">
+                    {!isStrictRuleSectionExpanded ? (
+                        <div className="text-sm text-slate-600">
+                            Đã thu gọn bảng strict theo độ hiếm. Mỗi rank có thể chỉnh mốc và điều kiện riêng (cùng loài, dạng, cấp).
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full text-sm border border-slate-200 rounded overflow-hidden">
+                                <thead className="bg-slate-100 text-slate-700">
+                                    <tr>
+                                        <th className="px-3 py-2 text-left font-bold border-b border-slate-200">Độ hiếm</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Bật ràng buộc</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Từ mốc</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Đến mốc</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Cùng loài</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Cùng dạng</th>
+                                        <th className="px-3 py-2 text-center font-bold border-b border-slate-200">Cùng cấp</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {strictRuleRows.map((row) => (
+                                        <tr key={`strict-rule-${row.rarity}`} className="odd:bg-white even:bg-slate-50">
+                                            <td className="px-3 py-2 border-b border-slate-100 font-bold text-slate-800">{row.rarityLabel}</td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.enabled}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { enabled: event.target.checked })}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="999"
+                                                    value={row.fromFusionLevel}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { fromFusionLevel: event.target.value })}
+                                                    className="w-24 px-2 py-1 border border-slate-300 rounded text-center"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="999"
+                                                    value={row.toFusionLevel}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { toFusionLevel: event.target.value })}
+                                                    className="w-24 px-2 py-1 border border-slate-300 rounded text-center"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.requireSameSpecies}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { requireSameSpecies: event.target.checked })}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.requireSameForm}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { requireSameForm: event.target.checked })}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-slate-100 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={row.requireSameLevel}
+                                                    onChange={(event) => updateStrictRuleByRarity(row.rarity, { requireSameLevel: event.target.checked })}
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             </section>
 
@@ -906,7 +1159,7 @@ export default function FusionConfigPage() {
                                                 Bởi: {row?.updatedBy?.username || 'Hệ thống'}
                                             </div>
                                             <div>
-                                                Strict: +{Number(row?.strictMaterialUntilFusionLevel || 0)} • Super: +{Number(row?.superFusionStoneBonusPercent || 0)}% • Cap: {Number(row?.finalSuccessRateCapPercent || 0)}%
+                                                Ràng buộc mặc định: +{Number(row?.strictMaterialUntilFusionLevel || 0)} • D: +{Number(row?.strictMaterialRulesByRarity?.d?.fromFusionLevel ?? 0)} đến +{Number(row?.strictMaterialRulesByRarity?.d?.toFusionLevel ?? Math.max(0, Number(row?.strictMaterialUntilFusionLevel || 0) - 1))} • SSS: +{Number(row?.strictMaterialRulesByRarity?.sss?.fromFusionLevel ?? 0)} đến +{Number(row?.strictMaterialRulesByRarity?.sss?.toFusionLevel ?? Math.max(0, Number(row?.strictMaterialUntilFusionLevel || 0) - 1))} • Super: +{Number(row?.superFusionStoneBonusPercent || 0)}% • Trần: {Number(row?.finalSuccessRateCapPercent || 0)}%
                                             </div>
                                             {String(row?.changeNote || '').trim() && (
                                                 <div className="mt-1 text-slate-600">Ghi chú: {row.changeNote}</div>
