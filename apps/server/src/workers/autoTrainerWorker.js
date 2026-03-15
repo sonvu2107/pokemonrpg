@@ -14,7 +14,9 @@ import {
     resolveDailyState,
     toSafeInt,
 } from '../utils/autoTrainerUtils.js'
-import { resolveEffectiveVipBenefits } from '../services/vipBenefitService.js'
+import { resolveEffectiveVipBenefits, resolveEffectiveVipBenefitsForUsers } from '../services/vipBenefitService.js'
+import { recordWorkerTickMetric, runWithPerfContext } from '../utils/perfMetrics.js'
+import { resolveTrainerBattleForUserDirect } from '../services/trainerBattleResolveDirectService.js'
 
 const WORKER_LOCK_KEY_PREFIX = 'auto-trainer:tick-lock'
 const OWNER_ID = `auto-trainer-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
@@ -28,6 +30,8 @@ const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_TRAINER_POST_USER_COOLD
 const TRAINER_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_TRAINER_META_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_TRAINER_LOGS_LIMIT = 12
 const MIN_EFFECTIVE_USER_BUDGET_MS = toSafeInt(process.env.AUTO_TRAINER_MIN_EFFECTIVE_USER_BUDGET_MS, 30000, 10000, 300000)
+const WORKER_BATCH_VIP_LOOKUP = String(process.env.WORKER_BATCH_VIP_LOOKUP || 'true').trim().toLowerCase() !== 'false'
+const WORKER_TRAINER_USE_DIRECT_SERVICE = String(process.env.WORKER_TRAINER_USE_DIRECT_SERVICE || '').trim().toLowerCase() === 'true'
 
 let intervalRef = null
 let localBusy = false
@@ -257,7 +261,11 @@ const runAutoTrainerBattleFlow = async ({ userId, token, trainerId, trainerMeta,
     })
 
     try {
-        await callApiWithRetry({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
+        if (WORKER_TRAINER_USE_DIRECT_SERVICE) {
+            await resolveTrainerBattleForUserDirect({ userId, trainerId })
+        } else {
+            await callApiWithRetry({ token, path: '/api/game/battle/resolve', method: 'POST', body: { trainerId }, deadlineAt })
+        }
     } catch (error) {
         const normalized = normalizeSearchText(error?.message || '')
         if (normalized.includes('da duoc nhan') || normalized.includes('phan thuong battle da duoc nhan')) {
@@ -298,11 +306,11 @@ const shouldDisableOnFailureCode = (code = '') => {
     )
 }
 
-const processUser = async (userDoc, deadlineAt, stats) => {
+const processUser = async (userDoc, deadlineAt, stats, { preResolvedVipBenefits = null } = {}) => {
     const userId = String(userDoc?._id || '').trim()
     if (!userId) return
 
-    const effectiveVipBenefits = await resolveEffectiveVipBenefits(userDoc)
+    const effectiveVipBenefits = preResolvedVipBenefits || await resolveEffectiveVipBenefits(userDoc)
     const effectiveUser = {
         ...userDoc,
         vipBenefits: effectiveVipBenefits,
@@ -485,7 +493,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    const token = createInternalToken(userId)
+    const token = WORKER_TRAINER_USE_DIRECT_SERVICE ? '' : createInternalToken(userId)
     const trainerMeta = {
         id: trainerId,
         name: String(trainer?.name || 'Trainer').trim() || 'Trainer',
@@ -727,82 +735,100 @@ const releaseDistributedLock = async () => {
 
 const runTick = async () => {
     if (localBusy) return
-    localBusy = true
-
-    const startedAt = Date.now()
-    const stats = {
-        fetched: 0,
-        success: 0,
-        skipped: 0,
-        errors: 0,
-        skippedReasons: {},
-        errorReasons: {},
+    const perfContext = {
+        type: 'worker',
+        workerName: 'auto-trainer',
+        mongoOps: 0,
     }
 
-    try {
-        const acquired = await acquireDistributedLock()
-        if (!acquired) {
-            return
+    await runWithPerfContext(perfContext, async () => {
+        localBusy = true
+
+        const startedAt = Date.now()
+        const stats = {
+            fetched: 0,
+            success: 0,
+            skipped: 0,
+            errors: 0,
+            skippedReasons: {},
+            errorReasons: {},
         }
 
         try {
-            const users = await fetchEligibleUsers()
-            stats.fetched = users.length
-            if (users.length === 0) return
+            const acquired = await acquireDistributedLock()
+            if (!acquired) {
+                stats.skipped += 1
+                stats.skippedReasons.LOCK_NOT_ACQUIRED = (stats.skippedReasons.LOCK_NOT_ACQUIRED || 0) + 1
+                return
+            }
 
-            await runWithConcurrency(users, CONCURRENCY, async (user) => {
-                try {
-                    const deadlineAt = Date.now() + TIME_BUDGET_MS
-                    await processUser(user, deadlineAt, stats)
-                    if (POST_USER_COOLDOWN_MS > 0) {
-                        await sleep(POST_USER_COOLDOWN_MS)
-                    }
-                } catch (error) {
-                    const normalizedCode = String(error?.code || '').trim().toUpperCase()
-                    if (normalizedCode === 'TIME_BUDGET' || normalizedCode === 'REQUEST_TIMEOUT') {
-                        stats.skipped += 1
-                        stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] = (stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] || 0) + 1
-                        return
-                    }
+            try {
+                const users = await fetchEligibleUsers()
+                stats.fetched = users.length
+                if (users.length === 0) return
 
-                    stats.errors += 1
-                    stats.errorReasons.EXCEPTION = (stats.errorReasons.EXCEPTION || 0) + 1
-                    console.error('[auto-trainer-worker] process user failed:', {
-                        userId: String(user?._id || ''),
-                        message: error?.message,
-                    })
-                }
-            })
+                const effectiveVipBenefitsByUserId = WORKER_BATCH_VIP_LOOKUP
+                    ? await resolveEffectiveVipBenefitsForUsers(users)
+                    : null
+                await runWithConcurrency(users, CONCURRENCY, async (user) => {
+                    try {
+                        const deadlineAt = Date.now() + TIME_BUDGET_MS
+                        const userId = String(user?._id || '').trim()
+                        await processUser(user, deadlineAt, stats, {
+                            preResolvedVipBenefits: effectiveVipBenefitsByUserId?.get(userId) || null,
+                        })
+                        if (POST_USER_COOLDOWN_MS > 0) {
+                            await sleep(POST_USER_COOLDOWN_MS)
+                        }
+                    } catch (error) {
+                        const normalizedCode = String(error?.code || '').trim().toUpperCase()
+                        if (normalizedCode === 'TIME_BUDGET' || normalizedCode === 'REQUEST_TIMEOUT') {
+                            stats.skipped += 1
+                            stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] = (stats.skippedReasons[normalizedCode || 'TIME_BUDGET'] || 0) + 1
+                            return
+                        }
+
+                        stats.errors += 1
+                        stats.errorReasons.EXCEPTION = (stats.errorReasons.EXCEPTION || 0) + 1
+                        console.error('[auto-trainer-worker] process user failed:', {
+                            userId: String(user?._id || ''),
+                            message: error?.message,
+                        })
+                    }
+                })
+            } finally {
+                await releaseDistributedLock()
+            }
+        } catch (error) {
+            console.error('[auto-trainer-worker] tick failed:', error)
         } finally {
-            await releaseDistributedLock()
-        }
-    } catch (error) {
-        console.error('[auto-trainer-worker] tick failed:', error)
-    } finally {
-        localBusy = false
-        const durationMs = Date.now() - startedAt
+            localBusy = false
+            const durationMs = Date.now() - startedAt
+            const mongoOps = Math.max(0, Number(perfContext.mongoOps || 0))
+            recordWorkerTickMetric({ workerName: 'auto-trainer', durationMs, mongoOps, stats })
 
-        if (trainerMetaCache.size > 5000) {
-            const gcThresholdMs = Date.now() - (TRAINER_META_CACHE_TTL_MS * 2)
-            for (const [trainerId, payload] of trainerMetaCache.entries()) {
-                if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
-                    trainerMetaCache.delete(trainerId)
+            if (trainerMetaCache.size > 5000) {
+                const gcThresholdMs = Date.now() - (TRAINER_META_CACHE_TTL_MS * 2)
+                for (const [trainerId, payload] of trainerMetaCache.entries()) {
+                    if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
+                        trainerMetaCache.delete(trainerId)
+                    }
                 }
             }
-        }
 
-        if (stats.fetched > 0 || stats.errors > 0) {
-            const skippedReasonsText = Object.entries(stats.skippedReasons)
-                .map(([key, count]) => `${key}:${count}`)
-                .join(',')
-            const errorReasonsText = Object.entries(stats.errorReasons)
-                .map(([key, count]) => `${key}:${count}`)
-                .join(',')
-            console.log(
-                `[auto-trainer-worker] tick done: fetched=${stats.fetched} success=${stats.success} skipped=${stats.skipped}${skippedReasonsText ? ` (${skippedReasonsText})` : ''} errors=${stats.errors}${errorReasonsText ? ` (${errorReasonsText})` : ''} durationMs=${durationMs}`
-            )
+            if (stats.fetched > 0 || stats.errors > 0) {
+                const skippedReasonsText = Object.entries(stats.skippedReasons)
+                    .map(([key, count]) => `${key}:${count}`)
+                    .join(',')
+                const errorReasonsText = Object.entries(stats.errorReasons)
+                    .map(([key, count]) => `${key}:${count}`)
+                    .join(',')
+                console.log(
+                    `[auto-trainer-worker] tick done: fetched=${stats.fetched} success=${stats.success} skipped=${stats.skipped}${skippedReasonsText ? ` (${skippedReasonsText})` : ''} errors=${stats.errors}${errorReasonsText ? ` (${errorReasonsText})` : ''} mongoOps=${mongoOps} durationMs=${durationMs}`
+                )
+            }
         }
-    }
+    })
 }
 
 export const startAutoTrainerWorker = ({ baseUrl }) => {
@@ -820,7 +846,8 @@ export const startAutoTrainerWorker = ({ baseUrl }) => {
         runTick()
     }, 1200)
 
-    console.log(`[auto-trainer-worker] started (mode=resolve_only, tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, minUserBudget=${MIN_EFFECTIVE_USER_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
+    const resolveMode = WORKER_TRAINER_USE_DIRECT_SERVICE ? 'direct_service' : 'http_loopback'
+    console.log(`[auto-trainer-worker] started (mode=${resolveMode}, tick=${TICK_INTERVAL_MS}ms, budget=${TIME_BUDGET_MS}ms, minUserBudget=${MIN_EFFECTIVE_USER_BUDGET_MS}ms, batch=${BATCH_SIZE}, concurrency=${CONCURRENCY})`)
 }
 
 export const stopAutoTrainerWorker = () => {

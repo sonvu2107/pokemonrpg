@@ -4,6 +4,8 @@ import User from '../models/User.js'
 import MapModel from '../models/Map.js'
 import WorkerLock from '../models/WorkerLock.js'
 import { getActiveEncounterDirect, runFromEncounterDirect, getInventoryDirect } from '../services/workerService.js'
+import { searchMapForUserDirect } from '../services/autoSearchDirectService.js'
+import { attackEncounterForUserDirect, usePokeballOnEncounterDirect } from '../services/autoSearchActionDirectService.js'
 import {
     getGameDayKey,
     hasVipAutoSearchAccess,
@@ -17,7 +19,8 @@ import {
     resolveDailyState,
     toSafeInt,
 } from '../utils/autoTrainerUtils.js'
-import { resolveEffectiveVipBenefits } from '../services/vipBenefitService.js'
+import { resolveEffectiveVipBenefits, resolveEffectiveVipBenefitsForUsers } from '../services/vipBenefitService.js'
+import { recordWorkerTickMetric, runWithPerfContext } from '../utils/perfMetrics.js'
 
 const WORKER_LOCK_KEY_PREFIX = 'auto-search:tick-lock'
 const OWNER_ID = `auto-search-worker:${process.pid}:${crypto.randomBytes(5).toString('hex')}`
@@ -30,6 +33,8 @@ const TIME_BUDGET_MS = toSafeInt(process.env.AUTO_SEARCH_TIME_BUDGET_MS, 22000, 
 const POST_USER_COOLDOWN_MS = toSafeInt(process.env.AUTO_SEARCH_POST_USER_COOLDOWN_MS, 0, 0, 5000)
 const MAP_META_CACHE_TTL_MS = toSafeInt(process.env.AUTO_SEARCH_MAP_CACHE_TTL_MS, 60000, 5000, 600000)
 const AUTO_SEARCH_LOGS_LIMIT = 12
+const WORKER_BATCH_VIP_LOOKUP = String(process.env.WORKER_BATCH_VIP_LOOKUP || 'true').trim().toLowerCase() !== 'false'
+const WORKER_USE_DIRECT_SERVICE = String(process.env.WORKER_USE_DIRECT_SERVICE || '').trim().toLowerCase() === 'true'
 
 let intervalRef = null
 let localBusy = false
@@ -291,11 +296,11 @@ const findAutoCatchBallItemId = async (userId, preferredBallId = '') => {
     return String(pokeballs[0]?.item?._id || '').trim()
 }
 
-const processUser = async (userDoc, deadlineAt, stats) => {
+const processUser = async (userDoc, deadlineAt, stats, { preResolvedVipBenefits = null } = {}) => {
     const userId = String(userDoc?._id || '').trim()
     if (!userId) return
 
-    const effectiveVipBenefits = await resolveEffectiveVipBenefits(userDoc)
+    const effectiveVipBenefits = preResolvedVipBenefits || await resolveEffectiveVipBenefits(userDoc)
     const effectiveUser = {
         ...userDoc,
         vipBenefits: effectiveVipBenefits,
@@ -530,7 +535,7 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         return
     }
 
-    const token = createInternalToken(userId)
+    const token = WORKER_USE_DIRECT_SERVICE ? '' : createInternalToken(userId)
 
     let activeEncounter = null
     try {
@@ -544,13 +549,20 @@ const processUser = async (userDoc, deadlineAt, stats) => {
 
     if (!activeEncounter) {
         try {
-            const searchRes = await callApiWithRetry({
-                token,
-                path: '/api/game/search',
-                method: 'POST',
-                body: { mapSlug },
-                deadlineAt,
-            })
+            const searchRes = WORKER_USE_DIRECT_SERVICE
+                ? await searchMapForUserDirect({
+                    userId,
+                    mapSlug,
+                    role: userDoc?.role,
+                    vipTierLevel: userDoc?.vipTierLevel,
+                })
+                : await callApiWithRetry({
+                    token,
+                    path: '/api/game/search',
+                    method: 'POST',
+                    body: { mapSlug },
+                    deadlineAt,
+                })
 
             const itemDropInfo = resolveItemDropInfo(searchRes?.itemDrop)
             const itemDropLabel = formatItemDropLabel(itemDropInfo)
@@ -755,17 +767,24 @@ const processUser = async (userDoc, deadlineAt, stats) => {
         }
 
         try {
-            const catchRes = await callApiWithRetry({
-                token,
-                path: '/api/inventory/use',
-                method: 'POST',
-                body: {
+            const catchRes = WORKER_USE_DIRECT_SERVICE
+                ? await usePokeballOnEncounterDirect({
+                    userId,
                     itemId: ballItemId,
                     quantity: 1,
                     encounterId,
-                },
-                deadlineAt,
-            })
+                })
+                : await callApiWithRetry({
+                    token,
+                    path: '/api/inventory/use',
+                    method: 'POST',
+                    body: {
+                        itemId: ballItemId,
+                        quantity: 1,
+                        encounterId,
+                    },
+                    deadlineAt,
+                })
 
             const isCaught = Boolean(catchRes?.caught)
             await updateAutoSearchState({
@@ -830,7 +849,9 @@ const processUser = async (userDoc, deadlineAt, stats) => {
     }
 
     try {
-        const attackRes = await callApiWithRetry({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
+        const attackRes = WORKER_USE_DIRECT_SERVICE
+            ? await attackEncounterForUserDirect({ userId, encounterId })
+            : await callApiWithRetry({ token, path: `/api/game/encounter/${encounterId}/attack`, method: 'POST', deadlineAt })
         const playerDefeated = Boolean(attackRes?.playerDefeated)
         const defeated = Boolean(attackRes?.defeated)
         const isFirstBattleForEncounter = userLastBattleEncounterId.get(userId) !== encounterId
@@ -1002,112 +1023,132 @@ const releaseDistributedLock = async () => {
 
 const runTick = async () => {
     if (localBusy) return
-    localBusy = true
-
-    const startedAt = Date.now()
-    const stats = {
-        fetched: 0,
-        success: 0,
-        skipped: 0,
-        errors: 0,
-        skippedReasons: {},
-        errorReasons: {},
+    const perfContext = {
+        type: 'worker',
+        workerName: 'auto-search',
+        mongoOps: 0,
     }
 
-    try {
-        const acquired = await acquireDistributedLock()
-        if (!acquired) return
+    await runWithPerfContext(perfContext, async () => {
+        localBusy = true
+
+        const startedAt = Date.now()
+        const stats = {
+            fetched: 0,
+            success: 0,
+            skipped: 0,
+            errors: 0,
+            skippedReasons: {},
+            errorReasons: {},
+        }
 
         try {
-            const users = await fetchEligibleUsers()
-            stats.fetched = users.length
-            if (users.length === 0) return
+            const acquired = await acquireDistributedLock()
+            if (!acquired) {
+                stats.skipped += 1
+                stats.skippedReasons.LOCK_NOT_ACQUIRED = (stats.skippedReasons.LOCK_NOT_ACQUIRED || 0) + 1
+                return
+            }
 
-            const deadlineAt = Date.now() + TIME_BUDGET_MS
-            await runWithConcurrency(users, CONCURRENCY, async (user) => {
-                try {
-                    await processUser(user, deadlineAt, stats)
-                    if (POST_USER_COOLDOWN_MS > 0) {
-                        await sleep(POST_USER_COOLDOWN_MS)
+            try {
+                const users = await fetchEligibleUsers()
+                stats.fetched = users.length
+                if (users.length === 0) return
+
+                const effectiveVipBenefitsByUserId = WORKER_BATCH_VIP_LOOKUP
+                    ? await resolveEffectiveVipBenefitsForUsers(users)
+                    : null
+                const deadlineAt = Date.now() + TIME_BUDGET_MS
+                await runWithConcurrency(users, CONCURRENCY, async (user) => {
+                    try {
+                        const userId = String(user?._id || '').trim()
+                        await processUser(user, deadlineAt, stats, {
+                            preResolvedVipBenefits: effectiveVipBenefitsByUserId?.get(userId) || null,
+                        })
+                        if (POST_USER_COOLDOWN_MS > 0) {
+                            await sleep(POST_USER_COOLDOWN_MS)
+                        }
+                    } catch (error) {
+                        const normalizedErrorCode = String(error?.code || 'EXCEPTION').trim().toUpperCase() || 'EXCEPTION'
+                        if (normalizedErrorCode === 'TIME_BUDGET' || normalizedErrorCode === 'REQUEST_TIMEOUT') {
+                            stats.skipped += 1
+                            stats.skippedReasons[normalizedErrorCode] = (stats.skippedReasons[normalizedErrorCode] || 0) + 1
+                            return
+                        }
+                        stats.errors += 1
+                        stats.errorReasons[normalizedErrorCode] = (stats.errorReasons[normalizedErrorCode] || 0) + 1
+
+                        await updateAutoSearchState({
+                            userId: String(user?._id || ''),
+                            setPatch: {},
+                            lastAction: {
+                                action: 'tick',
+                                result: 'error',
+                                reason: normalizedErrorCode,
+                                targetId: String(user?.autoSearch?.mapSlug || '').trim().toLowerCase(),
+                                at: new Date(),
+                            },
+                            logMessage: `Auto tìm kiếm lỗi: ${String(error?.message || 'Lỗi không xác định')}`,
+                            logType: 'error',
+                        })
+
+                        console.error('[auto-search-worker] process user failed:', {
+                            userId: String(user?._id || ''),
+                            code: normalizedErrorCode,
+                            message: error?.message,
+                        })
                     }
-                } catch (error) {
-                    const normalizedErrorCode = String(error?.code || 'EXCEPTION').trim().toUpperCase() || 'EXCEPTION'
-                    if (normalizedErrorCode === 'TIME_BUDGET' || normalizedErrorCode === 'REQUEST_TIMEOUT') {
-                        stats.skipped += 1
-                        stats.skippedReasons[normalizedErrorCode] = (stats.skippedReasons[normalizedErrorCode] || 0) + 1
-                        return
-                    }
-                    stats.errors += 1
-                    stats.errorReasons[normalizedErrorCode] = (stats.errorReasons[normalizedErrorCode] || 0) + 1
-
-                    await updateAutoSearchState({
-                        userId: String(user?._id || ''),
-                        setPatch: {},
-                        lastAction: {
-                            action: 'tick',
-                            result: 'error',
-                            reason: normalizedErrorCode,
-                            targetId: String(user?.autoSearch?.mapSlug || '').trim().toLowerCase(),
-                            at: new Date(),
-                        },
-                        logMessage: `Auto tìm kiếm lỗi: ${String(error?.message || 'Lỗi không xác định')}`,
-                        logType: 'error',
-                    })
-
-                    console.error('[auto-search-worker] process user failed:', {
-                        userId: String(user?._id || ''),
-                        code: normalizedErrorCode,
-                        message: error?.message,
-                    })
-                }
-            })
+                })
+            } finally {
+                await releaseDistributedLock()
+            }
+        } catch (error) {
+            console.error('[auto-search-worker] tick failed:', error)
         } finally {
-            await releaseDistributedLock()
-        }
-    } catch (error) {
-        console.error('[auto-search-worker] tick failed:', error)
-    } finally {
-        localBusy = false
-        const durationMs = Date.now() - startedAt
+            localBusy = false
+            const durationMs = Date.now() - startedAt
+            const mongoOps = Math.max(0, Number(perfContext.mongoOps || 0))
+            recordWorkerTickMetric({ workerName: 'auto-search', durationMs, mongoOps, stats })
 
-        if (mapMetaCache.size > 5000) {
-            const gcThresholdMs = Date.now() - (MAP_META_CACHE_TTL_MS * 2)
-            for (const [mapSlug, payload] of mapMetaCache.entries()) {
-                if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
-                    mapMetaCache.delete(mapSlug)
+            if (mapMetaCache.size > 5000) {
+                const gcThresholdMs = Date.now() - (MAP_META_CACHE_TTL_MS * 2)
+                for (const [mapSlug, payload] of mapMetaCache.entries()) {
+                    if (Number(payload?.cachedAtMs || 0) < gcThresholdMs) {
+                        mapMetaCache.delete(mapSlug)
+                    }
                 }
             }
-        }
 
-        if (userNextActionAtMs.size > 5000) {
-            const gcThresholdMs = Date.now() - 60000
-            for (const [userId, nextAtMs] of userNextActionAtMs.entries()) {
-                if (Number(nextAtMs) < gcThresholdMs) {
-                    userNextActionAtMs.delete(userId)
+            if (userNextActionAtMs.size > 5000) {
+                const gcThresholdMs = Date.now() - 60000
+                for (const [userId, nextAtMs] of userNextActionAtMs.entries()) {
+                    if (Number(nextAtMs) < gcThresholdMs) {
+                        userNextActionAtMs.delete(userId)
+                    }
                 }
             }
-        }
 
-        if (userLastBattleEncounterId.size > 5000) {
-            for (const [userId] of userLastBattleEncounterId.entries()) {
-                if (!userNextActionAtMs.has(userId)) {
-                    userLastBattleEncounterId.delete(userId)
+            if (userLastBattleEncounterId.size > 5000) {
+                for (const [userId] of userLastBattleEncounterId.entries()) {
+                    if (!userNextActionAtMs.has(userId)) {
+                        userLastBattleEncounterId.delete(userId)
+                    }
                 }
             }
-        }
 
-        if (stats.fetched > 0 || stats.errors > 0) {
-            const skippedReasonsText = Object.entries(stats.skippedReasons)
-                .map(([key, count]) => `${key}:${count}`)
-                .join(',')
-            const errorReasonsText = Object.entries(stats.errorReasons)
-                .map(([key, count]) => `${key}:${count}`)
-                .join(',')
-            console.log(
-                `[auto-search-worker] tick done: fetched=${stats.fetched} success=${stats.success} skipped=${stats.skipped}${skippedReasonsText ? ` (${skippedReasonsText})` : ''} errors=${stats.errors}${errorReasonsText ? ` (${errorReasonsText})` : ''} durationMs=${durationMs}`
-            )
+            if (stats.fetched > 0 || stats.errors > 0) {
+                const skippedReasonsText = Object.entries(stats.skippedReasons)
+                    .map(([key, count]) => `${key}:${count}`)
+                    .join(',')
+                const errorReasonsText = Object.entries(stats.errorReasons)
+                    .map(([key, count]) => `${key}:${count}`)
+                    .join(',')
+                console.log(
+                    `[auto-search-worker] tick done: fetched=${stats.fetched} success=${stats.success} skipped=${stats.skipped}${skippedReasonsText ? ` (${skippedReasonsText})` : ''} errors=${stats.errors}${errorReasonsText ? ` (${errorReasonsText})` : ''} mongoOps=${mongoOps} durationMs=${durationMs}`
+                )
+            }
         }
-    }
+    })
 }
 
 export const startAutoSearchWorker = ({ baseUrl }) => {

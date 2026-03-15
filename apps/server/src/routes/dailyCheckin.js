@@ -6,6 +6,7 @@ import UserInventory from '../models/UserInventory.js'
 import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { syncUserPokedexEntriesForPokemonDocs } from '../services/userPokedexService.js'
 import { emitPlayerState } from '../socket/index.js'
 import {
     DAILY_REWARD_CYCLE_DAYS,
@@ -257,6 +258,7 @@ router.post('/claim', async (req, res) => {
             }))
 
             await UserPokemon.insertMany(docs)
+            await syncUserPokedexEntriesForPokemonDocs(docs)
             rewardedAmount = safeQuantity
 
             claimResult = {

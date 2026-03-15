@@ -25,6 +25,7 @@ const userMoveInventorySchema = new mongoose.Schema(
 )
 
 userMoveInventorySchema.index({ userId: 1, moveId: 1 }, { unique: true })
+userMoveInventorySchema.index({ userId: 1, updatedAt: -1, _id: -1 })
 
 const UserMoveInventory = mongoose.model('UserMoveInventory', userMoveInventorySchema)
 

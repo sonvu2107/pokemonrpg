@@ -9,15 +9,76 @@ const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g
 const BOX_ENTRY_SELECT = '_id userId pokemonId nickname level fusionLevel formId isShiny location obtainedAt createdAt obtainedVipMapLevel'
 const BOX_POKEMON_SELECT = '_id name pokedexNumber rarity imageUrl sprites defaultFormId forms evolution'
 const POKEMON_RARITY_ORDER = ['d', 'c', 'b', 'a', 's', 'ss', 'sss', 'sss+']
+const BOX_SPECIES_SEARCH_CACHE_TTL_MS = 60 * 1000
+
+let boxSpeciesSearchCache = {
+    rows: [],
+    expiresAt: 0,
+}
+
+const loadBoxSpeciesSearchRows = async () => {
+    const now = Date.now()
+    if (boxSpeciesSearchCache.expiresAt > now) {
+        return boxSpeciesSearchCache.rows
+    }
+
+    const rows = await Pokemon.find({})
+        .select('_id nameLower')
+        .lean()
+
+    boxSpeciesSearchCache = {
+        rows,
+        expiresAt: now + BOX_SPECIES_SEARCH_CACHE_TTL_MS,
+    }
+
+    return rows
+}
+
+const resolveBoxSpeciesIdsBySearch = async (search = '') => {
+    const normalizedSearch = String(search || '').trim().toLowerCase()
+    if (!normalizedSearch) return []
+
+    const rows = await loadBoxSpeciesSearchRows()
+    return rows
+        .filter((entry) => String(entry?.nameLower || '').includes(normalizedSearch))
+        .map((entry) => entry?._id)
+        .filter(Boolean)
+}
+
 const getPokemonRarityRank = (rarity = '') => {
     const index = POKEMON_RARITY_ORDER.indexOf(String(rarity || '').trim().toLowerCase())
     return index >= 0 ? index : -1
 }
 
+const loadRaritySortedUserPokemonPage = async ({ query, page, limit }) => {
+    const normalizedPage = Math.max(1, Number(page) || 1)
+    const normalizedLimit = Math.max(1, Number(limit) || 1)
+    const allMatchingRows = await UserPokemon.find(query)
+        .select(BOX_ENTRY_SELECT)
+        .populate('pokemonId', BOX_POKEMON_SELECT)
+        .lean()
+
+    allMatchingRows.sort((left, right) => {
+        const rarityDiff = getPokemonRarityRank(right?.pokemonId?.rarity) - getPokemonRarityRank(left?.pokemonId?.rarity)
+        if (rarityDiff !== 0) return rarityDiff
+
+        const levelDiff = Number(right?.level || 0) - Number(left?.level || 0)
+        if (levelDiff !== 0) return levelDiff
+
+        const createdAtDiff = new Date(right?.createdAt || 0).getTime() - new Date(left?.createdAt || 0).getTime()
+        if (createdAtDiff !== 0) return createdAtDiff
+
+        return String(right?._id || '').localeCompare(String(left?._id || ''))
+    })
+
+    const start = (normalizedPage - 1) * normalizedLimit
+    return allMatchingRows.slice(start, start + normalizedLimit)
+}
+
 router.use(authMiddleware)
 router.get('/', async (req, res) => {
     try {
-        let {
+        const {
             page = 1,
             limit = 28,
             search = '',
@@ -30,8 +91,7 @@ router.get('/', async (req, res) => {
         const query = withActiveUserPokemonFilter({ userId: req.user.userId, location: 'box' })
         if (search) {
             const searchRegex = new RegExp(escapeRegExp(search), 'i')
-            const species = await Pokemon.find({ name: searchRegex }).select('_id').lean()
-            const speciesIds = species.map(s => s._id)
+            const speciesIds = await resolveBoxSpeciesIdsBySearch(search)
 
             query.$or = [
                 { nickname: searchRegex },
@@ -79,25 +139,11 @@ router.get('/', async (req, res) => {
         let userPokemon = []
 
         if (sort === 'rarity') {
-            const allMatchingPokemon = await UserPokemon.find(query)
-                .select(BOX_ENTRY_SELECT)
-                .populate('pokemonId', BOX_POKEMON_SELECT)
-                .lean()
-
-            allMatchingPokemon.sort((left, right) => {
-                const rarityDiff = getPokemonRarityRank(right?.pokemonId?.rarity) - getPokemonRarityRank(left?.pokemonId?.rarity)
-                if (rarityDiff !== 0) return rarityDiff
-
-                const levelDiff = (Number(right?.level || 0) - Number(left?.level || 0))
-                if (levelDiff !== 0) return levelDiff
-
-                const createdAtDiff = new Date(right?.createdAt || 0).getTime() - new Date(left?.createdAt || 0).getTime()
-                if (createdAtDiff !== 0) return createdAtDiff
-
-                return String(right?._id || '').localeCompare(String(left?._id || ''))
+            userPokemon = await loadRaritySortedUserPokemonPage({
+                query,
+                page: normalizedPage,
+                limit: limitNum,
             })
-
-            userPokemon = allMatchingPokemon.slice((normalizedPage - 1) * limitNum, normalizedPage * limitNum)
         } else {
             userPokemon = await UserPokemon.find(query)
                 .select(BOX_ENTRY_SELECT)
@@ -128,5 +174,14 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: 'Không thể tải kho Pokémon' })
     }
 })
+
+export const __boxRouteInternals = {
+    clearSpeciesSearchCache() {
+        boxSpeciesSearchCache = {
+            rows: [],
+            expiresAt: 0,
+        }
+    },
+}
 
 export default router

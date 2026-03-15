@@ -8,6 +8,7 @@ import UserPokemon from '../models/UserPokemon.js'
 import Pokemon from '../models/Pokemon.js'
 import Item from '../models/Item.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { syncUserPokedexEntriesForPokemonDocs } from '../services/userPokedexService.js'
 import { emitPlayerState } from '../socket/index.js'
 import { normalizePokemonForms } from '../utils/dailyCheckInUtils.js'
 
@@ -491,6 +492,7 @@ router.post('/redeem', async (req, res) => {
                 }))
 
                 await UserPokemon.insertMany(docs)
+                await syncUserPokedexEntriesForPokemonDocs(docs)
 
                 claimResult = {
                     ...(claimResult || {}),

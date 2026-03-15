@@ -1,0 +1,189 @@
+{
+  "ok": true,
+  "config": {
+    "canaryPort": 3010,
+    "durationMinutes": 30,
+    "intervalSeconds": 60,
+    "totalSamples": 31,
+    "pid": "5964",
+    "logFile": "benchmark_trainer_route.log",
+    "worker": "auto-trainer",
+    "hotRoute": "POST /api/game/battle/resolve"
+  },
+  "summary": {
+    "delta": {
+      "ticks": 351,
+      "success": 1400,
+      "skipped": 0,
+      "error": 0,
+      "activeTicks": 350,
+      "fetchedTicks": 350,
+      "lockNotAcquiredTicks": 0,
+      "usersFetched": 1400,
+      "usersProcessed": 1400,
+      "resolveRouteHits": 1400,
+      "resolveRouteErrors": 0,
+      "memoryGrowthBytes": -48381952,
+      "logGrowthBytes": 79087
+    },
+    "ratios": {
+      "success": 1,
+      "skipped": 0,
+      "error": 0
+    },
+    "throughput": {
+      "processedPerTick": 3.989,
+      "successPerTick": 3.989,
+      "fetchedPerTick": 3.989
+    },
+    "durationMs": {
+      "startAvg": 1208.72,
+      "endAvg": 1103.92,
+      "minAvg": 1103.92,
+      "maxAvg": 1253.97
+    },
+    "mongoAvgPerTick": {
+      "start": 25.85,
+      "end": 25.77
+    },
+    "lockNotAcquiredPerTotalTicks": {
+      "count": 0,
+      "totalTicks": 351,
+      "ratio": 0
+    },
+    "users": {
+      "fetched": 1400,
+      "processed": 1400,
+      "success": 1400,
+      "skipped": 0,
+      "error": 0
+    },
+    "activeTicks": {
+      "count": 350,
+      "totalTicks": 351,
+      "ratio": 0.9972
+    },
+    "routeResolveHitsDelta": 1400,
+    "routeResolveErrorsDelta": 0,
+    "routeResolveHitsEnd": 1672,
+    "routeResolveErrorsEnd": 0,
+    "skippedReasonsDelta": {},
+    "skippedReasonsEnd": {},
+    "errorReasonsDelta": {},
+    "errorReasonsEnd": {},
+    "flaggedSkippedReasons": [],
+    "newErrorReasons": [],
+    "memoryMb": {
+      "start": 350.4,
+      "end": 304.26,
+      "growth": -46.14
+    },
+    "logMbGrowth": 0.075,
+    "idempotencyProbe": {
+      "before": {
+        "duplicateRewardMarkerGroups": 49,
+        "activeCompletedSessions": 0
+      },
+      "after": {
+        "duplicateRewardMarkerGroups": 49,
+        "activeCompletedSessions": 0
+      },
+      "delta": {
+        "duplicateRewardMarkerGroups": 0,
+        "activeCompletedSessions": 0
+      }
+    }
+  },
+  "start": {
+    "capturedAt": "2026-03-15T15:55:16.229Z",
+    "worker": {
+      "hasActivityMetrics": true,
+      "tickCount": 68,
+      "outcomes": {
+        "success": 272,
+        "skipped": 0,
+        "error": 0
+      },
+      "skippedReasons": {},
+      "errorReasons": {},
+      "durationMs": {
+        "avg": 1208.72,
+        "max": 1849,
+        "p50": 1161,
+        "p95": 1572,
+        "p99": 1849
+      },
+      "mongoOps": {
+        "total": 1758,
+        "avgPerTick": 25.85
+      },
+      "activity": {
+        "activeTickCount": 68,
+        "activeTickRatio": 1,
+        "fetchedTickCount": 68,
+        "fetchedTickRatio": 1,
+        "lockNotAcquiredTickCount": 0,
+        "lockNotAcquiredTickRatio": 0,
+        "totalFetchedUsers": 272,
+        "totalProcessedUsers": 272,
+        "avgFetchedUsersPerTick": 4,
+        "avgProcessedUsersPerTick": 4
+      }
+    },
+    "route": {
+      "resolveHits": 272,
+      "resolveErrors": 0
+    },
+    "process": {
+      "pid": "5964",
+      "memoryBytes": 367423488,
+      "logSizeBytes": 16246
+    }
+  },
+  "end": {
+    "capturedAt": "2026-03-15T16:29:32.346Z",
+    "worker": {
+      "hasActivityMetrics": true,
+      "tickCount": 419,
+      "outcomes": {
+        "success": 1672,
+        "skipped": 0,
+        "error": 0
+      },
+      "skippedReasons": {},
+      "errorReasons": {},
+      "durationMs": {
+        "avg": 1103.92,
+        "max": 3697,
+        "p50": 979,
+        "p95": 1304,
+        "p99": 2577
+      },
+      "mongoOps": {
+        "total": 10796,
+        "avgPerTick": 25.77
+      },
+      "activity": {
+        "activeTickCount": 418,
+        "activeTickRatio": 0.9976,
+        "fetchedTickCount": 418,
+        "fetchedTickRatio": 0.9976,
+        "lockNotAcquiredTickCount": 0,
+        "lockNotAcquiredTickRatio": 0,
+        "totalFetchedUsers": 1672,
+        "totalProcessedUsers": 1672,
+        "avgFetchedUsersPerTick": 3.99,
+        "avgProcessedUsersPerTick": 3.99
+      }
+    },
+    "route": {
+      "resolveHits": 1672,
+      "resolveErrors": 0
+    },
+    "process": {
+      "pid": "5964",
+      "memoryBytes": 319041536,
+      "logSizeBytes": 95333
+    }
+  }
+}

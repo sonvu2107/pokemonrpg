@@ -12,6 +12,8 @@ import { BADGE_MAX_EQUIPPED, buildBadgeOverviewForUser } from '../utils/badgeUti
 import { getLiveSocketPresenceSnapshot } from '../socket/index.js'
 import { resolveEffectiveVipBenefits, resolveEffectiveVipBenefitsForUsers } from '../services/vipBenefitService.js'
 import { closeOnlineSession } from '../utils/onlineTime.js'
+import { getPerfMetricsSnapshot } from '../utils/perfMetrics.js'
+import { getIpBanCacheStats } from '../services/ipBanGuardService.js'
 import { resolveUserPokemonFinalStats } from '../utils/userPokemonStats.js'
 
 const router = express.Router()
@@ -330,6 +332,23 @@ router.get('/', async (req, res) => {
         res.status(500).json({
             ok: false,
             message: 'Không thể tải thống kê máy chủ'
+        })
+    }
+})
+
+// GET /api/stats/perf - Admin endpoint for request/worker performance
+router.get('/perf', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        return res.json({
+            ok: true,
+            metrics: getPerfMetricsSnapshot(),
+            ipBanCache: getIpBanCacheStats(),
+        })
+    } catch (error) {
+        console.error('GET /api/stats/perf error:', error)
+        return res.status(500).json({
+            ok: false,
+            message: 'Không thể tải thống kê hiệu năng',
         })
     }
 })

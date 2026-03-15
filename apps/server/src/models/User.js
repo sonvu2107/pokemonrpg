@@ -539,7 +539,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 userSchema.index({ isOnline: 1, createdAt: 1, _id: 1 })
 userSchema.index({ isOnline: 1, lastActive: -1, _id: 1 })
 userSchema.index({ registrationIp: 1, createdAt: -1 })
-userSchema.index({ 'autoSearch.enabled': 1, isBanned: 1, _id: 1 })
-userSchema.index({ 'autoTrainer.enabled': 1, isBanned: 1, _id: 1 })
+userSchema.index({ 'autoSearch.enabled': 1, isBanned: 1, role: 1, _id: 1 })
+userSchema.index({ 'autoTrainer.enabled': 1, isBanned: 1, role: 1, _id: 1 })
 
 export default mongoose.model('User', userSchema)

@@ -121,5 +121,6 @@ const weeklyLeaderboardRewardSchema = new mongoose.Schema(
 
 weeklyLeaderboardRewardSchema.index({ weekStart: 1, mode: 1, userId: 1, rewardType: 1 }, { unique: true })
 weeklyLeaderboardRewardSchema.index({ weekStart: 1, mode: 1, rank: 1 })
+weeklyLeaderboardRewardSchema.index({ userId: 1, rewardType: 1, rewardedAt: -1, _id: -1 })
 
 export default mongoose.model('WeeklyLeaderboardReward', weeklyLeaderboardRewardSchema)

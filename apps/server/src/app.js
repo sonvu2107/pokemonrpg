@@ -44,6 +44,8 @@ import IpBan from './models/IpBan.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { extractClientIp } from './utils/ipUtils.js'
+import { checkIpBanWithCache } from './services/ipBanGuardService.js'
+import { perfRequestContextMiddleware } from './utils/perfMetrics.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -77,11 +79,27 @@ app.use(
     })
 )
 
+app.use(perfRequestContextMiddleware)
+
 // Rate limiting
 app.use('/api/', async (req, res, next) => {
     try {
         const clientIp = extractClientIp(req)
         if (!clientIp) return next()
+
+        const cacheEnabled = String(process.env.IP_BAN_CACHE_ENABLED || '').trim().toLowerCase() === 'true'
+        if (cacheEnabled) {
+            const ipBanState = await checkIpBanWithCache(clientIp)
+            if (!ipBanState?.blocked) {
+                return next()
+            }
+
+            return res.status(403).json({
+                ok: false,
+                code: 'IP_BANNED',
+                message: ipBanState.reason || 'IP của bạn đã bị chặn truy cập hệ thống.',
+            })
+        }
 
         const ipBan = await IpBan.findOne({ ip: clientIp, isActive: true })
             .select('reason expiresAt')

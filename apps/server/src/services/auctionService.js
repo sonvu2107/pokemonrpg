@@ -5,6 +5,7 @@ import AuctionSettlementLog from '../models/AuctionSettlementLog.js'
 import PlayerState from '../models/PlayerState.js'
 import UserInventory from '../models/UserInventory.js'
 import UserPokemon from '../models/UserPokemon.js'
+import { syncUserPokedexEntriesForPokemonDocs } from './userPokedexService.js'
 import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../utils/mongoTransactions.js'
 
 export const AUCTION_REWARD_TYPE_ITEM = 'item'
@@ -493,6 +494,7 @@ export const settleAuctionById = async (auctionId, options = {}) => {
                         obtainedAt: now,
                     }))
                     await UserPokemon.insertMany(pokemonDocs, getSessionOptions(session))
+                    await syncUserPokedexEntriesForPokemonDocs(pokemonDocs, { session })
                 }
             } else {
                 await UserInventory.findOneAndUpdate(

@@ -9,6 +9,7 @@ import UserPokemon from '../../models/UserPokemon.js'
 import WeeklyLeaderboardReward from '../../models/WeeklyLeaderboardReward.js'
 import LeaderboardCosmeticConfig from '../../models/LeaderboardCosmeticConfig.js'
 import upload from '../../middleware/upload.js'
+import { syncUserPokedexEntriesForPokemonDocs } from '../../services/userPokedexService.js'
 import { attachSession, getSessionOptions, runWithOptionalTransaction } from '../../utils/mongoTransactions.js'
 import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 
@@ -22,9 +23,9 @@ let rewardIndexesSyncPromise = null
 
 const ensureRewardIndexesSynced = async () => {
     if (!rewardIndexesSyncPromise) {
-        rewardIndexesSyncPromise = WeeklyLeaderboardReward.syncIndexes()
+        rewardIndexesSyncPromise = WeeklyLeaderboardReward.createIndexes()
             .catch((error) => {
-                console.error('WeeklyLeaderboardReward.syncIndexes error:', error)
+                console.error('WeeklyLeaderboardReward.createIndexes error:', error)
             })
     }
     await rewardIndexesSyncPromise
@@ -664,6 +665,7 @@ router.post('/award', async (req, res) => {
                     originalTrainer: originToken,
                 }))
                 await UserPokemon.insertMany(pokemonAwardDocs)
+                await syncUserPokedexEntriesForPokemonDocs(pokemonAwardDocs)
 
                 rewardPokemonId = pokemonDoc._id
                 rewardPokemonNameSnapshot = String(pokemonDoc?.name || '').trim()

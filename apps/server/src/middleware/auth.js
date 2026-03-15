@@ -1,12 +1,10 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import { hasAdminPermission } from '../constants/adminPermissions.js'
-import { applyVipResetToUserLike, expireVipUsersIfNeeded, isVipCurrentlyExpired } from '../utils/vipStatus.js'
+import { applyVipResetToUserLike, isVipCurrentlyExpired } from '../utils/vipStatus.js'
 
 export const authMiddleware = async (req, res, next) => {
     try {
-        await expireVipUsersIfNeeded(User)
-
         // Get token from Authorization header
         const authHeader = req.headers.authorization
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -119,6 +117,18 @@ export const authMiddleware = async (req, res, next) => {
 }
 
 export const requireAdmin = (req, res, next) => {
+    const role = String(req.user?.role || '').trim().toLowerCase()
+    if (role === 'admin') {
+        req.adminUser = {
+            _id: req.user?.userId || null,
+            role: 'admin',
+            adminPermissions: Array.isArray(req.user?.adminPermissions)
+                ? req.user.adminPermissions
+                : [],
+        }
+        return next()
+    }
+
     return requireAdminFromDb(req, res, next)
 }
 

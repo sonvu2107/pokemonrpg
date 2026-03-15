@@ -1,0 +1,115 @@
+{
+  "generatedAt": "2026-03-15T17:47:33.606Z",
+  "setup": {
+    "isolatedSingleWorker": true,
+    "warmupMinutes": 5,
+    "benchmarkMinutes": 30,
+    "baselineMode": "route_loopback",
+    "candidateMode": "direct_service",
+    "workerFlag": "WORKER_TRAINER_USE_DIRECT_SERVICE"
+  },
+  "metrics": {
+    "baseline": {
+      "ticksTotal": 351,
+      "ticksProcessed": 350,
+      "usersFetched": 1400,
+      "usersProcessed": 1400,
+      "success": 1400,
+      "skipped": 0,
+      "error": 0,
+      "successPerTick": 3.989,
+      "tickDurationMs": {
+        "avg": 1103.92,
+        "p95": 1304,
+        "p99": 2577
+      },
+      "mongoOpsPerTick": 25.77,
+      "memorySlopeMb": -46.14,
+      "logGrowthMb": 0.075,
+      "errorReasonsDelta": {},
+      "flaggedSkippedReasons": [],
+      "routeBattleResolve": {
+        "hits": 1400,
+        "errors": 0
+      },
+      "idempotencyProbe": {
+        "before": {
+          "duplicateRewardMarkerGroups": 49,
+          "activeCompletedSessions": 0
+        },
+        "after": {
+          "duplicateRewardMarkerGroups": 49,
+          "activeCompletedSessions": 0
+        },
+        "delta": {
+          "duplicateRewardMarkerGroups": 0,
+          "activeCompletedSessions": 0
+        }
+      }
+    },
+    "direct": {
+      "ticksTotal": 362,
+      "ticksProcessed": 362,
+      "usersFetched": 1448,
+      "usersProcessed": 1448,
+      "success": 1448,
+      "skipped": 0,
+      "error": 0,
+      "successPerTick": 4,
+      "tickDurationMs": {
+        "avg": 1053.33,
+        "p95": 1222,
+        "p99": 2104
+      },
+      "mongoOpsPerTick": 73.83,
+      "memorySlopeMb": -35.22,
+      "logGrowthMb": 0.077,
+      "errorReasonsDelta": {},
+      "flaggedSkippedReasons": [],
+      "routeBattleResolve": {
+        "hits": 0,
+        "errors": 0
+      },
+      "idempotencyProbe": {
+        "before": {
+          "duplicateRewardMarkerGroups": 49,
+          "activeCompletedSessions": 0
+        },
+        "after": {
+          "duplicateRewardMarkerGroups": 49,
+          "activeCompletedSessions": 0
+        },
+        "delta": {
+          "duplicateRewardMarkerGroups": 0,
+          "activeCompletedSessions": 0
+        }
+      }
+    }
+  },
+  "performanceDelta": {
+    "successPerTickPct": 0.28,
+    "usersProcessedPct": 3.43,
+    "tickDurationAvgPct": -4.58,
+    "tickDurationP95Pct": -6.29,
+    "tickDurationP99Pct": -18.35,
+    "mongoOpsPerTickPct": 186.5,
+    "memorySlopeMbDiff": 10.92,
+    "logGrowthMbDiff": 0.002,
+    "notes": [
+      "mongoOpsPerTick is not directly comparable between modes because DB work moved from HTTP route context into worker context after direct-service migration."
+    ]
+  },
+  "safety": {
+    "pass": true,
+    "checks": {
+      "errorReasonsDeltaEmpty": true,
+      "flaggedSkippedReasonsEmpty": true,
+      "routeResolveZeroHit": true,
+      "idempotencyStable": true
+    }
+  },
+  "decision": {
+    "outcome": "EXPAND_WITH_CAUTION",
+    "reason": "Safety checks pass and isolated benchmark shows stable/improved tick duration with equivalent throughput. Keep staged rollout and continue memory observation."
+  }
+}

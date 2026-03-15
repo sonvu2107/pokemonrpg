@@ -20,6 +20,7 @@ const RECOVERY_PIN_REGEX = /^\d{6}$/
 const REGISTRATION_IP_WINDOW_MS = 24 * 60 * 60 * 1000
 const COSMETIC_REWARD_TYPES = Object.freeze(['titleImage', 'avatarFrame'])
 const WEEKLY_COSMETIC_DURATION_MS = 7 * 24 * 60 * 60 * 1000
+const shouldUseVipExpireBackgroundJob = String(process.env.VIP_EXPIRE_BACKGROUND_JOB_ENABLED || '').trim().toLowerCase() === 'true'
 
 const createRateLimitHandler = (code, fallbackMessage, fallbackWindowMs) => (req, res) => {
     const resetTimeMs = req.rateLimit?.resetTime
@@ -444,7 +445,9 @@ router.post('/register', registerLimiter, async (req, res, next) => {
 // POST /api/auth/login
 router.post('/login', async (req, res, next) => {
     try {
-        await expireVipUsersIfNeeded(User)
+        if (!shouldUseVipExpireBackgroundJob) {
+            await expireVipUsersIfNeeded(User)
+        }
 
         const { email, password } = req.body
         const normalizedEmail = String(email || '').trim().toLowerCase()

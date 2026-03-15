@@ -6,6 +6,8 @@ import { initSocket } from './socket/index.js'
 import { startAutoTrainerWorker } from './workers/autoTrainerWorker.js'
 import { startAutoSearchWorker } from './workers/autoSearchWorker.js'
 import { startAuctionWorker } from './workers/auctionWorker.js'
+import { startIpBanCleanupWorker } from './workers/ipBanCleanupWorker.js'
+import { startVipExpireWorker } from './workers/vipExpireWorker.js'
 import { enforcePartyUniqueSpeciesGlobally } from './utils/partyDuplicateUtils.js'
 
 // Create HTTP server
@@ -36,4 +38,6 @@ server.listen(PORT, () => {
     startAutoTrainerWorker({ baseUrl: `http://127.0.0.1:${PORT}` })
     startAutoSearchWorker({ baseUrl: `http://127.0.0.1:${PORT}` })
     startAuctionWorker()
+    startIpBanCleanupWorker()
+    startVipExpireWorker()
 })

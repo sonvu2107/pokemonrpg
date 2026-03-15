@@ -23,6 +23,7 @@ import VipPrivilegeTier from '../../models/VipPrivilegeTier.js'
 import upload from '../../middleware/upload.js'
 import { uploadVipAssetImageToCloudinary } from '../../utils/cloudinary.js'
 import { normalizeIpAddress } from '../../utils/ipUtils.js'
+import { syncUserPokedexEntriesForPokemonDocs } from '../../services/userPokedexService.js'
 import {
     ADMIN_PERMISSIONS,
     ALL_ADMIN_PERMISSIONS,
@@ -31,8 +32,10 @@ import {
     normalizeAdminPermissions,
 } from '../../constants/adminPermissions.js'
 import { addOneMonth, buildVipResetPayload, expireVipUsersIfNeeded } from '../../utils/vipStatus.js'
+import { invalidateIpBanCache } from '../../services/ipBanGuardService.js'
 
 const router = express.Router()
+const shouldUseVipExpireBackgroundJob = String(process.env.VIP_EXPIRE_BACKGROUND_JOB_ENABLED || '').trim().toLowerCase() === 'true'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const toSafeLookupLimit = (value, fallback = 200) => Math.min(1000, Math.max(1, parseInt(value, 10) || fallback))
@@ -499,7 +502,9 @@ const buildUserResponse = (user) => {
 // GET /api/admin/users - List all users with pagination and search
 router.get('/', async (req, res) => {
     try {
-        await expireVipUsersIfNeeded(User)
+        if (!shouldUseVipExpireBackgroundJob) {
+            await expireVipUsersIfNeeded(User)
+        }
 
         await User.updateMany(
             {
@@ -728,6 +733,8 @@ router.post('/ip-bans', async (req, res) => {
             }
         )
 
+        invalidateIpBanCache(ip)
+
         res.json({
             ok: true,
             ipBan: banDoc,
@@ -762,6 +769,8 @@ router.delete('/ip-bans/:banId', async (req, res) => {
         if (!updated) {
             return res.status(404).json({ ok: false, message: 'Không tìm thấy bản ghi IP ban' })
         }
+
+        invalidateIpBanCache(updated.ip)
 
         res.json({ ok: true, message: `Đã gỡ chặn IP ${updated.ip}` })
     } catch (error) {
@@ -1445,6 +1454,7 @@ router.post('/:id/grant-pokemon', async (req, res) => {
         }))
 
         await UserPokemon.insertMany(docs)
+        await syncUserPokedexEntriesForPokemonDocs(docs)
 
         res.json({
             ok: true,
